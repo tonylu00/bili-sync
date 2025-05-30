@@ -78,10 +78,6 @@ pub struct WatchLaterConfig {
     pub enabled: bool,
     #[serde(default)]
     pub path: PathBuf,
-    #[serde(default = "default_download_all_seasons")]
-    pub download_all_seasons: bool,
-    #[serde(default = "default_page_name")]
-    pub page_name: Option<String>,
 }
 
 fn default_time_format() -> String {

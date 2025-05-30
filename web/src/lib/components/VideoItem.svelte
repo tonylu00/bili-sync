@@ -75,11 +75,11 @@
 					// 如果强制重置仍然返回未重置，说明没有任何任务
 					toast.info('无任务可重置', {
 						description: '该视频暂无任何任务'
-					});
-				} else {
-					toast.info('重置无效', {
+				});
+			} else {
+				toast.info('重置无效', {
 						description: '所有任务均成功，无需重置。如需重新下载，请使用强制重置。'
-					});
+				});
 				}
 			}
 		} catch (error) {
