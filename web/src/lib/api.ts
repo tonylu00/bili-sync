@@ -104,6 +104,8 @@ export async function deleteVideoSource(source_type: string, id: number, delete_
 export async function getConfig(): Promise<{
     video_name: string;
     page_name: string;
+    multi_page_name?: string;
+    bangumi_name?: string;
     folder_structure: string;
     time_format: string;
     interval: number;

@@ -126,6 +126,39 @@
 			return;
 		}
 		
+		// 检查是否修改了命名相关的配置
+		const originalConfig = await getConfig();
+		const hasNamingChanges = 
+			video_name.trim() !== originalConfig.video_name ||
+			page_name.trim() !== originalConfig.page_name ||
+			multi_page_name.trim() !== (originalConfig.multi_page_name || '{{title}}-P{{pid_pad}}') ||
+			bangumi_name.trim() !== (originalConfig.bangumi_name || 'S{{season_pad}}E{{pid_pad}}-{{pid_pad}}');
+		
+		// 如果修改了命名相关配置，显示风险警告
+		if (hasNamingChanges) {
+			const riskWarning = `⚠️ 重要警告 ⚠️\n\n` +
+				`您正在修改文件命名模板，这将触发文件重命名操作。\n\n` +
+				`如果当前有正在下载的任务，可能导致：\n` +
+				`• 下载任务中断\n` +
+				`• 文件损坏\n` +
+				`• 文件名冲突\n` +
+				`• 数据库状态异常\n\n` +
+				`强烈建议：\n` +
+				`1. 确保所有下载任务已完成\n` +
+				`2. 或暂停所有下载任务\n\n` +
+				`如果仍要继续修改，出现任何问题需要自行承担后果。\n\n` +
+				`是否确定要继续？`;
+			
+			if (!confirm(riskWarning)) {
+				return;
+			}
+			
+			// 第二次确认
+			if (!confirm('请再次确认：您已了解风险并愿意承担可能的后果？')) {
+				return;
+			}
+		}
+		
 		loading = true;
 		
 		try {

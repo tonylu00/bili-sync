@@ -198,7 +198,22 @@
 
 	// 删除视频源
 	async function handleDeleteSource(category: keyof VideoSourcesResponse, id: number, name: string) {
+		// 第一次确认 - 基本确认
 		if (!confirm(`确定要删除视频源 "${name}" 吗？此操作不可撤销。`)) {
+			return;
+		}
+		
+		// 第二次确认 - 风险警告
+		const riskWarning = `⚠️ 重要警告 ⚠️\n\n` +
+			`如果该视频源正在下载中，删除可能导致：\n` +
+			`• 下载任务中断\n` +
+			`• 文件损坏\n` +
+			`• 数据库状态异常\n\n` +
+			`请确保该视频源当前没有正在进行的下载任务！\n\n` +
+			`如果仍要继续删除，出现任何问题需要自行承担后果。\n\n` +
+			`是否确定要继续删除？`;
+		
+		if (!confirm(riskWarning)) {
 			return;
 		}
 		
