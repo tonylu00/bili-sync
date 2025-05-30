@@ -66,8 +66,9 @@ export async function getVideo(id: number): Promise<VideoResponse> {
     return fetchWithAuth(`${BASE_URL}/videos/${id}`);
 }
 
-export async function resetVideo(id: number): Promise<ResetVideoResponse> {
-    return fetchWithAuth(`${BASE_URL}/videos/${id}/reset`, { method: 'POST' });
+export async function resetVideo(id: number, force: boolean = false): Promise<ResetVideoResponse> {
+    const url = force ? `${BASE_URL}/videos/${id}/reset?force=true` : `${BASE_URL}/videos/${id}/reset`;
+    return fetchWithAuth(url, { method: 'POST' });
 }
 
 // 添加新的视频源

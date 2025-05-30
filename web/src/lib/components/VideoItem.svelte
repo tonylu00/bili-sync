@@ -30,7 +30,7 @@
 	];
 
 	// 状态对应的颜色样式
-	const statusColorClasses = {
+	const statusColorClasses: Record<string, string> = {
 		'未下载': 'bg-gray-100 text-gray-800',
 		'等待下载': 'bg-yellow-100 text-yellow-800',
 		'下载中': 'bg-blue-100 text-blue-800',
@@ -56,11 +56,11 @@
 		}
 	}
 
-	// 修改重置函数：调用 resetVideo 后重新获取视频详情
-	async function resetVideoItem() {
+	// 修改重置函数：支持强制重置参数
+	async function resetVideoItem(force: boolean = false) {
 		loading = true;
 		try {
-			const res: ResetVideoResponse = await resetVideo(video.id);
+			const res: ResetVideoResponse = await resetVideo(video.id, force);
 			// 重置后重新加载视频详情，并更新视频信息
 			const newDetail = await getVideo(video.id);
 			detail = newDetail;
@@ -68,12 +68,19 @@
 			// 根据返回的 resetted 显示提示
 			if (res.resetted) {
 				toast.success('重置成功', {
-					description: `已重置视频与视频的 ${res.pages.length} 条 page.`
+					description: `已重置视频与视频的 ${res.pages.length} 条 page.${force ? ' (强制重置)' : ''}`
 				});
 			} else {
-				toast.info('重置无效', {
-					description: '所有任务均成功，无需重置'
-				});
+				if (force) {
+					// 如果强制重置仍然返回未重置，说明没有任何任务
+					toast.info('无任务可重置', {
+						description: '该视频暂无任何任务'
+					});
+				} else {
+					toast.info('重置无效', {
+						description: '所有任务均成功，无需重置。如需重新下载，请使用强制重置。'
+					});
+				}
 			}
 		} catch (error) {
 			console.error(error);
@@ -100,7 +107,12 @@
 			<Button onclick={toggleDetail}>
 				{showDetail ? '收起' : '展开'}
 			</Button>
-			<Button onclick={resetVideoItem}>重置</Button>
+			<Button onclick={() => resetVideoItem(false)} variant="secondary">
+				重置失败
+			</Button>
+			<Button onclick={() => resetVideoItem(true)} variant="destructive">
+				强制重置
+			</Button>
 		</div>
 	</div>
 	{#if showDetail}

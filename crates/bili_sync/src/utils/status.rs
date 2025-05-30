@@ -49,6 +49,23 @@ impl<const N: usize> Status<N> {
         changed
     }
 
+    /// 重置所有子任务（包括成功的），将状态设置为 0b000，返回值表示 status 是否发生了变化
+    pub fn reset_all(&mut self) -> bool {
+        let mut changed = false;
+        for i in 0..N {
+            let status = self.get_status(i);
+            if status != 0 {
+                self.set_status(i, 0);
+                changed = true;
+            }
+        }
+        // 如果有任何改变，清除完成标记
+        if changed {
+            self.set_completed(false);
+        }
+        changed
+    }
+
     /// 覆盖某个子任务的状态
     pub fn set(&mut self, offset: usize, status: u32) {
         assert!(status < 0b1000, "status should be less than 0b1000");

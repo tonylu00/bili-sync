@@ -215,18 +215,28 @@ pub async fn get_video(
     }))
 }
 
-/// 将某个视频与其所有分页的失败状态清空为未下载状态，这样在下次下载任务中会触发重试
+/// 重置视频的下载状态
 #[utoipa::path(
     post,
     path = "/api/videos/{id}/reset",
+    params(
+        ("id" = i32, Path, description = "Video ID"),
+        ("force" = Option<bool>, Query, description = "Force reset all tasks including successful ones")
+    ),
     responses(
-        (status = 200, body = ApiResponse<ResetVideoResponse> ),
+        (status = 200, body = ApiResponse<ResetVideoResponse>),
     )
 )]
 pub async fn reset_video(
     Path(id): Path<i32>,
+    Query(params): Query<std::collections::HashMap<String, String>>,
     Extension(db): Extension<Arc<DatabaseConnection>>,
 ) -> Result<ApiResponse<ResetVideoResponse>, ApiError> {
+    // 检查是否强制重置
+    let force_reset = params.get("force")
+        .and_then(|v| v.parse::<bool>().ok())
+        .unwrap_or(false);
+
     let txn = db.begin().await?;
     let video_status: Option<u32> = video::Entity::find_by_id(id)
         .select_only()
@@ -244,7 +254,12 @@ pub async fn reset_video(
         .into_iter()
         .filter_map(|mut model| {
             let mut page_status = PageStatus::from(model.download_status);
-            if page_status.reset_failed() {
+            let should_reset = if force_reset {
+                page_status.reset_all()
+            } else {
+                page_status.reset_failed()
+            };
+            if should_reset {
                 model.download_status = page_status.into();
                 Some(model)
             } else {
@@ -253,7 +268,11 @@ pub async fn reset_video(
         })
         .collect();
     let mut video_status = VideoStatus::from(video_status);
-    let mut should_update_video = video_status.reset_failed();
+    let mut should_update_video = if force_reset {
+        video_status.reset_all()
+    } else {
+        video_status.reset_failed()
+    };
     if !resetted_pages_model.is_empty() {
         // 视频状态标志的第 5 位表示是否有分 P 下载失败，如果有需要重置的分页，需要同时重置视频的该状态
         video_status.set(4, 0);
