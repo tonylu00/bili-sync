@@ -1,5 +1,10 @@
 ![bili-sync](https://socialify.git.ci/amtoaer/bili-sync/image?description=1&font=KoHo&issues=1&language=1&logo=https%3A%2F%2Fs2.loli.net%2F2023%2F12%2F02%2F9EwT2yInOu1d3zm.png&name=1&owner=1&pattern=Signal&pulls=1&stargazers=1&theme=Light)
 
+[![GitHub Release](https://img.shields.io/github/v/release/amtoaer/bili-sync)](https://github.com/amtoaer/bili-sync/releases/latest)
+[![Test](https://github.com/amtoaer/bili-sync/actions/workflows/test.yml/badge.svg)](https://github.com/amtoaer/bili-sync/actions/workflows/test.yml)
+[![Release](https://github.com/amtoaer/bili-sync/actions/workflows/release.yml/badge.svg)](https://github.com/amtoaer/bili-sync/actions/workflows/release.yml)
+[![Downloads](https://img.shields.io/github/downloads/amtoaer/bili-sync/total)](https://github.com/amtoaer/bili-sync/releases)
+
 ## 简介
 
 > [!NOTE]
@@ -27,7 +32,14 @@ bili-sync 是一款专为 NAS 用户编写的哔哩哔哩同步工具，由 Rust
 
 ### 🔧 最新更新 (2024)
 
-#### 🎉 2024-06-01 更新
+#### 🎉 2024-06-01 更新 - 文档系统全面升级 📚
+- **📚 VitePress 文档系统** - 搭建了现代化的文档网站，支持中文搜索和暗黑模式
+- **🚀 GitHub Actions 自动部署** - 推送代码即可自动更新文档，实现 CI/CD 流程
+- **📄 功能展示页面** - 添加了详细的功能截图和使用说明
+- **📖 部署指南** - 提供了完整的文档部署教程
+- **🌐 在线文档** - 访问地址：https://qq1582185982.github.io/bili-sync-01/
+
+#### 🎉 2024-06-01 更新 - 重大功能升级
 - **🗄️ 视频源数据库迁移** - 视频源配置从配置文件完全迁移到数据库，配置文件不再包含视频源信息
 - **📁 收藏夹功能完善** - 实现直接显示当前用户的所有收藏夹列表，无需搜索即可快速选择
 - **🔢 修复收藏夹ID精度问题** - 解决了大ID收藏夹（如3594171330）被截断的问题，现在使用完整的64位ID

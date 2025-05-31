@@ -69,8 +69,15 @@ export default defineConfig({
 				items: [
 					{ text: "常见问题", link: "/question" },
 					{ text: "管理页", link: "/frontend" },
+					{ text: "部署指南", link: "/deploy-guide" },
 				],
-			}
+			},
+			{
+				text: "更新日志",
+				items: [
+					{ text: "2024年6月更新", link: "/update-log-2024-06" },
+				],
+			},
 		],
 		socialLinks: [
 			{ icon: "github", link: "https://github.com/amtoaer/bili-sync" },
