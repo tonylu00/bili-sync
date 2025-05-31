@@ -39,10 +39,8 @@ pub struct AddVideoSourceRequest {
 }
 
 // 删除视频源的请求结构体
-#[derive(Deserialize, IntoParams, ToSchema)]
+#[derive(Debug, Deserialize, ToSchema)]
 pub struct DeleteVideoSourceRequest {
-    // 是否删除本地已下载文件
-    #[serde(default)]
     pub delete_local_files: bool,
 }
 
@@ -69,4 +67,22 @@ pub struct UpdateConfigRequest {
     pub parallel_download_enabled: Option<bool>,
     pub parallel_download_threads: Option<usize>,
     pub parallel_download_min_size: Option<u64>,
+}
+
+#[derive(Debug, Deserialize, ToSchema)]
+pub struct SearchRequest {
+    pub keyword: String,           // 搜索关键词
+    pub search_type: String,       // 搜索类型：video, bili_user, media_bangumi
+    #[serde(default = "default_page")]
+    pub page: u32,                 // 页码，默认1
+    #[serde(default = "default_page_size")]
+    pub page_size: u32,            // 每页数量，默认20
+}
+
+fn default_page() -> u32 {
+    1
+}
+
+fn default_page_size() -> u32 {
+    20
 }

@@ -4,7 +4,7 @@
 	import { Button } from '$lib/components/ui/button';
 	import VideoItem from '$lib/components/VideoItem.svelte';
 	import { listVideos, getVideoSources, deleteVideoSource, ApiError } from '$lib/api';
-	import type { VideoInfo, VideoSourcesResponse } from '$lib/types';
+	import type { VideoInfo, VideoSourcesResponse, VideoCategory } from '$lib/types';
 	import Header from '$lib/components/Header.svelte';
 	import AddSourceForm from '$lib/components/AddSourceForm.svelte';
 	import ConfigForm from '$lib/components/ConfigForm.svelte';
@@ -120,6 +120,31 @@
 	let showAddForm = false; // 控制添加表单的显示
 	let showConfigForm = false; // 控制配置表单的显示
 
+	// 搜索结果相关状态
+	let searchResults: Array<{
+		result_type: string;
+		title: string;
+		author: string;
+		bvid?: string;
+		aid?: number;
+		mid?: number;
+		season_id?: string;
+		media_id?: string;
+		cover: string;
+		description: string;
+		duration?: string;
+		pubdate?: number;
+		play?: number;
+		danmaku?: number;
+	}> = [];
+	let showSearchResults = false;
+	let searchKeyword = '';
+	let searchType = '';
+	let searchSourceType = '';
+	let totalSearchResults = 0;
+	let searchCurrentPage = 1;
+	let searchPageSize = 12;
+
 	// 视频列表模型及全局选中模型（只全局允许选中一个）
 	let videoListModels: VideoSourcesResponse = {
 		collection: [],
@@ -160,6 +185,9 @@
 		'bg-red-200', // 下载失败
 		'bg-orange-200' // 部分P下载失败
 	];
+
+	// 添加表单的引用
+	let addSourceFormRef: AddSourceForm;
 
 	// 加载视频列表模型
 	async function fetchVideoListModels() {
@@ -218,6 +246,116 @@
 	// 配置更新成功后的回调
 	function handleConfigSuccess() {
 		showConfigForm = false; // 隐藏配置表单
+	}
+
+	// 处理搜索结果事件
+	function handleSearchResults(event: CustomEvent) {
+		const { results, total, keyword, searchType: sType, sourceType, page = 1 } = event.detail;
+		searchResults = results;
+		totalSearchResults = total;
+		searchKeyword = keyword;
+		searchType = sType;
+		searchSourceType = sourceType;
+		searchCurrentPage = page;
+		showSearchResults = true;
+		console.log('收到搜索结果:', { results, total, keyword, sType, sourceType, page });
+	}
+
+	// 搜索翻页
+	async function searchPage(page: number) {
+		if (page < 1 || page === searchCurrentPage) return;
+		
+		// 调用AddSourceForm的搜索方法，传入页码
+		if (addSourceFormRef && addSourceFormRef.searchWithPage) {
+			await addSourceFormRef.searchWithPage(page);
+		}
+	}
+
+	// 上一页搜索结果
+	function prevSearchPage() {
+		if (searchCurrentPage > 1) {
+			searchPage(searchCurrentPage - 1);
+		}
+	}
+
+	// 下一页搜索结果
+	function nextSearchPage() {
+		const maxPage = Math.ceil(totalSearchResults / searchPageSize);
+		if (searchCurrentPage < maxPage) {
+			searchPage(searchCurrentPage + 1);
+		}
+	}
+
+	// 选择搜索结果
+	function selectSearchResult(result: any) {
+		console.log('选择搜索结果:', result);
+		
+		// 调用AddSourceForm的填充方法
+		if (addSourceFormRef && addSourceFormRef.fillFromSearchResult) {
+			addSourceFormRef.fillFromSearchResult(result, searchSourceType as VideoCategory);
+		}
+		
+		// 隐藏搜索结果
+		showSearchResults = false;
+		searchResults = [];
+	}
+
+	// 关闭搜索结果
+	function closeSearchResults() {
+		showSearchResults = false;
+		searchResults = [];
+		searchKeyword = '';
+		searchType = '';
+		searchSourceType = '';
+		totalSearchResults = 0;
+		searchCurrentPage = 1;
+	}
+
+	// 清理标题中的HTML标签
+	function cleanTitle(title: string): string {
+		// 移除HTML标签并解码HTML实体
+		const div = document.createElement('div');
+		div.innerHTML = title;
+		return div.textContent || div.innerText || title;
+	}
+
+	// 处理图片加载错误
+	function handleImageError(event: Event) {
+		const img = event.target as HTMLImageElement;
+		console.error('图片加载失败:', img.src);
+		img.style.display = 'none';
+		// 尝试使用备用图片URL（B站图片有时需要处理协议）
+		if (img.src.startsWith('http://')) {
+			img.src = img.src.replace('http://', 'https://');
+			img.style.display = 'block';
+		}
+	}
+
+	// 处理B站图片URL
+	function processBilibiliImageUrl(url: string): string {
+		if (!url) return '';
+		
+		// 确保使用https协议
+		let processedUrl = url.replace('http://', 'https://');
+		
+		// 如果URL不包含协议，添加https
+		if (!processedUrl.startsWith('http')) {
+			processedUrl = 'https:' + processedUrl;
+		}
+		
+		// 移除已有的图片参数
+		if (processedUrl.includes('@')) {
+			processedUrl = processedUrl.split('@')[0];
+		}
+		
+		// 添加只缩放不裁剪的参数，保持图片完整性
+		// 使用较大的尺寸以确保图片质量
+		if (processedUrl.includes('i0.hdslb.com') || processedUrl.includes('i1.hdslb.com') || processedUrl.includes('i2.hdslb.com')) {
+			processedUrl += '@672w.webp';  // 只指定宽度，高度自适应
+		}
+		
+		console.log('处理后的图片URL:', processedUrl);
+		return processedUrl;
 	}
 
 	// 在页面加载时检查是否已有有效Token
@@ -405,7 +543,7 @@
 
 			{#if showAddForm}
 				<div class="mb-4">
-					<AddSourceForm onSuccess={handleAddSourceSuccess} />
+					<AddSourceForm bind:this={addSourceFormRef} onSuccess={handleAddSourceSuccess} on:searchResults={handleSearchResults} />
 				</div>
 			{/if}
 			
@@ -456,6 +594,160 @@
 
 		<!-- 主内容区域 -->
 		<main class="flex-1 p-4">
+			<!-- 搜索结果显示区域 -->
+			{#if showSearchResults}
+			<div class="mb-4 bg-white border rounded-lg shadow-lg">
+				<div class="flex justify-between items-center p-3 border-b bg-gray-50 sticky top-0 z-10">
+					<div>
+						<h3 class="text-lg font-semibold">
+							🔍 搜索结果
+							<span class="text-sm font-normal text-gray-600">
+								- 关键词: "{searchKeyword}" 
+								({searchType === 'bili_user' ? 'UP主' : searchType === 'media_bangumi' ? '番剧和影视' : '视频'})
+							</span>
+						</h3>
+						<p class="text-sm text-gray-500">共找到 {totalSearchResults} 个结果，点击任意结果可自动填充表单</p>
+					</div>
+					<button 
+						type="button" 
+						on:click={closeSearchResults}
+						class="text-gray-500 hover:text-gray-700 text-lg font-bold p-1 hover:bg-gray-200 rounded transition-colors"
+					>
+						✕
+					</button>
+				</div>
+				
+				{#if searchResults.length === 0}
+					<div class="p-8 text-center text-gray-500">
+						没有找到相关结果
+					</div>
+				{:else}
+					<!-- 搜索结果网格 - 固定4行3列布局，水平排列 -->
+					<div class="p-4 grid grid-cols-3 grid-rows-4 gap-3 h-[520px] overflow-hidden">
+						{#each searchResults.slice(0, 12) as result}
+						<button 
+							type="button"
+							class="w-full p-2 border rounded-lg hover:bg-blue-50 hover:border-blue-300 text-left transition-all flex flex-row h-full"
+							on:click={() => selectSearchResult(result)}
+						>
+							<!-- 左侧封面图片区域 - 根据类型自动调整 -->
+							{#if result.cover}
+								{#if searchType === 'media_bangumi'}
+									<!-- 番剧/影视 - 竖屏海报 -->
+									<div class="w-20 h-28 flex-shrink-0 bg-gray-100 rounded overflow-hidden mr-3 flex items-center justify-center">
+										<img 
+											src={processBilibiliImageUrl(result.cover)}
+											alt="封面"
+											class="max-w-full max-h-full object-contain"
+											loading="lazy"
+											on:error={handleImageError}
+											on:load={() => console.log('图片加载成功:', result.cover)}
+											referrerpolicy="no-referrer"
+										/>
+									</div>
+								{:else}
+									<!-- 普通视频 - 横屏缩略图 -->
+									<div class="w-32 h-20 flex-shrink-0 bg-gray-100 rounded overflow-hidden mr-3 flex items-center justify-center">
+										<img 
+											src={processBilibiliImageUrl(result.cover)}
+											alt="封面"
+											class="max-w-full max-h-full object-contain"
+											loading="lazy"
+											on:error={handleImageError}
+											on:load={() => console.log('图片加载成功:', result.cover)}
+											referrerpolicy="no-referrer"
+										/>
+									</div>
+								{/if}
+							{:else}
+								{#if searchType === 'media_bangumi'}
+									<div class="w-20 h-28 flex-shrink-0 bg-gray-200 rounded mr-3 flex items-center justify-center">
+										<span class="text-gray-400 text-xs">无封面</span>
+									</div>
+								{:else}
+									<div class="w-32 h-20 flex-shrink-0 bg-gray-200 rounded mr-3 flex items-center justify-center">
+										<span class="text-gray-400 text-xs">无封面</span>
+									</div>
+								{/if}
+							{/if}
+							
+							<!-- 右侧内容区域 -->
+							<div class="flex-1 min-w-0 flex flex-col justify-between">
+								<div class="flex-1 min-h-0">
+									<h4 class="font-medium text-xs text-gray-900 mb-1 line-clamp-2 leading-tight">
+										{cleanTitle(result.title)}
+									</h4>
+									<p class="text-xs text-gray-600 mb-1 truncate">
+										{searchType === 'bili_user' ? 'UP主' : 
+										 searchType === 'media_bangumi' ? '制作方' : '作者'}: {result.author.length > 12 ? result.author.substring(0, 12) + '...' : result.author}
+									</p>
+									{#if result.description}
+									<p class="text-xs text-gray-500 line-clamp-3 leading-tight">
+										{cleanTitle(result.description)}
+									</p>
+									{/if}
+								</div>
+								<div class="flex items-center gap-1 text-xs text-gray-500 flex-wrap mt-1">
+									{#if searchType === 'media_bangumi' && result.result_type}
+									<span class="px-1 py-0.5 rounded text-xs {result.result_type === 'media_bangumi' ? 'bg-purple-100 text-purple-700' : 'bg-green-100 text-green-700'}">
+										{result.result_type === 'media_bangumi' ? '番剧' : '影视'}
+									</span>
+									{/if}
+									{#if result.play}
+									<span class="flex items-center gap-0.5"><span class="text-xs">▶</span> {(result.play / 10000).toFixed(1)}万</span>
+									{/if}
+									{#if result.danmaku}
+									<span class="flex items-center gap-0.5"><span class="text-xs">💬</span> {result.danmaku > 10000 ? (result.danmaku / 10000).toFixed(1) + '万' : result.danmaku}</span>
+									{/if}
+								</div>
+							</div>
+						</button>
+						{/each}
+						
+						<!-- 如果结果不足12个，用空白卡片填充 -->
+						{#each Array(12 - searchResults.slice(0, 12).length) as _, i}
+						<div class="w-full p-3 border border-dashed border-gray-200 rounded-lg bg-gray-50 flex items-center justify-center">
+							<span class="text-gray-400 text-xs">暂无更多</span>
+						</div>
+						{/each}
+					</div>
+					
+					<!-- 搜索结果翻页控件 -->
+					{#if totalSearchResults > searchPageSize}
+					<div class="flex justify-between items-center p-3 border-t bg-gray-50">
+						<button 
+							type="button"
+							class="px-4 py-2 text-sm border rounded {searchCurrentPage === 1 ? 'text-gray-400 border-gray-300 cursor-not-allowed' : 'text-blue-600 border-blue-300 hover:bg-blue-50'}"
+							disabled={searchCurrentPage === 1}
+							on:click={prevSearchPage}
+						>
+							上一页
+						</button>
+						
+						<div class="flex items-center space-x-4">
+							<span class="text-sm text-gray-600">
+								第 {searchCurrentPage} 页 / 共 {Math.ceil(totalSearchResults / searchPageSize)} 页
+							</span>
+							<span class="text-sm text-gray-500">
+								（共 {totalSearchResults} 个结果）
+							</span>
+						</div>
+						
+						<button 
+							type="button"
+							class="px-4 py-2 text-sm border rounded {searchCurrentPage >= Math.ceil(totalSearchResults / searchPageSize) ? 'text-gray-400 border-gray-300 cursor-not-allowed' : 'text-blue-600 border-blue-300 hover:bg-blue-50'}"
+							disabled={searchCurrentPage >= Math.ceil(totalSearchResults / searchPageSize)}
+							on:click={nextSearchPage}
+						>
+							下一页
+						</button>
+					</div>
+					{/if}
+				{/if}
+			</div>
+			{/if}
+
+			<!-- 原有的视频搜索和列表 -->
 			<div class="mb-4">
 				<Input placeholder="搜索视频..." bind:value={searchQuery} on:change={onSearch} />
 			</div>
@@ -504,3 +796,33 @@
 		</main>
 	</div>
 {/if}
+
+<style>
+	.line-clamp-1 {
+		display: -webkit-box;
+		-webkit-line-clamp: 1;
+		-webkit-box-orient: vertical;
+		overflow: hidden;
+	}
+	
+	.line-clamp-2 {
+		display: -webkit-box;
+		-webkit-line-clamp: 2;
+		-webkit-box-orient: vertical;
+		overflow: hidden;
+	}
+	
+	.line-clamp-3 {
+		display: -webkit-box;
+		-webkit-line-clamp: 3;
+		-webkit-box-orient: vertical;
+		overflow: hidden;
+	}
+	
+	.line-clamp-4 {
+		display: -webkit-box;
+		-webkit-line-clamp: 4;
+		-webkit-box-orient: vertical;
+		overflow: hidden;
+	}
+</style>

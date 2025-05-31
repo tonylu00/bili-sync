@@ -363,7 +363,7 @@ pub async fn download_video_pages(
     let mut status = VideoStatus::from(video_model.download_status);
     let separate_status = status.should_run();
 
-    // 添加判断：检查是否为番剧类型
+    // 检查是否为番剧
     let is_bangumi = matches!(video_source, VideoSourceEnum::BangumiSource(_));
 
     // 获取番剧源和季度信息
@@ -446,16 +446,16 @@ pub async fn download_video_pages(
             &video_model,
             base_path.join(format!("{}.nfo", video_base_name)),
         )),
-        // 下载 Up 主头像
+        // 下载 Up 主头像（番剧跳过，因为番剧没有UP主信息）
         Box::pin(fetch_upper_face(
-            separate_status[2] && should_download_upper,
+            separate_status[2] && should_download_upper && !is_bangumi,
             &video_model,
             downloader,
             base_upper_path.join("folder.jpg"),
         )),
-        // 生成 Up 主信息的 nfo
+        // 生成 Up 主信息的 nfo（番剧跳过，因为番剧没有UP主信息）
         Box::pin(generate_upper_nfo(
-            separate_status[3] && should_download_upper,
+            separate_status[3] && should_download_upper && !is_bangumi,
             &video_model,
             base_upper_path.join("person.nfo"),
         )),
@@ -535,6 +535,7 @@ pub async fn dispatch_download_page(args: DownloadPageArgs<'_>) -> Result<Execut
                 args.video_source,
                 args.video_model,
                 page_model,
+                args.connection,
                 &child_semaphore,
                 args.downloader,
                 args.base_path,
@@ -589,6 +590,7 @@ pub async fn download_page(
     video_source: &VideoSourceEnum,
     video_model: &video::Model,
     page_model: page::Model,
+    connection: &DatabaseConnection,
     semaphore: &Semaphore,
     downloader: &Downloader,
     base_path: &Path,
@@ -608,7 +610,7 @@ pub async fn download_page(
     let base_name = if is_bangumi {
         // 番剧使用专用的模板方法
         if let VideoSourceEnum::BangumiSource(bangumi_source) = video_source {
-            bangumi_source.render_page_name(video_model, &page_model)?
+            bangumi_source.render_page_name(video_model, &page_model, connection).await?
         } else {
             // 如果类型不匹配，使用最新配置手动渲染
             let current_config = crate::config::reload_config();
@@ -1096,7 +1098,15 @@ pub async fn fetch_upper_face(
     if !should_run {
         return Ok(ExecutionStatus::Skipped);
     }
-    downloader.fetch(&video_model.upper_face, &upper_face_path).await?;
+    
+    // 检查URL是否有效，避免相对路径或空URL
+    let upper_face_url = &video_model.upper_face;
+    if upper_face_url.is_empty() || !upper_face_url.starts_with("http") {
+        debug!("跳过无效的作者头像URL: {}", upper_face_url);
+        return Ok(ExecutionStatus::Ignored(anyhow::anyhow!("无效的作者头像URL")));
+    }
+    
+    downloader.fetch(upper_face_url, &upper_face_path).await?;
     Ok(ExecutionStatus::Succeeded)
 }
 

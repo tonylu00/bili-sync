@@ -4,10 +4,56 @@ use std::time::Duration;
 use anyhow::{Context, Result};
 use leaky_bucket::RateLimiter;
 use reqwest::{Method, header};
+use serde::{Deserialize, Serialize};
+use serde_json::Value;
 
-use crate::bilibili::Credential;
+use crate::bilibili::{Credential, Validate};
 use crate::bilibili::credential::WbiImg;
 use crate::config::{CONFIG, RateLimit};
+
+/// bilibili搜索响应包装
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SearchResponseWrapper {
+    pub results: Vec<SearchResult>,
+    pub total: u32,
+    pub num_pages: u32,
+}
+
+/// bilibili搜索结果类型
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SearchResult {
+    pub result_type: String,    // video, bili_user, media_bangumi等
+    pub title: String,          // 标题
+    pub author: String,         // 作者/UP主
+    pub bvid: Option<String>,   // 视频BV号
+    pub aid: Option<i64>,       // 视频AV号
+    pub mid: Option<i64>,       // UP主ID
+    pub season_id: Option<String>, // 番剧season_id
+    pub media_id: Option<String>,  // 番剧media_id
+    pub cover: String,          // 封面图
+    pub description: String,    // 描述
+    pub duration: Option<String>, // 视频时长
+    pub pubdate: Option<i64>,   // 发布时间
+    pub play: Option<i64>,      // 播放量
+    pub danmaku: Option<i64>,   // 弹幕数
+}
+
+/// bilibili搜索响应
+#[derive(Debug, Deserialize)]
+struct SearchResponse {
+    code: i32,
+    message: String,
+    data: Option<SearchData>,
+}
+
+#[derive(Debug, Deserialize)]
+struct SearchData {
+    result: Option<Vec<Value>>,
+    #[serde(rename = "numPages")]
+    num_pages: Option<i32>,
+    #[serde(rename = "numResults")]  
+    num_results: Option<i32>,
+}
 
 // 一个对 reqwest::Client 的简单封装，用于 Bilibili 请求
 #[derive(Clone)]
@@ -83,7 +129,7 @@ impl BiliClient {
                         .refill(*limit)
                         .max(*limit)
                         .interval(Duration::from_millis(*duration))
-                        .build(),
+                        .build()
                 )
             });
         Self {
@@ -133,5 +179,299 @@ impl BiliClient {
         let credential = CONFIG.credential.load();
         let credential = credential.as_deref().context("no credential found")?;
         credential.wbi_img(&self.client).await
+    }
+
+    /// 搜索bilibili内容
+    /// 
+    /// # Arguments
+    /// * `keyword` - 搜索关键词
+    /// * `search_type` - 搜索类型：video(视频), bili_user(UP主), media_bangumi(番剧)等
+    /// * `page` - 页码（从1开始）
+    /// * `page_size` - 每页数量
+    pub async fn search(
+        &self,
+        keyword: &str,
+        search_type: &str,
+        page: u32,
+        page_size: u32,
+    ) -> Result<SearchResponseWrapper> {
+        let url = "https://api.bilibili.com/x/web-interface/search/type";
+        
+        let params = [
+            ("keyword", keyword),
+            ("search_type", search_type),
+            ("page", &page.to_string()),
+            ("page_size", &page_size.to_string()),
+            ("order", "totalrank"), // 按综合排序
+            ("duration", "0"),       // 不限时长
+            ("tids", "0"),          // 不限分区
+        ];
+
+        let response = self.request(Method::GET, url)
+            .await
+            .query(&params)
+            .send()
+            .await?;
+
+        if !response.status().is_success() {
+            return Err(anyhow::anyhow!("搜索请求失败: {}", response.status()));
+        }
+
+        let search_response: SearchResponse = response.json().await?;
+        
+        if search_response.code != 0 {
+            return Err(anyhow::anyhow!("搜索API返回错误: {}", search_response.message));
+        }
+
+        let data = search_response.data.unwrap_or(SearchData {
+            result: None,
+            num_pages: None,
+            num_results: None,
+        });
+
+        let results = data.result.unwrap_or_default();
+        
+        // 获取总数和页数
+        let total = data.num_results.unwrap_or(0) as u32;
+        let num_pages = data.num_pages.unwrap_or(0) as u32;
+        let num_pages = if num_pages == 0 {
+            if total > 0 {
+                (total + page_size - 1) / page_size  // 向上取整
+            } else {
+                1
+            }
+        } else {
+            num_pages
+        };
+
+        let mut parsed_results = Vec::new();
+        
+        for item in results {
+            if let Ok(result) = self.parse_search_result(&item, search_type) {
+                parsed_results.push(result);
+            }
+        }
+
+        Ok(SearchResponseWrapper {
+            results: parsed_results,
+            total,
+            num_pages,
+        })
+    }
+
+    /// 解析搜索结果
+    fn parse_search_result(&self, item: &Value, search_type: &str) -> Result<SearchResult> {
+        match search_type {
+            "video" => {
+                // 解析视频搜索结果
+                Ok(SearchResult {
+                    result_type: "video".to_string(),
+                    title: item["title"].as_str().unwrap_or("").to_string(),
+                    author: item["author"].as_str().unwrap_or("").to_string(),
+                    bvid: item["bvid"].as_str().map(|s| s.to_string()),
+                    aid: item["aid"].as_i64(),
+                    mid: item["mid"].as_i64(),
+                    season_id: None,
+                    media_id: None,
+                    cover: item["pic"].as_str().unwrap_or("").to_string(),
+                    description: item["description"].as_str().unwrap_or("").to_string(),
+                    duration: item["duration"].as_str().map(|s| s.to_string()),
+                    pubdate: item["pubdate"].as_i64(),
+                    play: item["play"].as_i64(),
+                    danmaku: item["video_review"].as_i64(),
+                })
+            }
+            "bili_user" => {
+                // 解析UP主搜索结果
+                Ok(SearchResult {
+                    result_type: "bili_user".to_string(),
+                    title: item["uname"].as_str().unwrap_or("").to_string(),
+                    author: item["uname"].as_str().unwrap_or("").to_string(),
+                    bvid: None,
+                    aid: None,
+                    mid: item["mid"].as_i64(),
+                    season_id: None,
+                    media_id: None,
+                    cover: item["upic"].as_str().unwrap_or("").to_string(),
+                    description: item["usign"].as_str().unwrap_or("").to_string(),
+                    duration: None,
+                    pubdate: None,
+                    play: None,
+                    danmaku: None,
+                })
+            }
+            "media_bangumi" => {
+                // 解析番剧搜索结果
+                Ok(SearchResult {
+                    result_type: "media_bangumi".to_string(),
+                    title: item["title"].as_str().unwrap_or("").to_string(),
+                    author: item["staff"].as_str().unwrap_or("").to_string(),
+                    bvid: None,
+                    aid: None,
+                    mid: None,
+                    season_id: item["season_id"].as_str().map(|s| s.to_string())
+                        .or_else(|| item["season_id"].as_i64().map(|s| s.to_string())),
+                    media_id: item["media_id"].as_str().map(|s| s.to_string())
+                        .or_else(|| item["media_id"].as_i64().map(|s| s.to_string())),
+                    cover: item["cover"].as_str().unwrap_or("").to_string(),
+                    description: item["desc"].as_str().unwrap_or("").to_string(),
+                    duration: None,
+                    pubdate: None,
+                    play: None,
+                    danmaku: None,
+                })
+            }
+            "media_ft" => {
+                // 解析影视搜索结果（电影、电视剧等）
+                Ok(SearchResult {
+                    result_type: "media_ft".to_string(),
+                    title: item["title"].as_str().unwrap_or("").to_string(),
+                    author: item["staff"].as_str().unwrap_or("").to_string(),
+                    bvid: None,
+                    aid: None,
+                    mid: None,
+                    season_id: item["season_id"].as_str().map(|s| s.to_string())
+                        .or_else(|| item["season_id"].as_i64().map(|s| s.to_string())),
+                    media_id: item["media_id"].as_str().map(|s| s.to_string())
+                        .or_else(|| item["media_id"].as_i64().map(|s| s.to_string())),
+                    cover: item["cover"].as_str().unwrap_or("").to_string(),
+                    description: item["desc"].as_str().unwrap_or("").to_string(),
+                    duration: None,
+                    pubdate: None,
+                    play: None,
+                    danmaku: None,
+                })
+            }
+            _ => Err(anyhow::anyhow!("不支持的搜索类型: {}", search_type))
+        }
+    }
+
+    /// 获取用户创建的收藏夹列表
+    pub async fn get_user_favorite_folders(&self, uid: Option<i64>) -> Result<Vec<crate::api::UserFavoriteFolder>, anyhow::Error> {
+        let uid = match uid {
+            Some(uid) => uid,
+            None => {
+                // 从CONFIG中获取当前用户ID
+                let credential = crate::config::CONFIG.credential.load();
+                match credential.as_ref() {
+                    Some(cred) => cred.dedeuserid.parse::<i64>()
+                        .map_err(|_| anyhow::anyhow!("无效的用户ID"))?,
+                    None => return Err(anyhow::anyhow!("未设置登录凭据")),
+                }
+            }
+        };
+
+        let response = self
+            .request(reqwest::Method::GET, "https://api.bilibili.com/x/v3/fav/folder/created/list-all")
+            .await
+            .query(&[("up_mid", uid.to_string().as_str())])
+            .send()
+            .await?
+            .error_for_status()?
+            .json::<serde_json::Value>()
+            .await?
+            .validate()?;
+
+        let folders: Vec<crate::api::UserFavoriteFolder> = serde_json::from_value(
+            response["data"]["list"].clone()
+        )?;
+
+        Ok(folders)
+    }
+
+    /// 获取UP主的合集和系列列表
+    pub async fn get_user_collections(&self, mid: i64, page: u32, page_size: u32) -> Result<crate::api::response::UserCollectionsResponse> {
+        use serde_json::Value;
+        
+        // 同时获取合集(seasons)和系列(series)
+        let mut all_collections = Vec::new();
+        
+        // 获取合集（seasons）
+        let seasons_url = "https://api.bilibili.com/x/polymer/web-space/seasons_series_list";
+        let seasons_response = self
+            .request(Method::GET, seasons_url)
+            .await
+            .query(&[
+                ("mid", &mid.to_string()),
+                ("page_num", &page.to_string()),
+                ("page_size", &page_size.to_string()),
+            ])
+            .send()
+            .await?
+            .error_for_status()?
+            .json::<Value>()
+            .await?
+            .validate()?;
+        
+        // 解析合集数据
+        if let Some(seasons_list) = seasons_response["data"]["items_lists"]["seasons_list"].as_array() {
+            for season in seasons_list {
+                if let Some(season_obj) = season.as_object() {
+                    // 从不同的可能位置尝试获取封面
+                    let cover = season_obj["meta"]["cover"].as_str()
+                        .or_else(|| season_obj["cover"].as_str())
+                        .or_else(|| season_obj["meta"]["square_cover"].as_str())
+                        .or_else(|| season_obj["meta"]["horizontal_cover"].as_str())
+                        .unwrap_or("")
+                        .to_string();
+                    
+                    all_collections.push(crate::api::response::UserCollection {
+                        collection_type: "season".to_string(),
+                        sid: season_obj["meta"]["season_id"]
+                            .as_i64()
+                            .or_else(|| season_obj["meta"]["season_id"].as_str().and_then(|s| s.parse().ok()))
+                            .unwrap_or(0)
+                            .to_string(),
+                        name: season_obj["meta"]["name"].as_str().unwrap_or("").to_string(),
+                        cover,
+                        description: season_obj["meta"]["description"].as_str().unwrap_or("").to_string(),
+                        total: season_obj["meta"]["total"].as_i64().unwrap_or(0),
+                        ptime: season_obj["meta"]["ptime"].as_i64(),
+                        mid,
+                    });
+                }
+            }
+        }
+        
+        // 获取系列（series）
+        if let Some(series_list) = seasons_response["data"]["items_lists"]["series_list"].as_array() {
+            for series in series_list {
+                if let Some(series_obj) = series.as_object() {
+                    // 从不同的可能位置尝试获取封面
+                    let cover = series_obj["meta"]["cover"].as_str()
+                        .or_else(|| series_obj["cover"].as_str())
+                        .or_else(|| series_obj["meta"]["square_cover"].as_str())
+                        .or_else(|| series_obj["meta"]["horizontal_cover"].as_str())
+                        .unwrap_or("")
+                        .to_string();
+                    
+                    all_collections.push(crate::api::response::UserCollection {
+                        collection_type: "series".to_string(),
+                        sid: series_obj["meta"]["series_id"]
+                            .as_i64()
+                            .or_else(|| series_obj["meta"]["series_id"].as_str().and_then(|s| s.parse().ok()))
+                            .unwrap_or(0)
+                            .to_string(),
+                        name: series_obj["meta"]["name"].as_str().unwrap_or("").to_string(),
+                        cover,
+                        description: series_obj["meta"]["description"].as_str().unwrap_or("").to_string(),
+                        total: series_obj["meta"]["total"].as_i64().unwrap_or(0),
+                        ptime: series_obj["meta"]["mtime"].as_i64(),
+                        mid,
+                    });
+                }
+            }
+        }
+        
+        // 获取总数
+        let total = seasons_response["data"]["page"]["total"].as_i64().unwrap_or(0) as u32;
+        
+        Ok(crate::api::response::UserCollectionsResponse {
+            success: true,
+            collections: all_collections,
+            total,
+            page,
+            page_size,
+        })
     }
 }

@@ -25,7 +25,7 @@ use crate::utils::status::{PageStatus, VideoStatus};
 
 #[derive(OpenApi)]
 #[openapi(
-    paths(get_video_sources, get_videos, get_video, reset_video, add_video_source, delete_video_source, reload_config, get_config, update_config, get_bangumi_seasons),
+    paths(get_video_sources, get_videos, get_video, reset_video, add_video_source, delete_video_source, reload_config, get_config, update_config, get_bangumi_seasons, search_bilibili, get_user_favorites, get_user_collections),
     modifiers(&OpenAPIAuth),
     security(
         ("Token" = []),
@@ -1888,6 +1888,7 @@ pub async fn get_bangumi_seasons(
 ) -> Result<ApiResponse<crate::api::response::BangumiSeasonsResponse>, ApiError> {
     use crate::bilibili::BiliClient;
     use crate::bilibili::bangumi::Bangumi;
+    use futures::future::join_all;
     
     // 创建 BiliClient，使用空 cookie（对于获取季度信息不需要登录）
     let bili_client = BiliClient::new(String::new());
@@ -1898,11 +1899,37 @@ pub async fn get_bangumi_seasons(
     // 获取所有季度信息
     match bangumi.get_all_seasons().await {
         Ok(seasons) => {
-            let season_list: Vec<_> = seasons.into_iter().map(|s| crate::api::response::BangumiSeasonInfo {
-                season_id: s.season_id,
-                season_title: s.season_title,
-                media_id: s.media_id,
-                cover: Some(s.cover),
+            // 并发获取所有季度的详细信息
+            let season_details_futures: Vec<_> = seasons.iter().map(|s| {
+                let bili_client_clone = bili_client.clone();
+                let season_clone = s.clone();
+                async move {
+                    let season_bangumi = Bangumi::new(&bili_client_clone, season_clone.media_id.clone(), Some(season_clone.season_id.clone()), None);
+                    let full_title = match season_bangumi.get_season_info().await {
+                        Ok(season_info) => {
+                            season_info["title"].as_str().map(|t| t.to_string())
+                        }
+                        Err(e) => {
+                            warn!("获取季度 {} 的详细信息失败: {}", season_clone.season_id, e);
+                            None
+                        }
+                    };
+                    (season_clone, full_title)
+                }
+            }).collect();
+
+            // 等待所有并发请求完成
+            let season_details = join_all(season_details_futures).await;
+            
+            // 构建响应数据
+            let season_list: Vec<_> = season_details.into_iter().map(|(s, full_title)| {
+                crate::api::response::BangumiSeasonInfo {
+                    season_id: s.season_id,
+                    season_title: s.season_title,
+                    full_title,
+                    media_id: s.media_id,
+                    cover: Some(s.cover),
+                }
             }).collect();
             
             Ok(ApiResponse::ok(crate::api::response::BangumiSeasonsResponse {
@@ -1913,6 +1940,195 @@ pub async fn get_bangumi_seasons(
         Err(e) => {
             error!("获取番剧季度信息失败: {}", e);
             Err(anyhow!("获取番剧季度信息失败: {}", e).into())
+        }
+    }
+}
+
+/// 搜索bilibili内容
+#[utoipa::path(
+    get,
+    path = "/api/search",
+    params(
+        ("keyword" = String, Query, description = "搜索关键词"),
+        ("search_type" = String, Query, description = "搜索类型：video, bili_user, media_bangumi"),
+        ("page" = Option<u32>, Query, description = "页码，默认1"),
+        ("page_size" = Option<u32>, Query, description = "每页数量，默认20")
+    ),
+    responses(
+        (status = 200, body = ApiResponse<crate::api::response::SearchResponse>),
+    )
+)]
+pub async fn search_bilibili(
+    Query(params): Query<crate::api::request::SearchRequest>,
+) -> Result<ApiResponse<crate::api::response::SearchResponse>, ApiError> {
+    use crate::bilibili::{BiliClient, SearchResult};
+    
+    // 验证搜索类型
+    let valid_types = ["video", "bili_user", "media_bangumi", "media_ft"];
+    if !valid_types.contains(&params.search_type.as_str()) {
+        return Err(anyhow!("不支持的搜索类型，支持的类型: {}", valid_types.join(", ")).into());
+    }
+
+    // 验证关键词
+    if params.keyword.trim().is_empty() {
+        return Err(anyhow!("搜索关键词不能为空").into());
+    }
+
+    // 创建 BiliClient，使用空 cookie（搜索不需要登录）
+    let bili_client = BiliClient::new(String::new());
+    
+    // 特殊处理：当搜索类型为media_bangumi时，同时搜索番剧和影视
+    let mut all_results = Vec::new();
+    let mut total_results = 0u32;
+    
+    if params.search_type == "media_bangumi" {
+        // 搜索番剧
+        match bili_client.search(
+            &params.keyword, 
+            "media_bangumi", 
+            params.page, 
+            params.page_size / 2  // 每种类型分配一半的结果数
+        ).await {
+            Ok(bangumi_wrapper) => {
+                all_results.extend(bangumi_wrapper.results);
+                total_results += bangumi_wrapper.total;
+            }
+            Err(e) => {
+                warn!("搜索番剧失败: {}", e);
+            }
+        }
+        
+        // 搜索影视
+        match bili_client.search(
+            &params.keyword, 
+            "media_ft", 
+            params.page, 
+            params.page_size / 2  // 每种类型分配一半的结果数
+        ).await {
+            Ok(ft_wrapper) => {
+                all_results.extend(ft_wrapper.results);
+                total_results += ft_wrapper.total;
+            }
+            Err(e) => {
+                warn!("搜索影视失败: {}", e);
+            }
+        }
+        
+        // 如果两个搜索都失败了，返回错误
+        if all_results.is_empty() && total_results == 0 {
+            return Err(anyhow!("搜索失败：无法获取番剧或影视结果").into());
+        }
+    } else {
+        // 其他类型正常搜索
+    match bili_client.search(
+        &params.keyword, 
+        &params.search_type, 
+        params.page, 
+        params.page_size
+    ).await {
+        Ok(search_wrapper) => {
+                all_results = search_wrapper.results;
+                total_results = search_wrapper.total;
+            }
+            Err(e) => {
+                error!("搜索失败: {}", e);
+                return Err(anyhow!("搜索失败: {}", e).into());
+            }
+        }
+    }
+    
+            // 转换搜索结果格式
+    let api_results: Vec<crate::api::response::SearchResult> = all_results.into_iter().map(|r: SearchResult| {
+                crate::api::response::SearchResult {
+                    result_type: r.result_type,
+                    title: r.title,
+                    author: r.author,
+                    bvid: r.bvid,
+                    aid: r.aid,
+                    mid: r.mid,
+                    season_id: r.season_id,
+                    media_id: r.media_id,
+                    cover: r.cover,
+                    description: r.description,
+                    duration: r.duration,
+                    pubdate: r.pubdate,
+                    play: r.play,
+                    danmaku: r.danmaku,
+                }
+            }).collect();
+
+            Ok(ApiResponse::ok(crate::api::response::SearchResponse {
+                success: true,
+                results: api_results,
+        total: total_results,
+                page: params.page,
+                page_size: params.page_size,
+            }))
+}
+
+/// 获取用户收藏夹列表
+#[utoipa::path(
+    get,
+    path = "/api/user/favorites",
+    responses(
+        (status = 200, body = ApiResponse<Vec<crate::api::response::UserFavoriteFolder>>),
+    )
+)]
+pub async fn get_user_favorites() -> Result<ApiResponse<Vec<crate::api::response::UserFavoriteFolder>>, ApiError> {
+    let bili_client = crate::bilibili::BiliClient::new(String::new());
+    
+    match bili_client.get_user_favorite_folders(None).await {
+        Ok(folders) => {
+            let response_folders: Vec<crate::api::response::UserFavoriteFolder> = folders
+                .into_iter()
+                .map(|folder| crate::api::response::UserFavoriteFolder {
+                    id: folder.id,
+                    fid: folder.fid,
+                    title: folder.title,
+                    media_count: folder.media_count,
+                })
+                .collect();
+            
+            Ok(ApiResponse::ok(response_folders))
+        }
+        Err(e) => {
+            error!("获取用户收藏夹列表失败: {}", e);
+            Err(anyhow!("获取用户收藏夹列表失败: {}", e).into())
+        }
+    }
+}
+
+/// 获取UP主的合集和系列列表
+#[utoipa::path(
+    get,
+    path = "/api/user/collections/{mid}",
+    params(
+        ("mid" = i64, Path, description = "UP主ID"),
+        ("page" = Option<u32>, Query, description = "页码，默认1"),
+        ("page_size" = Option<u32>, Query, description = "每页数量，默认20")
+    ),
+    responses(
+        (status = 200, body = ApiResponse<crate::api::response::UserCollectionsResponse>),
+    )
+)]
+pub async fn get_user_collections(
+    Path(mid): Path<i64>,
+    Query(params): Query<std::collections::HashMap<String, String>>,
+) -> Result<ApiResponse<crate::api::response::UserCollectionsResponse>, ApiError> {
+    let page = params.get("page")
+        .and_then(|p| p.parse::<u32>().ok())
+        .unwrap_or(1);
+    let page_size = params.get("page_size")
+        .and_then(|p| p.parse::<u32>().ok())
+        .unwrap_or(20);
+
+    let bili_client = crate::bilibili::BiliClient::new(String::new());
+    
+    match bili_client.get_user_collections(mid, page, page_size).await {
+        Ok(response) => Ok(ApiResponse::ok(response)),
+        Err(e) => {
+            error!("获取UP主合集列表失败: {}", e);
+            Err(anyhow!("获取UP主合集列表失败: {}", e).into())
         }
     }
 }

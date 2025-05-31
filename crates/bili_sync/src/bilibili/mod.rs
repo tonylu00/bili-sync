@@ -5,7 +5,7 @@ use anyhow::{Result, bail, ensure};
 use arc_swap::ArcSwapOption;
 use chrono::serde::ts_seconds;
 use chrono::{DateTime, Utc};
-pub use client::{BiliClient, Client};
+pub use client::{BiliClient, Client, SearchResult};
 pub use collection::{Collection, CollectionItem, CollectionType};
 pub use credential::Credential;
 pub use danmaku::DanmakuOption;

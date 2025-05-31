@@ -1,4 +1,4 @@
-import type { VideoResponse, VideoInfo, VideosResponse, VideoSourcesResponse, ResetVideoResponse, AddVideoSourceResponse, DeleteVideoSourceResponse } from './types';
+import type { VideoResponse, VideoInfo, VideosResponse, VideoSourcesResponse, ResetVideoResponse, AddVideoSourceResponse, DeleteVideoSourceResponse, UserFavoriteFolder } from './types';
 
 const BASE_URL = '/api';
 
@@ -151,4 +151,97 @@ export async function getBangumiSeasons(seasonId: string): Promise<any> {
     return fetchWithAuth(`${BASE_URL}/bangumi/seasons/${seasonId}`, {
         method: 'GET'
     });
+}
+
+// 搜索bilibili内容
+export async function searchBilibili(params: {
+    keyword: string;
+    search_type: 'video' | 'bili_user' | 'media_bangumi';
+    page?: number;
+    page_size?: number;
+}): Promise<{
+    success: boolean;
+    results: Array<{
+        result_type: string;
+        title: string;
+        author: string;
+        bvid?: string;
+        aid?: number;
+        mid?: number;
+        season_id?: string;
+        media_id?: string;
+        cover: string;
+        description: string;
+        duration?: string;
+        pubdate?: number;
+        play?: number;
+        danmaku?: number;
+    }>;
+    total: number;
+    page: number;
+    page_size: number;
+}> {
+    const searchParams = new URLSearchParams();
+    Object.entries(params).forEach(([key, value]) => {
+        if (value !== undefined) {
+            searchParams.append(key, value.toString());
+        }
+    });
+    
+    const url = `${BASE_URL}/search?${searchParams.toString()}`;
+    console.log(`搜索请求: ${url}`);
+    
+    try {
+        const response = await fetch(url, {
+            method: 'GET',
+            headers: {
+                'Content-Type': 'application/json'
+            }
+        });
+        
+        if (!response.ok) {
+            const errorText = await response.text();
+            console.error(`搜索API请求失败: ${response.status} ${response.statusText}`, errorText);
+            throw new ApiError(`搜索API请求失败: ${response.status} ${response.statusText}, 响应: ${errorText}`);
+        }
+        
+        const responseData = await response.json();
+        console.log('搜索API响应:', responseData);
+        
+        if (!responseData.data) {
+            console.warn(`搜索API响应缺少data字段:`, responseData);
+        }
+        
+        return responseData.data;
+    } catch (error) {
+        console.error(`搜索请求 ${url} 时出错:`, error);
+        throw error;
+    }
+}
+
+// 获取用户收藏夹列表
+export async function getUserFavorites(): Promise<UserFavoriteFolder[]> {
+    const response = await fetchWithAuth(`${BASE_URL}/user/favorites`);
+    return response;
+}
+
+// 获取UP主的合集和系列列表  
+export async function getUserCollections(mid: string, page: number = 1, pageSize: number = 20): Promise<{
+    success: boolean;
+    collections: Array<{
+        collection_type: string;
+        sid: string;
+        name: string;
+        cover: string;
+        description: string;
+        total: number;
+        ptime?: number;
+        mid: number;
+    }>;
+    total: number;
+    page: number;
+    page_size: number;
+}> {
+    const response = await fetchWithAuth(`${BASE_URL}/user/collections/${mid}?page=${page}&page_size=${pageSize}`);
+    return response;
 }

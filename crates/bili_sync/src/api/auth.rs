@@ -10,7 +10,15 @@ use crate::api::wrapper::ApiResponse;
 use crate::config::CONFIG;
 
 pub async fn auth(headers: HeaderMap, request: Request, next: Next) -> Result<Response, StatusCode> {
-    if request.uri().path().starts_with("/api/") && get_token(&headers) != CONFIG.auth_token {
+    // 排除不需要认证的路径
+    let path = request.uri().path();
+    let excluded_paths = [
+        "/api/search",  // 搜索API不需要认证
+    ];
+    
+    let needs_auth = path.starts_with("/api/") && !excluded_paths.iter().any(|&excluded| path.starts_with(excluded));
+    
+    if needs_auth && get_token(&headers) != CONFIG.auth_token {
         return Ok(ApiResponse::unauthorized(()).into_response());
     }
     Ok(next.run(request).await)

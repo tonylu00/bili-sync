@@ -9,7 +9,6 @@ use sea_orm::prelude::*;
 use sea_orm::{ActiveValue::Set};
 use tracing::debug;
 use tracing::info;
-use tracing::warn;
 
 use bili_sync_entity::VideoSourceTrait;
 use sea_orm::sea_query::SimpleExpr;
@@ -34,11 +33,12 @@ pub struct BangumiSource {
 
 impl BangumiSource {
     /// 渲染番剧的 page_name，优先使用全局 bangumi_name 配置
-    /// 支持重名检测，当发现重名时自动添加title后缀
-    pub fn render_page_name(
+    /// 智能检测同一集是否有多个版本，自动添加title后缀避免冲突
+    pub async fn render_page_name(
         &self,
         video_model: &bili_sync_entity::video::Model,
         page_model: &bili_sync_entity::page::Model,
+        db: &sea_orm::DatabaseConnection,
     ) -> Result<String> {
         use crate::utils::format_arg::bangumi_page_format_args;
 
@@ -46,13 +46,28 @@ impl BangumiSource {
         let current_config = crate::config::reload_config();
 
         // 优先级：全局 bangumi_name > 番剧自己的 page_name > 默认格式
-        let template = if !current_config.bangumi_name.is_empty() {
+        let mut template = if !current_config.bangumi_name.is_empty() {
             current_config.bangumi_name.to_string()
         } else if let Some(ref page_name) = self.page_name_template {
             page_name.clone()
         } else {
             "S{{season_pad}}E{{pid_pad}}-{{pid_pad}}".to_string()
         };
+
+        // 智能检测：检查同一番剧源的同一集是否有多个不同版本
+        if !template.contains("{{title}}") && !template.contains("{{ title }}") {
+            let should_add_title = self.check_multiple_versions(video_model, db).await;
+            
+            if should_add_title {
+                // 如果检测到多版本，自动添加title后缀
+                template = format!("{}-{{{{title}}}}", template);
+                info!(
+                    "智能检测到番剧第{}集存在多个版本，自动添加title后缀: {}",
+                    video_model.episode_number.unwrap_or(page_model.pid),
+                    video_model.name
+                );
+            }
+        }
 
         // 创建配置了辅助函数的 handlebars 实例
         let mut handlebars = handlebars::Handlebars::new();
@@ -71,78 +86,57 @@ impl BangumiSource {
 
         let format_args = bangumi_page_format_args(video_model, page_model);
         
-        // 首先使用原始模板渲染
-        let base_name = crate::utils::filenamify::filenamify(&handlebars.render_template(
+        // 使用最终模板渲染
+        let final_name = crate::utils::filenamify::filenamify(&handlebars.render_template(
             &template,
             &format_args,
         )?);
 
-        // 检查是否需要添加title后缀来避免重名
-        let final_name = self.resolve_naming_conflict(&base_name, video_model, page_model, &template, &handlebars, &format_args)?;
-
         Ok(final_name)
     }
 
-    /// 检测并解决文件命名冲突
-    /// 当检测到重名时，自动在模板末尾添加 `-{{title}}` 后缀
-    fn resolve_naming_conflict(
-        &self,
-        base_name: &str,
-        _video_model: &bili_sync_entity::video::Model,
-        page_model: &bili_sync_entity::page::Model,
-        original_template: &str,
-        handlebars: &handlebars::Handlebars,
-        format_args: &serde_json::Value,
-    ) -> Result<String> {
-        // 检查目标目录是否存在同名的mp4文件
-        let target_path = self.path.join(format!("{}.mp4", base_name));
+    /// 智能检测同一番剧源的同一集是否存在多个版本
+    /// 通过检查相同episode_number的视频数量来判断
+    async fn check_multiple_versions(
+        &self, 
+        video_model: &bili_sync_entity::video::Model,
+        db: &sea_orm::DatabaseConnection,
+    ) -> bool {
+        use sea_orm::*;
+        use bili_sync_entity::video;
         
-        if !target_path.exists() {
-            // 如果文件不存在，直接返回基础名称
-            return Ok(base_name.to_string());
+        let source_id = self.id;
+        let episode_number = video_model.episode_number.unwrap_or(0);
+        let season_id = &video_model.season_id;
+        
+        // 查询同一番剧源、同一季度、同一集数的视频数量
+        let mut query = video::Entity::find()
+            .filter(video::Column::SourceId.eq(source_id))
+            .filter(video::Column::SourceType.eq(1)); // 番剧类型
+        
+        // 如果有episode_number，使用episode_number过滤
+        if episode_number > 0 {
+            query = query.filter(video::Column::EpisodeNumber.eq(episode_number));
         }
-
-        // 文件已存在，需要添加区分后缀
-        info!(
-            "检测到番剧文件名冲突: {}，自动添加title后缀区分不同版本",
-            base_name
-        );
-
-        // 检查原模板是否已包含title，避免重复添加
-        let enhanced_template = if original_template.contains("{{title}}") || original_template.contains("{{ title }}") {
-            // 已包含title，直接使用原模板
-            original_template.to_string()
-        } else {
-            // 在模板末尾添加title后缀
-            format!("{}-{{{{title}}}}", original_template)
-        };
-
-        // 使用增强模板重新渲染
-        let enhanced_name = crate::utils::filenamify::filenamify(&handlebars.render_template(
-            &enhanced_template,
-            format_args,
-        )?);
-
-        // 再次检查增强后的名称是否冲突
-        let enhanced_path = self.path.join(format!("{}.mp4", enhanced_name));
-        if enhanced_path.exists() {
-            // 如果仍然冲突，添加更详细的区分信息
-            warn!(
-                "即使添加title后缀仍有冲突: {}，使用详细区分方案",
-                enhanced_name
-            );
-            
-            // 使用CID作为最后的区分手段
-            let final_name = format!("{}-CID{}", enhanced_name, page_model.cid);
-            return Ok(final_name);
+        
+        // 如果有season_id，使用season_id过滤
+        if let Some(season_id_value) = season_id {
+            query = query.filter(video::Column::SeasonId.eq(season_id_value));
         }
-
-        info!(
-            "成功解决文件名冲突: {} -> {}",
-            base_name, enhanced_name
-        );
-
-        Ok(enhanced_name)
+        
+        match query.count(db).await {
+            Ok(count) => {
+                debug!(
+                    "番剧源{} 第{}集 共有{}个版本", 
+                    source_id, episode_number, count
+                );
+                count > 1
+            }
+            Err(e) => {
+                debug!("检查多版本失败: {}", e);
+                false
+            }
+        }
     }
 
     pub async fn video_stream_from(

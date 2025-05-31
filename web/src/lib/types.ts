@@ -56,3 +56,10 @@ export interface DeleteVideoSourceResponse {
 }
 
 export type VideoCategory = 'collection' | 'favorite' | 'submission' | 'watch_later' | 'bangumi';
+
+export interface UserFavoriteFolder {
+    id: string;
+    fid: string;
+    title: string;
+    media_count: number;
+}

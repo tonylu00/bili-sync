@@ -15,7 +15,7 @@ use utoipa_swagger_ui::{Config, SwaggerUi};
 use crate::api::auth;
 use crate::api::handler::{
     ApiDoc, add_video_source, delete_video_source, get_config, get_video, get_video_sources, get_videos, reload_config,
-    reset_video, update_config, get_bangumi_seasons,
+    reset_video, update_config, get_bangumi_seasons, search_bilibili, get_user_favorites, get_user_collections,
 };
 use crate::config::CONFIG;
 
@@ -35,6 +35,9 @@ pub async fn http_server(database_connection: Arc<DatabaseConnection>) -> Result
         .route("/api/config", get(get_config))
         .route("/api/config", put(update_config))
         .route("/api/bangumi/seasons/{season_id}", get(get_bangumi_seasons))
+        .route("/api/search", get(search_bilibili))
+        .route("/api/user/favorites", get(get_user_favorites))
+        .route("/api/user/collections/{mid}", get(get_user_collections))
         .merge(
             SwaggerUi::new("/swagger-ui/")
                 .url("/api-docs/openapi.json", ApiDoc::openapi())
