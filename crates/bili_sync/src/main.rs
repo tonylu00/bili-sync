@@ -65,7 +65,8 @@ fn spawn_task(
 fn init() {
     init_logger(&ARGS.log_level);
     info!("欢迎使用 Bili-Sync，当前程序版本：{}", config::version());
-    info!("项目地址：https://github.com/amtoaer/bili-sync");
+    info!("现项目地址：https://github.com/qq1582185982/bili-sync-01");
+    info!("原项目地址：https://github.com/amtoaer/bili-sync");
     Lazy::force(&CONFIG);
 }
 
