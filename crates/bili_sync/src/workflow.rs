@@ -1165,10 +1165,10 @@ async fn get_season_title_from_api(bili_client: &BiliClient, season_id: &str) ->
             }
         }
         Err(e) => warn!("发送季度信息请求失败: {}", e),
-    }
-    
-    None
-}
+            }
+
+            None
+        }
 
 /// 从番剧API获取指定EP的CID
 async fn get_bangumi_cid_from_api(bili_client: &BiliClient, ep_id: &str) -> Option<i64> {
@@ -1203,8 +1203,8 @@ async fn get_bangumi_cid_from_api(bili_client: &BiliClient, ep_id: &str) -> Opti
                 }
             } else {
                 warn!("获取番剧信息HTTP请求失败，状态码: {}", res.status());
-            }
         }
+    }
         Err(e) => warn!("发送番剧信息请求失败: {}", e),
     }
     

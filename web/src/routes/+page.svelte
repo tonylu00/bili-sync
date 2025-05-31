@@ -372,7 +372,7 @@
 	</div>
 {:else}
 	<!-- 主管理界面 -->
-	<Header>
+<Header>
 		<!-- 在Header中添加退出登录按钮 -->
 		<div slot="actions" class="flex items-center space-x-2">
 			<span class="text-sm text-gray-600">已登录</span>

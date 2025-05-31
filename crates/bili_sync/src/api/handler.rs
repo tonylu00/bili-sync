@@ -1713,56 +1713,56 @@ async fn regenerate_nfo_files(db: Arc<DatabaseConnection>, config: &crate::confi
                     } else {
                         // 如果找不到实际文件，则使用模板生成（兜底方案）
                         if let Some(bangumi_source) = &bangumi_source {
-                            let template = bangumi_source
-                                .page_name_template
-                                .as_deref()
-                                .unwrap_or("S{{season_pad}}E{{pid_pad}}-{{pid_pad}}");
+                        let template = bangumi_source
+                            .page_name_template
+                            .as_deref()
+                            .unwrap_or("S{{season_pad}}E{{pid_pad}}-{{pid_pad}}");
 
-                            // 构建番剧专用的模板数据
-                            let episode_number = video.episode_number.unwrap_or(page.pid);
-                            let season_number = video.season_number.unwrap_or(1);
+                        // 构建番剧专用的模板数据
+                        let episode_number = video.episode_number.unwrap_or(page.pid);
+                        let season_number = video.season_number.unwrap_or(1);
 
-                            let mut template_data = std::collections::HashMap::new();
-                            template_data.insert("bvid".to_string(), serde_json::Value::String(video.bvid.clone()));
-                            template_data.insert("title".to_string(), serde_json::Value::String(video.name.clone()));
-                            template_data.insert(
-                                "upper_name".to_string(),
-                                serde_json::Value::String(video.upper_name.clone()),
-                            );
-                            template_data.insert(
-                                "upper_mid".to_string(),
-                                serde_json::Value::String(video.upper_id.to_string()),
-                            );
-                            template_data.insert("ptitle".to_string(), serde_json::Value::String(page.name.clone()));
-                            template_data.insert("pid".to_string(), serde_json::Value::String(episode_number.to_string()));
-                            template_data.insert(
-                                "pid_pad".to_string(),
-                                serde_json::Value::String(format!("{:02}", episode_number)),
-                            );
-                            template_data.insert(
-                                "season".to_string(),
-                                serde_json::Value::String(season_number.to_string()),
-                            );
-                            template_data.insert(
-                                "season_pad".to_string(),
-                                serde_json::Value::String(format!("{:02}", season_number)),
-                            );
+                        let mut template_data = std::collections::HashMap::new();
+                        template_data.insert("bvid".to_string(), serde_json::Value::String(video.bvid.clone()));
+                        template_data.insert("title".to_string(), serde_json::Value::String(video.name.clone()));
+                        template_data.insert(
+                            "upper_name".to_string(),
+                            serde_json::Value::String(video.upper_name.clone()),
+                        );
+                        template_data.insert(
+                            "upper_mid".to_string(),
+                            serde_json::Value::String(video.upper_id.to_string()),
+                        );
+                        template_data.insert("ptitle".to_string(), serde_json::Value::String(page.name.clone()));
+                        template_data.insert("pid".to_string(), serde_json::Value::String(episode_number.to_string()));
+                        template_data.insert(
+                            "pid_pad".to_string(),
+                            serde_json::Value::String(format!("{:02}", episode_number)),
+                        );
+                        template_data.insert(
+                            "season".to_string(),
+                            serde_json::Value::String(season_number.to_string()),
+                        );
+                        template_data.insert(
+                            "season_pad".to_string(),
+                            serde_json::Value::String(format!("{:02}", season_number)),
+                        );
 
-                            let handlebars = Handlebars::new();
-                            let template_value = serde_json::Value::Object(template_data.into_iter().collect());
+                        let handlebars = Handlebars::new();
+                        let template_value = serde_json::Value::Object(template_data.into_iter().collect());
 
-                            match handlebars.render_template(template, &template_value) {
-                                Ok(rendered) => crate::utils::filenamify::filenamify(&rendered),
-                                Err(e) => {
-                                    warn!("渲染番剧模板失败: {}, 使用默认格式", e);
-                                    format!("S{:02}E{:02}-{:02}", season_number, episode_number, episode_number)
-                                }
+                        match handlebars.render_template(template, &template_value) {
+                            Ok(rendered) => crate::utils::filenamify::filenamify(&rendered),
+                            Err(e) => {
+                                warn!("渲染番剧模板失败: {}, 使用默认格式", e);
+                                format!("S{:02}E{:02}-{:02}", season_number, episode_number, episode_number)
                             }
-                        } else {
-                            // 如果找不到番剧源配置，使用默认格式
-                            let season_number = video.season_number.unwrap_or(1);
-                            let episode_number = video.episode_number.unwrap_or(page.pid);
-                            format!("S{:02}E{:02}-{:02}", season_number, episode_number, episode_number)
+                        }
+                    } else {
+                        // 如果找不到番剧源配置，使用默认格式
+                        let season_number = video.season_number.unwrap_or(1);
+                        let episode_number = video.episode_number.unwrap_or(page.pid);
+                        format!("S{:02}E{:02}-{:02}", season_number, episode_number, episode_number)
                         }
                     };
 
