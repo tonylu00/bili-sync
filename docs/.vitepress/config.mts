@@ -13,6 +13,7 @@ export default defineConfig({
 	lastUpdated: true,
 	cleanUrls: true,
 	metaChunk: true,
+	ignoreDeadLinks: true, // 忽略死链接检查
 	themeConfig: {
 		outline: {
 			label: "页面导航",

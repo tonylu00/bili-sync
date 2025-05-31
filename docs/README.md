@@ -17,8 +17,8 @@
 | 文档 | 适用人群 | 内容 |
 |------|----------|------|
 | [GitHub Actions 使用说明](github-actions-build.md) | 开发者 | 云端编译配置和原理 |
-| [本地编译指南](../cross-compile.bat) | 开发者 | 本地跨平台编译脚本 |
-| [Docker 构建指南](../Dockerfile) | 运维人员 | 容器化部署方案 |
+| 本地编译指南 | 开发者 | 本地跨平台编译脚本 |
+| Docker 构建指南 | 运维人员 | 容器化部署方案 |
 
 ## 🎯 我是小白，应该看哪个？
 
@@ -49,13 +49,13 @@
 
 ### 🔥 场景三：我想在本地编译
 **解决方案：** 使用本地编译脚本
-- 🔧 Windows：运行 `cross-compile.bat`
-- 🔧 跨平台：查看 [本地编译指南](../cross-compile.bat)
+- 🔧 Windows：运行 `cross-compile.bat`（如果项目提供）
+- 🔧 跨平台：参考项目根目录的编译说明
 
 ### 🔥 场景四：我想部署到服务器
 **解决方案：** 使用 Docker 容器
-- 🐳 Docker：查看 [Dockerfile](../Dockerfile)
-- 📖 说明：[Docker 构建指南](../README.md)
+- 🐳 Docker：查看项目根目录的 Dockerfile
+- �� 说明：参考项目 README
 
 ## 📱 移动端用户
 
