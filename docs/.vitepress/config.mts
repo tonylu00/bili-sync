@@ -6,8 +6,9 @@ export default defineConfig({
 	title: "bili-sync",
 	description: "由 Rust & Tokio 驱动的哔哩哔哩同步工具",
 	lang: "zh-Hans",
+	base: "/bili-sync-01/", // GitHub仓库名
 	sitemap: {
-		hostname: "https://bili-sync.github.io",
+		hostname: "https://qq1582185982.github.io/bili-sync-01",
 	},
 	lastUpdated: true,
 	cleanUrls: true,
@@ -40,6 +41,7 @@ export default defineConfig({
 				items: [
 					{ text: "什么是 bili-sync？", link: "/introduction" },
 					{ text: "快速开始", link: "/quick-start" },
+					{ text: "功能展示", link: "/features" },
 				],
 			},
 			{
