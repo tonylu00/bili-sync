@@ -83,6 +83,7 @@ impl VideoSource for collection::Model {
 }
 
 // 修改初始化合集源的方法中的类型转换问题
+#[allow(dead_code)]
 pub async fn init_collection_sources(
     conn: &DatabaseConnection,
     collection_list: &std::collections::HashMap<CollectionItem, std::path::PathBuf>,

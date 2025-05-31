@@ -3,17 +3,85 @@
 	import { Input } from '$lib/components/ui/input';
 	import { Button } from '$lib/components/ui/button';
 	import VideoItem from '$lib/components/VideoItem.svelte';
-	import { listVideos, getVideoSources, deleteVideoSource } from '$lib/api';
+	import { listVideos, getVideoSources, deleteVideoSource, ApiError } from '$lib/api';
 	import type { VideoInfo, VideoSourcesResponse } from '$lib/types';
 	import Header from '$lib/components/Header.svelte';
 	import AddSourceForm from '$lib/components/AddSourceForm.svelte';
 	import ConfigForm from '$lib/components/ConfigForm.svelte';
 	import { toast } from 'svelte-sonner';
 
+	// Token验证状态
+	let isAuthenticated = false;
+	let authToken = '';
+	let authError = '';
+	let isVerifying = false;
+
 	// API Token 管理
 	let apiToken: string = localStorage.getItem('auth_token') || '';
 	function updateToken() {
 		localStorage.setItem('auth_token', apiToken);
+	}
+
+	// 验证Token的函数
+	async function verifyToken() {
+		if (!authToken.trim()) {
+			authError = '请输入API Token';
+			return;
+		}
+		
+		isVerifying = true;
+		authError = '';
+		
+		// 临时设置Token到localStorage进行验证
+		const originalToken = localStorage.getItem('auth_token');
+		localStorage.setItem('auth_token', authToken);
+		
+		try {
+			// 尝试调用一个需要认证的API来验证Token
+			await getVideoSources();
+			// 如果成功，说明Token正确
+			isAuthenticated = true;
+			apiToken = authToken;
+			updateToken();
+			// 加载管理页数据
+			await fetchVideoListModels();
+		} catch (error) {
+			// 如果失败，恢复原Token并显示错误
+			localStorage.setItem('auth_token', originalToken || '');
+			if (error instanceof ApiError && error.message.includes('401')) {
+				authError = 'API Token错误，请检查后重试';
+			} else {
+				authError = '验证失败，请检查网络连接或Token是否正确';
+			}
+			console.error('Token验证失败:', error);
+		} finally {
+			isVerifying = false;
+		}
+	}
+
+	// 处理Enter键登录
+	function handleKeyDown(event: KeyboardEvent) {
+		if (event.key === 'Enter') {
+			verifyToken();
+		}
+	}
+
+	// 退出登录
+	function logout() {
+		isAuthenticated = false;
+		authToken = '';
+		apiToken = '';
+		localStorage.removeItem('auth_token');
+		// 清空数据
+		videoListModels = {
+			collection: [],
+			favorite: [],
+			submission: [],
+			watch_later: [],
+			bangumi: []
+		};
+		videos = [];
+		selectedModel = null;
 	}
 
 	// 定义分类列表
@@ -152,9 +220,19 @@
 		showConfigForm = false; // 隐藏配置表单
 	}
 
-	onMount(fetchVideoListModels);
+	// 在页面加载时检查是否已有有效Token
+	onMount(async () => {
+		const savedToken = localStorage.getItem('auth_token');
+		if (savedToken && savedToken.trim()) {
+			authToken = savedToken;
+			// 自动验证已保存的Token
+			await verifyToken();
+		}
+	});
 
-	$: activeCategory, currentPage, searchQuery, fetchVideos();
+	$: if (isAuthenticated) {
+		activeCategory, currentPage, searchQuery, fetchVideos();
+	}
 
 	function onSearch() {
 		currentPage = 0;
@@ -246,7 +324,64 @@
 	<title>bili-sync 管理页</title>
 </svelte:head>
 
-<Header>
+{#if !isAuthenticated}
+	<!-- 登录界面 -->
+	<div class="min-h-screen bg-gray-50 flex items-center justify-center">
+		<div class="max-w-md w-full space-y-8">
+			<div class="text-center">
+				<h1 class="text-3xl font-bold text-gray-900 mb-2">bili-sync 管理页</h1>
+				<p class="text-gray-600">请输入API Token以访问管理功能</p>
+			</div>
+			<div class="bg-white p-8 rounded-lg shadow-md">
+				<div class="space-y-4">
+					<div>
+						<label for="token" class="block text-sm font-medium text-gray-700 mb-2">
+							API Token
+						</label>
+						<Input
+							id="token"
+							type="password"
+							placeholder="请输入API Token"
+							bind:value={authToken}
+							on:keydown={handleKeyDown}
+							class="w-full"
+							disabled={isVerifying}
+						/>
+						{#if authError}
+							<p class="mt-2 text-sm text-red-600">{authError}</p>
+						{/if}
+					</div>
+					<Button
+						onclick={verifyToken}
+						disabled={isVerifying || !authToken.trim()}
+						class="w-full"
+					>
+						{isVerifying ? '验证中...' : '登录'}
+					</Button>
+				</div>
+				<div class="mt-6 text-sm text-gray-500">
+					<p class="mb-2">💡 提示：</p>
+					<ul class="list-disc list-inside space-y-1">
+						<li>API Token可在配置文件中的 auth_token 字段找到</li>
+						<li>如果是首次运行，Token会自动生成</li>
+						<li>Token验证成功后会自动保存到浏览器</li>
+					</ul>
+				</div>
+			</div>
+		</div>
+	</div>
+{:else}
+	<!-- 主管理界面 -->
+	<Header>
+		<!-- 在Header中添加退出登录按钮 -->
+		<div slot="actions" class="flex items-center space-x-2">
+			<span class="text-sm text-gray-600">已登录</span>
+			<Button onclick={logout} variant="outline" class="text-sm px-3 py-1 h-auto">
+				退出登录
+			</Button>
+		</div>
+	</Header>
+	
 	<div class="flex">
 		<!-- 左侧侧边栏 -->
 		<aside class="w-1/4 border-r p-4">
@@ -344,14 +479,15 @@
 							class="w-16 px-2 py-1 text-sm border border-gray-200 rounded focus:border-blue-300 focus:ring-1 focus:ring-blue-200 bg-gray-50"
 							on:keydown={(e) => {
 								if (e.key === 'Enter') {
-									const targetPage = parseInt(e.target.value) - 1;
+									const target = e.target as HTMLInputElement;
+									const targetPage = parseInt(target.value) - 1;
 									if (targetPage >= 0 && targetPage < Math.ceil(total / pageSize)) {
 										currentPage = targetPage;
 										videoCollapseSignal = !videoCollapseSignal;
 										fetchVideos();
 										window.scrollTo({ top: 0, behavior: 'smooth' });
 									}
-									e.target.value = '';
+									target.value = '';
 								}
 							}}
 						/>
@@ -367,4 +503,4 @@
 			{/if}
 		</main>
 	</div>
-</Header>
+{/if}

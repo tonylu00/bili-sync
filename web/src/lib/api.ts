@@ -110,6 +110,9 @@ export async function getConfig(): Promise<{
     time_format: string;
     interval: number;
     nfo_time_type: string;
+    parallel_download_enabled: boolean;
+    parallel_download_threads: number;
+    parallel_download_min_size: number;
 }> {
     return fetchWithAuth(`${BASE_URL}/config`, {
         method: 'GET'
@@ -126,6 +129,9 @@ export async function updateConfig(params: {
     time_format?: string;
     interval?: number;
     nfo_time_type?: string;
+    parallel_download_enabled?: boolean;
+    parallel_download_threads?: number;
+    parallel_download_min_size?: number;
 }): Promise<{
     success: boolean;
     message: string;

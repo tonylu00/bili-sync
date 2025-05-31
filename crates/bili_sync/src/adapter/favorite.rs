@@ -72,6 +72,7 @@ impl VideoSource for favorite::Model {
     }
 }
 
+#[allow(dead_code)]
 pub async fn init_favorite_sources(
     conn: &DatabaseConnection,
     favorite_list: &HashMap<String, std::path::PathBuf>,

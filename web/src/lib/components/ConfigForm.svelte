@@ -15,6 +15,11 @@
 	let time_format = '%Y-%m-%d';
 	let interval = 1200;
 	let nfo_time_type = 'favtime';
+	// 多线程下载配置
+	let parallel_download_enabled = true;
+	let parallel_download_threads = 4;
+	let parallel_download_min_size = 10485760; // 10MB
+	let parallel_download_min_size_mb = 10; // MB单位显示
 	let loading = false;
 	let loadingConfig = true;
 
@@ -27,7 +32,10 @@
 		folder_structure: '多页视频的文件夹结构模板',
 		time_format: '时间格式',
 		interval: '扫描间隔时间（秒），建议不少于60秒',
-		nfo_time_type: 'NFO文件中使用的时间类型'
+		nfo_time_type: 'NFO文件中使用的时间类型',
+		parallel_download_enabled: '是否启用多线程下载',
+		parallel_download_threads: '每个文件的下载线程数',
+		parallel_download_min_size: '最小文件大小（MB），小于此大小的文件不使用多线程下载'
 	};
 
 	// 变量说明
@@ -57,6 +65,11 @@
 			{ name: '%H', desc: '小时（如00-23）' },
 			{ name: '%M', desc: '分钟（如00-59）' },
 			{ name: '%S', desc: '秒数（如00-59）' }
+		],
+		parallel: [
+			{ name: '启用多线程下载', desc: '对大文件使用多线程分片下载，可以显著提升下载速度' },
+			{ name: '下载线程数', desc: '推荐设置为2-8，过多线程可能导致服务器限制' },
+			{ name: '最小文件大小', desc: '只有大于此大小的文件才使用多线程下载，默认10MB' }
 		]
 	};
 
@@ -81,6 +94,10 @@
 			time_format = config.time_format;
 			interval = config.interval;
 			nfo_time_type = config.nfo_time_type;
+			parallel_download_enabled = config.parallel_download_enabled;
+			parallel_download_threads = config.parallel_download_threads;
+			parallel_download_min_size = config.parallel_download_min_size;
+			parallel_download_min_size_mb = Math.round(config.parallel_download_min_size / 1048576); // 转换为MB
 		} catch (error) {
 			console.error('加载配置失败:', error);
 			toast.error('加载配置失败', { description: `错误信息：${error}` });
@@ -123,6 +140,16 @@
 		
 		if (interval < 60) {
 			toast.error('扫描间隔过短', { description: '建议设置不少于60秒，避免频繁请求' });
+			return;
+		}
+		
+		if (parallel_download_threads < 1) {
+			toast.error('下载线程数无效', { description: '下载线程数必须大于0' });
+			return;
+		}
+		
+		if (parallel_download_min_size_mb < 1) {
+			toast.error('最小文件大小设置过小', { description: '最小文件大小不能小于1MB' });
 			return;
 		}
 		
@@ -170,7 +197,10 @@
 				folder_structure: folder_structure.trim(),
 				time_format: time_format.trim(),
 				interval,
-				nfo_time_type
+				nfo_time_type,
+				parallel_download_enabled,
+				parallel_download_threads,
+				parallel_download_min_size: parallel_download_min_size_mb * 1048576 // 将MB转换为字节
 			});
 			
 			if (result.success) {
@@ -262,6 +292,18 @@
 						{/each}
 					</div>
 				</div>
+				
+				<div>
+					<h4 class="font-medium text-indigo-600 mb-2">⚡ 多线程下载</h4>
+					<div class="space-y-1 text-sm">
+						{#each variableHelp.parallel as variable}
+							<div class="flex">
+								<code class="bg-indigo-100 px-2 py-1 rounded text-indigo-800 mr-2 min-w-fit">{variable.name}</code>
+								<span class="text-gray-600">{variable.desc}</span>
+							</div>
+						{/each}
+					</div>
+				</div>
 			</div>
 			
 			<div class="mt-4 p-3 bg-blue-50 rounded border-l-4 border-blue-400">
@@ -317,6 +359,14 @@
 						<div class="ml-4 space-y-1">
 							<div><code>{'{{ truncate title 20 }}'}</code> → <span class="text-gray-600">截取标题前20个字符</span></div>
 							<div><code>{'{{ truncate upper_name 10 }} - {{title}}'}</code> → <span class="text-gray-600">庄心妍 - 没想到吧～这些歌原来是我唱的！</span></div>
+						</div>
+					</div>
+					<div>
+						<strong>多线程下载配置：</strong>
+						<div class="ml-4 space-y-1">
+							<div><code>启用</code> → <span class="text-gray-600">对大文件启用多线程分片下载</span></div>
+							<div><code>线程数: 4</code> → <span class="text-gray-600">使用4个线程同时下载（推荐2-8个）</span></div>
+							<div><code>最小大小: 10MB</code> → <span class="text-gray-600">10MB以上的文件才使用多线程下载</span></div>
 						</div>
 					</div>
 				</div>
@@ -445,6 +495,51 @@
 					{/each}
 				</select>
 				<p class="text-xs text-gray-500 mt-1">{fieldDescriptions.nfo_time_type}</p>
+			</div>
+			
+			<div>
+				<label class="block text-sm font-medium mb-1" for="parallel-download-enabled">
+					是否启用多线程下载
+				</label>
+				<select 
+					id="parallel-download-enabled" 
+					class="w-full p-2 border rounded bg-gray-50 text-gray-900 border-gray-300 focus:border-blue-500 focus:ring-1 focus:ring-blue-500" 
+					bind:value={parallel_download_enabled}
+				>
+					<option value={true}>是</option>
+					<option value={false}>否</option>
+				</select>
+				<p class="text-xs text-gray-500 mt-1">{fieldDescriptions.parallel_download_enabled}</p>
+			</div>
+			
+			<div>
+				<label class="block text-sm font-medium mb-1" for="parallel-download-threads">
+					每个文件的下载线程数
+				</label>
+				<Input 
+					id="parallel-download-threads" 
+					type="number" 
+					bind:value={parallel_download_threads} 
+					min="1"
+					placeholder="例如：4"
+					class="bg-gray-50 text-gray-900 border-gray-300 focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
+				/>
+				<p class="text-xs text-gray-500 mt-1">{fieldDescriptions.parallel_download_threads}</p>
+			</div>
+			
+			<div>
+				<label class="block text-sm font-medium mb-1" for="parallel-download-min-size">
+					最小文件大小（MB），小于此大小的文件不使用多线程下载
+				</label>
+				<Input 
+					id="parallel-download-min-size" 
+					type="number" 
+					bind:value={parallel_download_min_size_mb} 
+					min="1"
+					placeholder="例如：10"
+					class="bg-gray-50 text-gray-900 border-gray-300 focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
+				/>
+				<p class="text-xs text-gray-500 mt-1">{fieldDescriptions.parallel_download_min_size}</p>
 			</div>
 			
 			<div class="flex justify-end space-x-2">

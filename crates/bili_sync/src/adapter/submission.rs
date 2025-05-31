@@ -72,7 +72,7 @@ impl VideoSource for submission::Model {
     }
 }
 
-// 添加初始化UP主投稿源的方法
+#[allow(dead_code)]
 pub async fn init_submission_sources(
     conn: &DatabaseConnection,
     submission_list: &std::collections::HashMap<String, std::path::PathBuf>,

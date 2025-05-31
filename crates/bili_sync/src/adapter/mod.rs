@@ -4,11 +4,13 @@ mod favorite;
 mod submission;
 mod watch_later;
 
-// 将子模块改为公开
-pub use collection::init_collection_sources;
-pub use favorite::init_favorite_sources;
-pub use submission::init_submission_sources;
-pub use watch_later::init_watch_later_source;
+// 移除不再使用的init函数导出，因为现在视频源通过Web API管理
+// pub use collection::init_collection_sources;
+// pub use favorite::init_favorite_sources;
+// pub use submission::init_submission_sources;
+// pub use watch_later::init_watch_later_source;
+
+pub use bangumi::BangumiSource;
 
 use std::path::Path;
 use std::pin::Pin;
@@ -27,7 +29,6 @@ use bili_sync_entity::favorite::Model as Favorite;
 use bili_sync_entity::submission::Model as Submission;
 use bili_sync_entity::watch_later::Model as WatchLater;
 
-use crate::adapter::bangumi::BangumiSource;
 use crate::adapter::collection::collection_from;
 use crate::adapter::favorite::favorite_from;
 use crate::adapter::submission::submission_from;

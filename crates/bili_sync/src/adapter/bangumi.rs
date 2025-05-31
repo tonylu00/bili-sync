@@ -1,14 +1,12 @@
-#[allow(unused_imports)]
 use std::path::Path;
 use std::path::PathBuf;
 use std::pin::Pin;
 
-use anyhow::{Context, Result};
+use anyhow::Result;
 use chrono::{DateTime, NaiveDateTime, Utc};
 use futures::Stream;
 use sea_orm::prelude::*;
-use sea_orm::sea_query::Expr;
-use sea_orm::{ActiveValue::Set, ColumnTrait, EntityTrait, QueryFilter};
+use sea_orm::{ActiveValue::Set};
 use tracing::debug;
 use tracing::info;
 
@@ -18,8 +16,6 @@ use sea_orm::sea_query::SimpleExpr;
 use crate::adapter::VideoSource;
 use crate::bilibili::bangumi::Bangumi;
 use crate::bilibili::{BiliClient, VideoInfo};
-use crate::config::BangumiConfig;
-use crate::config::CONFIG;
 
 #[derive(Clone)]
 pub struct BangumiSource {
@@ -44,16 +40,33 @@ impl BangumiSource {
     ) -> Result<String> {
         use crate::utils::format_arg::bangumi_page_format_args;
 
+        // 获取最新的配置，而不是使用静态全局配置
+        let current_config = crate::config::reload_config();
+
         // 优先级：全局 bangumi_name > 番剧自己的 page_name > 默认格式
-        let template = if !CONFIG.bangumi_name.is_empty() {
-            CONFIG.bangumi_name.as_ref()
+        let template = if !current_config.bangumi_name.is_empty() {
+            current_config.bangumi_name.as_ref()
         } else if let Some(ref page_name) = self.page_name_template {
             page_name.as_str()
         } else {
             "S{{season_pad}}E{{pid_pad}}-{{pid_pad}}"
         };
 
-        let handlebars = handlebars::Handlebars::new();
+        // 创建配置了辅助函数的 handlebars 实例
+        let mut handlebars = handlebars::Handlebars::new();
+        // 注册 truncate 辅助函数
+        handlebars.register_helper("truncate", Box::new(|h: &handlebars::Helper, _: &handlebars::Handlebars, _: &handlebars::Context, _: &mut handlebars::RenderContext, out: &mut dyn handlebars::Output| -> handlebars::HelperResult {
+            let s = h.param(0).and_then(|v| v.value().as_str()).unwrap_or("");
+            let len = h.param(1).and_then(|v| v.value().as_u64()).unwrap_or(0) as usize;
+            let result = if s.chars().count() > len {
+                s.chars().take(len).collect::<String>()
+            } else {
+                s.to_string()
+            };
+            out.write(&result)?;
+            Ok(())
+        }));
+
         Ok(crate::utils::filenamify::filenamify(&handlebars.render_template(
             template,
             &bangumi_page_format_args(video_model, page_model),
@@ -85,97 +98,7 @@ impl BangumiSource {
         }
     }
 
-    // 初始化番剧源到数据库
-    pub async fn init_to_db(bangumi_config: &BangumiConfig, conn: &DatabaseConnection) -> Result<i32> {
-        let name = if let Some(media_id) = &bangumi_config.media_id {
-            format!("番剧媒体：{}", media_id)
-        } else if let Some(ep_id) = &bangumi_config.ep_id {
-            format!("番剧剧集：{}", ep_id)
-        } else if let Some(season_id) = &bangumi_config.season_id {
-            format!("番剧季度：{}", season_id)
-        } else {
-            "未命名番剧".to_string()
-        };
-
-        // 查询是否已存在相同配置的番剧记录
-        let source = bili_sync_entity::video_source::Entity::find()
-            .filter(bili_sync_entity::video_source::Column::Type.eq(1).and(
-                match (
-                    &bangumi_config.media_id,
-                    &bangumi_config.season_id,
-                    &bangumi_config.ep_id,
-                ) {
-                    (Some(media_id), _, _) => bili_sync_entity::video_source::Column::MediaId.eq(media_id.clone()),
-                    (_, Some(season_id), _) => bili_sync_entity::video_source::Column::SeasonId.eq(season_id.clone()),
-                    (_, _, Some(ep_id)) => bili_sync_entity::video_source::Column::EpId.eq(ep_id.clone()),
-                    _ => Expr::val(false).into(),
-                },
-            ))
-            .one(conn)
-            .await?;
-
-        if let Some(source) = source {
-            // 更新现有记录
-            let mut updates = Vec::new();
-
-            if source.path != bangumi_config.path.to_string_lossy() {
-                updates.push(bili_sync_entity::video_source::ActiveModel {
-                    id: Set(source.id),
-                    path: Set(bangumi_config.path.to_string_lossy().to_string()),
-                    ..Default::default()
-                });
-            }
-
-            if source.download_all_seasons != Some(bangumi_config.download_all_seasons) {
-                updates.push(bili_sync_entity::video_source::ActiveModel {
-                    id: Set(source.id),
-                    download_all_seasons: Set(Some(bangumi_config.download_all_seasons)),
-                    ..Default::default()
-                });
-            }
-
-            // 检查模板字段是否需要更新
-            if source.page_name_template != bangumi_config.page_name {
-                updates.push(bili_sync_entity::video_source::ActiveModel {
-                    id: Set(source.id),
-                    page_name_template: Set(bangumi_config.page_name.clone()),
-                    ..Default::default()
-                });
-            }
-
-            for update in updates {
-                bili_sync_entity::video_source::Entity::update(update)
-                    .exec(conn)
-                    .await
-                    .context("Failed to update bangumi source")?;
-            }
-
-            return Ok(source.id);
-        }
-
-        // 创建新记录
-        let now = Utc::now().naive_utc();
-        let new_source = bili_sync_entity::video_source::ActiveModel {
-            name: Set(name),
-            r#type: Set(1), // 1 表示番剧类型
-            latest_row_at: Set(now),
-            season_id: Set(bangumi_config.season_id.clone()),
-            media_id: Set(bangumi_config.media_id.clone()),
-            ep_id: Set(bangumi_config.ep_id.clone()),
-            path: Set(bangumi_config.path.to_string_lossy().to_string()),
-            download_all_seasons: Set(Some(bangumi_config.download_all_seasons)),
-            page_name_template: Set(bangumi_config.page_name.clone()),
-            selected_seasons: Set(None), // 初始化时不设置选中的季度
-            ..Default::default()
-        };
-
-        let result = bili_sync_entity::video_source::Entity::insert(new_source)
-            .exec(conn)
-            .await
-            .context("Failed to insert bangumi source")?;
-
-        Ok(result.last_insert_id)
-    }
+    // 番剧源的初始化现在通过Web API完成，不再需要这个函数
 }
 
 impl VideoSourceTrait for BangumiSource {

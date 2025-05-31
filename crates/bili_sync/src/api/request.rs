@@ -65,4 +65,8 @@ pub struct UpdateConfigRequest {
     pub interval: Option<u64>,
     // NFO时间类型
     pub nfo_time_type: Option<String>,
+    // 多线程下载配置
+    pub parallel_download_enabled: Option<bool>,
+    pub parallel_download_threads: Option<usize>,
+    pub parallel_download_min_size: Option<u64>,
 }

@@ -108,6 +108,10 @@ pub struct ConfigResponse {
     pub time_format: String,
     pub interval: u64,
     pub nfo_time_type: String,
+    // 多线程下载配置
+    pub parallel_download_enabled: bool,
+    pub parallel_download_threads: usize,
+    pub parallel_download_min_size: u64,
 }
 
 // 更新配置的响应结构体

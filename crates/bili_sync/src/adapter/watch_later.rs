@@ -12,7 +12,6 @@ use sea_orm::{DatabaseConnection, Unchanged};
 
 use crate::adapter::{_ActiveModel, VideoSource, VideoSourceEnum};
 use crate::bilibili::{BiliClient, VideoInfo, WatchLater};
-use crate::config::WatchLaterConfig;
 
 impl VideoSource for watch_later::Model {
     fn filter_expr(&self) -> SimpleExpr {
@@ -73,53 +72,7 @@ impl VideoSource for watch_later::Model {
     }
 }
 
-// 添加初始化稍后观看源的方法
-pub async fn init_watch_later_source(conn: &DatabaseConnection, watch_later_config: &WatchLaterConfig) -> Result<()> {
-    // 如果稍后观看功能未启用，则不需要初始化
-    if !watch_later_config.enabled {
-        return Ok(());
-    }
-
-    // 检查数据库中是否已存在稍后观看记录
-    let existing = watch_later::Entity::find().one(conn).await?;
-
-    if existing.is_none() {
-        // 如果不存在，创建新记录
-        let model = watch_later::ActiveModel {
-            id: Set(1), // 稍后观看只有一个记录，ID固定为1
-            path: Set(watch_later_config.path.to_string_lossy().to_string()),
-            latest_row_at: Set(chrono::Utc::now().naive_utc()),
-            ..Default::default()
-        };
-
-        // 插入数据库
-        let result = watch_later::Entity::insert(model)
-            .exec(conn)
-            .await
-            .context("Failed to insert watch_later source")?;
-
-        info!("初始化稍后观看源 (ID: {})", result.last_insert_id);
-    } else if let Some(existing) = existing {
-        // 如果已存在，更新路径
-        if existing.path != watch_later_config.path.to_string_lossy() {
-            let model = watch_later::ActiveModel {
-                id: Set(existing.id),
-                path: Set(watch_later_config.path.to_string_lossy().to_string()),
-                ..Default::default()
-            };
-
-            // 更新数据库
-            watch_later::Entity::update(model)
-                .exec(conn)
-                .await
-                .context("Failed to update watch_later source")?;
-
-            info!("更新稍后观看源 (ID: {})", existing.id);
-        }
-    }
-
-    Ok(())
-}
+// 稍后观看源的初始化现在通过Web API完成，不再需要这个函数
 
 pub(super) async fn watch_later_from<'a>(
     path: &Path,

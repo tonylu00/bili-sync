@@ -1,15 +1,12 @@
 <script lang="ts">
-	import { Input } from '$lib/components/ui/input';
-	let apiToken: string = localStorage.getItem('auth_token') || '';
-	function updateToken() {
-		localStorage.setItem('auth_token', apiToken);
-	}
+	// 移除不必要的API Token管理代码，因为已经在主页面处理了
 </script>
 
 <header class="flex items-center justify-between bg-gray-100 p-4">
 	<h1 class="text-xl font-bold">bili-sync 管理页</h1>
-	<div>
-		<Input type="password" placeholder="API Token" bind:value={apiToken} on:change={updateToken} />
+	<div class="flex items-center space-x-4">
+		<!-- actions slot用于显示操作按钮 -->
+		<slot name="actions" />
 	</div>
 </header>
 

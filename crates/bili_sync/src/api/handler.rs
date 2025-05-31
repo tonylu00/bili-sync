@@ -23,8 +23,6 @@ use crate::api::response::{
 use crate::api::wrapper::{ApiError, ApiResponse};
 use crate::utils::status::{PageStatus, VideoStatus};
 
-use std::fs;
-
 #[derive(OpenApi)]
 #[openapi(
     paths(get_video_sources, get_videos, get_video, reset_video, add_video_source, delete_video_source, reload_config, get_config, update_config, get_bangumi_seasons),
@@ -36,6 +34,7 @@ use std::fs;
 pub struct ApiDoc;
 
 /// 获取配置文件路径，提供统一的错误处理
+#[allow(dead_code)]
 fn get_config_path() -> Result<PathBuf> {
     dirs::config_dir()
         .context("无法获取配置目录")
@@ -357,29 +356,6 @@ pub async fn add_video_source(
 
             let insert_result = collection::Entity::insert(collection).exec(&txn).await?;
 
-            // 更新配置文件 - 直接修改文件
-            let config_path = get_config_path()?;
-            let config_content = std::fs::read_to_string(&config_path)?;
-            let mut config: toml::Value = toml::from_str(&config_content)?;
-
-            // 确保collection_list存在
-            if config.get("collection_list").is_none() {
-                config["collection_list"] = toml::Value::Table(toml::value::Table::new());
-            }
-
-            // 添加新项 - 使用正确的格式 type:mid:sid，使用用户提供的UP主ID
-            if let Some(table) = config["collection_list"].as_table_mut() {
-                let key = format!("{}:{}:{}", collection_type_value, up_id, params.source_id);
-                table.insert(key, toml::Value::String(params.path.clone()));
-            }
-
-            // 写回文件
-            let config_str = toml::to_string_pretty(&config)?;
-            std::fs::write(&config_path, config_str)?;
-
-            // 重新加载配置，使修改立即生效
-            reload_config_file()?;
-
             AddVideoSourceResponse {
                 success: true,
                 source_id: insert_result.last_insert_id,
@@ -399,28 +375,6 @@ pub async fn add_video_source(
             };
 
             let insert_result = favorite::Entity::insert(favorite).exec(&txn).await?;
-
-            // 更新配置文件 - 直接修改文件
-            let config_path = get_config_path()?;
-            let config_content = std::fs::read_to_string(&config_path)?;
-            let mut config: toml::Value = toml::from_str(&config_content)?;
-
-            // 确保favorite_list存在
-            if config.get("favorite_list").is_none() {
-                config["favorite_list"] = toml::Value::Table(toml::value::Table::new());
-            }
-
-            // 添加新项
-            if let Some(table) = config["favorite_list"].as_table_mut() {
-                table.insert(params.source_id.clone(), toml::Value::String(params.path.clone()));
-            }
-
-            // 写回文件
-            let config_str = toml::to_string_pretty(&config)?;
-            std::fs::write(&config_path, config_str)?;
-
-            // 重新加载配置，使修改立即生效
-            reload_config_file()?;
 
             AddVideoSourceResponse {
                 success: true,
@@ -442,28 +396,6 @@ pub async fn add_video_source(
 
             let insert_result = submission::Entity::insert(submission).exec(&txn).await?;
 
-            // 更新配置文件 - 直接修改文件
-            let config_path = get_config_path()?;
-            let config_content = std::fs::read_to_string(&config_path)?;
-            let mut config: toml::Value = toml::from_str(&config_content)?;
-
-            // 确保submission_list存在
-            if config.get("submission_list").is_none() {
-                config["submission_list"] = toml::Value::Table(toml::value::Table::new());
-            }
-
-            // 添加新项
-            if let Some(table) = config["submission_list"].as_table_mut() {
-                table.insert(params.source_id.clone(), toml::Value::String(params.path.clone()));
-            }
-
-            // 写回文件
-            let config_str = toml::to_string_pretty(&config)?;
-            std::fs::write(&config_path, config_str)?;
-
-            // 重新加载配置，使修改立即生效
-            reload_config_file()?;
-
             AddVideoSourceResponse {
                 success: true,
                 source_id: insert_result.last_insert_id,
@@ -473,8 +405,6 @@ pub async fn add_video_source(
         }
         "bangumi" => {
             // 添加番剧
-            let media_id_clone = params.media_id.clone();
-            let ep_id_clone = params.ep_id.clone();
             let download_all_seasons = params.download_all_seasons.unwrap_or(false);
             
             // 处理选中的季度
@@ -506,56 +436,6 @@ pub async fn add_video_source(
 
             let insert_result = video_source::Entity::insert(bangumi).exec(&txn).await?;
 
-            // 更新配置文件 - 直接修改文件
-            let config_path = get_config_path()?;
-            let config_content = std::fs::read_to_string(&config_path)?;
-            let mut config: toml::Value = toml::from_str(&config_content)?;
-
-            // 创建新的bangumi配置
-            let mut bangumi_item = toml::value::Table::new();
-            if !params.source_id.is_empty() {
-                bangumi_item.insert("season_id".to_string(), toml::Value::String(params.source_id.clone()));
-            }
-            if let Some(media_id) = &media_id_clone {
-                bangumi_item.insert("media_id".to_string(), toml::Value::String(media_id.clone()));
-            }
-            if let Some(ep_id) = &ep_id_clone {
-                bangumi_item.insert("ep_id".to_string(), toml::Value::String(ep_id.clone()));
-            }
-            bangumi_item.insert("path".to_string(), toml::Value::String(params.path.clone()));
-            bangumi_item.insert(
-                "download_all_seasons".to_string(),
-                toml::Value::Boolean(download_all_seasons),
-            );
-
-            // 安全地添加到bangumi数组
-            match config.get_mut("bangumi") {
-                Some(toml::Value::Array(array)) => {
-                    // 如果bangumi存在且是数组类型，直接添加
-                    array.push(toml::Value::Table(bangumi_item));
-                }
-                _ => {
-                    // 如果bangumi不存在或不是数组类型，创建新数组
-                    let mut new_array = Vec::new();
-                    new_array.push(toml::Value::Table(bangumi_item));
-
-                    // 使用insert方法而不是索引操作，避免可能的panic
-                    if let Some(table) = config.as_table_mut() {
-                        table.insert("bangumi".to_string(), toml::Value::Array(new_array));
-                    } else {
-                        // 如果config不是table类型，这是一个严重错误
-                        return Err(anyhow!("配置文件格式错误，无法添加番剧配置").into());
-                    }
-                }
-            }
-
-            // 写回文件
-            let config_str = toml::to_string_pretty(&config)?;
-            std::fs::write(&config_path, config_str)?;
-
-            // 重新加载配置，使修改立即生效
-            reload_config_file()?;
-
             AddVideoSourceResponse {
                 success: true,
                 source_id: insert_result.last_insert_id,
@@ -580,27 +460,6 @@ pub async fn add_video_source(
 
             let insert_result = watch_later::Entity::insert(watch_later).exec(&txn).await?;
 
-            // 更新配置文件 - 直接修改文件
-            let config_path = get_config_path()?;
-            let config_content = std::fs::read_to_string(&config_path)?;
-            let mut config: toml::Value = toml::from_str(&config_content)?;
-
-            // 确保watch_later存在
-            if config.get("watch_later").is_none() {
-                config["watch_later"] = toml::Value::Table(toml::value::Table::new());
-            }
-
-            // 设置稍后观看配置
-            config["watch_later"]["enabled"] = toml::Value::Boolean(true);
-            config["watch_later"]["path"] = toml::Value::String(params.path.clone());
-
-            // 写回文件
-            let config_str = toml::to_string_pretty(&config)?;
-            std::fs::write(&config_path, config_str)?;
-
-            // 重新加载配置，使修改立即生效
-            reload_config_file()?;
-
             AddVideoSourceResponse {
                 success: true,
                 source_id: insert_result.last_insert_id,
@@ -612,7 +471,7 @@ pub async fn add_video_source(
     };
 
     // 确保目标路径存在
-    fs::create_dir_all(&params.path).map_err(|e| anyhow!("创建目录失败: {}", e))?;
+    std::fs::create_dir_all(&params.path).map_err(|e| anyhow!("创建目录失败: {}", e))?;
 
     txn.commit().await?;
     Ok(ApiResponse::ok(result))
@@ -701,16 +560,6 @@ pub async fn delete_video_source(
             // 删除数据库中的记录
             collection::Entity::delete_by_id(id).exec(&txn).await?;
 
-            // 更新配置文件 - 从 collection_list HashMap 中删除
-            update_config_file(|config| {
-                // 查找并删除对应的合集配置
-                config.collection_list.retain(|collection_item, _| {
-                    !(collection_item.mid == collection.m_id.to_string()
-                        && collection_item.sid == collection.s_id.to_string())
-                });
-                Ok(())
-            })?;
-
             crate::api::response::DeleteVideoSourceResponse {
                 success: true,
                 source_id: id,
@@ -756,12 +605,6 @@ pub async fn delete_video_source(
 
             // 删除数据库中的记录
             favorite::Entity::delete_by_id(id).exec(&txn).await?;
-
-            // 更新配置文件 - 从 favorite_list HashMap 中删除
-            update_config_file(|config| {
-                config.favorite_list.retain(|fid, _| fid != &favorite.f_id.to_string());
-                Ok(())
-            })?;
 
             crate::api::response::DeleteVideoSourceResponse {
                 success: true,
@@ -809,14 +652,6 @@ pub async fn delete_video_source(
             // 删除数据库中的记录
             submission::Entity::delete_by_id(id).exec(&txn).await?;
 
-            // 更新配置文件 - 从 submission_list HashMap 中删除
-            update_config_file(|config| {
-                config
-                    .submission_list
-                    .retain(|upper_id, _| upper_id != &submission.upper_id.to_string());
-                Ok(())
-            })?;
-
             crate::api::response::DeleteVideoSourceResponse {
                 success: true,
                 source_id: id,
@@ -862,12 +697,6 @@ pub async fn delete_video_source(
 
             // 删除数据库中的记录
             watch_later::Entity::delete_by_id(id).exec(&txn).await?;
-
-            // 更新配置文件 - 禁用 watch_later
-            update_config_file(|config| {
-                config.watch_later.enabled = false;
-                Ok(())
-            })?;
 
             crate::api::response::DeleteVideoSourceResponse {
                 success: true,
@@ -917,15 +746,6 @@ pub async fn delete_video_source(
             // 删除数据库中的记录
             video_source::Entity::delete_by_id(id).exec(&txn).await?;
 
-            // 更新配置文件 - 从 bangumi Vec 中删除
-            update_config_file(|config| {
-                config.bangumi.retain(|bangumi_config| {
-                    // 根据 season_id 匹配删除
-                    bangumi_config.season_id.as_ref() != bangumi.season_id.as_ref()
-                });
-                Ok(())
-            })?;
-
             crate::api::response::DeleteVideoSourceResponse {
                 success: true,
                 source_id: id,
@@ -941,6 +761,7 @@ pub async fn delete_video_source(
 }
 
 /// 更新配置文件的辅助函数
+#[allow(dead_code)]
 fn update_config_file<F>(update_fn: F) -> Result<()>
 where
     F: FnOnce(&mut crate::config::Config) -> Result<()>,
@@ -962,6 +783,7 @@ where
 }
 
 // 在添加视频源成功后调用此函数获取新配置
+#[allow(dead_code)]
 fn reload_config_file() -> Result<()> {
     // 使用公共的 reload_config 函数重新加载配置
     let new_config = crate::config::reload_config();
@@ -1002,6 +824,9 @@ pub async fn get_config() -> Result<ApiResponse<crate::api::response::ConfigResp
         time_format: config.time_format.clone(),
         interval: config.interval,
         nfo_time_type: nfo_time_type.to_string(),
+        parallel_download_enabled: config.concurrent_limit.parallel_download.enabled,
+        parallel_download_threads: config.concurrent_limit.parallel_download.threads,
+        parallel_download_min_size: config.concurrent_limit.parallel_download.min_size,
     }))
 }
 
@@ -1097,6 +922,28 @@ pub async fn update_config(
         if !bangumi_name.trim().is_empty() && bangumi_name != original_bangumi_name.as_ref() {
             config.bangumi_name = Cow::Owned(bangumi_name);
             updated_fields.push("bangumi_name");
+        }
+    }
+
+    // 处理多线程下载配置
+    if let Some(enabled) = params.parallel_download_enabled {
+        if enabled != config.concurrent_limit.parallel_download.enabled {
+            config.concurrent_limit.parallel_download.enabled = enabled;
+            updated_fields.push("parallel_download_enabled");
+        }
+    }
+
+    if let Some(threads) = params.parallel_download_threads {
+        if threads > 0 && threads != config.concurrent_limit.parallel_download.threads {
+            config.concurrent_limit.parallel_download.threads = threads;
+            updated_fields.push("parallel_download_threads");
+        }
+    }
+
+    if let Some(min_size) = params.parallel_download_min_size {
+        if min_size > 0 && min_size != config.concurrent_limit.parallel_download.min_size {
+            config.concurrent_limit.parallel_download.min_size = min_size;
+            updated_fields.push("parallel_download_min_size");
         }
     }
 
@@ -1829,58 +1676,94 @@ async fn regenerate_nfo_files(db: Arc<DatabaseConnection>, config: &crate::confi
                     .await?;
 
                 for page in pages {
-                    // 使用番剧的page_name_template来生成正确的文件名
-                    let page_name = if let Some(bangumi_source) = &bangumi_source {
-                        let template = bangumi_source
-                            .page_name_template
-                            .as_deref()
-                            .unwrap_or("S{{season_pad}}E{{pid_pad}}-{{pid_pad}}");
-
-                        // 构建番剧专用的模板数据
+                    // 对于番剧，首先尝试从现有文件中查找实际的文件名格式
+                    let actual_page_name = if let Ok(entries) = std::fs::read_dir(video_path) {
+                        let mut found_name = None;
                         let episode_number = video.episode_number.unwrap_or(page.pid);
-                        let season_number = video.season_number.unwrap_or(1);
-
-                        let mut template_data = std::collections::HashMap::new();
-                        template_data.insert("bvid".to_string(), serde_json::Value::String(video.bvid.clone()));
-                        template_data.insert("title".to_string(), serde_json::Value::String(video.name.clone()));
-                        template_data.insert(
-                            "upper_name".to_string(),
-                            serde_json::Value::String(video.upper_name.clone()),
-                        );
-                        template_data.insert(
-                            "upper_mid".to_string(),
-                            serde_json::Value::String(video.upper_id.to_string()),
-                        );
-                        template_data.insert("ptitle".to_string(), serde_json::Value::String(page.name.clone()));
-                        template_data.insert("pid".to_string(), serde_json::Value::String(episode_number.to_string()));
-                        template_data.insert(
-                            "pid_pad".to_string(),
-                            serde_json::Value::String(format!("{:02}", episode_number)),
-                        );
-                        template_data.insert(
-                            "season".to_string(),
-                            serde_json::Value::String(season_number.to_string()),
-                        );
-                        template_data.insert(
-                            "season_pad".to_string(),
-                            serde_json::Value::String(format!("{:02}", season_number)),
-                        );
-
-                        let handlebars = Handlebars::new();
-                        let template_value = serde_json::Value::Object(template_data.into_iter().collect());
-
-                        match handlebars.render_template(template, &template_value) {
-                            Ok(rendered) => crate::utils::filenamify::filenamify(&rendered),
-                            Err(e) => {
-                                warn!("渲染番剧模板失败: {}, 使用默认格式", e);
-                                format!("S{:02}E{:02}-{:02}", season_number, episode_number, episode_number)
+                        
+                        for entry in entries.flatten() {
+                            let file_name = entry.file_name();
+                            let file_name_str = file_name.to_string_lossy();
+                            if file_name_str.ends_with(".mp4") {
+                                // 尝试多种匹配模式
+                                let patterns = vec![
+                                    format!("第{:02}集", episode_number),  // 第01集
+                                    format!("第{}集", episode_number),     // 第1集
+                                    format!("S{:02}E{:02}", 1, episode_number), // S01E01
+                                    format!("E{:02}", episode_number),     // E01
+                                    format!("{:02}", episode_number),      // 01
+                                ];
+                                
+                                if patterns.iter().any(|pattern| file_name_str.contains(pattern)) {
+                                    // 找到匹配的视频文件，提取基础名称
+                                    found_name = Some(file_name_str.trim_end_matches(".mp4").to_string());
+                                    debug!("找到番剧分页文件: {} 对应集数: {}", file_name_str, episode_number);
+                                    break;
+                                }
                             }
                         }
+                        found_name
                     } else {
-                        // 如果找不到番剧源配置，使用默认格式
-                        let season_number = video.season_number.unwrap_or(1);
-                        let episode_number = video.episode_number.unwrap_or(page.pid);
-                        format!("S{:02}E{:02}-{:02}", season_number, episode_number, episode_number)
+                        None
+                    };
+
+                    let page_name = if let Some(actual_name) = actual_page_name {
+                        // 使用实际找到的文件名格式
+                        actual_name
+                    } else {
+                        // 如果找不到实际文件，则使用模板生成（兜底方案）
+                        if let Some(bangumi_source) = &bangumi_source {
+                            let template = bangumi_source
+                                .page_name_template
+                                .as_deref()
+                                .unwrap_or("S{{season_pad}}E{{pid_pad}}-{{pid_pad}}");
+
+                            // 构建番剧专用的模板数据
+                            let episode_number = video.episode_number.unwrap_or(page.pid);
+                            let season_number = video.season_number.unwrap_or(1);
+
+                            let mut template_data = std::collections::HashMap::new();
+                            template_data.insert("bvid".to_string(), serde_json::Value::String(video.bvid.clone()));
+                            template_data.insert("title".to_string(), serde_json::Value::String(video.name.clone()));
+                            template_data.insert(
+                                "upper_name".to_string(),
+                                serde_json::Value::String(video.upper_name.clone()),
+                            );
+                            template_data.insert(
+                                "upper_mid".to_string(),
+                                serde_json::Value::String(video.upper_id.to_string()),
+                            );
+                            template_data.insert("ptitle".to_string(), serde_json::Value::String(page.name.clone()));
+                            template_data.insert("pid".to_string(), serde_json::Value::String(episode_number.to_string()));
+                            template_data.insert(
+                                "pid_pad".to_string(),
+                                serde_json::Value::String(format!("{:02}", episode_number)),
+                            );
+                            template_data.insert(
+                                "season".to_string(),
+                                serde_json::Value::String(season_number.to_string()),
+                            );
+                            template_data.insert(
+                                "season_pad".to_string(),
+                                serde_json::Value::String(format!("{:02}", season_number)),
+                            );
+
+                            let handlebars = Handlebars::new();
+                            let template_value = serde_json::Value::Object(template_data.into_iter().collect());
+
+                            match handlebars.render_template(template, &template_value) {
+                                Ok(rendered) => crate::utils::filenamify::filenamify(&rendered),
+                                Err(e) => {
+                                    warn!("渲染番剧模板失败: {}, 使用默认格式", e);
+                                    format!("S{:02}E{:02}-{:02}", season_number, episode_number, episode_number)
+                                }
+                            }
+                        } else {
+                            // 如果找不到番剧源配置，使用默认格式
+                            let season_number = video.season_number.unwrap_or(1);
+                            let episode_number = video.episode_number.unwrap_or(page.pid);
+                            format!("S{:02}E{:02}-{:02}", season_number, episode_number, episode_number)
+                        }
                     };
 
                     let page_nfo_path = video_path.join(format!("{}.nfo", page_name));
