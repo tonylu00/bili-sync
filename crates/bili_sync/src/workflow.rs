@@ -201,6 +201,56 @@ pub async fn fetch_video_details(
     video_source.log_fetch_video_start();
     let videos_model = filter_unfilled_videos(video_source.filter_expr(), connection).await?;
     for video_model in videos_model {
+        // 检查是否为番剧类型，如果是番剧则跳过详情获取
+        let is_bangumi = video_model.source_type == Some(1);
+        
+        if is_bangumi {
+            // 番剧已经在添加视频源时获取了所有必要信息，
+            // 不需要再次调用通用视频详情API，避免错误的分页信息
+            debug!(
+                "跳过番剧 {} - {} 的详情获取，避免错误的多P识别",
+                &video_model.bvid, &video_model.name
+            );
+            
+            // 为番剧创建一个默认的单页记录
+            let txn = connection.begin().await?;
+            
+            // 尝试从番剧API获取实际的CID
+            let actual_cid = if let Some(ep_id) = &video_model.ep_id {
+                match get_bangumi_cid_from_api(bili_client, ep_id).await {
+                    Some(cid) => cid,
+                    None => {
+                        warn!("无法获取番剧 {} (EP{}) 的CID，使用默认值", &video_model.name, ep_id);
+                        0
+                    }
+                }
+            } else {
+                warn!("番剧 {} 缺少EP ID，使用默认CID", &video_model.name);
+                0
+            };
+            
+            let page_info = PageInfo {
+                cid: actual_cid,
+                page: 1,
+                name: video_model.name.clone(),
+                duration: 0, // 将在后续处理中更新
+                first_frame: None,
+                dimension: None,
+            };
+            
+            create_pages(vec![page_info], &video_model, &txn).await?;
+            
+            // 更新视频模型，标记为单页并设置已处理
+            let mut video_active_model: bili_sync_entity::video::ActiveModel = video_model.into();
+            video_source.set_relation_id(&mut video_active_model);
+            video_active_model.single_page = Set(Some(true)); // 番剧的每一集都是单页
+            video_active_model.tags = Set(Some(serde_json::Value::Array(vec![]))); // 空标签数组
+            video_active_model.save(&txn).await?;
+            txn.commit().await?;
+            continue;
+        }
+        
+        // 非番剧的处理逻辑保持不变
         let video = Video::new(bili_client, video_model.bvid.clone());
         let info: Result<_> = async { Ok((video.get_tags().await?, video.get_view_info().await?)) }.await;
         match info {
@@ -1090,40 +1140,75 @@ async fn generate_nfo(serializer: NFOSerializer<'_>, nfo_path: PathBuf) -> Resul
 }
 
 async fn get_season_title_from_api(bili_client: &BiliClient, season_id: &str) -> Option<String> {
-    use crate::bilibili::bangumi::Bangumi;
-
-    // 创建Bangumi实例
-    let bangumi = Bangumi::new(bili_client, None, Some(season_id.to_string()), None);
-
-    // 尝试获取季度信息
-    match bangumi.get_season_info().await {
-        Ok(season_info) => {
-            // 优先从seasons数组中查找当前season_id对应的季度标题
-            if let Some(seasons) = season_info["seasons"].as_array() {
-                for season in seasons.iter() {
-                    if let Some(id) = season["season_id"].as_u64().map(|id| id.to_string()) {
-                        if id == season_id {
-                            // 找到匹配的season_id，直接使用其season_title
-                            if let Some(season_title) = season["season_title"].as_str() {
-                                return Some(season_title.to_string());
+    let url = format!("https://api.bilibili.com/pgc/view/web/season?season_id={}", season_id);
+    
+    match bili_client.get(&url).await {
+        Ok(res) => {
+            if res.status().is_success() {
+                match res.json::<serde_json::Value>().await {
+                    Ok(json) => {
+                        // 检查API返回是否成功
+                        if json["code"].as_i64().unwrap_or(-1) == 0 {
+                            // 获取季度标题
+                            if let Some(title) = json["result"]["title"].as_str() {
+                                debug!("获取到季度标题: {}", title);
+                                return Some(title.to_string());
                             }
+                        } else {
+                            warn!("获取季度信息失败，API返回错误: {}", json["message"].as_str().unwrap_or("未知错误"));
                         }
                     }
+                    Err(e) => warn!("解析季度信息JSON失败: {}", e),
                 }
+            } else {
+                warn!("获取季度信息HTTP请求失败，状态码: {}", res.status());
             }
-
-            // 如果在seasons数组中没找到匹配的season_id，使用根级别的season_title
-            if let Some(season_title) = season_info["season_title"].as_str() {
-                return Some(season_title.to_string());
-            }
-
-            None
         }
-        Err(e) => {
-            error!("获取season_id: {} 的季度信息失败: {}", season_id, e);
-            None
-        }
+        Err(e) => warn!("发送季度信息请求失败: {}", e),
     }
+    
+    None
+}
+
+/// 从番剧API获取指定EP的CID
+async fn get_bangumi_cid_from_api(bili_client: &BiliClient, ep_id: &str) -> Option<i64> {
+    let url = format!("https://api.bilibili.com/pgc/view/web/season?ep_id={}", ep_id);
+    
+    match bili_client.get(&url).await {
+        Ok(res) => {
+            if res.status().is_success() {
+                match res.json::<serde_json::Value>().await {
+                    Ok(json) => {
+                        // 检查API返回是否成功
+                        if json["code"].as_i64().unwrap_or(-1) == 0 {
+                            // 在episodes数组中查找对应EP的CID
+                            if let Some(episodes) = json["result"]["episodes"].as_array() {
+                                for episode in episodes {
+                                    if let Some(episode_id) = episode["id"].as_i64() {
+                                        if episode_id.to_string() == ep_id {
+                                            if let Some(cid) = episode["cid"].as_i64() {
+                                                debug!("获取到番剧EP {} 的CID: {}", ep_id, cid);
+                                                return Some(cid);
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                            warn!("在episodes数组中未找到EP {} 的信息", ep_id);
+                        } else {
+                            warn!("获取番剧信息失败，API返回错误: {}", json["message"].as_str().unwrap_or("未知错误"));
+                        }
+                    }
+                    Err(e) => warn!("解析番剧信息JSON失败: {}", e),
+                }
+            } else {
+                warn!("获取番剧信息HTTP请求失败，状态码: {}", res.status());
+            }
+        }
+        Err(e) => warn!("发送番剧信息请求失败: {}", e),
+    }
+    
+    None
 }
 
 /// 获取特定视频源的视频数量
