@@ -3,6 +3,7 @@ use futures::TryStreamExt;
 use futures::stream::FuturesUnordered;
 use prost::Message;
 use reqwest::Method;
+use tracing::debug;
 
 use crate::bilibili::analyzer::PageAnalyzer;
 use crate::bilibili::client::BiliClient;
@@ -60,6 +61,11 @@ pub struct Dimension {
 impl<'a> Video<'a> {
     pub fn new(client: &'a BiliClient, bvid: String) -> Self {
         let aid = bvid_to_aid(&bvid).to_string();
+        Self { client, aid, bvid }
+    }
+
+    /// 创建一个使用特定 aid 的 Video 实例，用于番剧等特殊情况
+    pub fn new_with_aid(client: &'a BiliClient, bvid: String, aid: String) -> Self {
         Self { client, aid, bvid }
     }
 
@@ -122,6 +128,12 @@ impl<'a> Video<'a> {
     }
 
     async fn get_danmaku_segment(&self, page: &PageInfo, segment_idx: i64) -> Result<Vec<DanmakuElem>> {
+        // 添加调试日志
+        debug!(
+            "请求弹幕片段: type=1, oid={}, pid={}, segment_index={}", 
+            page.cid, self.aid, segment_idx
+        );
+        
         let mut res = self
             .client
             .request(Method::GET, "http://api.bilibili.com/x/v2/dm/web/seg.so")

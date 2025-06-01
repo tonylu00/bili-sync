@@ -1,0 +1,46 @@
+name: Build
+
+on: [push, pull_request]
+
+jobs:
+  build-linux:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v2
+      - name: Build Linux binary
+        run: |
+          cargo build --verbose --release --no-default-features --features quick_xml,rustls
+      - name: Upload Linux Artifact
+        uses: actions/upload-artifact@v2
+        with:
+          name: danmu2ass-linux
+          path: target/release/danmu2ass
+
+  build-windows:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v2
+      - name: Install mingw-w64
+        run: |
+          sudo apt install -y mingw-w64
+      - name: Add rust target
+        run: |
+          rustup target add x86_64-pc-windows-gnu
+      - name: Build Windows binary
+        run: |
+          cargo build --verbose --release --target x86_64-pc-windows-gnu
+      - name: build webui
+        run: |
+          cd webui
+          npm install
+          npm run build
+      - name: Prepare output 
+        run: |
+          mkdir danmu2ass
+          cp target/x86_64-pc-windows-gnu/release/danmu2ass.exe ./danmu2ass
+          cp -r webui/dist ./danmu2ass/static
+      - name: Upload Windows Artifact
+        uses: actions/upload-artifact@v2
+        with:
+          name: danmu2ass-windows
+          path: ./danmu2ass

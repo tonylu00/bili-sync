@@ -208,35 +208,32 @@ pub async fn fetch_video_details(
             // 番剧已经在添加视频源时获取了所有必要信息，
             // 不需要再次调用通用视频详情API，避免错误的分页信息
             debug!(
-                "处理番剧 {} - {} 的详情，获取CID和时长信息",
+                "跳过番剧 {} - {} 的详情获取，避免错误的多P识别",
                 &video_model.bvid, &video_model.name
             );
             
             // 为番剧创建一个默认的单页记录
             let txn = connection.begin().await?;
             
-            // 尝试从番剧API获取实际的CID和duration
-            let (actual_cid, actual_duration) = if let Some(ep_id) = &video_model.ep_id {
-                match get_bangumi_episode_info_from_api(bili_client, ep_id).await {
-                    Some((cid, duration)) => {
-                        debug!("获取到番剧 {} (EP{}) 的CID: {}, 时长: {}秒", &video_model.name, ep_id, cid, duration);
-                        (cid, duration)
-                    }
+            // 尝试从番剧API获取实际的CID
+            let actual_cid = if let Some(ep_id) = &video_model.ep_id {
+                match get_bangumi_cid_from_api(bili_client, ep_id).await {
+                    Some(cid) => cid,
                     None => {
-                        warn!("无法获取番剧 {} (EP{}) 的CID和时长，使用默认值", &video_model.name, ep_id);
-                        (0, 0)
+                        warn!("无法获取番剧 {} (EP{}) 的CID，使用默认值", &video_model.name, ep_id);
+                        0
                     }
                 }
             } else {
-                warn!("番剧 {} 缺少EP ID，使用默认CID和时长", &video_model.name);
-                (0, 0)
+                warn!("番剧 {} 缺少EP ID，使用默认CID", &video_model.name);
+                0
             };
             
             let page_info = PageInfo {
                 cid: actual_cid,
                 page: 1,
                 name: video_model.name.clone(),
-                duration: actual_duration,
+                duration: 0, // 将在后续处理中更新
                 first_frame: None,
                 dimension: None,
             };
@@ -244,19 +241,12 @@ pub async fn fetch_video_details(
             create_pages(vec![page_info], &video_model, &txn).await?;
             
             // 更新视频模型，标记为单页并设置已处理
-            let mut video_active_model: bili_sync_entity::video::ActiveModel = video_model.clone().into();
+            let mut video_active_model: bili_sync_entity::video::ActiveModel = video_model.into();
             video_source.set_relation_id(&mut video_active_model);
             video_active_model.single_page = Set(Some(true)); // 番剧的每一集都是单页
             video_active_model.tags = Set(Some(serde_json::Value::Array(vec![]))); // 空标签数组
             video_active_model.save(&txn).await?;
             txn.commit().await?;
-            
-            info!("成功处理番剧 {} (EP{})，CID: {}, 时长: {}秒", 
-                &video_model.name,
-                video_model.ep_id.as_ref().unwrap_or(&"".to_string()),
-                actual_cid,
-                actual_duration
-            );
             continue;
         }
         
@@ -689,31 +679,9 @@ pub async fn download_page(
         }),
         _ => None,
     };
-    
-    // 对于番剧，如果数据库中的 duration 为 0，需要从 API 重新获取
-    let actual_duration = if is_bangumi && page_model.duration == 0 {
-        if let Some(ep_id) = &video_model.ep_id {
-            match get_bangumi_episode_info_from_api(bili_client, ep_id).await {
-                Some((_, duration)) => {
-                    debug!("从API获取到番剧 {} (EP{}) 的实际时长: {}秒", &video_model.name, ep_id, duration);
-                    duration
-                }
-                None => {
-                    warn!("无法从API获取番剧 {} (EP{}) 的时长，使用数据库值", &video_model.name, ep_id);
-                    page_model.duration
-                }
-            }
-        } else {
-            warn!("番剧 {} 缺少EP ID，使用数据库中的时长", &video_model.name);
-            page_model.duration
-        }
-    } else {
-        page_model.duration
-    };
-    
     let page_info = PageInfo {
         cid: page_model.cid,
-        duration: actual_duration,
+        duration: page_model.duration,
         dimension,
         ..Default::default()
     };
@@ -1055,7 +1023,16 @@ pub async fn fetch_page_danmaku(
     if !should_run {
         return Ok(ExecutionStatus::Skipped);
     }
-    let bili_video = Video::new(bili_client, video_model.bvid.clone());
+    
+    // 检查是否为番剧，如果是番剧则使用其自身的 aid
+    let bili_video = if video_model.source_type == Some(1) && video_model.aid.is_some() {
+        // 番剧：使用番剧API提供的 aid
+        Video::new_with_aid(bili_client, video_model.bvid.clone(), video_model.aid.clone().unwrap())
+    } else {
+        // 普通视频：使用 bvid 转换的 aid
+        Video::new(bili_client, video_model.bvid.clone())
+    };
+    
     bili_video
         .get_danmaku_writer(page_info)
         .await?
@@ -1207,13 +1184,13 @@ async fn get_season_title_from_api(bili_client: &BiliClient, season_id: &str) ->
             }
         }
         Err(e) => warn!("发送季度信息请求失败: {}", e),
-    }
+            }
 
-    None
-}
+            None
+        }
 
-/// 从番剧API获取指定EP的CID和duration
-async fn get_bangumi_episode_info_from_api(bili_client: &BiliClient, ep_id: &str) -> Option<(i64, u32)> {
+/// 从番剧API获取指定EP的CID
+async fn get_bangumi_cid_from_api(bili_client: &BiliClient, ep_id: &str) -> Option<i64> {
     let url = format!("https://api.bilibili.com/pgc/view/web/season?ep_id={}", ep_id);
     
     match bili_client.get(&url).await {
@@ -1223,17 +1200,15 @@ async fn get_bangumi_episode_info_from_api(bili_client: &BiliClient, ep_id: &str
                     Ok(json) => {
                         // 检查API返回是否成功
                         if json["code"].as_i64().unwrap_or(-1) == 0 {
-                            // 在episodes数组中查找对应EP的信息
+                            // 在episodes数组中查找对应EP的CID
                             if let Some(episodes) = json["result"]["episodes"].as_array() {
                                 for episode in episodes {
                                     if let Some(episode_id) = episode["id"].as_i64() {
                                         if episode_id.to_string() == ep_id {
-                                            let cid = episode["cid"].as_i64()?;
-                                            // duration字段是毫秒，需要转换为秒
-                                            let duration_ms = episode["duration"].as_i64().unwrap_or(0);
-                                            let duration_sec = (duration_ms / 1000) as u32;
-                                            debug!("获取到番剧EP {} 的CID: {}, 时长: {}秒", ep_id, cid, duration_sec);
-                                            return Some((cid, duration_sec));
+                                            if let Some(cid) = episode["cid"].as_i64() {
+                                                debug!("获取到番剧EP {} 的CID: {}", ep_id, cid);
+                                                return Some(cid);
+                                            }
                                         }
                                     }
                                 }
@@ -1247,18 +1222,12 @@ async fn get_bangumi_episode_info_from_api(bili_client: &BiliClient, ep_id: &str
                 }
             } else {
                 warn!("获取番剧信息HTTP请求失败，状态码: {}", res.status());
-            }
         }
+    }
         Err(e) => warn!("发送番剧信息请求失败: {}", e),
     }
     
     None
-}
-
-/// 从番剧API获取指定EP的CID
-async fn get_bangumi_cid_from_api(bili_client: &BiliClient, ep_id: &str) -> Option<i64> {
-    // 调用新函数并只返回CID部分
-    get_bangumi_episode_info_from_api(bili_client, ep_id).await.map(|(cid, _)| cid)
 }
 
 /// 获取特定视频源的视频数量
