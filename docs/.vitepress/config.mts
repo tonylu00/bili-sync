@@ -75,6 +75,7 @@ export default defineConfig({
 			{
 				text: "更新日志",
 				items: [
+					{ text: "v2.6.2 (2025年6月)", link: "/update-log-2025-06" },
 					{ text: "2024年6月更新", link: "/update-log-2024-06" },
 				],
 			},
