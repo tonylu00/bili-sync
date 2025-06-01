@@ -26,6 +26,7 @@ pub struct BangumiEpisode {
     #[allow(dead_code)]
     pub long_title: String, // 集副标题
     pub pub_time: i64, // 发布时间戳
+    #[allow(dead_code)]
     pub duration: i64, // 视频时长（毫秒）
     pub show_title: String, // 显示标题
 }
@@ -219,7 +220,6 @@ impl Bangumi {
                     show_title: Some(episode.show_title.clone()),
                     season_number,
                     episode_number,
-                    duration: episode.duration,
                 }
             }
         })
@@ -287,7 +287,6 @@ impl Bangumi {
                         show_title: Some(episode.show_title.clone()),
                         season_number,
                         episode_number,
-                        duration: episode.duration,
                     }
                 }
             }
@@ -369,7 +368,6 @@ impl Bangumi {
                         show_title: Some(episode.show_title.clone()),
                         season_number,
                         episode_number,
-                        duration: episode.duration,
                     }
                 }
             }
