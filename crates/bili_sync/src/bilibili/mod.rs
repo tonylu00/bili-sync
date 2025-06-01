@@ -154,5 +154,7 @@ pub enum VideoInfo {
         season_number: Option<i32>,
         /// 集数，直接从API的title字段获取
         episode_number: Option<i32>,
+        /// 视频时长（毫秒）
+        duration: i64,
     },
 }

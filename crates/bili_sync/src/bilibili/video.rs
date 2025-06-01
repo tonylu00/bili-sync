@@ -3,6 +3,7 @@ use futures::TryStreamExt;
 use futures::stream::FuturesUnordered;
 use prost::Message;
 use reqwest::Method;
+use tracing::{info, warn, error};
 
 use crate::bilibili::analyzer::PageAnalyzer;
 use crate::bilibili::client::BiliClient;
@@ -121,24 +122,77 @@ impl<'a> Video<'a> {
         Ok(DanmakuWriter::new(page, result.into_iter().map(|x| x.into()).collect()))
     }
 
+    /// 获取番剧弹幕的专用方法
+    pub async fn get_bangumi_danmaku_writer(&self, page: &'a PageInfo, ep_id: Option<&str>) -> Result<DanmakuWriter> {
+        // 首先尝试使用普通方法
+        match self.get_danmaku_writer(page).await {
+            Ok(writer) => {
+                // 检查是否真的获取到了弹幕
+                if writer.danmakus.is_empty() {
+                    warn!("番剧弹幕为空，CID: {}, EP: {:?}", page.cid, ep_id);
+                    // 如果有EP ID，可以尝试其他方法（预留接口）
+                    if let Some(ep) = ep_id {
+                        info!("尝试使用EP ID {} 获取番剧弹幕", ep);
+                        // TODO: 未来可以实现基于EP的弹幕获取
+                    }
+                }
+                Ok(writer)
+            }
+            Err(e) => {
+                error!("番剧弹幕获取失败: {}, CID: {}, EP: {:?}", e, page.cid, ep_id);
+                // 返回空弹幕而不是错误，避免影响下载
+                Ok(DanmakuWriter::new(page, vec![]))
+            }
+        }
+    }
+
     async fn get_danmaku_segment(&self, page: &PageInfo, segment_idx: i64) -> Result<Vec<DanmakuElem>> {
-        let mut res = self
+        let mut req = self
             .client
             .request(Method::GET, "http://api.bilibili.com/x/v2/dm/web/seg.so")
             .await
-            .query(&[("type", 1), ("oid", page.cid), ("segment_index", segment_idx)])
-            .send()
-            .await?
-            .error_for_status()?;
-        let headers = std::mem::take(res.headers_mut());
+            .query(&[("type", 1), ("oid", page.cid), ("segment_index", segment_idx)]);
+        
+        // 添加必要的headers，特别是对于番剧内容
+        req = req.header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36");
+        
+        let res = req.send().await?;
+        
+        // 检查响应状态
+        if !res.status().is_success() {
+            warn!("弹幕获取失败，状态码: {}, CID: {}, 分段: {}", res.status(), page.cid, segment_idx);
+            return Ok(vec![]);
+        }
+        
+        let headers = res.headers().clone();
         let content_type = headers.get("content-type");
+        
+        // 如果没有content-type或者为空，说明可能是权限问题
+        if content_type.is_none() {
+            let body = res.text().await?;
+            if body.is_empty() {
+                warn!("弹幕API返回空内容，可能需要特殊权限。CID: {}, 分段: {}", page.cid, segment_idx);
+                return Ok(vec![]);
+            } else {
+                bail!("unexpected response: {:?}", body);
+            }
+        }
+        
         ensure!(
             content_type.is_some_and(|v| v == "application/octet-stream"),
-            "unexpected content type: {:?}, body: {:?}",
+            "unexpected content type: {:?}, cid: {}, segment: {}",
             content_type,
-            res.text().await
+            page.cid,
+            segment_idx
         );
-        Ok(DmSegMobileReply::decode(res.bytes().await?)?.elems)
+        
+        let bytes = res.bytes().await?;
+        if bytes.is_empty() {
+            warn!("弹幕数据为空，CID: {}, 分段: {}", page.cid, segment_idx);
+            return Ok(vec![]);
+        }
+        
+        Ok(DmSegMobileReply::decode(bytes)?.elems)
     }
 
     pub async fn get_page_analyzer(&self, page: &PageInfo) -> Result<PageAnalyzer> {

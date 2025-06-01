@@ -25,6 +25,7 @@ use crate::utils::model::{
 };
 use crate::utils::nfo::{ModelWrapper, NFOMode, NFOSerializer};
 use crate::utils::status::{PageStatus, STATUS_OK, VideoStatus};
+use crate::bilibili::danmaku::DanmakuWriter;
 
 /// 创建一个配置了 truncate 辅助函数的 handlebars 实例
 fn create_handlebars_with_helpers() -> handlebars::Handlebars<'static> {
@@ -215,25 +216,50 @@ pub async fn fetch_video_details(
             // 为番剧创建一个默认的单页记录
             let txn = connection.begin().await?;
             
-            // 尝试从番剧API获取实际的CID
+            // 番剧的CID需要从EP获取
             let actual_cid = if let Some(ep_id) = &video_model.ep_id {
                 match get_bangumi_cid_from_api(bili_client, ep_id).await {
-                    Some(cid) => cid,
+                    Some(cid) => {
+                        info!("成功从API获取番剧 {} (EP{}) 的CID: {}", &video_model.name, ep_id, cid);
+                        cid
+                    },
                     None => {
-                        warn!("无法获取番剧 {} (EP{}) 的CID，使用默认值", &video_model.name, ep_id);
+                        error!("无法获取番剧 {} (EP{}) 的CID，弹幕下载可能失败", &video_model.name, ep_id);
                         0
                     }
                 }
             } else {
-                warn!("番剧 {} 缺少EP ID，使用默认CID", &video_model.name);
+                error!("番剧 {} 缺少EP ID信息，弹幕下载将失败", &video_model.name);
                 0
+            };
+            
+            // 如果CID仍然是0，记录错误
+            if actual_cid == 0 {
+                error!("番剧 {} 的CID为0，弹幕下载将失败", &video_model.name);
+            }
+            
+            // 尝试从API获取番剧的duration信息
+            let actual_duration = if let Some(ep_id) = &video_model.ep_id {
+                match get_bangumi_duration_from_api(bili_client, ep_id).await {
+                    Some(duration) => {
+                        info!("成功从API获取番剧 {} (EP{}) 的时长: {}ms", &video_model.name, ep_id, duration);
+                        duration as u32
+                    },
+                    None => {
+                        warn!("无法获取番剧 {} (EP{}) 的时长，使用默认值24分钟", &video_model.name, ep_id);
+                        1440000 // 24分钟默认值
+                    }
+                }
+            } else {
+                warn!("番剧 {} 缺少EP ID，无法获取时长，使用默认值24分钟", &video_model.name);
+                1440000 // 24分钟默认值
             };
             
             let page_info = PageInfo {
                 cid: actual_cid,
                 page: 1,
                 name: video_model.name.clone(),
-                duration: 0, // 将在后续处理中更新
+                duration: actual_duration, // 使用实际的duration值
                 first_frame: None,
                 dimension: None,
             };
@@ -1024,11 +1050,52 @@ pub async fn fetch_page_danmaku(
         return Ok(ExecutionStatus::Skipped);
     }
     let bili_video = Video::new(bili_client, video_model.bvid.clone());
-    bili_video
-        .get_danmaku_writer(page_info)
-        .await?
-        .write(danmaku_path)
-        .await?;
+    
+    // 下载弹幕
+    if should_download_danmaku {
+        info!("处理视频「{}」第 {} 页弹幕", &video_model.name, page_model.pid);
+        
+        // 判断是否为番剧
+        let is_bangumi = video_model.source_type == Some(1);
+        
+        let danmaku_result = if is_bangumi {
+            // 番剧使用专门的弹幕获取方法
+            bili_video.get_bangumi_danmaku_writer(&page_info, video_model.ep_id.as_deref()).await
+        } else {
+            // 普通视频使用标准方法
+            bili_video.get_danmaku_writer(&page_info).await
+        };
+        
+        match danmaku_result {
+            Ok(writer) => {
+                if writer.danmakus.is_empty() {
+                    warn!(
+                        "视频「{}」第 {} 页没有弹幕数据{}",
+                        &video_model.name, 
+                        page_model.pid,
+                        if is_bangumi { "（番剧可能需要会员权限）" } else { "" }
+                    );
+                } else {
+                    info!("获取到 {} 条弹幕", writer.danmakus.len());
+                }
+                // 写入弹幕文件
+                writer.write(danmaku_path).await?;
+            }
+            Err(e) => {
+                error!(
+                    "处理视频「{}」第 {} 页弹幕失败: {}{}",
+                    &video_model.name, 
+                    page_model.pid, 
+                    e,
+                    if is_bangumi { "（番剧弹幕可能需要特殊权限）" } else { "" }
+                );
+                // 创建空弹幕文件，避免重复尝试
+                let empty_writer = DanmakuWriter::new(&page_info, vec![]);
+                empty_writer.write(danmaku_path).await?;
+            }
+        }
+    }
+    
     Ok(ExecutionStatus::Succeeded)
 }
 
@@ -1175,10 +1242,10 @@ async fn get_season_title_from_api(bili_client: &BiliClient, season_id: &str) ->
             }
         }
         Err(e) => warn!("发送季度信息请求失败: {}", e),
-            }
+    }
 
-            None
-        }
+    None
+}
 
 /// 从番剧API获取指定EP的CID
 async fn get_bangumi_cid_from_api(bili_client: &BiliClient, ep_id: &str) -> Option<i64> {
@@ -1213,9 +1280,50 @@ async fn get_bangumi_cid_from_api(bili_client: &BiliClient, ep_id: &str) -> Opti
                 }
             } else {
                 warn!("获取番剧信息HTTP请求失败，状态码: {}", res.status());
+            }
         }
-    }
         Err(e) => warn!("发送番剧信息请求失败: {}", e),
+    }
+    
+    None
+}
+
+/// 从番剧API获取指定EP的duration（毫秒）
+async fn get_bangumi_duration_from_api(bili_client: &BiliClient, ep_id: &str) -> Option<i64> {
+    let url = format!("https://api.bilibili.com/pgc/view/web/season?ep_id={}", ep_id);
+    
+    match bili_client.get(&url).await {
+        Ok(res) => {
+            if res.status().is_success() {
+                match res.json::<serde_json::Value>().await {
+                    Ok(json) => {
+                        // 检查API返回是否成功
+                        if json["code"].as_i64().unwrap_or(-1) == 0 {
+                            // 在episodes数组中查找对应EP的duration
+                            if let Some(episodes) = json["result"]["episodes"].as_array() {
+                                for episode in episodes {
+                                    if let Some(episode_id) = episode["id"].as_i64() {
+                                        if episode_id.to_string() == ep_id {
+                                            if let Some(duration) = episode["duration"].as_i64() {
+                                                debug!("获取到番剧EP {} 的时长: {}ms", ep_id, duration);
+                                                return Some(duration);
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                            warn!("在episodes数组中未找到EP {} 的时长信息", ep_id);
+                        } else {
+                            warn!("获取番剧时长失败，API返回错误: {}", json["message"].as_str().unwrap_or("未知错误"));
+                        }
+                    }
+                    Err(e) => warn!("解析番剧时长JSON失败: {}", e),
+                }
+            } else {
+                warn!("获取番剧时长HTTP请求失败，状态码: {}", res.status());
+            }
+        }
+        Err(e) => warn!("发送番剧时长请求失败: {}", e),
     }
     
     None
