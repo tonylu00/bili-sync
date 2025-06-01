@@ -3,7 +3,7 @@ use futures::TryStreamExt;
 use futures::stream::FuturesUnordered;
 use prost::Message;
 use reqwest::Method;
-use tracing::{info, warn, error};
+use tracing::{warn, error, debug};
 
 use crate::bilibili::analyzer::PageAnalyzer;
 use crate::bilibili::client::BiliClient;
@@ -128,7 +128,7 @@ impl<'a> Video<'a> {
         match self.get_danmaku_writer(page).await {
             Ok(writer) => {
                 // 成功获取弹幕
-                info!("成功获取番剧弹幕，CID: {}, EP: {:?}", page.cid, ep_id);
+                debug!("成功获取番剧弹幕，CID: {}, EP: {:?}", page.cid, ep_id);
                 Ok(writer)
             }
             Err(e) => {
@@ -154,10 +154,20 @@ impl<'a> Video<'a> {
         // 添加必要的headers，特别是对于番剧内容
         req = req.header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36");
         
+        // 添加防缓存头部，防止返回304 Not Modified
+        req = req
+            .header("Cache-Control", "no-cache, no-store, must-revalidate")
+            .header("Pragma", "no-cache");
+        
         let res = req.send().await?;
         
         // 检查响应状态
         if !res.status().is_success() {
+            // 对于304状态码，给出更具体的提示
+            if res.status() == 304 {
+                debug!("弹幕API返回304 Not Modified，CID: {}, 分段: {}", page.cid, segment_idx);
+                return Ok(vec![]);
+            }
             warn!("弹幕获取失败，状态码: {}, CID: {}, 分段: {}", res.status(), page.cid, segment_idx);
             return Ok(vec![]);
         }

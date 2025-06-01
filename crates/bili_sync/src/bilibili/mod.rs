@@ -155,6 +155,7 @@ pub enum VideoInfo {
         /// 集数，直接从API的title字段获取
         episode_number: Option<i32>,
         /// 视频时长（毫秒）
+        #[allow(dead_code)]
         duration: i64,
     },
 }

@@ -219,7 +219,7 @@ pub async fn fetch_video_details(
             let actual_cid = if let Some(ep_id) = &video_model.ep_id {
                 match get_bangumi_cid_from_api(bili_client, ep_id).await {
                     Some(cid) => {
-                        info!("成功从API获取番剧 {} (EP{}) 的CID: {}", &video_model.name, ep_id, cid);
+                        debug!("成功从API获取番剧 {} (EP{}) 的CID: {}", &video_model.name, ep_id, cid);
                         cid
                     },
                     None => {
@@ -241,7 +241,7 @@ pub async fn fetch_video_details(
             let actual_duration = if let Some(ep_id) = &video_model.ep_id {
                 match get_bangumi_duration_from_api(bili_client, ep_id).await {
                     Some(duration) => {
-                        info!("成功从API获取番剧 {} (EP{}) 的时长: {}ms", &video_model.name, ep_id, duration);
+                        debug!("成功从API获取番剧 {} (EP{}) 的时长: {}ms", &video_model.name, ep_id, duration);
                         duration as u32
                     },
                     None => {
@@ -1053,7 +1053,7 @@ pub async fn fetch_page_danmaku(
     // 判断是否为番剧
     let is_bangumi = video_model.source_type == Some(1);
     
-    info!("处理视频「{}」弹幕", &video_model.name);
+    debug!("处理视频「{}」弹幕", &video_model.name);
     
     let result = if is_bangumi {
         // 番剧使用专门的弹幕获取方法
