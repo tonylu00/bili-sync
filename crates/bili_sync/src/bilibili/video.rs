@@ -126,7 +126,12 @@ impl<'a> Video<'a> {
             .client
             .request(Method::GET, "http://api.bilibili.com/x/v2/dm/web/seg.so")
             .await
-            .query(&[("type", 1), ("oid", page.cid), ("segment_index", segment_idx)])
+            .query(&[
+                ("type", "1"),
+                ("oid", &page.cid.to_string()),
+                ("pid", &self.aid),
+                ("segment_index", &segment_idx.to_string())
+            ])
             .send()
             .await?
             .error_for_status()?;
