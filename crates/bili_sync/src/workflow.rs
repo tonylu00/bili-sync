@@ -25,7 +25,6 @@ use crate::utils::model::{
 };
 use crate::utils::nfo::{ModelWrapper, NFOMode, NFOSerializer};
 use crate::utils::status::{PageStatus, STATUS_OK, VideoStatus};
-use crate::bilibili::danmaku::DanmakuWriter;
 
 /// 创建一个配置了 truncate 辅助函数的 handlebars 实例
 fn create_handlebars_with_helpers() -> handlebars::Handlebars<'static> {
@@ -1051,51 +1050,41 @@ pub async fn fetch_page_danmaku(
     }
     let bili_video = Video::new(bili_client, video_model.bvid.clone());
     
-    // 下载弹幕
-    if should_download_danmaku {
-        info!("处理视频「{}」第 {} 页弹幕", &video_model.name, page_model.pid);
-        
-        // 判断是否为番剧
-        let is_bangumi = video_model.source_type == Some(1);
-        
-        let danmaku_result = if is_bangumi {
-            // 番剧使用专门的弹幕获取方法
-            bili_video.get_bangumi_danmaku_writer(&page_info, video_model.ep_id.as_deref()).await
-        } else {
-            // 普通视频使用标准方法
-            bili_video.get_danmaku_writer(&page_info).await
-        };
-        
-        match danmaku_result {
-            Ok(writer) => {
-                if writer.danmakus.is_empty() {
-                    warn!(
-                        "视频「{}」第 {} 页没有弹幕数据{}",
-                        &video_model.name, 
-                        page_model.pid,
-                        if is_bangumi { "（番剧可能需要会员权限）" } else { "" }
-                    );
-                } else {
-                    info!("获取到 {} 条弹幕", writer.danmakus.len());
-                }
-                // 写入弹幕文件
-                writer.write(danmaku_path).await?;
-            }
+    // 判断是否为番剧
+    let is_bangumi = video_model.source_type == Some(1);
+    
+    info!("处理视频「{}」弹幕", &video_model.name);
+    
+    let result = if is_bangumi {
+        // 番剧使用专门的弹幕获取方法
+        match bili_video.get_bangumi_danmaku_writer(&page_info, video_model.ep_id.as_deref()).await {
+            Ok(writer) => writer.write(danmaku_path).await,
             Err(e) => {
                 error!(
-                    "处理视频「{}」第 {} 页弹幕失败: {}{}",
+                    "处理视频「{}」弹幕失败: {}（番剧弹幕可能需要特殊权限）",
                     &video_model.name, 
-                    page_model.pid, 
-                    e,
-                    if is_bangumi { "（番剧弹幕可能需要特殊权限）" } else { "" }
+                    e
                 );
-                // 创建空弹幕文件，避免重复尝试
-                let empty_writer = DanmakuWriter::new(&page_info, vec![]);
-                empty_writer.write(danmaku_path).await?;
+                // 对于番剧，如果获取失败，创建一个空文件避免重复尝试
+                if let Some(parent) = danmaku_path.parent() {
+                    tokio::fs::create_dir_all(parent).await?;
+                }
+                tokio::fs::write(&danmaku_path, "").await?;
+                Ok(())
             }
         }
-    }
+    } else {
+        // 普通视频使用标准方法
+        match bili_video.get_danmaku_writer(&page_info).await {
+            Ok(writer) => writer.write(danmaku_path).await,
+            Err(e) => {
+                error!("处理视频「{}」弹幕失败: {}", &video_model.name, e);
+                return Err(e);
+            }
+        }
+    };
     
+    result?;
     Ok(ExecutionStatus::Succeeded)
 }
 

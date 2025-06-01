@@ -1,4 +1,4 @@
-use anyhow::{Result, ensure};
+use anyhow::{Result, ensure, bail};
 use futures::TryStreamExt;
 use futures::stream::FuturesUnordered;
 use prost::Message;
@@ -127,19 +127,17 @@ impl<'a> Video<'a> {
         // 首先尝试使用普通方法
         match self.get_danmaku_writer(page).await {
             Ok(writer) => {
-                // 检查是否真的获取到了弹幕
-                if writer.danmakus.is_empty() {
-                    warn!("番剧弹幕为空，CID: {}, EP: {:?}", page.cid, ep_id);
-                    // 如果有EP ID，可以尝试其他方法（预留接口）
-                    if let Some(ep) = ep_id {
-                        info!("尝试使用EP ID {} 获取番剧弹幕", ep);
-                        // TODO: 未来可以实现基于EP的弹幕获取
-                    }
-                }
+                // 成功获取弹幕
+                info!("成功获取番剧弹幕，CID: {}, EP: {:?}", page.cid, ep_id);
                 Ok(writer)
             }
             Err(e) => {
-                error!("番剧弹幕获取失败: {}, CID: {}, EP: {:?}", e, page.cid, ep_id);
+                // 如果是权限错误，记录特殊信息
+                if e.to_string().contains("empty") || e.to_string().contains("权限") {
+                    warn!("番剧弹幕获取失败（可能需要会员权限）: {}, CID: {}, EP: {:?}", e, page.cid, ep_id);
+                } else {
+                    error!("番剧弹幕获取失败: {}, CID: {}, EP: {:?}", e, page.cid, ep_id);
+                }
                 // 返回空弹幕而不是错误，避免影响下载
                 Ok(DanmakuWriter::new(page, vec![]))
             }
