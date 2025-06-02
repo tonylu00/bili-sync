@@ -89,3 +89,11 @@ Dockerfile - 副本
 # Downloaded artifacts (for testing)
 *.tar.gz.zip
 *_2.zip
+
+# Root directory build outputs
+/_app/
+/index.html
+/add-source.html
+/settings.html
+/favicon.png
+/*.html
