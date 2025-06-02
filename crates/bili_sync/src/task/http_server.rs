@@ -63,11 +63,25 @@ async fn frontend_files(uri: Uri) -> impl IntoResponse {
     if path.is_empty() {
         path = "index.html";
     }
+    
     match Asset::get(path) {
         Some(content) => {
             let mime = mime_guess::from_path(path).first_or_octet_stream();
             ([(header::CONTENT_TYPE, mime.as_ref())], content.data).into_response()
         }
+        None => {
+            // 对于SPA路由，如果请求的路径不是文件（没有扩展名），则返回index.html
+            if !path.contains('.') {
+                match Asset::get("index.html") {
+                    Some(content) => {
+                        let mime = mime_guess::from_path("index.html").first_or_octet_stream();
+            ([(header::CONTENT_TYPE, mime.as_ref())], content.data).into_response()
+        }
         None => (StatusCode::NOT_FOUND, "404 Not Found").into_response(),
+                }
+            } else {
+                (StatusCode::NOT_FOUND, "404 Not Found").into_response()
+            }
+        }
     }
 }

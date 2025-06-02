@@ -1,247 +1,314 @@
-import type { VideoResponse, VideoInfo, VideosResponse, VideoSourcesResponse, ResetVideoResponse, AddVideoSourceResponse, DeleteVideoSourceResponse, UserFavoriteFolder } from './types';
+import type {
+	ApiResponse,
+	VideoSourcesResponse,
+	VideosRequest,
+	VideosResponse,
+	VideoResponse,
+	ResetVideoResponse,
+	ApiError,
+	AddVideoSourceRequest,
+	AddVideoSourceResponse,
+	DeleteVideoSourceResponse,
+	ConfigResponse,
+	UpdateConfigRequest,
+	UpdateConfigResponse,
+	SearchRequest,
+	SearchResponse,
+	UserFavoriteFolder,
+	UserCollectionsResponse
+} from './types';
 
-const BASE_URL = '/api';
+// API 基础配置
+const API_BASE_URL = '/api';
 
-export class ApiError extends Error {
-    constructor(message: string) {
-        super(message);
-        this.name = 'ApiError';
-    }
-}
+// HTTP 客户端类
+class ApiClient {
+	private baseURL: string;
+	private defaultHeaders: Record<string, string>;
 
-async function fetchWithAuth(url: string, options: RequestInit = {}) {
-    try {
-    const token = localStorage.getItem('auth_token');
-    const headers = {
-        ...options.headers,
-        'Authorization': token || ''
-    };
+	constructor(baseURL: string = API_BASE_URL) {
+		this.baseURL = baseURL;
+		this.defaultHeaders = {
+			'Content-Type': 'application/json'
+		};
+		const token = localStorage.getItem('auth_token');
+		if (token) {
+			this.defaultHeaders['Authorization'] = token;
+		}
+	}
 
-        console.log(`请求: ${url}`, options.method || 'GET');
+	// 设置认证 token
+	setAuthToken(token?: string) {
+		if (token) {
+			this.defaultHeaders['Authorization'] = token;
+			localStorage.setItem('auth_token', token);
+		} else {
+			delete this.defaultHeaders['Authorization'];
+			localStorage.removeItem('auth_token');
+		}
+	}
 
-    const response = await fetch(url, { ...options, headers });
+	// 通用请求方法
+	private async request<T>(endpoint: string, options: RequestInit = {}): Promise<ApiResponse<T>> {
+		const url = `${this.baseURL}${endpoint}`;
+
+		const config: RequestInit = {
+			headers: {
+				...this.defaultHeaders,
+				...options.headers
+			},
+			...options
+		};
+
+		try {
+			const response = await fetch(url, config);
+
     if (!response.ok) {
-            const errorText = await response.text();
-            console.error(`API请求失败: ${response.status} ${response.statusText}`, errorText);
-            throw new ApiError(`API请求失败: ${response.status} ${response.statusText}, 响应: ${errorText}`);
+				throw new Error(`HTTP error! status: ${response.status}`);
     }
         
-        const responseData = await response.json();
-        if (!responseData.data) {
-            console.warn(`API响应缺少data字段:`, responseData);
-        }
-        
-        return responseData.data;
+			const data: ApiResponse<T> = await response.json();
+			return data;
     } catch (error) {
-        console.error(`请求 ${url} 时出错:`, error);
-        throw error;
-    }
+			const apiError: ApiError = {
+				message: error instanceof Error ? error.message : 'Unknown error occurred',
+				status: error instanceof TypeError ? undefined : (error as { status?: number }).status
+			};
+			throw apiError;
 }
+	}
 
-export async function getVideoSources(): Promise<VideoSourcesResponse> {
-    return fetchWithAuth(`${BASE_URL}/video-sources`);
-}
+	// GET 请求
+	private async get<T>(
+		endpoint: string,
+		params?: VideosRequest | Record<string, unknown>
+	): Promise<ApiResponse<T>> {
+		let queryString = '';
 
-export async function listVideos(params: {
-    collection?: string;
-    favorite?: string;
-    submission?: string;
-    watch_later?: string;
-    bangumi?: string;
-    query?: string;
-    page?: number;
-    page_size?: number;
-}): Promise<VideosResponse> {
+		if (params) {
     const searchParams = new URLSearchParams();
     Object.entries(params).forEach(([key, value]) => {
-        if (value !== undefined) {
-            searchParams.append(key, value.toString());
+				if (value !== undefined && value !== null) {
+					searchParams.append(key, String(value));
         }
     });
-    return fetchWithAuth(`${BASE_URL}/videos?${searchParams.toString()}`);
+			queryString = searchParams.toString();
 }
 
-
-export async function getVideo(id: number): Promise<VideoResponse> {
-    return fetchWithAuth(`${BASE_URL}/videos/${id}`);
+		const finalEndpoint = queryString ? `${endpoint}?${queryString}` : endpoint;
+		return this.request<T>(finalEndpoint, {
+			method: 'GET'
+		});
 }
 
-export async function resetVideo(id: number, force: boolean = false): Promise<ResetVideoResponse> {
-    const url = force ? `${BASE_URL}/videos/${id}/reset?force=true` : `${BASE_URL}/videos/${id}/reset`;
-    return fetchWithAuth(url, { method: 'POST' });
-}
+	// POST 请求
+	private async post<T>(endpoint: string, data?: unknown): Promise<ApiResponse<T>> {
+		return this.request<T>(endpoint, {
+			method: 'POST',
+			body: data ? JSON.stringify(data) : undefined
+		});
+	}
 
-// 添加新的视频源
-export async function addVideoSource(params: {
-    source_type: string;
-    source_id: string;
-    up_id?: string;
-    name: string;
-    path: string;
-    collection_type?: string;
-    media_id?: string;
-    ep_id?: string;
-    download_all_seasons?: boolean;
-    selected_seasons?: string[];
-}): Promise<AddVideoSourceResponse> {
-    return fetchWithAuth(`${BASE_URL}/video-sources`, {
-        method: 'POST',
-        headers: {
-            'Content-Type': 'application/json'
-        },
-        body: JSON.stringify(params)
+	// PUT 请求
+	private async put<T>(endpoint: string, data?: unknown): Promise<ApiResponse<T>> {
+		return this.request<T>(endpoint, {
+			method: 'PUT',
+			body: data ? JSON.stringify(data) : undefined
     });
 }
 
-// 删除视频源
-export async function deleteVideoSource(source_type: string, id: number, delete_local_files: boolean = false): Promise<DeleteVideoSourceResponse> {
-    return fetchWithAuth(`${BASE_URL}/video-sources/${source_type}/${id}?delete_local_files=${delete_local_files}`, {
+	// DELETE 请求
+	private async delete<T>(endpoint: string, params?: Record<string, string>): Promise<ApiResponse<T>> {
+		let queryString = '';
+		if (params) {
+			const searchParams = new URLSearchParams(params);
+			queryString = searchParams.toString();
+		}
+		const finalEndpoint = queryString ? `${endpoint}?${queryString}` : endpoint;
+		return this.request<T>(finalEndpoint, {
         method: 'DELETE'
     });
 }
 
-// 获取配置
-export async function getConfig(): Promise<{
-    video_name: string;
-    page_name: string;
-    multi_page_name?: string;
-    bangumi_name?: string;
-    folder_structure: string;
-    time_format: string;
-    interval: number;
-    nfo_time_type: string;
-    parallel_download_enabled: boolean;
-    parallel_download_threads: number;
-    parallel_download_min_size: number;
-}> {
-    return fetchWithAuth(`${BASE_URL}/config`, {
-        method: 'GET'
+	// API 方法
+
+	/**
+	 * 获取所有视频来源
+	 */
+	async getVideoSources(): Promise<ApiResponse<VideoSourcesResponse>> {
+		return this.get<VideoSourcesResponse>('/video-sources');
+	}
+
+	/**
+	 * 获取视频列表
+	 * @param params 查询参数
+	 */
+	async getVideos(params?: VideosRequest): Promise<ApiResponse<VideosResponse>> {
+		return this.get<VideosResponse>('/videos', params);
+	}
+
+	/**
+	 * 获取单个视频详情
+	 * @param id 视频 ID
+	 */
+	async getVideo(id: number): Promise<ApiResponse<VideoResponse>> {
+		return this.get<VideoResponse>(`/videos/${id}`);
+}
+
+	/**
+	 * 重置视频下载状态
+	 * @param id 视频 ID
+	 * @param force 是否强制重置
+	 */
+	async resetVideo(id: number, force: boolean = false): Promise<ApiResponse<ResetVideoResponse>> {
+		const endpoint = force ? `/videos/${id}/reset?force=true` : `/videos/${id}/reset`;
+		return this.post<ResetVideoResponse>(endpoint);
+	}
+
+	/**
+	 * 添加视频源
+	 * @param params 视频源参数
+	 */
+	async addVideoSource(params: AddVideoSourceRequest): Promise<ApiResponse<AddVideoSourceResponse>> {
+		return this.post<AddVideoSourceResponse>('/video-sources', params);
+	}
+
+	/**
+	 * 删除视频源
+	 * @param sourceType 视频源类型
+	 * @param id 视频源ID
+	 * @param deleteLocalFiles 是否删除本地文件
+	 */
+	async deleteVideoSource(sourceType: string, id: number, deleteLocalFiles: boolean = false): Promise<ApiResponse<DeleteVideoSourceResponse>> {
+		return this.delete<DeleteVideoSourceResponse>(`/video-sources/${sourceType}/${id}`, { 
+			delete_local_files: deleteLocalFiles.toString() 
     });
 }
 
-// 更新配置
-export async function updateConfig(params: {
-    video_name?: string;
-    page_name?: string;
-    multi_page_name?: string;
-    bangumi_name?: string;
-    folder_structure?: string;
-    time_format?: string;
-    interval?: number;
-    nfo_time_type?: string;
-    parallel_download_enabled?: boolean;
-    parallel_download_threads?: number;
-    parallel_download_min_size?: number;
-}): Promise<{
-    success: boolean;
-    message: string;
-    updated_files?: number;
-}> {
-    return fetchWithAuth(`${BASE_URL}/config`, {
-        method: 'PUT',
-        headers: {
-            'Content-Type': 'application/json'
-        },
-        body: JSON.stringify(params)
-    });
+	/**
+	 * 获取配置
+	 */
+	async getConfig(): Promise<ApiResponse<ConfigResponse>> {
+		return this.get<ConfigResponse>('/config');
+	}
+
+	/**
+	 * 更新配置
+	 * @param params 配置参数
+	 */
+	async updateConfig(params: UpdateConfigRequest): Promise<ApiResponse<UpdateConfigResponse>> {
+		return this.put<UpdateConfigResponse>('/config', params);
 }
 
-// 获取番剧季度信息
-export async function getBangumiSeasons(seasonId: string): Promise<any> {
-    return fetchWithAuth(`${BASE_URL}/bangumi/seasons/${seasonId}`, {
-        method: 'GET'
-    });
+	/**
+	 * 搜索B站内容
+	 * @param params 搜索参数
+	 */
+	async searchBilibili(params: SearchRequest): Promise<ApiResponse<SearchResponse>> {
+		return this.get<SearchResponse>('/search', params);
+	}
+
+	/**
+	 * 获取用户收藏夹列表
+	 */
+	async getUserFavorites(): Promise<ApiResponse<UserFavoriteFolder[]>> {
+		return this.get<UserFavoriteFolder[]>('/user/favorites');
+	}
+
+	/**
+	 * 获取UP主的合集和系列列表
+	 * @param mid UP主ID
+	 * @param page 页码
+	 * @param pageSize 每页数量
+	 */
+	async getUserCollections(mid: string, page: number = 1, pageSize: number = 20): Promise<ApiResponse<UserCollectionsResponse>> {
+		return this.get<UserCollectionsResponse>(`/user/collections/${mid}`, {
+			page,
+			page_size: pageSize
+		});
+	}
+
+	/**
+	 * 获取番剧季度信息
+	 * @param seasonId 季度ID
+	 */
+	async getBangumiSeasons(seasonId: string): Promise<ApiResponse<any>> {
+		return this.get<any>(`/bangumi/seasons/${seasonId}`);
+	}
 }
 
-// 搜索bilibili内容
-export async function searchBilibili(params: {
-    keyword: string;
-    search_type: 'video' | 'bili_user' | 'media_bangumi';
-    page?: number;
-    page_size?: number;
-}): Promise<{
-    success: boolean;
-    results: Array<{
-        result_type: string;
-        title: string;
-        author: string;
-        bvid?: string;
-        aid?: number;
-        mid?: number;
-        season_id?: string;
-        media_id?: string;
-        cover: string;
-        description: string;
-        duration?: string;
-        pubdate?: number;
-        play?: number;
-        danmaku?: number;
-    }>;
-    total: number;
-    page: number;
-    page_size: number;
-}> {
-    const searchParams = new URLSearchParams();
-    Object.entries(params).forEach(([key, value]) => {
-        if (value !== undefined) {
-            searchParams.append(key, value.toString());
-        }
-    });
-    
-    const url = `${BASE_URL}/search?${searchParams.toString()}`;
-    console.log(`搜索请求: ${url}`);
-    
-    try {
-        const response = await fetch(url, {
-            method: 'GET',
-            headers: {
-                'Content-Type': 'application/json'
-            }
-        });
-        
-        if (!response.ok) {
-            const errorText = await response.text();
-            console.error(`搜索API请求失败: ${response.status} ${response.statusText}`, errorText);
-            throw new ApiError(`搜索API请求失败: ${response.status} ${response.statusText}, 响应: ${errorText}`);
-        }
-        
-        const responseData = await response.json();
-        console.log('搜索API响应:', responseData);
-        
-        if (!responseData.data) {
-            console.warn(`搜索API响应缺少data字段:`, responseData);
-        }
-        
-        return responseData.data;
-    } catch (error) {
-        console.error(`搜索请求 ${url} 时出错:`, error);
-        throw error;
-    }
-}
+// 创建默认的 API 客户端实例
+export const apiClient = new ApiClient();
 
-// 获取用户收藏夹列表
-export async function getUserFavorites(): Promise<UserFavoriteFolder[]> {
-    const response = await fetchWithAuth(`${BASE_URL}/user/favorites`);
-    return response;
-}
+// 导出 API 方法的便捷函数
+export const api = {
+	/**
+	 * 获取所有视频来源
+	 */
+	getVideoSources: () => apiClient.getVideoSources(),
 
-// 获取UP主的合集和系列列表  
-export async function getUserCollections(mid: string, page: number = 1, pageSize: number = 20): Promise<{
-    success: boolean;
-    collections: Array<{
-        collection_type: string;
-        sid: string;
-        name: string;
-        cover: string;
-        description: string;
-        total: number;
-        ptime?: number;
-        mid: number;
-    }>;
-    total: number;
-    page: number;
-    page_size: number;
-}> {
-    const response = await fetchWithAuth(`${BASE_URL}/user/collections/${mid}?page=${page}&page_size=${pageSize}`);
-    return response;
-}
+	/**
+	 * 获取视频列表
+	 */
+	getVideos: (params?: VideosRequest) => apiClient.getVideos(params),
+
+	/**
+	 * 获取单个视频详情
+	 */
+	getVideo: (id: number) => apiClient.getVideo(id),
+
+	/**
+	 * 重置视频下载状态
+	 */
+	resetVideo: (id: number, force?: boolean) => apiClient.resetVideo(id, force),
+
+	/**
+	 * 设置认证 token
+	 */
+	setAuthToken: (token: string) => apiClient.setAuthToken(token),
+
+	/**
+	 * 添加视频源
+	 */
+	addVideoSource: (params: AddVideoSourceRequest) => apiClient.addVideoSource(params),
+
+	/**
+	 * 删除视频源
+	 */
+	deleteVideoSource: (sourceType: string, id: number, deleteLocalFiles?: boolean) => 
+		apiClient.deleteVideoSource(sourceType, id, deleteLocalFiles),
+
+	/**
+	 * 获取配置
+	 */
+	getConfig: () => apiClient.getConfig(),
+
+	/**
+	 * 更新配置
+	 */
+	updateConfig: (params: UpdateConfigRequest) => apiClient.updateConfig(params),
+
+	/**
+	 * 搜索B站内容
+	 */
+	searchBilibili: (params: SearchRequest) => apiClient.searchBilibili(params),
+
+	/**
+	 * 获取用户收藏夹列表
+	 */
+	getUserFavorites: () => apiClient.getUserFavorites(),
+
+	/**
+	 * 获取UP主的合集和系列列表
+	 */
+	getUserCollections: (mid: string, page?: number, pageSize?: number) => 
+		apiClient.getUserCollections(mid, page, pageSize),
+
+	/**
+	 * 获取番剧季度信息
+	 */
+	getBangumiSeasons: (seasonId: string) => apiClient.getBangumiSeasons(seasonId)
+};
+
+// 默认导出
+export default api;

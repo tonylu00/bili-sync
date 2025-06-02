@@ -72,6 +72,16 @@ if errorlevel 1 (
     echo 安装前端依赖失败
     exit /b 1
 )
+echo 检查并安装 autoprefixer...
+call npm list autoprefixer >nul 2>&1
+if errorlevel 1 (
+    echo 安装 autoprefixer...
+    call npm install autoprefixer --save-dev
+    if errorlevel 1 (
+        echo 安装 autoprefixer 失败
+        exit /b 1
+    )
+)
 echo 前端依赖安装完成
 
 echo 构建前端...
@@ -150,6 +160,16 @@ if not exist "node_modules" (
         exit /b 1
     )
 )
+echo [DEBUG] 检查并安装 autoprefixer...
+call npm list autoprefixer >nul 2>&1
+if errorlevel 1 (
+    echo 安装 autoprefixer...
+    call npm install autoprefixer --save-dev
+    if errorlevel 1 (
+        echo 安装 autoprefixer 失败
+        exit /b 1
+    )
+)
 echo [DEBUG] 执行 npm run build...
 call npm run build
 if errorlevel 1 (
@@ -176,6 +196,16 @@ if not exist "node_modules" (
     npm install
     if errorlevel 1 (
         echo 安装前端依赖失败
+        exit /b 1
+    )
+)
+echo 检查并安装 autoprefixer...
+call npm list autoprefixer >nul 2>&1
+if errorlevel 1 (
+    echo 安装 autoprefixer...
+    call npm install autoprefixer --save-dev
+    if errorlevel 1 (
+        echo 安装 autoprefixer 失败
         exit /b 1
     )
 )
