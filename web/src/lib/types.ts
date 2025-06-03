@@ -36,6 +36,7 @@ export interface VideoInfo {
     id: number;
     name: string;
     upper_name: string;
+    path: string;
 	download_status: [number, number, number, number, number];
 }
 

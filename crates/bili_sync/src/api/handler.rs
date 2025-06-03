@@ -152,9 +152,10 @@ pub async fn get_videos(
                 video::Column::Id,
                 video::Column::Name,
                 video::Column::UpperName,
+                video::Column::Path,
                 video::Column::DownloadStatus,
             ])
-            .into_tuple::<(i32, String, String, u32)>()
+            .into_tuple::<(i32, String, String, String, u32)>()
             .paginate(db.as_ref(), page_size)
             .fetch_page(page)
             .await?
@@ -183,9 +184,10 @@ pub async fn get_video(
             video::Column::Id,
             video::Column::Name,
             video::Column::UpperName,
+            video::Column::Path,
             video::Column::DownloadStatus,
         ])
-        .into_tuple::<(i32, String, String, u32)>()
+        .into_tuple::<(i32, String, String, String, u32)>()
         .one(db.as_ref())
         .await?
         .map(VideoInfo::from);

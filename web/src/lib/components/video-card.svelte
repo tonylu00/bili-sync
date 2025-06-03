@@ -214,6 +214,16 @@
 					</Button>
 				</div>
 			{/if}
+
+			<!-- 路径信息 -->
+			{#if video.path && (mode === 'detail')}
+				<div class="mt-2 space-y-1">
+					<div class="text-muted-foreground text-xs">保存路径</div>
+					<div class="bg-muted rounded px-2 py-1 text-xs font-mono break-all" title={video.path}>
+						{video.path}
+					</div>
+				</div>
+			{/if}
 		</div>
 	</CardContent>
 </Card>

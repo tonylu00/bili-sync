@@ -83,15 +83,17 @@ pub struct VideoInfo {
     pub id: i32,
     pub name: String,
     pub upper_name: String,
+    pub path: String,
     pub download_status: [u32; 5],
 }
 
-impl From<(i32, String, String, u32)> for VideoInfo {
-    fn from((id, name, upper_name, download_status): (i32, String, String, u32)) -> Self {
+impl From<(i32, String, String, String, u32)> for VideoInfo {
+    fn from((id, name, upper_name, path, download_status): (i32, String, String, String, u32)) -> Self {
         Self {
             id,
             name,
             upper_name,
+            path,
             download_status: VideoStatus::from(download_status).into(),
         }
     }
