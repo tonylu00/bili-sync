@@ -334,6 +334,24 @@ pub async fn add_video_source(
                 .ok_or_else(|| anyhow!("合集类型需要提供UP主ID"))?;
 
             let up_id = up_id_str.parse::<i64>().map_err(|_| anyhow!("无效的UP主ID"))?;
+            let s_id = params.source_id.parse::<i64>().map_err(|_| anyhow!("无效的合集ID"))?;
+
+            // 检查是否已存在相同的合集
+            let existing_collection = collection::Entity::find()
+                .filter(collection::Column::SId.eq(s_id))
+                .filter(collection::Column::MId.eq(up_id))
+                .one(&txn)
+                .await?;
+
+            if let Some(existing) = existing_collection {
+                return Err(anyhow!(
+                    "合集已存在！合集名称：\"{}\"，合集ID：{}，UP主ID：{}，保存路径：{}。如需修改设置，请先删除现有合集再重新添加。",
+                    existing.name,
+                    existing.s_id,
+                    existing.m_id,
+                    existing.path
+                ).into());
+            }
 
             // 添加合集
             let collection_type_value = params.collection_type.as_deref().unwrap_or("season");
@@ -345,10 +363,10 @@ pub async fn add_video_source(
 
             let collection = collection::ActiveModel {
                 id: sea_orm::ActiveValue::NotSet,
-                s_id: sea_orm::Set(params.source_id.parse::<i64>().map_err(|_| anyhow!("无效的合集ID"))?),
-                m_id: sea_orm::Set(up_id), // 使用用户提供的UP主ID
+                s_id: sea_orm::Set(s_id),
+                m_id: sea_orm::Set(up_id),
                 name: sea_orm::Set(params.name),
-                r#type: sea_orm::Set(collection_type), // 使用用户选择的类型
+                r#type: sea_orm::Set(collection_type),
                 path: sea_orm::Set(params.path.clone()),
                 created_at: sea_orm::Set(chrono::Utc::now().to_string()),
                 latest_row_at: sea_orm::Set(chrono::Utc::now().naive_utc()),
@@ -364,10 +382,27 @@ pub async fn add_video_source(
             }
         }
         "favorite" => {
+            let f_id = params.source_id.parse::<i64>().map_err(|_| anyhow!("无效的收藏夹ID"))?;
+
+            // 检查是否已存在相同的收藏夹
+            let existing_favorite = favorite::Entity::find()
+                .filter(favorite::Column::FId.eq(f_id))
+                .one(&txn)
+                .await?;
+
+            if let Some(existing) = existing_favorite {
+                return Err(anyhow!(
+                    "收藏夹已存在！收藏夹名称：\"{}\"，收藏夹ID：{}，保存路径：{}。如需修改设置，请先删除现有收藏夹再重新添加。",
+                    existing.name,
+                    existing.f_id,
+                    existing.path
+                ).into());
+            }
+
             // 添加收藏夹
             let favorite = favorite::ActiveModel {
                 id: sea_orm::ActiveValue::NotSet,
-                f_id: sea_orm::Set(params.source_id.parse::<i64>().map_err(|_| anyhow!("无效的收藏夹ID"))?),
+                f_id: sea_orm::Set(f_id),
                 name: sea_orm::Set(params.name),
                 path: sea_orm::Set(params.path.clone()),
                 created_at: sea_orm::Set(chrono::Utc::now().to_string()),
@@ -384,10 +419,27 @@ pub async fn add_video_source(
             }
         }
         "submission" => {
+            let upper_id = params.source_id.parse::<i64>().map_err(|_| anyhow!("无效的UP主ID"))?;
+
+            // 检查是否已存在相同的UP主投稿
+            let existing_submission = submission::Entity::find()
+                .filter(submission::Column::UpperId.eq(upper_id))
+                .one(&txn)
+                .await?;
+
+            if let Some(existing) = existing_submission {
+                return Err(anyhow!(
+                    "UP主投稿已存在！UP主名称：\"{}\"，UP主ID：{}，保存路径：{}。如需修改设置，请先删除现有UP主投稿再重新添加。",
+                    existing.upper_name,
+                    existing.upper_id,
+                    existing.path
+                ).into());
+            }
+
             // 添加UP主投稿
             let submission = submission::ActiveModel {
                 id: sea_orm::ActiveValue::NotSet,
-                upper_id: sea_orm::Set(params.source_id.parse::<i64>().map_err(|_| anyhow!("无效的UP主ID"))?),
+                upper_id: sea_orm::Set(upper_id),
                 upper_name: sea_orm::Set(params.name),
                 path: sea_orm::Set(params.path.clone()),
                 created_at: sea_orm::Set(chrono::Utc::now().to_string()),
@@ -404,51 +456,303 @@ pub async fn add_video_source(
             }
         }
         "bangumi" => {
-            // 添加番剧
-            let download_all_seasons = params.download_all_seasons.unwrap_or(false);
-            
-            // 处理选中的季度
-            let selected_seasons_json = if !download_all_seasons && params.selected_seasons.is_some() {
-                let seasons = params.selected_seasons.unwrap();
-                Some(serde_json::to_string(&seasons)?)
-            } else {
-                None
-            };
-
             // 验证至少有一个ID不为空
             if params.source_id.is_empty() && params.media_id.is_none() && params.ep_id.is_none() {
                 return Err(anyhow!("番剧标识不能全部为空，请至少提供 season_id、media_id 或 ep_id 中的一个").into());
             }
 
-            let bangumi = video_source::ActiveModel {
-                id: sea_orm::ActiveValue::NotSet,
-                name: sea_orm::Set(params.name),
-                path: sea_orm::Set(params.path.clone()),
-                r#type: sea_orm::Set(1), // 1表示番剧类型
-                latest_row_at: sea_orm::Set(chrono::Utc::now().naive_utc()),
-                season_id: sea_orm::Set(Some(params.source_id.clone())),
-                media_id: sea_orm::Set(params.media_id),
-                ep_id: sea_orm::Set(params.ep_id),
-                download_all_seasons: sea_orm::Set(Some(download_all_seasons)),
-                selected_seasons: sea_orm::Set(selected_seasons_json),
-                ..Default::default()
-            };
+            // 检查是否已存在相同的番剧（Season ID完全匹配）
+            let existing_query = video_source::Entity::find()
+                .filter(video_source::Column::Type.eq(1)); // 番剧类型
 
-            let insert_result = video_source::Entity::insert(bangumi).exec(&txn).await?;
+            // 1. 首先检查 Season ID 是否重复（精确匹配）
+            let mut existing_bangumi = None;
+            
+            if !params.source_id.is_empty() {
+                // 如果有 season_id，检查是否已存在该 season_id
+                existing_bangumi = existing_query.clone()
+                    .filter(video_source::Column::SeasonId.eq(&params.source_id))
+                    .one(&txn)
+                    .await?;
+            } 
+            
+            if existing_bangumi.is_none() {
+                if let Some(ref media_id) = params.media_id {
+                    // 如果只有 media_id，检查是否已存在该 media_id
+                    existing_bangumi = existing_query.clone()
+                        .filter(video_source::Column::MediaId.eq(media_id))
+                        .one(&txn)
+                        .await?;
+                } else if let Some(ref ep_id) = params.ep_id {
+                    // 如果只有 ep_id，检查是否已存在该 ep_id
+                    existing_bangumi = existing_query.clone()
+                        .filter(video_source::Column::EpId.eq(ep_id))
+                        .one(&txn)
+                        .await?;
+                }
+            }
 
-            AddVideoSourceResponse {
-                success: true,
-                source_id: insert_result.last_insert_id,
-                source_type: "bangumi".to_string(),
-                message: "番剧添加成功".to_string(),
+            if let Some(mut existing) = existing_bangumi {
+                // 情况1：Season ID 重复 → 合并到现有番剧源
+                info!("检测到重复番剧 Season ID，执行智能合并: {}", existing.name);
+                
+                let download_all_seasons = params.download_all_seasons.unwrap_or(false);
+                let mut updated = false;
+                let mut merge_message = String::new();
+                
+                // 如果新请求要下载全部季度，直接更新现有配置
+                if download_all_seasons {
+                    if !existing.download_all_seasons.unwrap_or(false) {
+                        existing.download_all_seasons = Some(true);
+                        existing.selected_seasons = None; // 清空特定季度选择
+                        updated = true;
+                        merge_message = "已更新为下载全部季度".to_string();
+                    } else {
+                        merge_message = "已配置为下载全部季度，无需更改".to_string();
+                    }
+                } else {
+                    // 处理特定季度的合并
+                    if let Some(new_seasons) = params.selected_seasons {
+                        if !new_seasons.is_empty() {
+                            let mut current_seasons: Vec<String> = Vec::new();
+                            
+                            // 获取现有的季度选择
+                            if let Some(ref seasons_json) = existing.selected_seasons {
+                                if let Ok(seasons) = serde_json::from_str::<Vec<String>>(seasons_json) {
+                                    current_seasons = seasons;
+                                }
+                            }
+                            
+                            // 合并新的季度（去重）
+                            let mut all_seasons = current_seasons.clone();
+                            let mut added_seasons = Vec::new();
+                            
+                            for season in new_seasons {
+                                if !all_seasons.contains(&season) {
+                                    all_seasons.push(season.clone());
+                                    added_seasons.push(season);
+                                }
+                            }
+                            
+                            if !added_seasons.is_empty() {
+                                // 有新季度需要添加
+                                let seasons_json = serde_json::to_string(&all_seasons)?;
+                                existing.selected_seasons = Some(seasons_json);
+                                existing.download_all_seasons = Some(false); // 确保不是全部下载模式
+                                updated = true;
+                                
+                                merge_message = if added_seasons.len() == 1 {
+                                    format!("已添加新季度: {}", added_seasons.join(", "))
+                                } else {
+                                    format!("已添加 {} 个新季度: {}", added_seasons.len(), added_seasons.join(", "))
+                                };
+                            } else {
+                                // 所有季度都已存在
+                                merge_message = "所选季度已存在于现有配置中，无需更改".to_string();
+                            }
+                        }
+                    }
+                }
+                
+                // 更新保存路径（如果提供了不同的路径）
+                if !params.path.is_empty() && params.path != existing.path {
+                    existing.path = params.path.clone();
+                    updated = true;
+                    
+                    if !merge_message.is_empty() {
+                        merge_message.push_str("，");
+                    }
+                    merge_message.push_str(&format!("保存路径已更新为: {}", params.path));
+                }
+                
+                // 更新番剧名称（如果提供了不同的名称）
+                if !params.name.is_empty() && params.name != existing.name {
+                    existing.name = params.name.clone();
+                    updated = true;
+                    
+                    if !merge_message.is_empty() {
+                        merge_message.push_str("，");
+                    }
+                    merge_message.push_str(&format!("番剧名称已更新为: {}", params.name));
+                }
+                
+                if updated {
+                    // 更新数据库记录 - 修复：正确使用ActiveModel更新
+                    let mut existing_update = video_source::ActiveModel {
+                        id: sea_orm::ActiveValue::Unchanged(existing.id),
+                        latest_row_at: sea_orm::Set(chrono::Utc::now().naive_utc()),
+                        ..Default::default()
+                    };
+                    
+                    // 根据实际修改的字段设置对应的ActiveModel字段
+                    if download_all_seasons && !existing.download_all_seasons.unwrap_or(false) {
+                        // 切换到下载全部季度模式
+                        existing_update.download_all_seasons = sea_orm::Set(Some(true));
+                        existing_update.selected_seasons = sea_orm::Set(None); // 清空特定季度选择
+                    } else if !download_all_seasons {
+                        // 处理特定季度的合并或更新
+                        if let Some(ref new_seasons_json) = existing.selected_seasons {
+                            existing_update.selected_seasons = sea_orm::Set(Some(new_seasons_json.clone()));
+                            existing_update.download_all_seasons = sea_orm::Set(Some(false));
+                        }
+                    }
+                    
+                    // 更新路径（如果有变更）
+                    if !params.path.is_empty() && params.path != existing.path {
+                        existing_update.path = sea_orm::Set(params.path.clone());
+                    }
+                    
+                    // 更新名称（如果有变更）
+                    if !params.name.is_empty() && params.name != existing.name {
+                        existing_update.name = sea_orm::Set(params.name.clone());
+                    }
+                    
+                    video_source::Entity::update(existing_update).exec(&txn).await?;
+                    
+                    // 确保目标路径存在
+                    std::fs::create_dir_all(&existing.path).map_err(|e| anyhow!("创建目录失败: {}", e))?;
+                    
+                    info!("番剧配置合并成功: {}", merge_message);
+                    
+                    AddVideoSourceResponse {
+                        success: true,
+                        source_id: existing.id,
+                        source_type: "bangumi".to_string(),
+                        message: format!("番剧配置已成功合并！{}", merge_message),
+                    }
+                } else {
+                    // 没有实际更新
+                    AddVideoSourceResponse {
+                        success: true,
+                        source_id: existing.id,
+                        source_type: "bangumi".to_string(),
+                        message: format!("番剧已存在，{}", merge_message),
+                    }
+                }
+            } else {
+                // 情况2：Season ID 不重复，检查季度重复并跳过
+                let download_all_seasons = params.download_all_seasons.unwrap_or(false);
+                let mut final_selected_seasons = params.selected_seasons.clone();
+                let mut skipped_seasons = Vec::new();
+                
+                // 如果不是下载全部季度，且指定了特定季度，则检查季度重复
+                if !download_all_seasons {
+                    if let Some(ref new_seasons) = params.selected_seasons {
+                        if !new_seasons.is_empty() {
+                            // 获取所有现有番剧源的已选季度
+                            let all_existing_sources = video_source::Entity::find()
+                                .filter(video_source::Column::Type.eq(1))
+                                .all(&txn)
+                                .await?;
+                            
+                            let mut all_existing_seasons = std::collections::HashSet::new();
+                            
+                            for source in all_existing_sources {
+                                // 如果该番剧源配置为下载全部季度，我们无法确定具体季度，跳过检查
+                                if source.download_all_seasons.unwrap_or(false) {
+                                    continue;
+                                }
+                                
+                                // 获取该番剧源的已选季度
+                                if let Some(ref seasons_json) = source.selected_seasons {
+                                    if let Ok(seasons) = serde_json::from_str::<Vec<String>>(seasons_json) {
+                                        for season in seasons {
+                                            all_existing_seasons.insert(season);
+                                        }
+                                    }
+                                }
+                            }
+                            
+                            // 过滤掉重复的季度
+                            let mut unique_seasons = Vec::new();
+                            for season in new_seasons {
+                                if all_existing_seasons.contains(season) {
+                                    skipped_seasons.push(season.clone());
+                                } else {
+                                    unique_seasons.push(season.clone());
+                                }
+                            }
+                            
+                            final_selected_seasons = Some(unique_seasons);
+                        }
+                    }
+                }
+                
+                // 如果所有季度都被跳过了，返回错误
+                if !download_all_seasons && final_selected_seasons.as_ref().map_or(true, |s| s.is_empty()) {
+                    let skipped_msg = if skipped_seasons.is_empty() {
+                        "未选择任何季度".to_string()
+                    } else {
+                        format!("所选季度已在其他番剧源中存在，已跳过: {}", skipped_seasons.join(", "))
+                    };
+                    
+                    return Err(anyhow!("无法添加番剧：{}。请选择其他季度或使用'下载全部季度'选项。", skipped_msg).into());
+                }
+                
+                // 处理选中的季度
+                let selected_seasons_json = if !download_all_seasons && final_selected_seasons.is_some() {
+                    let seasons = final_selected_seasons.clone().unwrap();
+                    if seasons.is_empty() {
+                        None
+                    } else {
+                        Some(serde_json::to_string(&seasons)?)
+                    }
+                } else {
+                    None
+                };
+
+                let bangumi = video_source::ActiveModel {
+                    id: sea_orm::ActiveValue::NotSet,
+                    name: sea_orm::Set(params.name),
+                    path: sea_orm::Set(params.path.clone()),
+                    r#type: sea_orm::Set(1), // 1表示番剧类型
+                    latest_row_at: sea_orm::Set(chrono::Utc::now().naive_utc()),
+                    season_id: sea_orm::Set(Some(params.source_id.clone())),
+                    media_id: sea_orm::Set(params.media_id),
+                    ep_id: sea_orm::Set(params.ep_id),
+                    download_all_seasons: sea_orm::Set(Some(download_all_seasons)),
+                    selected_seasons: sea_orm::Set(selected_seasons_json),
+                    ..Default::default()
+                };
+
+                let insert_result = video_source::Entity::insert(bangumi).exec(&txn).await?;
+
+                // 确保目标路径存在
+                std::fs::create_dir_all(&params.path).map_err(|e| anyhow!("创建目录失败: {}", e))?;
+
+                let success_message = if !skipped_seasons.is_empty() {
+                    format!("番剧添加成功！已跳过重复季度: {}，添加的季度: {}", 
+                           skipped_seasons.join(", "),
+                           final_selected_seasons.unwrap_or_default().join(", "))
+                } else {
+                    "番剧添加成功".to_string()
+                };
+
+                info!("新番剧添加完成: {}", success_message);
+
+                AddVideoSourceResponse {
+                    success: true,
+                    source_id: insert_result.last_insert_id,
+                    source_type: "bangumi".to_string(),
+                    message: success_message,
+                }
             }
         }
         "watch_later" => {
-            // 稍后观看只能有一个
+            // 稍后观看只能有一个，检查是否已存在
             let existing = watch_later::Entity::find().count(&txn).await?;
 
             if existing > 0 {
-                return Err(anyhow!("已存在稍后观看配置，无法添加多个").into());
+                // 获取现有的稍后观看配置信息
+                let existing_watch_later = watch_later::Entity::find()
+                    .one(&txn)
+                    .await?
+                    .ok_or_else(|| anyhow!("数据库状态异常"))?;
+
+                return Err(anyhow!(
+                    "稍后观看已存在！保存路径：{}。一个系统只能配置一个稍后观看源，如需修改路径，请先删除现有配置再重新添加。",
+                    existing_watch_later.path
+                ).into());
             }
 
             let watch_later = watch_later::ActiveModel {
@@ -550,10 +854,36 @@ pub async fn delete_video_source(
 
             // 如果需要删除本地文件
             if delete_local_files {
-                // 尝试删除本地文件夹
+                // 添加安全检查
                 let path = &collection.path;
-                if let Err(e) = std::fs::remove_dir_all(path) {
-                    warn!("删除合集文件夹失败: {}", e);
+                if path.is_empty() || path == "/" || path == "\\" {
+                    warn!("检测到危险路径，跳过删除: {}", path);
+                } else if !std::path::Path::new(path).exists() {
+                    info!("本地文件夹不存在，跳过删除: {}", path);
+                } else {
+                    info!("开始删除合集文件夹: {}", path);
+                    
+                    // 检查文件夹大小
+                    match get_directory_size(path) {
+                        Ok(size) => {
+                            let size_mb = size as f64 / 1024.0 / 1024.0;
+                            info!("即将删除文件夹，总大小: {:.2} MB", size_mb);
+                            
+                            if let Err(e) = std::fs::remove_dir_all(path) {
+                                error!("删除合集文件夹失败: {} - {}", path, e);
+                            } else {
+                                info!("成功删除合集文件夹: {} ({:.2} MB)", path, size_mb);
+                            }
+                        }
+                        Err(e) => {
+                            warn!("无法计算文件夹大小: {} - {}", path, e);
+                            if let Err(e) = std::fs::remove_dir_all(path) {
+                                error!("删除合集文件夹失败: {} - {}", path, e);
+                            } else {
+                                info!("成功删除合集文件夹: {}", path);
+                            }
+                        }
+                    }
                 }
             }
 
@@ -596,10 +926,34 @@ pub async fn delete_video_source(
 
             // 如果需要删除本地文件
             if delete_local_files {
-                // 尝试删除本地文件夹
                 let path = &favorite.path;
-                if let Err(e) = std::fs::remove_dir_all(path) {
-                    warn!("删除收藏夹文件夹失败: {}", e);
+                if path.is_empty() || path == "/" || path == "\\" {
+                    warn!("检测到危险路径，跳过删除: {}", path);
+                } else if !std::path::Path::new(path).exists() {
+                    info!("本地文件夹不存在，跳过删除: {}", path);
+                } else {
+                    info!("开始删除收藏夹文件夹: {}", path);
+                    
+                    match get_directory_size(path) {
+                        Ok(size) => {
+                            let size_mb = size as f64 / 1024.0 / 1024.0;
+                            info!("即将删除文件夹，总大小: {:.2} MB", size_mb);
+                            
+                            if let Err(e) = std::fs::remove_dir_all(path) {
+                                error!("删除收藏夹文件夹失败: {} - {}", path, e);
+                            } else {
+                                info!("成功删除收藏夹文件夹: {} ({:.2} MB)", path, size_mb);
+                            }
+                        }
+                        Err(e) => {
+                            warn!("无法计算文件夹大小: {} - {}", path, e);
+                            if let Err(e) = std::fs::remove_dir_all(path) {
+                                error!("删除收藏夹文件夹失败: {} - {}", path, e);
+                            } else {
+                                info!("成功删除收藏夹文件夹: {}", path);
+                            }
+                        }
+                    }
                 }
             }
 
@@ -642,10 +996,34 @@ pub async fn delete_video_source(
 
             // 如果需要删除本地文件
             if delete_local_files {
-                // 尝试删除本地文件夹
                 let path = &submission.path;
-                if let Err(e) = std::fs::remove_dir_all(path) {
-                    warn!("删除UP主投稿文件夹失败: {}", e);
+                if path.is_empty() || path == "/" || path == "\\" {
+                    warn!("检测到危险路径，跳过删除: {}", path);
+                } else if !std::path::Path::new(path).exists() {
+                    info!("本地文件夹不存在，跳过删除: {}", path);
+                } else {
+                    info!("开始删除UP主投稿文件夹: {}", path);
+                    
+                    match get_directory_size(path) {
+                        Ok(size) => {
+                            let size_mb = size as f64 / 1024.0 / 1024.0;
+                            info!("即将删除文件夹，总大小: {:.2} MB", size_mb);
+                            
+                            if let Err(e) = std::fs::remove_dir_all(path) {
+                                error!("删除UP主投稿文件夹失败: {} - {}", path, e);
+                            } else {
+                                info!("成功删除UP主投稿文件夹: {} ({:.2} MB)", path, size_mb);
+                            }
+                        }
+                        Err(e) => {
+                            warn!("无法计算文件夹大小: {} - {}", path, e);
+                            if let Err(e) = std::fs::remove_dir_all(path) {
+                                error!("删除UP主投稿文件夹失败: {} - {}", path, e);
+                            } else {
+                                info!("成功删除UP主投稿文件夹: {}", path);
+                            }
+                        }
+                    }
                 }
             }
 
@@ -688,10 +1066,34 @@ pub async fn delete_video_source(
 
             // 如果需要删除本地文件
             if delete_local_files {
-                // 尝试删除本地文件夹
                 let path = &watch_later.path;
-                if let Err(e) = std::fs::remove_dir_all(path) {
-                    warn!("删除稍后再看文件夹失败: {}", e);
+                if path.is_empty() || path == "/" || path == "\\" {
+                    warn!("检测到危险路径，跳过删除: {}", path);
+                } else if !std::path::Path::new(path).exists() {
+                    info!("本地文件夹不存在，跳过删除: {}", path);
+                } else {
+                    info!("开始删除稍后再看文件夹: {}", path);
+                    
+                    match get_directory_size(path) {
+                        Ok(size) => {
+                            let size_mb = size as f64 / 1024.0 / 1024.0;
+                            info!("即将删除文件夹，总大小: {:.2} MB", size_mb);
+                            
+                            if let Err(e) = std::fs::remove_dir_all(path) {
+                                error!("删除稍后再看文件夹失败: {} - {}", path, e);
+                            } else {
+                                info!("成功删除稍后再看文件夹: {} ({:.2} MB)", path, size_mb);
+                            }
+                        }
+                        Err(e) => {
+                            warn!("无法计算文件夹大小: {} - {}", path, e);
+                            if let Err(e) = std::fs::remove_dir_all(path) {
+                                error!("删除稍后再看文件夹失败: {} - {}", path, e);
+                            } else {
+                                info!("成功删除稍后再看文件夹: {}", path);
+                            }
+                        }
+                    }
                 }
             }
 
@@ -736,10 +1138,55 @@ pub async fn delete_video_source(
 
             // 如果需要删除本地文件
             if delete_local_files {
-                // 尝试删除本地文件夹
-                let path = &bangumi.path;
-                if let Err(e) = std::fs::remove_dir_all(path) {
-                    warn!("删除番剧文件夹失败: {}", e);
+                let base_path = &bangumi.path;
+                if base_path.is_empty() || base_path == "/" || base_path == "\\" {
+                    warn!("检测到危险路径，跳过删除: {}", base_path);
+                } else {
+                    // 删除番剧相关的季度文件夹，而不是删除整个番剧基础目录
+                    info!("开始删除番剧 {} 的相关文件夹", bangumi.name);
+                    
+                    // 获取所有相关的视频记录来确定需要删除的具体文件夹
+                    let mut deleted_folders = std::collections::HashSet::new();
+                    let mut total_deleted_size = 0u64;
+                    
+                    for video in &videos {
+                        // 对于每个视频，删除其对应的文件夹
+                        let video_path = std::path::Path::new(&video.path);
+                        
+                        if video_path.exists() && !deleted_folders.contains(&video.path) {
+                            match get_directory_size(&video.path) {
+                                Ok(size) => {
+                                    let size_mb = size as f64 / 1024.0 / 1024.0;
+                                    info!("删除番剧季度文件夹: {} (大小: {:.2} MB)", video.path, size_mb);
+                                    
+                                    if let Err(e) = std::fs::remove_dir_all(&video.path) {
+                                        error!("删除番剧季度文件夹失败: {} - {}", video.path, e);
+                                    } else {
+                                        info!("成功删除番剧季度文件夹: {} ({:.2} MB)", video.path, size_mb);
+                                        deleted_folders.insert(video.path.clone());
+                                        total_deleted_size += size;
+                                    }
+                                }
+                                Err(e) => {
+                                    warn!("无法计算文件夹大小: {} - {}", video.path, e);
+                                    if let Err(e) = std::fs::remove_dir_all(&video.path) {
+                                        error!("删除番剧季度文件夹失败: {} - {}", video.path, e);
+                                    } else {
+                                        info!("成功删除番剧季度文件夹: {}", video.path);
+                                        deleted_folders.insert(video.path.clone());
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    
+                    if !deleted_folders.is_empty() {
+                        let total_size_mb = total_deleted_size as f64 / 1024.0 / 1024.0;
+                        info!("番剧 {} 删除完成，共删除 {} 个文件夹，总大小: {:.2} MB", 
+                              bangumi.name, deleted_folders.len(), total_size_mb);
+                    } else {
+                        info!("番剧 {} 没有找到需要删除的本地文件夹", bangumi.name);
+                    }
                 }
             }
 
@@ -1905,16 +2352,27 @@ pub async fn get_bangumi_seasons(
                 let season_clone = s.clone();
                 async move {
                     let season_bangumi = Bangumi::new(&bili_client_clone, season_clone.media_id.clone(), Some(season_clone.season_id.clone()), None);
-                    let full_title = match season_bangumi.get_season_info().await {
+                    
+                    let (full_title, episode_count) = match season_bangumi.get_season_info().await {
                         Ok(season_info) => {
-                            season_info["title"].as_str().map(|t| t.to_string())
+                            let full_title = season_info["title"].as_str().map(|t| t.to_string());
+                            
+                            // 获取集数信息
+                            let episode_count = if let Some(episodes) = season_info["episodes"].as_array() {
+                                Some(episodes.len() as i32)
+                            } else {
+                                None
+                            };
+                            
+                            (full_title, episode_count)
                         }
                         Err(e) => {
                             warn!("获取季度 {} 的详细信息失败: {}", season_clone.season_id, e);
-                            None
+                            (None, None)
                         }
                     };
-                    (season_clone, full_title)
+                    
+                    (season_clone, full_title, episode_count)
                 }
             }).collect();
 
@@ -1922,13 +2380,14 @@ pub async fn get_bangumi_seasons(
             let season_details = join_all(season_details_futures).await;
             
             // 构建响应数据
-            let season_list: Vec<_> = season_details.into_iter().map(|(s, full_title)| {
+            let season_list: Vec<_> = season_details.into_iter().map(|(s, full_title, episode_count)| {
                 crate::api::response::BangumiSeasonInfo {
                     season_id: s.season_id,
                     season_title: s.season_title,
                     full_title,
                     media_id: s.media_id,
                     cover: Some(s.cover),
+                    episode_count,
                 }
             }).collect();
             
@@ -2131,4 +2590,26 @@ pub async fn get_user_collections(
             Err(anyhow!("获取UP主合集列表失败: {}", e).into())
         }
     }
+}
+
+/// 计算目录大小的辅助函数
+fn get_directory_size(path: &str) -> std::io::Result<u64> {
+    fn dir_size(path: &std::path::Path) -> std::io::Result<u64> {
+        let mut size = 0;
+        if path.is_dir() {
+            for entry in std::fs::read_dir(path)? {
+                let entry = entry?;
+                let path = entry.path();
+                if path.is_dir() {
+                    size += dir_size(&path)?;
+                } else {
+                    size += entry.metadata()?.len();
+                }
+            }
+        }
+        Ok(size)
+    }
+    
+    let path = std::path::Path::new(path);
+    dir_size(path)
 }

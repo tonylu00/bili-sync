@@ -205,3 +205,19 @@ export interface UserCollectionsResponse {
 
 // 视频分类类型
 export type VideoCategory = 'collection' | 'favorite' | 'submission' | 'watch_later' | 'bangumi';
+
+// 番剧季度信息类型
+export interface BangumiSeasonInfo {
+	season_id: string;
+	season_title: string;
+	full_title?: string;
+	media_id?: string;
+	cover?: string;
+	episode_count?: number; // 集数
+}
+
+// 番剧季度响应类型
+export interface BangumiSeasonsResponse {
+	success: boolean;
+	data: BangumiSeasonInfo[];
+}

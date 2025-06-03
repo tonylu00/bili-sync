@@ -216,23 +216,33 @@
 	async function handleSubmit() {
 		// 验证表单
 		if (sourceType !== 'watch_later' && !sourceId) {
-			toast.error('请输入ID');
+			toast.error('请输入ID', { description: '视频源ID不能为空' });
 			return;
 		}
 
 		if (sourceType === 'collection' && !upId) {
-			toast.error('请输入UP主ID');
+			toast.error('请输入UP主ID', { description: '合集需要提供UP主ID' });
 			return;
 		}
 
 		if (!name) {
-			toast.error('请输入名称');
+			toast.error('请输入名称', { description: '视频源名称不能为空' });
 			return;
 		}
 
 		if (!path) {
-			toast.error('请输入保存路径');
+			toast.error('请输入保存路径', { description: '保存路径不能为空' });
 			return;
+		}
+
+		// 番剧特殊验证
+		if (sourceType === 'bangumi') {
+			if (!downloadAllSeasons && selectedSeasons.length === 0) {
+				toast.error('请选择要下载的季度', { 
+					description: '未选择"下载全部季度"时，至少需要选择一个季度' 
+				});
+				return;
+			}
 		}
 
 		loading = true;
@@ -262,13 +272,50 @@
 
 			if (result.data.success) {
 				toast.success('添加成功', { description: result.data.message });
+				// 重置表单
+				sourceId = '';
+				upId = '';
+				name = '';
+				path = '/Downloads';
+				downloadAllSeasons = false;
+				collectionType = 'season';
+				isManualInput = false;
+				bangumiSeasons = [];
+				selectedSeasons = [];
+				// 跳转到首页
 				goto('/');
 			} else {
 				toast.error('添加失败', { description: result.data.message });
 			}
 		} catch (error: any) {
 			console.error('添加视频源失败:', error);
-			toast.error('添加失败', { description: error.message });
+			
+			// 解析错误信息，提供更友好的提示
+			let errorMessage = error.message;
+			let errorDescription = '';
+
+			if (errorMessage.includes('已存在')) {
+				// 重复添加错误
+				if (sourceType === 'bangumi') {
+					errorDescription = '该番剧已经添加过了，请检查是否使用了相同的Season ID、Media ID或Episode ID';
+				} else if (sourceType === 'collection') {
+					errorDescription = '该合集已经添加过了，请检查是否使用了相同的合集ID和UP主ID';
+				} else if (sourceType === 'favorite') {
+					errorDescription = '该收藏夹已经添加过了，请检查是否使用了相同的收藏夹ID';
+				} else if (sourceType === 'submission') {
+					errorDescription = '该UP主的投稿已经添加过了，请检查是否使用了相同的UP主ID';
+				} else if (sourceType === 'watch_later') {
+					errorDescription = '稍后观看只能配置一个，请先删除现有配置';
+				}
+				
+				toast.error('重复添加', { 
+					description: errorDescription,
+					duration: 5000 // 延长显示时间
+				});
+			} else {
+				// 其他错误
+				toast.error('添加失败', { description: errorMessage });
+			}
 		} finally {
 			loading = false;
 		}
@@ -933,8 +980,14 @@
 																	class="h-4 w-4 rounded border-gray-300 text-purple-600 focus:ring-purple-500"
 																/>
 															</div>
+															<!-- 右下角集数标签 -->
+															{#if season.episode_count}
+																<div class="absolute bottom-3 right-3">
+																	<span class="text-xs bg-purple-100 text-purple-700 px-1.5 py-0.5 rounded">{season.episode_count}集</span>
+																</div>
+															{/if}
 															<label for="season-{season.season_id}" class="cursor-pointer">
-																<h4 class="font-medium text-sm truncate pr-6">{season.season_title || season.title}</h4>
+																<h4 class="font-medium text-sm truncate pr-6">{season.full_title || season.season_title || season.title}</h4>
 																{#if season.season_id === sourceId}
 																	<span class="text-xs bg-purple-100 text-purple-700 px-1.5 py-0.5 rounded inline-block mt-1">当前</span>
 																{/if}

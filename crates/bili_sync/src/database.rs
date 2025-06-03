@@ -1,6 +1,7 @@
 use anyhow::Result;
 use bili_sync_migration::{Migrator, MigratorTrait};
 use sea_orm::{ConnectOptions, Database, DatabaseConnection};
+use tracing::info;
 
 use crate::config::CONFIG_DIR;
 
@@ -9,6 +10,7 @@ fn database_url() -> String {
     if !CONFIG_DIR.exists() {
         std::fs::create_dir_all(&*CONFIG_DIR).expect("创建配置目录失败");
     }
+    // 只使用基本的连接参数，WAL模式通过SQL命令设置
     format!("sqlite://{}?mode=rwc", CONFIG_DIR.join("data.sqlite").to_string_lossy())
 }
 
@@ -18,7 +20,21 @@ async fn database_connection() -> Result<DatabaseConnection> {
         .max_connections(100)
         .min_connections(5)
         .acquire_timeout(std::time::Duration::from_secs(90));
-    Ok(Database::connect(option).await?)
+    
+    let connection = Database::connect(option).await?;
+    
+    // 确保 WAL 模式已启用并应用额外的性能优化
+    use sea_orm::ConnectionTrait;
+    connection.execute_unprepared("PRAGMA journal_mode = WAL;").await?;
+    connection.execute_unprepared("PRAGMA synchronous = NORMAL;").await?;
+    connection.execute_unprepared("PRAGMA cache_size = 1000;").await?;
+    connection.execute_unprepared("PRAGMA temp_store = memory;").await?;
+    connection.execute_unprepared("PRAGMA mmap_size = 268435456;").await?; // 256MB
+    connection.execute_unprepared("PRAGMA wal_autocheckpoint = 1000;").await?;
+    
+    info!("SQLite WAL 模式已启用，性能优化参数已应用");
+    
+    Ok(connection)
 }
 
 async fn migrate_database() -> Result<()> {

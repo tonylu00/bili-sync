@@ -6,6 +6,7 @@
 	import { useSidebar } from '$lib/components/ui/sidebar/context.svelte.js';
 	import { appStateStore, setVideoSourceFilter, clearAll, ToQuery } from '$lib/stores/filter';
 	import { toast } from 'svelte-sonner';
+	import DeleteVideoSourceDialog from './delete-video-source-dialog.svelte';
 
 	import { type VideoSourcesResponse } from '$lib/types';
 	import { VIDEO_SOURCES } from '$lib/consts';
@@ -16,6 +17,14 @@
 	const sidebar = useSidebar();
 
 	const items = Object.values(VIDEO_SOURCES);
+
+	// 删除对话框状态
+	let showDeleteDialog = false;
+	let deleteSourceInfo = {
+		type: '',
+		id: 0,
+		name: ''
+	};
 
 	function handleSourceClick(sourceType: string, sourceId: number) {
 		setVideoSourceFilter(sourceType, sourceId.toString());
@@ -34,19 +43,24 @@
 		}
 	}
 
-	// 删除视频源
-	async function handleDeleteSource(event: Event, sourceType: string, sourceId: number, sourceName: string) {
+	// 打开删除确认对话框
+	function handleDeleteSource(event: Event, sourceType: string, sourceId: number, sourceName: string) {
 		event.stopPropagation(); // 阻止触发父级的点击事件
 		
-		if (!confirm(`确定要删除视频源 "${sourceName}" 吗？此操作不可撤销。`)) {
-			return;
-		}
-		
-		// 询问是否同时删除本地文件
-		const deleteLocalFiles = confirm(`是否同时删除本地已下载的文件？\n选择"确定"将删除本地文件，选择"取消"将保留本地文件。`);
+		deleteSourceInfo = {
+			type: sourceType,
+			id: sourceId,
+			name: sourceName
+		};
+		showDeleteDialog = true;
+	}
+
+	// 确认删除
+	async function handleConfirmDelete(event: CustomEvent<{ deleteLocalFiles: boolean }>) {
+		const { deleteLocalFiles } = event.detail;
 		
 		try {
-			const result = await api.deleteVideoSource(sourceType, sourceId, deleteLocalFiles);
+			const result = await api.deleteVideoSource(deleteSourceInfo.type, deleteSourceInfo.id, deleteLocalFiles);
 			if (result.data.success) {
 				toast.success('删除成功', { 
 					description: result.data.message + (deleteLocalFiles ? '，本地文件已删除' : '，本地文件已保留') 
@@ -63,6 +77,11 @@
 			toast.error('删除失败', { description: error.message });
 		}
 	}
+
+	// 取消删除
+	function handleCancelDelete() {
+		showDeleteDialog = false;
+	}
 </script>
 
 <Sidebar.Root class="border-border bg-background border-r">
@@ -70,7 +89,7 @@
 		<a
 			href="/"
 			class="flex w-full items-center gap-3 px-4 py-3 hover:cursor-pointer"
-			onclick={handleLogoClick}
+			on:click={handleLogoClick}
 		>
 			<div class="flex h-8 w-8 items-center justify-center overflow-hidden rounded-lg">
 				<img src="/favicon.png" alt="Bili Sync" class="h-6 w-6" />
@@ -119,13 +138,13 @@
 															<div class="flex items-center gap-1 group/item">
 																<button
 																	class="text-foreground hover:bg-accent/50 flex-1 cursor-pointer rounded-md px-3 py-2 text-left text-sm transition-all duration-200"
-																	onclick={() => handleSourceClick(item.type, source.id)}
+																	on:click={() => handleSourceClick(item.type, source.id)}
 																>
 																	<span class="block truncate">{source.name}</span>
 																</button>
 																<button
 																	class="text-muted-foreground hover:text-destructive hover:bg-destructive/10 opacity-0 group-hover/item:opacity-100 p-1.5 rounded transition-all duration-200"
-																	onclick={(e) => handleDeleteSource(e, item.type, source.id, source.name)}
+																	on:click={(e) => handleDeleteSource(e, item.type, source.id, source.name)}
 																	title="删除视频源"
 																>
 																	<TrashIcon class="h-3.5 w-3.5" />
@@ -169,4 +188,13 @@
 		</div>
 	</Sidebar.Content>
 </Sidebar.Root>
+
+<!-- 删除确认对话框 -->
+<DeleteVideoSourceDialog
+	bind:isOpen={showDeleteDialog}
+	sourceName={deleteSourceInfo.name}
+	sourceType={deleteSourceInfo.type}
+	on:confirm={handleConfirmDelete}
+	on:cancel={handleCancelDelete}
+/>
  

@@ -129,6 +129,7 @@ pub struct BangumiSeasonInfo {
     pub full_title: Option<String>, // 完整的番剧标题
     pub media_id: Option<String>,
     pub cover: Option<String>,
+    pub episode_count: Option<i32>, // 集数
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, utoipa::ToSchema)]
