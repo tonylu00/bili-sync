@@ -10,9 +10,9 @@ fn database_url() -> String {
     if !CONFIG_DIR.exists() {
         std::fs::create_dir_all(&*CONFIG_DIR).expect("创建配置目录失败");
     }
-    // 启用 WAL 模式和其他优化参数
+    // 使用简单的SQLite连接URL，WAL模式和其他优化通过PRAGMA语句设置
     format!(
-        "sqlite://{}?mode=rwc&journal_mode=WAL&synchronous=NORMAL&cache_size=1000&temp_store=memory",
+        "sqlite://{}",
         CONFIG_DIR.join("data.sqlite").to_string_lossy()
     )
 }

@@ -37,6 +37,7 @@ export interface VideoInfo {
     name: string;
     upper_name: string;
     path: string;
+    category: number;
 	download_status: [number, number, number, number, number];
 }
 
@@ -221,4 +222,30 @@ export interface BangumiSeasonInfo {
 export interface BangumiSeasonsResponse {
 	success: boolean;
 	data: BangumiSeasonInfo[];
+}
+
+// 关注的UP主信息类型
+export interface UserFollowing {
+	mid: number;
+	name: string;
+	face: string;
+	sign: string;
+	official_verify?: OfficialVerify;
+}
+
+// 官方认证信息类型
+export interface OfficialVerify {
+	type: number;
+	desc: string;
+}
+
+export interface UserCollectionInfo {
+	sid: string;
+	name: string;
+	cover: string;
+	description: string;
+	total: number;
+	collection_type: string;
+	up_name: string;
+	up_mid: number;
 }

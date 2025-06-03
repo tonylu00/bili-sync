@@ -53,8 +53,8 @@
 			name: sourceName
 		};
 		showDeleteDialog = true;
-	}
-
+		}
+		
 	// 确认删除
 	async function handleConfirmDelete(event: CustomEvent<{ deleteLocalFiles: boolean }>) {
 		const { deleteLocalFiles } = event.detail;

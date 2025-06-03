@@ -84,6 +84,13 @@ if errorlevel 1 (
 )
 echo 前端依赖安装完成
 
+echo 同步 SvelteKit 配置...
+npx svelte-kit sync
+if errorlevel 1 (
+    echo SvelteKit 同步失败
+    exit /b 1
+)
+
 echo 构建前端...
 npm run build
 if errorlevel 1 (
@@ -170,6 +177,12 @@ if errorlevel 1 (
         exit /b 1
     )
 )
+echo [DEBUG] 同步 SvelteKit 配置...
+call npx svelte-kit sync
+if errorlevel 1 (
+    echo SvelteKit 同步失败
+    exit /b 1
+)
 echo [DEBUG] 执行 npm run build...
 call npm run build
 if errorlevel 1 (
@@ -208,6 +221,12 @@ if errorlevel 1 (
         echo 安装 autoprefixer 失败
         exit /b 1
     )
+)
+echo 同步 SvelteKit 配置...
+npx svelte-kit sync
+if errorlevel 1 (
+    echo SvelteKit 同步失败
+    exit /b 1
 )
 npm run build
 if errorlevel 1 (

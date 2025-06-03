@@ -25,7 +25,7 @@ use crate::utils::status::{PageStatus, VideoStatus};
 
 #[derive(OpenApi)]
 #[openapi(
-    paths(get_video_sources, get_videos, get_video, reset_video, add_video_source, delete_video_source, reload_config, get_config, update_config, get_bangumi_seasons, search_bilibili, get_user_favorites, get_user_collections),
+    paths(get_video_sources, get_videos, get_video, reset_video, add_video_source, delete_video_source, reload_config, get_config, update_config, get_bangumi_seasons, search_bilibili, get_user_favorites, get_user_collections, get_user_followings, get_subscribed_collections),
     modifiers(&OpenAPIAuth),
     security(
         ("Token" = []),
@@ -136,7 +136,10 @@ pub async fn get_videos(
         }
     }
     if let Some(query_word) = params.query {
-        query = query.filter(video::Column::Name.contains(query_word));
+        query = query.filter(
+            video::Column::Name.contains(&query_word)
+            .or(video::Column::Path.contains(&query_word))
+        );
     }
     let total_count = query.clone().count(db.as_ref()).await?;
     let (page, page_size) = if let (Some(page), Some(page_size)) = (params.page, params.page_size) {
@@ -153,9 +156,10 @@ pub async fn get_videos(
                 video::Column::Name,
                 video::Column::UpperName,
                 video::Column::Path,
+                video::Column::Category,
                 video::Column::DownloadStatus,
             ])
-            .into_tuple::<(i32, String, String, String, u32)>()
+            .into_tuple::<(i32, String, String, String, i32, u32)>()
             .paginate(db.as_ref(), page_size)
             .fetch_page(page)
             .await?
@@ -185,9 +189,10 @@ pub async fn get_video(
             video::Column::Name,
             video::Column::UpperName,
             video::Column::Path,
+            video::Column::Category,
             video::Column::DownloadStatus,
         ])
-        .into_tuple::<(i32, String, String, String, u32)>()
+        .into_tuple::<(i32, String, String, String, i32, u32)>()
         .one(db.as_ref())
         .await?
         .map(VideoInfo::from);
@@ -498,7 +503,7 @@ pub async fn add_video_source(
                 // 情况1：Season ID 重复 → 合并到现有番剧源
                 info!("检测到重复番剧 Season ID，执行智能合并: {}", existing.name);
                 
-                let download_all_seasons = params.download_all_seasons.unwrap_or(false);
+            let download_all_seasons = params.download_all_seasons.unwrap_or(false);
                 let mut updated = false;
                 let mut merge_message = String::new();
                 
@@ -690,34 +695,34 @@ pub async fn add_video_source(
                     
                     return Err(anyhow!("无法添加番剧：{}。请选择其他季度或使用'下载全部季度'选项。", skipped_msg).into());
                 }
-                
-                // 处理选中的季度
+            
+            // 处理选中的季度
                 let selected_seasons_json = if !download_all_seasons && final_selected_seasons.is_some() {
                     let seasons = final_selected_seasons.clone().unwrap();
                     if seasons.is_empty() {
                         None
                     } else {
-                        Some(serde_json::to_string(&seasons)?)
+                Some(serde_json::to_string(&seasons)?)
                     }
-                } else {
-                    None
-                };
+            } else {
+                None
+            };
 
-                let bangumi = video_source::ActiveModel {
-                    id: sea_orm::ActiveValue::NotSet,
-                    name: sea_orm::Set(params.name),
-                    path: sea_orm::Set(params.path.clone()),
-                    r#type: sea_orm::Set(1), // 1表示番剧类型
-                    latest_row_at: sea_orm::Set(chrono::Utc::now().naive_utc()),
-                    season_id: sea_orm::Set(Some(params.source_id.clone())),
-                    media_id: sea_orm::Set(params.media_id),
-                    ep_id: sea_orm::Set(params.ep_id),
-                    download_all_seasons: sea_orm::Set(Some(download_all_seasons)),
-                    selected_seasons: sea_orm::Set(selected_seasons_json),
-                    ..Default::default()
-                };
+            let bangumi = video_source::ActiveModel {
+                id: sea_orm::ActiveValue::NotSet,
+                name: sea_orm::Set(params.name),
+                path: sea_orm::Set(params.path.clone()),
+                r#type: sea_orm::Set(1), // 1表示番剧类型
+                latest_row_at: sea_orm::Set(chrono::Utc::now().naive_utc()),
+                season_id: sea_orm::Set(Some(params.source_id.clone())),
+                media_id: sea_orm::Set(params.media_id),
+                ep_id: sea_orm::Set(params.ep_id),
+                download_all_seasons: sea_orm::Set(Some(download_all_seasons)),
+                selected_seasons: sea_orm::Set(selected_seasons_json),
+                ..Default::default()
+            };
 
-                let insert_result = video_source::Entity::insert(bangumi).exec(&txn).await?;
+            let insert_result = video_source::Entity::insert(bangumi).exec(&txn).await?;
 
                 // 确保目标路径存在
                 std::fs::create_dir_all(&params.path).map_err(|e| anyhow!("创建目录失败: {}", e))?;
@@ -732,10 +737,10 @@ pub async fn add_video_source(
 
                 info!("新番剧添加完成: {}", success_message);
 
-                AddVideoSourceResponse {
-                    success: true,
-                    source_id: insert_result.last_insert_id,
-                    source_type: "bangumi".to_string(),
+            AddVideoSourceResponse {
+                success: true,
+                source_id: insert_result.last_insert_id,
+                source_type: "bangumi".to_string(),
                     message: success_message,
                 }
             }
@@ -871,7 +876,7 @@ pub async fn delete_video_source(
                             let size_mb = size as f64 / 1024.0 / 1024.0;
                             info!("即将删除文件夹，总大小: {:.2} MB", size_mb);
                             
-                            if let Err(e) = std::fs::remove_dir_all(path) {
+                if let Err(e) = std::fs::remove_dir_all(path) {
                                 error!("删除合集文件夹失败: {} - {}", path, e);
                             } else {
                                 info!("成功删除合集文件夹: {} ({:.2} MB)", path, size_mb);
@@ -941,7 +946,7 @@ pub async fn delete_video_source(
                             let size_mb = size as f64 / 1024.0 / 1024.0;
                             info!("即将删除文件夹，总大小: {:.2} MB", size_mb);
                             
-                            if let Err(e) = std::fs::remove_dir_all(path) {
+                if let Err(e) = std::fs::remove_dir_all(path) {
                                 error!("删除收藏夹文件夹失败: {} - {}", path, e);
                             } else {
                                 info!("成功删除收藏夹文件夹: {} ({:.2} MB)", path, size_mb);
@@ -1011,7 +1016,7 @@ pub async fn delete_video_source(
                             let size_mb = size as f64 / 1024.0 / 1024.0;
                             info!("即将删除文件夹，总大小: {:.2} MB", size_mb);
                             
-                            if let Err(e) = std::fs::remove_dir_all(path) {
+                if let Err(e) = std::fs::remove_dir_all(path) {
                                 error!("删除UP主投稿文件夹失败: {} - {}", path, e);
                             } else {
                                 info!("成功删除UP主投稿文件夹: {} ({:.2} MB)", path, size_mb);
@@ -1081,7 +1086,7 @@ pub async fn delete_video_source(
                             let size_mb = size as f64 / 1024.0 / 1024.0;
                             info!("即将删除文件夹，总大小: {:.2} MB", size_mb);
                             
-                            if let Err(e) = std::fs::remove_dir_all(path) {
+                if let Err(e) = std::fs::remove_dir_all(path) {
                                 error!("删除稍后再看文件夹失败: {} - {}", path, e);
                             } else {
                                 info!("成功删除稍后再看文件夹: {} ({:.2} MB)", path, size_mb);
@@ -2614,4 +2619,59 @@ fn get_directory_size(path: &str) -> std::io::Result<u64> {
     
     let path = std::path::Path::new(path);
     dir_size(path)
+}
+
+/// 获取关注的UP主列表
+#[utoipa::path(
+    get,
+    path = "/api/user/followings",
+    responses(
+        (status = 200, body = ApiResponse<Vec<crate::api::response::UserFollowing>>),
+    )
+)]
+pub async fn get_user_followings() -> Result<ApiResponse<Vec<crate::api::response::UserFollowing>>, ApiError> {
+    let bili_client = crate::bilibili::BiliClient::new(String::new());
+    
+    match bili_client.get_user_followings().await {
+        Ok(followings) => {
+            let response_followings: Vec<crate::api::response::UserFollowing> = followings
+                .into_iter()
+                .map(|following| crate::api::response::UserFollowing {
+                    mid: following.mid,
+                    name: following.name,
+                    face: following.face,
+                    sign: following.sign,
+                    official_verify: following.official_verify.map(|verify| crate::api::response::OfficialVerify {
+                        type_: verify.type_,
+                        desc: verify.desc,
+                    }),
+                })
+                .collect();
+            Ok(ApiResponse::ok(response_followings))
+        }
+        Err(e) => {
+            tracing::error!("获取关注UP主列表失败: {}", e);
+            Err(ApiError::from(anyhow::anyhow!("获取关注UP主列表失败: {}", e)))
+        }
+    }
+}
+
+/// 获取订阅的合集列表
+#[utoipa::path(
+    get,
+    path = "/api/user/subscribed-collections",
+    responses(
+        (status = 200, body = ApiResponse<Vec<crate::api::response::UserCollectionInfo>>),
+    )
+)]
+pub async fn get_subscribed_collections() -> Result<ApiResponse<Vec<crate::api::response::UserCollectionInfo>>, ApiError> {
+    let bili_client = crate::bilibili::BiliClient::new(String::new());
+    
+    match bili_client.get_subscribed_collections().await {
+        Ok(collections) => Ok(ApiResponse::ok(collections)),
+        Err(e) => {
+            tracing::error!("获取订阅合集失败: {}", e);
+            Err(ApiError::from(anyhow::anyhow!("获取订阅合集失败: {}", e)))
+        }
+    }
 }

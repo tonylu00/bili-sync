@@ -11,6 +11,21 @@ use crate::bilibili::{Credential, Validate};
 use crate::bilibili::credential::WbiImg;
 use crate::config::{CONFIG, RateLimit};
 
+#[derive(Debug, Clone)]
+pub struct UserFollowingInfo {
+    pub mid: i64,
+    pub name: String,
+    pub face: String,
+    pub sign: String,
+    pub official_verify: Option<UserOfficialVerify>,
+}
+
+#[derive(Debug, Clone)]
+pub struct UserOfficialVerify {
+    pub type_: i32,
+    pub desc: String,
+}
+
 /// bilibili搜索响应包装
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SearchResponseWrapper {
@@ -136,6 +151,16 @@ impl BiliClient {
             client,
             limiter,
             cookie,
+        }
+    }
+
+    /// 获取当前用户ID的辅助函数
+    fn get_current_user_id(&self) -> Result<i64, anyhow::Error> {
+        let credential = crate::config::CONFIG.credential.load();
+        match credential.as_ref() {
+            Some(cred) => cred.dedeuserid.parse::<i64>()
+                .map_err(|_| anyhow::anyhow!("无效的用户ID")),
+            None => Err(anyhow::anyhow!("未设置登录凭据")),
         }
     }
 
@@ -350,15 +375,7 @@ impl BiliClient {
     pub async fn get_user_favorite_folders(&self, uid: Option<i64>) -> Result<Vec<crate::api::UserFavoriteFolder>, anyhow::Error> {
         let uid = match uid {
             Some(uid) => uid,
-            None => {
-                // 从CONFIG中获取当前用户ID
-                let credential = crate::config::CONFIG.credential.load();
-                match credential.as_ref() {
-                    Some(cred) => cred.dedeuserid.parse::<i64>()
-                        .map_err(|_| anyhow::anyhow!("无效的用户ID"))?,
-                    None => return Err(anyhow::anyhow!("未设置登录凭据")),
-                }
-            }
+            None => self.get_current_user_id()?,
         };
 
         let response = self
@@ -473,5 +490,138 @@ impl BiliClient {
             page,
             page_size,
         })
+    }
+
+    /// 获取关注的UP主列表
+    pub async fn get_user_followings(&self) -> Result<Vec<UserFollowingInfo>, anyhow::Error> {
+        let uid = self.get_current_user_id()?;
+        
+        let url = "https://api.bilibili.com/x/relation/followings";
+        let mut all_followings = Vec::new();
+        let mut page = 1;
+        let page_size = 50; // bilibili API限制最大为50
+        
+        loop {
+            let response = self.request(Method::GET, url)
+                .await
+                .query(&[("vmid", &uid.to_string()), ("pn", &page.to_string()), ("ps", &page_size.to_string())])
+                .send()
+                .await?
+                .error_for_status()?
+                .json::<serde_json::Value>()
+                .await?
+                .validate()?;
+
+            let list = response["data"]["list"].as_array()
+                .ok_or_else(|| anyhow::anyhow!("响应格式错误：缺少list字段"))?;
+
+            // 如果当前页没有数据，说明已经获取完毕
+            if list.is_empty() {
+                break;
+            }
+
+            let current_page_followings: Vec<UserFollowingInfo> = list
+                .iter()
+                .filter_map(|item| {
+                    let mid = item["mid"].as_i64()?;
+                    let name = item["uname"].as_str()?.to_string();
+                    let face = item["face"].as_str()?.to_string();
+                    let sign = item["sign"].as_str().unwrap_or("").to_string();
+                    
+                    let official_verify = item["official_verify"].as_object().map(|verify| {
+                        UserOfficialVerify {
+                            type_: verify["type"].as_i64().unwrap_or(-1) as i32,
+                            desc: verify["desc"].as_str().unwrap_or("").to_string(),
+                        }
+                    });
+
+                    Some(UserFollowingInfo {
+                        mid,
+                        name,
+                        face,
+                        sign,
+                        official_verify,
+                    })
+                })
+                .collect();
+
+            all_followings.extend(current_page_followings);
+            
+            // 如果当前页数据不足50个，说明是最后一页
+            if list.len() < page_size as usize {
+                break;
+            }
+            
+            page += 1;
+            
+            // 添加延迟以避免请求过于频繁
+            tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
+        }
+
+        Ok(all_followings)
+    }
+
+    /// 获取用户关注的收藏夹列表
+    pub async fn get_subscribed_collections(&self) -> Result<Vec<crate::api::response::UserCollectionInfo>, anyhow::Error> {
+        let uid = self.get_current_user_id()?;
+        
+        let url = "https://api.bilibili.com/x/v3/fav/folder/collected/list";
+        let mut all_collections = Vec::new();
+        let mut page = 1;
+        let page_size = 20;
+        
+        loop {
+            let response = self.request(Method::GET, url)
+                .await
+                .query(&[
+                    ("up_mid", &uid.to_string()),
+                    ("pn", &page.to_string()),
+                    ("ps", &page_size.to_string()),
+                    ("platform", &"web".to_string()),
+                ])
+                .send()
+                .await?
+                .error_for_status()?
+                .json::<serde_json::Value>()
+                .await?
+                .validate()?;
+
+            let list = response["data"]["list"].as_array();
+            if list.is_none() || list.unwrap().is_empty() {
+                break;
+            }
+            
+            let list = list.unwrap();
+            
+            for item in list {
+                if let Some(item_obj) = item.as_object() {
+                    all_collections.push(crate::api::response::UserCollectionInfo {
+                        sid: item_obj["id"].as_i64().unwrap_or(0).to_string(),
+                        name: item_obj["title"].as_str().unwrap_or("").to_string(),
+                        cover: item_obj.get("cover").and_then(|v| v.as_str()).unwrap_or("").to_string(),
+                        description: item_obj.get("description").and_then(|v| v.as_str()).unwrap_or("").to_string(),
+                        total: item_obj["media_count"].as_i64().unwrap_or(0) as i32,
+                        collection_type: "favorite".to_string(),
+                        up_name: "".to_string(),
+                        up_mid: item_obj["mid"].as_i64().unwrap_or(0),
+                    });
+                }
+            }
+            
+            if list.len() < page_size {
+                break;
+            }
+            
+            page += 1;
+            tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
+        }
+        
+        if all_collections.is_empty() {
+            info!("当前用户暂无关注的收藏夹");
+        } else {
+            info!("获取到用户关注的 {} 个收藏夹", all_collections.len());
+        }
+        
+        Ok(all_collections)
     }
 }

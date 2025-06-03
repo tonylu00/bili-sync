@@ -84,16 +84,18 @@ pub struct VideoInfo {
     pub name: String,
     pub upper_name: String,
     pub path: String,
+    pub category: i32,
     pub download_status: [u32; 5],
 }
 
-impl From<(i32, String, String, String, u32)> for VideoInfo {
-    fn from((id, name, upper_name, path, download_status): (i32, String, String, String, u32)) -> Self {
+impl From<(i32, String, String, String, i32, u32)> for VideoInfo {
+    fn from((id, name, upper_name, path, category, download_status): (i32, String, String, String, i32, u32)) -> Self {
         Self {
             id,
             name,
             upper_name,
             path,
+            category,
             download_status: VideoStatus::from(download_status).into(),
         }
     }
@@ -210,10 +212,46 @@ pub struct UserCollection {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, utoipa::ToSchema)]
+pub struct UserCollectionInfo {
+    /// 合集/系列ID
+    pub sid: String,
+    /// 合集/系列名称
+    pub name: String,
+    /// 封面图片URL
+    pub cover: String,
+    /// 描述
+    pub description: String,
+    /// 视频总数
+    pub total: i32,
+    /// 合集类型：season（合集）或 series（系列）
+    pub collection_type: String,
+    /// UP主名称
+    pub up_name: String,
+    /// UP主ID
+    pub up_mid: i64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, utoipa::ToSchema)]
 pub struct UserCollectionsResponse {
     pub success: bool,
     pub collections: Vec<UserCollection>,
     pub total: u32,
     pub page: u32,
     pub page_size: u32,
+}
+
+#[derive(Serialize, ToSchema)]
+pub struct UserFollowing {
+    pub mid: i64,
+    pub name: String,
+    pub face: String,
+    pub sign: String,
+    pub official_verify: Option<OfficialVerify>,
+}
+
+#[derive(Serialize, ToSchema)]
+pub struct OfficialVerify {
+    #[serde(rename = "type")]
+    pub type_: i32,
+    pub desc: String,
 }

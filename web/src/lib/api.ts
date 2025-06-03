@@ -15,7 +15,9 @@ import type {
 	SearchRequest,
 	SearchResponse,
 	UserFavoriteFolder,
-	UserCollectionsResponse
+	UserCollectionsResponse,
+	UserFollowing,
+	UserCollectionInfo
 } from './types';
 
 // API 基础配置
@@ -230,10 +232,23 @@ class ApiClient {
 
 	/**
 	 * 获取番剧季度信息
-	 * @param seasonId 季度ID
 	 */
 	async getBangumiSeasons(seasonId: string): Promise<ApiResponse<any>> {
 		return this.get<any>(`/bangumi/seasons/${seasonId}`);
+	}
+
+	/**
+	 * 获取关注的UP主列表
+	 */
+	async getUserFollowings(): Promise<ApiResponse<UserFollowing[]>> {
+		return this.get<UserFollowing[]>('/user/followings');
+	}
+
+	/**
+	 * 获取订阅的合集列表
+	 */
+	async getSubscribedCollections(): Promise<ApiResponse<UserCollectionInfo[]>> {
+		return this.get<UserCollectionInfo[]>('/user/subscribed-collections');
 	}
 }
 
@@ -307,7 +322,17 @@ export const api = {
 	/**
 	 * 获取番剧季度信息
 	 */
-	getBangumiSeasons: (seasonId: string) => apiClient.getBangumiSeasons(seasonId)
+	getBangumiSeasons: (seasonId: string) => apiClient.getBangumiSeasons(seasonId),
+
+	/**
+	 * 获取关注的UP主列表
+	 */
+	getUserFollowings: () => apiClient.getUserFollowings(),
+
+	/**
+	 * 获取订阅的合集列表
+	 */
+	getSubscribedCollections: () => apiClient.getSubscribedCollections()
 };
 
 // 默认导出
