@@ -23,15 +23,15 @@ export default defineConfig({
 		nav: [
 			{ text: "主页", link: "/" },
 			{
-				text: "v2.6.2",
+				text: "v2.7.0",
 				items: [
 					{
 						text: "程序更新",
-						link: "https://github.com/amtoaer/bili-sync/releases",
+						link: "https://github.com/qq1582185982/bili-sync-01/releases",
 					},
 					{
 						text: "文档更新",
-						link: "https://github.com/search?q=repo:amtoaer/bili-sync+docs&type=commits",
+						link: "https://github.com/qq1582185982/bili-sync-01/commits/main",
 					},
 				],
 			},
@@ -75,13 +75,15 @@ export default defineConfig({
 			{
 				text: "更新日志",
 				items: [
+					{ text: "🚀 综合更新 v2.7.0 (2025-06-03)", link: "/comprehensive-update-2025-06-03" },
+					{ text: "🔧 智能合并bug修复", link: "/bangumi-merge-fix" },
 					{ text: "v2.6.2 (2025年6月)", link: "/update-log-2025-06" },
 					{ text: "2024年6月更新", link: "/update-log-2024-06" },
 				],
 			},
 		],
 		socialLinks: [
-			{ icon: "github", link: "https://github.com/amtoaer/bili-sync" },
+			{ icon: "github", link: "https://github.com/qq1582185982/bili-sync-01" },
 		],
 		search: {
 			provider: "local",
