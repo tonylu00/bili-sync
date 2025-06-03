@@ -5,7 +5,7 @@
 # 应用数据
 auth_data
 *.sqlite
-video
+/video
 debug*
 
 # Node.js 依赖
