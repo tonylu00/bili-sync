@@ -23,7 +23,7 @@ use crate::utils::model::{
     create_pages, create_videos, filter_unfilled_videos, filter_unhandled_video_pages, update_pages_model,
     update_videos_model,
 };
-use crate::utils::nfo::{ModelWrapper, NFOMode, NFOSerializer};
+use crate::utils::nfo::NFO;
 use crate::utils::status::{PageStatus, STATUS_OK, VideoStatus};
 
 /// 创建一个配置了 truncate 辅助函数的 handlebars 实例
@@ -1126,13 +1126,17 @@ pub async fn generate_page_nfo(
     if !should_run {
         return Ok(ExecutionStatus::Skipped);
     }
-    let single_page = video_model.single_page.context("single_page is null")?;
-    let nfo_serializer = if single_page {
-        NFOSerializer(ModelWrapper::Video(video_model), NFOMode::MOVIE)
-    } else {
-        NFOSerializer(ModelWrapper::Page(page_model), NFOMode::EPOSODE)
+    let nfo = match video_model.single_page {
+        Some(single_page) => {
+            if single_page {
+                NFO::Movie(video_model.into())
+            } else {
+                NFO::Episode(page_model.into())
+            }
+        }
+        None => NFO::Episode(page_model.into()),
     };
-    generate_nfo(nfo_serializer, nfo_path).await?;
+    generate_nfo(nfo, nfo_path).await?;
     Ok(ExecutionStatus::Succeeded)
 }
 
@@ -1180,8 +1184,7 @@ pub async fn generate_upper_nfo(
     if !should_run {
         return Ok(ExecutionStatus::Skipped);
     }
-    let nfo_serializer = NFOSerializer(ModelWrapper::Video(video_model), NFOMode::UPPER);
-    generate_nfo(nfo_serializer, nfo_path).await?;
+    generate_nfo(NFO::Upper(video_model.into()), nfo_path).await?;
     Ok(ExecutionStatus::Succeeded)
 }
 
@@ -1193,19 +1196,17 @@ pub async fn generate_video_nfo(
     if !should_run {
         return Ok(ExecutionStatus::Skipped);
     }
-    let nfo_serializer = NFOSerializer(ModelWrapper::Video(video_model), NFOMode::TVSHOW);
-    generate_nfo(nfo_serializer, nfo_path).await?;
+    generate_nfo(NFO::TVShow(video_model.into()), nfo_path).await?;
     Ok(ExecutionStatus::Succeeded)
 }
 
-/// 创建 nfo_path 的父目录，然后写入 nfo 文件
-async fn generate_nfo(serializer: NFOSerializer<'_>, nfo_path: PathBuf) -> Result<()> {
+async fn generate_nfo(nfo: NFO<'_>, nfo_path: PathBuf) -> Result<()> {
     if let Some(parent) = nfo_path.parent() {
         fs::create_dir_all(parent).await?;
     }
     fs::write(
         nfo_path,
-        serializer.generate_nfo(&CONFIG.nfo_time_type).await?.as_bytes(),
+        nfo.generate_nfo().await?.as_bytes(),
     )
     .await?;
     Ok(())

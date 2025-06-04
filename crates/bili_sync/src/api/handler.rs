@@ -22,6 +22,7 @@ use crate::api::response::{
 };
 use crate::api::wrapper::{ApiError, ApiResponse};
 use crate::utils::status::{PageStatus, VideoStatus};
+use crate::utils::nfo::NFO;
 
 #[derive(OpenApi)]
 #[openapi(
@@ -1990,7 +1991,6 @@ async fn rename_existing_files(
 
 /// 重新生成已下载视频的NFO文件以使用新的时间类型配置
 async fn regenerate_nfo_files(db: Arc<DatabaseConnection>, config: &crate::config::Config) -> Result<u32> {
-    use crate::utils::nfo::{ModelWrapper, NFOMode, NFOSerializer};
     use handlebars::Handlebars;
     use sea_orm::*;
     use std::path::Path;
@@ -2046,15 +2046,13 @@ async fn regenerate_nfo_files(db: Arc<DatabaseConnection>, config: &crate::confi
             video_path.join(format!("{}.nfo", video_name))
         };
 
-        let nfo_mode = if video.single_page.unwrap_or(false) {
-            NFOMode::MOVIE
+        let nfo = if video.single_page.unwrap_or(false) {
+            NFO::Movie((&video).into())
         } else {
-            NFOMode::TVSHOW
+            NFO::TVShow((&video).into())
         };
 
-        let nfo_serializer = NFOSerializer(ModelWrapper::Video(&video), nfo_mode);
-
-        match nfo_serializer.generate_nfo(&config.nfo_time_type).await {
+        match nfo.generate_nfo().await {
             Ok(nfo_content) => {
                 if let Some(parent) = video_nfo_path.parent() {
                     if let Err(e) = tokio::fs::create_dir_all(parent).await {
@@ -2085,9 +2083,9 @@ async fn regenerate_nfo_files(db: Arc<DatabaseConnection>, config: &crate::confi
             .join(upper_id.chars().next().unwrap_or('0').to_string())
             .join(&upper_id);
         let upper_nfo_path = base_upper_path.join("person.nfo");
-        let upper_nfo_serializer = NFOSerializer(ModelWrapper::Video(&video), NFOMode::UPPER);
+        let upper_nfo = NFO::Upper((&video).into());
 
-        match upper_nfo_serializer.generate_nfo(&config.nfo_time_type).await {
+        match upper_nfo.generate_nfo().await {
             Ok(nfo_content) => {
                 // 确保UP主目录存在
                 if let Some(parent) = upper_nfo_path.parent() {
@@ -2221,9 +2219,9 @@ async fn regenerate_nfo_files(db: Arc<DatabaseConnection>, config: &crate::confi
                     };
 
                     let page_nfo_path = video_path.join(format!("{}.nfo", page_name));
-                    let page_nfo_serializer = NFOSerializer(ModelWrapper::Page(&page), NFOMode::EPOSODE);
+                    let page_nfo = NFO::Episode((&page).into());
 
-                    match page_nfo_serializer.generate_nfo(&config.nfo_time_type).await {
+                    match page_nfo.generate_nfo().await {
                         Ok(nfo_content) => match tokio::fs::write(&page_nfo_path, nfo_content.as_bytes()).await {
                             Ok(_) => {
                                 debug!("重新生成番剧分页NFO文件成功: {:?}", page_nfo_path);
@@ -2304,9 +2302,9 @@ async fn regenerate_nfo_files(db: Arc<DatabaseConnection>, config: &crate::confi
                     };
 
                     let page_nfo_path = video_path.join(format!("{}.nfo", page_name));
-                    let page_nfo_serializer = NFOSerializer(ModelWrapper::Page(&page), NFOMode::EPOSODE);
+                    let page_nfo = NFO::Episode((&page).into());
 
-                    match page_nfo_serializer.generate_nfo(&config.nfo_time_type).await {
+                    match page_nfo.generate_nfo().await {
                         Ok(nfo_content) => match tokio::fs::write(&page_nfo_path, nfo_content.as_bytes()).await {
                             Ok(_) => {
                                 debug!("重新生成分页NFO文件成功: {:?}", page_nfo_path);
