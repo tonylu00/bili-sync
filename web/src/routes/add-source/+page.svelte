@@ -55,6 +55,11 @@
 	let hoverTimeout: any;
 	let mousePosition = { x: 0, y: 0 };
 
+	// 响应式相关
+	let innerWidth: number;
+	let isMobile: boolean = false;
+	$: isMobile = innerWidth < 768; // md断点
+
 	// 源类型选项
 	const sourceTypeOptions = [
 		{ value: 'collection', label: '合集', description: '视频合集，需要UP主ID和合集ID' },
@@ -576,14 +581,16 @@
 	<title>添加视频源 - Bili Sync</title>
 </svelte:head>
 
+<svelte:window bind:innerWidth />
+
 <div class="py-2">
 	<div class="mx-auto px-4">
 		<div class="bg-card rounded-lg shadow-sm border p-6">
 			<h1 class="text-2xl font-bold mb-6">添加新视频源</h1>
 
-			<div class="flex gap-8">
+			<div class="flex {isMobile ? 'flex-col' : 'gap-8'}">
 				<!-- 左侧：表单区域 -->
-				<div class="w-[600px] flex-shrink-0">
+				<div class="{isMobile ? 'w-full' : 'w-[600px] flex-shrink-0'}">
 					<form onsubmit={(e) => { e.preventDefault(); handleSubmit(); }} class="space-y-6">
 						<!-- 视频源类型 -->
 						<div class="space-y-2">
@@ -616,37 +623,41 @@
 												搜索B站内容
 											{/if}
 										</Label>
-										<div class="flex gap-2 mt-2">
+										<div class="flex {isMobile ? 'flex-col gap-2' : 'gap-2'} mt-2">
 											<Input 
 												id="search"
 												bind:value={searchKeyword} 
 												placeholder={sourceType === 'submission' || sourceType === 'collection' ? '搜索UP主...' : sourceType === 'bangumi' ? '搜索番剧...' : '搜索视频...'}
 												onkeydown={(e) => e.key === 'Enter' && handleSearch()}
 											/>
-											<Button 
-												onclick={() => handleSearch()} 
-												disabled={searchLoading || !searchKeyword.trim()}
-												size="sm"
-											>
-												{#if searchLoading}
-													搜索中...
-												{:else}
-													<Search class="h-4 w-4" />
-												{/if}
-											</Button>
-											{#if sourceType === 'collection' || sourceType === 'submission'}
+											<div class="flex gap-2">
 												<Button 
-													onclick={sourceType === 'collection' ? fetchSubscribedCollections : fetchUserFollowings} 
-													disabled={sourceType === 'collection' ? loadingSubscribedCollections : loadingFollowings}
+													onclick={() => handleSearch()} 
+													disabled={searchLoading || !searchKeyword.trim()}
 													size="sm"
-													variant="outline"
+													class="{isMobile ? 'flex-1' : ''}"
 												>
-													{sourceType === 'collection' 
-														? (loadingSubscribedCollections ? '获取中...' : '获取关注的合集')
-														: (loadingFollowings ? '获取中...' : '获取关注')
-													}
+													{#if searchLoading}
+														搜索中...
+													{:else}
+														<Search class="h-4 w-4" />
+													{/if}
 												</Button>
-											{/if}
+												{#if sourceType === 'collection' || sourceType === 'submission'}
+													<Button 
+														onclick={sourceType === 'collection' ? fetchSubscribedCollections : fetchUserFollowings} 
+														disabled={sourceType === 'collection' ? loadingSubscribedCollections : loadingFollowings}
+														size="sm"
+														variant="outline"
+														class="{isMobile ? 'flex-1' : ''}"
+													>
+														{sourceType === 'collection' 
+															? (loadingSubscribedCollections ? '获取中...' : '获取关注的合集')
+															: (loadingFollowings ? '获取中...' : '获取关注')
+														}
+													</Button>
+												{/if}
+											</div>
 										</div>
 										<p class="text-xs text-gray-600 mt-1">
 											{#if sourceType === 'collection'}
@@ -667,20 +678,21 @@
 						<!-- 收藏夹列表（仅收藏夹类型时显示） -->
 						{#if sourceType === 'favorite'}
 							<div class="p-4 bg-yellow-50 rounded-lg border border-yellow-200">
-								<div class="flex items-center justify-between mb-2">
+								<div class="flex {isMobile ? 'flex-col gap-2' : 'items-center justify-between'} mb-2">
 									<span class="text-sm font-medium text-yellow-800">我的收藏夹</span>
 									<Button 
 										size="sm" 
 										variant="outline"
 										onclick={fetchUserFavorites}
 										disabled={loadingFavorites}
+										class="{isMobile ? 'w-full' : ''}"
 									>
 										{loadingFavorites ? '加载中...' : '获取收藏夹'}
 									</Button>
 								</div>
 								
 								{#if userFavorites.length > 0}
-									<p class="text-xs text-yellow-600">已获取 {userFavorites.length} 个收藏夹，请在右侧选择</p>
+									<p class="text-xs text-yellow-600">已获取 {userFavorites.length} 个收藏夹，请在{isMobile ? '下方' : '右侧'}选择</p>
 								{/if}
 							</div>
 						{/if}
@@ -698,7 +710,7 @@
 										<option value={option.value}>{option.label}</option>
 									{/each}
 								</select>
-								<p class="text-sm text-orange-600">⚠️ 手动输入合集ID时需要指定类型，建议从右侧合集列表中选择</p>
+								<p class="text-sm text-orange-600">⚠️ 手动输入合集ID时需要指定类型，建议从{isMobile ? '下方' : '右侧'}合集列表中选择</p>
 							</div>
 						{/if}
 
@@ -714,7 +726,7 @@
 									required
 								/>
 								{#if userCollections.length > 0}
-									<p class="text-xs text-green-600 mt-1">✓ 已获取合集列表，请在右侧选择</p>
+									<p class="text-xs text-green-600 mt-1">✓ 已获取合集列表，请在{isMobile ? '下方' : '右侧'}选择</p>
 								{/if}
 							</div>
 						{/if}
@@ -767,7 +779,7 @@
 									{#if downloadAllSeasons}
 										<p class="text-xs text-purple-600 mt-1 ml-6">勾选后将下载该番剧的所有季度，无需单独选择</p>
 									{:else if bangumiSeasons.length > 1}
-										<p class="text-xs text-purple-600 mt-1 ml-6">检测到 {bangumiSeasons.length} 个相关季度，请在右侧选择要下载的季度</p>
+										<p class="text-xs text-purple-600 mt-1 ml-6">检测到 {bangumiSeasons.length} 个相关季度，请在{isMobile ? '下方' : '右侧'}选择要下载的季度</p>
 									{:else if bangumiSeasons.length === 1}
 										<p class="text-xs text-purple-600 mt-1 ml-6">该番剧只有当前一个季度</p>
 									{/if}
@@ -801,11 +813,11 @@
 						</div>
 
 						<!-- 提交按钮 -->
-						<div class="flex gap-2">
-							<Button type="submit" disabled={loading}>
+						<div class="flex {isMobile ? 'flex-col' : ''} gap-2">
+							<Button type="submit" disabled={loading} class="{isMobile ? 'w-full' : ''}">
 								{loading ? '添加中...' : '添加'}
 							</Button>
-							<Button type="button" variant="outline" onclick={() => goto('/')}>
+							<Button type="button" variant="outline" onclick={() => goto('/')} class="{isMobile ? 'w-full' : ''}">
 								取消
 							</Button>
 						</div>
@@ -814,12 +826,12 @@
 
 				<!-- 右侧：搜索结果区域 -->
 				{#if showSearchResults && searchResults.length > 0}
-					<div class="flex-1">
-						<div class="bg-white rounded-lg border h-full overflow-hidden flex flex-col sticky top-6 max-h-[calc(100vh-200px)]">
+					<div class="{isMobile ? 'w-full mt-6' : 'flex-1'}">
+						<div class="bg-white rounded-lg border {isMobile ? '' : 'h-full'} overflow-hidden flex flex-col {isMobile ? '' : 'sticky top-6'} max-h-[calc(100vh-200px)]">
 							<div class="flex justify-between items-center p-4 border-b bg-gray-50">
 								<div>
 									<span class="text-base font-medium">搜索结果</span>
-									<span class="text-sm text-gray-600 ml-2">
+									<span class="text-sm text-gray-600 {isMobile ? 'block' : 'ml-2'}">
 										共找到 {searchTotalResults} 个结果，当前第 {searchCurrentPage} 页
 									</span>
 								</div>
@@ -838,7 +850,7 @@
 							</div>
 							
 							<div class="flex-1 overflow-y-auto p-3">
-								<div class="grid grid-cols-3 gap-4">
+								<div class="grid {isMobile ? 'grid-cols-1 gap-3' : 'grid-cols-3 gap-4'}">
 									{#each searchResults as result}
 										<button 
 											onclick={() => selectSearchResult(result)}
@@ -903,19 +915,19 @@
 
 				<!-- 关注UP主列表（移动到右侧） -->
 				{#if (sourceType === 'collection' || sourceType === 'submission') && userFollowings.length > 0}
-					<div class="flex-1">
-						<div class="bg-white rounded-lg border h-full overflow-hidden flex flex-col sticky top-6 max-h-126">
+					<div class="{isMobile ? 'w-full mt-6' : 'flex-1'}">
+						<div class="bg-white rounded-lg border {isMobile ? '' : 'h-full'} overflow-hidden flex flex-col {isMobile ? '' : 'sticky top-6'} max-h-126">
 							<div class="flex justify-between items-center p-4 border-b bg-blue-50">
 								<div>
 									<span class="text-base font-medium text-blue-800">关注的UP主</span>
-									<span class="text-sm text-blue-600 ml-2">
+									<span class="text-sm text-blue-600 {isMobile ? 'block' : 'ml-2'}">
 										共 {userFollowings.length} 个UP主
 									</span>
 								</div>
 							</div>
 							
 							<div class="flex-1 overflow-y-auto p-3">
-								<div class="grid grid-cols-3 gap-3">
+								<div class="grid {isMobile ? 'grid-cols-1 gap-2' : 'grid-cols-3 gap-3'}">
 									{#each userFollowings as following}
 										<button 
 											onclick={() => selectFollowing(following)}
@@ -962,19 +974,19 @@
 
 				<!-- UP主合集列表（移动到右侧） -->
 				{#if sourceType === 'collection' && userCollections.length > 0}
-					<div class="flex-1">
-						<div class="bg-white rounded-lg border h-full overflow-hidden flex flex-col sticky top-6 max-h-[calc(100vh-200px)]">
+					<div class="{isMobile ? 'w-full mt-6' : 'flex-1'}">
+						<div class="bg-white rounded-lg border {isMobile ? '' : 'h-full'} overflow-hidden flex flex-col {isMobile ? '' : 'sticky top-6'} max-h-[calc(100vh-200px)]">
 							<div class="flex justify-between items-center p-4 border-b bg-green-50">
 								<div>
 									<span class="text-base font-medium text-green-800">UP主合集列表</span>
-									<span class="text-sm text-green-600 ml-2">
+									<span class="text-sm text-green-600 {isMobile ? 'block' : 'ml-2'}">
 										共 {userCollections.length} 个合集
 									</span>
 								</div>
 							</div>
 							
 							<div class="flex-1 overflow-y-auto p-3">
-								<div class="grid grid-cols-2 gap-4">
+								<div class="grid {isMobile ? 'grid-cols-1 gap-3' : 'grid-cols-2 gap-4'}">
 									{#each userCollections as collection}
 										<button 
 											onclick={() => selectCollection(collection)}
@@ -1020,19 +1032,19 @@
 
 				<!-- 收藏夹列表（移动到右侧） -->
 				{#if sourceType === 'favorite' && userFavorites.length > 0}
-					<div class="flex-1">
-						<div class="bg-white rounded-lg border h-full overflow-hidden flex flex-col sticky top-6 max-h-[calc(100vh-200px)]">
+					<div class="{isMobile ? 'w-full mt-6' : 'flex-1'}">
+						<div class="bg-white rounded-lg border {isMobile ? '' : 'h-full'} overflow-hidden flex flex-col {isMobile ? '' : 'sticky top-6'} max-h-[calc(100vh-200px)]">
 							<div class="flex justify-between items-center p-4 border-b bg-yellow-50">
 								<div>
 									<span class="text-base font-medium text-yellow-800">我的收藏夹</span>
-									<span class="text-sm text-yellow-600 ml-2">
+									<span class="text-sm text-yellow-600 {isMobile ? 'block' : 'ml-2'}">
 										共 {userFavorites.length} 个收藏夹
 									</span>
 								</div>
 							</div>
 							
 							<div class="flex-1 overflow-y-auto p-3">
-								<div class="grid grid-cols-2 gap-4">
+								<div class="grid {isMobile ? 'grid-cols-1 gap-3' : 'grid-cols-2 gap-4'}">
 									{#each userFavorites as favorite}
 										<button 
 											onclick={() => selectFavorite(favorite)}
@@ -1073,12 +1085,12 @@
 
 				<!-- 番剧季度选择区域（移动到右侧） -->
 				{#if sourceType === 'bangumi' && sourceId && !downloadAllSeasons && bangumiSeasons.length > 1}
-					<div class="flex-1">
-						<div class="bg-white rounded-lg border h-full overflow-hidden flex flex-col sticky top-6 max-h-[calc(100vh-200px)]">
+					<div class="{isMobile ? 'w-full mt-6' : 'flex-1'}">
+						<div class="bg-white rounded-lg border {isMobile ? '' : 'h-full'} overflow-hidden flex flex-col {isMobile ? '' : 'sticky top-6'} max-h-[calc(100vh-200px)]">
 							<div class="flex justify-between items-center p-4 border-b bg-purple-50">
 								<div>
 									<span class="text-base font-medium text-purple-800">选择要下载的季度</span>
-									<span class="text-sm text-purple-600 ml-2">
+									<span class="text-sm text-purple-600 {isMobile ? 'block' : 'ml-2'}">
 										{#if loadingSeasons}
 											正在加载...
 										{:else if bangumiSeasons.length > 0}
@@ -1105,10 +1117,10 @@
 									</div>
 								{:else if bangumiSeasons.length > 0}
 									<div class="seasons-grid-container">
-										<div class="grid grid-cols-3 gap-4">
+										<div class="grid {isMobile ? 'grid-cols-1 gap-3' : 'grid-cols-3 gap-4'}">
 											{#each bangumiSeasons as season}
-												<div class="p-4 border rounded-lg hover:bg-purple-50 transition-colors relative h-[120px]">
-													<div class="flex gap-3 h-full">
+												<div class="p-4 border rounded-lg hover:bg-purple-50 transition-colors relative {isMobile ? 'h-auto' : 'h-[120px]'}">
+													<div class="flex gap-3 {isMobile ? '' : 'h-full'}">
 														{#if season.cover}
 															<img 
 																src={processBilibiliImageUrl(season.cover)}
@@ -1157,7 +1169,7 @@
 										</div>
 									</div>
 									{#if !loadingSeasons && bangumiSeasons.length > 0}
-										<p class="text-xs text-purple-600 mt-3 text-center">不选择则仅下载左侧输入的当前季度</p>
+										<p class="text-xs text-purple-600 mt-3 text-center">不选择则仅下载{isMobile ? '上方' : '左侧'}输入的当前季度</p>
 									{/if}
 								{:else if sourceId}
 									<div class="p-4 text-center">
@@ -1172,19 +1184,19 @@
 
 				<!-- 订阅的合集列表（仅合集类型时显示） -->
 				{#if sourceType === 'collection' && subscribedCollections.length > 0}
-					<div class="flex-1">
-						<div class="bg-white rounded-lg border h-full overflow-hidden flex flex-col sticky top-6 max-h-96">
+					<div class="{isMobile ? 'w-full mt-6' : 'flex-1'}">
+						<div class="bg-white rounded-lg border {isMobile ? '' : 'h-full'} overflow-hidden flex flex-col {isMobile ? '' : 'sticky top-6'} max-h-96">
 							<div class="flex justify-between items-center p-4 border-b bg-purple-50">
 								<div>
 									<span class="text-base font-medium text-purple-800">关注的合集</span>
-									<span class="text-sm text-purple-600 ml-2">
+									<span class="text-sm text-purple-600 {isMobile ? 'block' : 'ml-2'}">
 										共 {subscribedCollections.length} 个合集
 									</span>
-			</div>
-		</div>
+								</div>
+							</div>
 							
 							<div class="flex-1 overflow-y-auto p-3">
-								<div class="grid grid-cols-2 gap-4">
+								<div class="grid {isMobile ? 'grid-cols-1 gap-3' : 'grid-cols-2 gap-4'}">
 									{#each subscribedCollections as collection}
 										<button 
 											onclick={() => selectSubscribedCollection(collection)}

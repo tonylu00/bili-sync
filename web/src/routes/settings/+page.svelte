@@ -65,6 +65,11 @@
 		{ value: 'pubtime', label: '发布时间' }
 	];
 
+	// 响应式相关
+	let innerWidth: number;
+	let isMobile: boolean = false;
+	$: isMobile = innerWidth < 768; // md断点
+
 	onMount(async () => {
 		setBreadcrumb([
 			{ label: '主页', href: '/' },
@@ -137,6 +142,8 @@
 	<title>设置 - Bili Sync</title>
 </svelte:head>
 
+<svelte:window bind:innerWidth />
+
 <div class="py-2">
 	<div class="mx-auto px-4">
 		<div class="bg-card rounded-lg shadow-sm border p-6">
@@ -147,19 +154,20 @@
 					<div class="text-muted-foreground">加载中...</div>
 				</div>
 			{:else}
-				<div class="flex gap-8">
+				<div class="flex {isMobile ? 'flex-col' : 'gap-8'}">
 					<!-- 左侧：表单区域 -->
-					<div class="w-[600px] flex-shrink-0">
+					<div class="{isMobile ? 'w-full' : 'w-[600px] flex-shrink-0'}">
 						<form onsubmit={(e) => { e.preventDefault(); saveConfig(); }} class="space-y-8">
 							<!-- 文件命名模板 -->
 							<div class="space-y-6">
-								<div class="flex justify-between items-center">
+								<div class="flex {isMobile ? 'flex-col gap-2' : 'justify-between items-center'}">
 									<h2 class="text-lg font-semibold">文件命名模板</h2>
 									<Button 
 										type="button" 
 										variant="outline"
 										size="sm"
 										onclick={() => showHelp = !showHelp}
+										class="{isMobile ? 'w-full' : ''}"
 									>
 										{showHelp ? '隐藏' : '显示'}变量说明
 									</Button>
@@ -301,11 +309,11 @@
 							</div>
 
 							<!-- 提交按钮 -->
-							<div class="flex gap-2 pt-4 border-t">
-								<Button type="submit" disabled={saving}>
+							<div class="flex {isMobile ? 'flex-col' : ''} gap-2 pt-4 border-t">
+								<Button type="submit" disabled={saving} class="{isMobile ? 'w-full' : ''}">
 									{saving ? '保存中...' : '保存设置'}
 								</Button>
-								<Button type="button" variant="outline" onclick={loadConfig}>
+								<Button type="button" variant="outline" onclick={loadConfig} class="{isMobile ? 'w-full' : ''}">
 									重置
 								</Button>
 							</div>
@@ -314,8 +322,8 @@
 
 					<!-- 右侧：变量说明 -->
 					{#if showHelp}
-						<div class="flex-1">
-							<div class="bg-white rounded-lg border h-full overflow-hidden flex flex-col sticky top-6 max-h-[calc(100vh-200px)]">
+						<div class="{isMobile ? 'w-full mt-6' : 'flex-1'}">
+							<div class="bg-white rounded-lg border {isMobile ? '' : 'h-full'} overflow-hidden flex flex-col {isMobile ? '' : 'sticky top-6'} max-h-[calc(100vh-200px)]">
 								<div class="p-4 border-b bg-gray-50">
 									<h3 class="text-base font-medium">📝 支持的模板变量</h3>
 								</div>
