@@ -66,8 +66,9 @@ export default defineConfig({
 			},
 			{
 				text: "技术文档",
+				collapsed: false,
 				items: [
-					{ text: "🛡️ 删除任务队列系统", link: "/README_DELETE_TASK_QUEUE" },
+					// { text: "🛡️ 删除任务队列系统", link: "/README_DELETE_TASK_QUEUE" },
 					{ text: "⚙️ 系统配置智能队列", link: "/SYSTEM_CONFIG_QUEUE_SUMMARY" },
 					{ text: "📊 队列管理功能说明", link: "/QUEUE_FEATURE_SUMMARY" },
 					{ text: "🎊 删除功能实现总结", link: "/FEATURE_SUMMARY" },
