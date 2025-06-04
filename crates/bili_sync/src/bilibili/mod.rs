@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 pub use analyzer::{BestStream, FilterOption};
-use anyhow::{Result, bail, ensure};
+use anyhow::{bail, ensure, Result};
 use arc_swap::ArcSwapOption;
 use chrono::serde::ts_seconds;
 use chrono::{DateTime, Utc};

@@ -1,11 +1,11 @@
 use core::str;
 use std::path::Path;
 
-use anyhow::{Context, Result, bail, ensure};
-use futures::{StreamExt, TryStreamExt, future};
+use anyhow::{bail, ensure, Context, Result};
+use futures::{future, StreamExt, TryStreamExt};
 use reqwest::{
-    Method,
     header::{CONTENT_LENGTH, RANGE},
+    Method,
 };
 use std::io::SeekFrom;
 use tokio::fs::{self, File, OpenOptions};

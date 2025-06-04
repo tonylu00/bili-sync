@@ -1,21 +1,21 @@
-use std::collections::{HashSet, HashMap};
+use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::pin::Pin;
 
-use anyhow::{Context, Result, anyhow, bail};
+use anyhow::{anyhow, bail, Context, Result};
 use bili_sync_entity::*;
 use futures::stream::{FuturesOrdered, FuturesUnordered};
 use futures::{Future, Stream, StreamExt, TryStreamExt};
+use sea_orm::entity::prelude::*;
 use sea_orm::ActiveValue::Set;
 use sea_orm::TransactionTrait;
-use sea_orm::entity::prelude::*;
 use tokio::fs;
 use tokio::sync::Semaphore;
 use tracing::{debug, error, info, warn};
 
-use crate::adapter::{Args, VideoSource, VideoSourceEnum, video_source_from};
+use crate::adapter::{video_source_from, Args, VideoSource, VideoSourceEnum};
 use crate::bilibili::{BestStream, BiliClient, BiliError, Dimension, PageInfo, Video, VideoInfo};
-use crate::config::{ARGS, CONFIG, PathSafeTemplate, TEMPLATE};
+use crate::config::{PathSafeTemplate, ARGS, CONFIG, TEMPLATE};
 use crate::downloader::Downloader;
 use crate::error::{DownloadAbortError, ExecutionStatus, ProcessPageError};
 use crate::utils::format_arg::{page_format_args, video_format_args};
@@ -24,23 +24,33 @@ use crate::utils::model::{
     update_videos_model,
 };
 use crate::utils::nfo::NFO;
-use crate::utils::status::{PageStatus, STATUS_OK, VideoStatus};
+use crate::utils::status::{PageStatus, VideoStatus, STATUS_OK};
 
 /// 创建一个配置了 truncate 辅助函数的 handlebars 实例
 fn create_handlebars_with_helpers() -> handlebars::Handlebars<'static> {
     let mut handlebars = handlebars::Handlebars::new();
     // 注册 truncate 辅助函数
-    handlebars.register_helper("truncate", Box::new(|h: &handlebars::Helper, _: &handlebars::Handlebars, _: &handlebars::Context, _: &mut handlebars::RenderContext, out: &mut dyn handlebars::Output| -> handlebars::HelperResult {
-        let s = h.param(0).and_then(|v| v.value().as_str()).unwrap_or("");
-        let len = h.param(1).and_then(|v| v.value().as_u64()).unwrap_or(0) as usize;
-        let result = if s.chars().count() > len {
-            s.chars().take(len).collect::<String>()
-        } else {
-            s.to_string()
-        };
-        out.write(&result)?;
-        Ok(())
-    }));
+    handlebars.register_helper(
+        "truncate",
+        Box::new(
+            |h: &handlebars::Helper,
+             _: &handlebars::Handlebars,
+             _: &handlebars::Context,
+             _: &mut handlebars::RenderContext,
+             out: &mut dyn handlebars::Output|
+             -> handlebars::HelperResult {
+                let s = h.param(0).and_then(|v| v.value().as_str()).unwrap_or("");
+                let len = h.param(1).and_then(|v| v.value().as_u64()).unwrap_or(0) as usize;
+                let result = if s.chars().count() > len {
+                    s.chars().take(len).collect::<String>()
+                } else {
+                    s.to_string()
+                };
+                out.write(&result)?;
+                Ok(())
+            },
+        ),
+    );
     handlebars
 }
 
@@ -200,12 +210,11 @@ pub async fn fetch_video_details(
 ) -> Result<()> {
     video_source.log_fetch_video_start();
     let videos_model = filter_unfilled_videos(video_source.filter_expr(), connection).await?;
-    
+
     // 分离出番剧和普通视频
-    let (bangumi_videos, normal_videos): (Vec<_>, Vec<_>) = videos_model
-        .into_iter()
-        .partition(|v| v.source_type == Some(1));
-    
+    let (bangumi_videos, normal_videos): (Vec<_>, Vec<_>) =
+        videos_model.into_iter().partition(|v| v.source_type == Some(1));
+
     // 并发获取所有番剧的信息
     if !bangumi_videos.is_empty() {
         info!("开始并发获取 {} 个番剧的详细信息", bangumi_videos.len());
@@ -222,30 +231,28 @@ pub async fn fetch_video_details(
                 })
             })
             .collect();
-        
+
         // 收集所有番剧信息
         let bangumi_infos: HashMap<String, (i64, u32)> = bangumi_info_futures
             .collect::<Vec<_>>()
             .await
             .into_iter()
-            .filter_map(|(ep_id, name, info)| {
-                match info {
-                    Some(info) => {
-                        debug!("成功获取番剧 {} (EP{}) 的信息", name, ep_id);
-                        Some((ep_id, info))
-                    }
-                    None => {
-                        warn!("无法获取番剧 {} (EP{}) 的信息", name, ep_id);
-                        None
-                    }
+            .filter_map(|(ep_id, name, info)| match info {
+                Some(info) => {
+                    debug!("成功获取番剧 {} (EP{}) 的信息", name, ep_id);
+                    Some((ep_id, info))
+                }
+                None => {
+                    warn!("无法获取番剧 {} (EP{}) 的信息", name, ep_id);
+                    None
                 }
             })
             .collect();
-        
+
         // 批量处理番剧视频
         for video_model in bangumi_videos {
             let txn = connection.begin().await?;
-            
+
             // 从预先获取的信息中查找
             let (actual_cid, duration) = if let Some(ep_id) = &video_model.ep_id {
                 match bangumi_infos.get(ep_id).copied() {
@@ -260,7 +267,7 @@ pub async fn fetch_video_details(
                 error!("番剧 {} 缺少EP ID，无法获取详细信息，将跳过弹幕下载", &video_model.name);
                 (-1, 1440)
             };
-            
+
             let page_info = PageInfo {
                 cid: actual_cid,
                 page: 1,
@@ -269,9 +276,9 @@ pub async fn fetch_video_details(
                 first_frame: None,
                 dimension: None,
             };
-            
+
             create_pages(vec![page_info], &video_model, &txn).await?;
-            
+
             // 更新视频模型，标记为单页并设置已处理
             let mut video_active_model: bili_sync_entity::video::ActiveModel = video_model.into();
             video_source.set_relation_id(&mut video_active_model);
@@ -281,7 +288,7 @@ pub async fn fetch_video_details(
             txn.commit().await?;
         }
     }
-    
+
     // 处理普通视频
     for video_model in normal_videos {
         let video = Video::new(bili_client, video_model.bvid.clone());
@@ -381,6 +388,18 @@ pub async fn download_unprocessed_videos(
     Ok(())
 }
 
+/// 分页下载任务的参数结构体
+pub struct DownloadPageArgs<'a> {
+    pub should_run: bool,
+    pub bili_client: &'a BiliClient,
+    pub video_source: &'a VideoSourceEnum,
+    pub video_model: &'a video::Model,
+    pub pages: Vec<page::Model>,
+    pub connection: &'a DatabaseConnection,
+    pub downloader: &'a Downloader,
+    pub base_path: &'a Path,
+}
+
 #[allow(clippy::too_many_arguments)]
 pub async fn download_video_pages(
     bili_client: &BiliClient,
@@ -410,9 +429,13 @@ pub async fn download_video_pages(
         let base_path = bangumi_source.path();
 
         // 如果启用了下载所有季度，或者有选中的季度（且不为空），则根据season_id创建子文件夹
-        let should_create_season_folder = bangumi_source.download_all_seasons 
-            || (bangumi_source.selected_seasons.as_ref().map(|s| !s.is_empty()).unwrap_or(false));
-            
+        let should_create_season_folder = bangumi_source.download_all_seasons
+            || (bangumi_source
+                .selected_seasons
+                .as_ref()
+                .map(|s| !s.is_empty())
+                .unwrap_or(false));
+
         if should_create_season_folder && video_model.season_id.is_some() {
             let season_id = video_model
                 .season_id
@@ -540,18 +563,6 @@ pub async fn download_video_pages(
     Ok(video_active_model)
 }
 
-/// 分页下载任务的参数结构体
-pub struct DownloadPageArgs<'a> {
-    pub should_run: bool,
-    pub bili_client: &'a BiliClient,
-    pub video_source: &'a VideoSourceEnum,
-    pub video_model: &'a video::Model,
-    pub pages: Vec<page::Model>,
-    pub connection: &'a DatabaseConnection,
-    pub downloader: &'a Downloader,
-    pub base_path: &'a Path,
-}
-
 /// 分发并执行分页下载任务，当且仅当所有分页成功下载或达到最大重试次数时返回 Ok，否则根据失败原因返回对应的错误
 pub async fn dispatch_download_page(args: DownloadPageArgs<'_>) -> Result<ExecutionStatus> {
     if !args.should_run {
@@ -618,6 +629,7 @@ pub async fn dispatch_download_page(args: DownloadPageArgs<'_>) -> Result<Execut
 }
 
 /// 下载某个分页，未发生风控且正常运行时返回 Ok(Page::ActiveModel)，其中 status 字段存储了新的下载状态，发生风控时返回 DownloadAbortError
+#[allow(clippy::too_many_arguments)]
 pub async fn download_page(
     bili_client: &BiliClient,
     video_source: &VideoSourceEnum,
@@ -643,12 +655,15 @@ pub async fn download_page(
     let base_name = if is_bangumi {
         // 番剧使用专用的模板方法
         if let VideoSourceEnum::BangumiSource(bangumi_source) = video_source {
-            bangumi_source.render_page_name(video_model, &page_model, connection).await?
+            bangumi_source
+                .render_page_name(video_model, &page_model, connection)
+                .await?
         } else {
             // 如果类型不匹配，使用最新配置手动渲染
             let current_config = crate::config::reload_config();
             let handlebars = create_handlebars_with_helpers();
-            let rendered = handlebars.render_template(&current_config.page_name, &page_format_args(video_model, &page_model))?;
+            let rendered =
+                handlebars.render_template(&current_config.page_name, &page_format_args(video_model, &page_model))?;
             crate::utils::filenamify::filenamify(&rendered)
         }
     } else if !is_single_page {
@@ -669,7 +684,8 @@ pub async fn download_page(
         // 单P视频使用最新配置的page_name模板
         let current_config = crate::config::reload_config();
         let handlebars = create_handlebars_with_helpers();
-        let rendered = handlebars.render_template(&current_config.page_name, &page_format_args(video_model, &page_model))?;
+        let rendered =
+            handlebars.render_template(&current_config.page_name, &page_format_args(video_model, &page_model))?;
         crate::utils::filenamify::filenamify(&rendered)
     };
 
@@ -1056,13 +1072,16 @@ pub async fn fetch_page_danmaku(
     if !should_run {
         return Ok(ExecutionStatus::Skipped);
     }
-    
+
     // 检查 CID 是否有效（-1 表示信息获取失败）
     if page_info.cid < 0 {
-        warn!("视频 {} 的 CID 无效（{}），跳过弹幕下载", &video_model.name, page_info.cid);
+        warn!(
+            "视频 {} 的 CID 无效（{}），跳过弹幕下载",
+            &video_model.name, page_info.cid
+        );
         return Ok(ExecutionStatus::Ignored(anyhow::anyhow!("CID 无效，无法下载弹幕")));
     }
-    
+
     // 检查是否为番剧，如果是番剧则需要从API获取正确的 aid
     let bili_video = if video_model.source_type == Some(1) {
         // 番剧：需要从API获取aid
@@ -1071,7 +1090,7 @@ pub async fn fetch_page_danmaku(
                 Some(aid) => {
                     debug!("使用番剧API获取到的aid: {}", aid);
                     Video::new_with_aid(bili_client, video_model.bvid.clone(), aid)
-                },
+                }
                 None => {
                     warn!("无法获取番剧 {} (EP{}) 的AID，使用bvid转换", &video_model.name, ep_id);
                     Video::new(bili_client, video_model.bvid.clone())
@@ -1085,7 +1104,7 @@ pub async fn fetch_page_danmaku(
         // 普通视频：使用 bvid 转换的 aid
         Video::new(bili_client, video_model.bvid.clone())
     };
-    
+
     bili_video
         .get_danmaku_writer(page_info)
         .await?
@@ -1164,14 +1183,14 @@ pub async fn fetch_upper_face(
     if !should_run {
         return Ok(ExecutionStatus::Skipped);
     }
-    
+
     // 检查URL是否有效，避免相对路径或空URL
     let upper_face_url = &video_model.upper_face;
     if upper_face_url.is_empty() || !upper_face_url.starts_with("http") {
         debug!("跳过无效的作者头像URL: {}", upper_face_url);
         return Ok(ExecutionStatus::Ignored(anyhow::anyhow!("无效的作者头像URL")));
     }
-    
+
     downloader.fetch(upper_face_url, &upper_face_path).await?;
     Ok(ExecutionStatus::Succeeded)
 }
@@ -1204,17 +1223,13 @@ async fn generate_nfo(nfo: NFO<'_>, nfo_path: PathBuf) -> Result<()> {
     if let Some(parent) = nfo_path.parent() {
         fs::create_dir_all(parent).await?;
     }
-    fs::write(
-        nfo_path,
-        nfo.generate_nfo().await?.as_bytes(),
-    )
-    .await?;
+    fs::write(nfo_path, nfo.generate_nfo().await?.as_bytes()).await?;
     Ok(())
 }
 
 async fn get_season_title_from_api(bili_client: &BiliClient, season_id: &str) -> Option<String> {
     let url = format!("https://api.bilibili.com/pgc/view/web/season?season_id={}", season_id);
-    
+
     match bili_client.get(&url).await {
         Ok(res) => {
             if res.status().is_success() {
@@ -1228,7 +1243,10 @@ async fn get_season_title_from_api(bili_client: &BiliClient, season_id: &str) ->
                                 return Some(title.to_string());
                             }
                         } else {
-                            warn!("获取季度信息失败，API返回错误: {}", json["message"].as_str().unwrap_or("未知错误"));
+                            warn!(
+                                "获取季度信息失败，API返回错误: {}",
+                                json["message"].as_str().unwrap_or("未知错误")
+                            );
                         }
                     }
                     Err(e) => warn!("解析季度信息JSON失败: {}", e),
@@ -1246,7 +1264,7 @@ async fn get_season_title_from_api(bili_client: &BiliClient, season_id: &str) ->
 /// 从番剧API获取指定EP的AID
 async fn get_bangumi_aid_from_api(bili_client: &BiliClient, ep_id: &str) -> Option<String> {
     let url = format!("https://api.bilibili.com/pgc/view/web/season?ep_id={}", ep_id);
-    
+
     match bili_client.get(&url).await {
         Ok(res) => {
             if res.status().is_success() {
@@ -1276,14 +1294,14 @@ async fn get_bangumi_aid_from_api(bili_client: &BiliClient, ep_id: &str) -> Opti
             error!("请求番剧API失败: {}", e);
         }
     }
-    
+
     None
 }
 
 /// 从番剧API获取指定EP的CID和duration
 async fn get_bangumi_info_from_api(bili_client: &BiliClient, ep_id: &str) -> Option<(i64, u32)> {
     let url = format!("https://api.bilibili.com/pgc/view/web/season?ep_id={}", ep_id);
-    
+
     match bili_client.get(&url).await {
         Ok(res) => {
             if res.status().is_success() {
@@ -1318,7 +1336,7 @@ async fn get_bangumi_info_from_api(bili_client: &BiliClient, ep_id: &str) -> Opt
             error!("请求番剧API失败: {}", e);
         }
     }
-    
+
     None
 }
 

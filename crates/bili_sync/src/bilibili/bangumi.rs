@@ -1,6 +1,6 @@
 use std::pin::Pin;
 
-use anyhow::{Result, bail};
+use anyhow::{bail, Result};
 use async_stream::try_stream;
 use chrono::{DateTime, Utc};
 use futures::Stream;
@@ -294,7 +294,10 @@ impl Bangumi {
     }
 
     /// 将选中的季度的番剧转换为视频流
-    pub fn to_selected_seasons_video_stream(&self, selected_seasons: Vec<String>) -> Pin<Box<dyn Stream<Item = Result<VideoInfo>> + Send>> {
+    pub fn to_selected_seasons_video_stream(
+        &self,
+        selected_seasons: Vec<String>,
+    ) -> Pin<Box<dyn Stream<Item = Result<VideoInfo>> + Send>> {
         let client = self.client.clone();
         let season_id = self.season_id.clone();
         let media_id = self.media_id.clone();
@@ -306,12 +309,12 @@ impl Bangumi {
 
             // 获取所有季度信息
             let all_seasons = bangumi.get_all_seasons().await?;
-            
+
             // 过滤出选中的季度
             let seasons: Vec<BangumiSeason> = all_seasons.into_iter()
                 .filter(|s| selected_seasons.contains(&s.season_id))
                 .collect();
-                
+
             debug!("筛选出 {} 个选中的季度", seasons.len());
 
             // 对每个选中的季度进行处理

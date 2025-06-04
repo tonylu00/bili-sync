@@ -93,6 +93,7 @@
 					name: videoData.video.name,
 					upper_name: videoData.video.upper_name,
 					path: videoData.video.path,
+					category: videoData.video.category,
 					download_status: videoData.video.download_status
 				}}
 				mode="detail"
@@ -135,6 +136,8 @@
 								id: pageInfo.id,
 								name: `P${pageInfo.pid}: ${pageInfo.name}`,
 								upper_name: '',
+								path: '',
+								category: 0,
 								download_status: pageInfo.download_status
 							}}
 							mode="page"

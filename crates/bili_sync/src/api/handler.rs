@@ -1,37 +1,36 @@
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use anyhow::{Context, Result, anyhow};
+use anyhow::{anyhow, Context, Result};
 use axum::extract::{Extension, Path, Query};
 use bili_sync_entity::*;
 use bili_sync_migration::{Expr, OnConflict};
+use chrono::Utc;
 use sea_orm::{
     ColumnTrait, DatabaseConnection, EntityTrait, IntoActiveModel, PaginatorTrait, QueryFilter, QueryOrder,
     QuerySelect, Set, TransactionTrait, Unchanged,
 };
-use tracing::{debug, error, info, warn};
-use utoipa::OpenApi;
 use serde::{Deserialize, Serialize};
 use std::collections::VecDeque;
 use std::sync::Mutex;
 use tokio::sync::broadcast;
-use chrono::Utc;
+use tracing::{debug, error, info, warn};
+use utoipa::OpenApi;
 
 use crate::api::auth::OpenAPIAuth;
 use crate::api::error::InnerApiError;
 use crate::api::request::{AddVideoSourceRequest, UpdateConfigRequest, VideosRequest};
 use crate::api::response::{
-    AddVideoSourceResponse, ConfigResponse, DeleteVideoSourceResponse, PageInfo, ResetVideoResponse,
+    AddVideoSourceResponse, BangumiSeasonInfo, ConfigResponse, DeleteVideoSourceResponse, PageInfo, ResetVideoResponse,
     UpdateConfigResponse, VideoInfo, VideoResponse, VideoSource, VideoSourcesResponse, VideosResponse,
-    BangumiSeasonInfo,
 };
 use crate::api::wrapper::{ApiError, ApiResponse};
-use crate::utils::status::{PageStatus, VideoStatus};
 use crate::utils::nfo::NFO;
+use crate::utils::status::{PageStatus, VideoStatus};
 
 #[derive(OpenApi)]
 #[openapi(
-    paths(get_video_sources, get_videos, get_video, reset_video, add_video_source, delete_video_source, reload_config, get_config, update_config, get_bangumi_seasons, search_bilibili, get_user_favorites, get_user_collections, get_user_followings, get_subscribed_collections, get_logs),
+    paths(get_video_sources, get_videos, get_video, reset_video, add_video_source, delete_video_source, reload_config, get_config, update_config, get_bangumi_seasons, search_bilibili, get_user_favorites, get_user_collections, get_user_followings, get_subscribed_collections, get_logs, get_queue_status),
     modifiers(&OpenAPIAuth),
     security(
         ("Token" = []),
@@ -143,8 +142,9 @@ pub async fn get_videos(
     }
     if let Some(query_word) = params.query {
         query = query.filter(
-            video::Column::Name.contains(&query_word)
-            .or(video::Column::Path.contains(&query_word))
+            video::Column::Name
+                .contains(&query_word)
+                .or(video::Column::Path.contains(&query_word)),
         );
     }
     let total_count = query.clone().count(db.as_ref()).await?;
@@ -245,7 +245,8 @@ pub async fn reset_video(
     Extension(db): Extension<Arc<DatabaseConnection>>,
 ) -> Result<ApiResponse<ResetVideoResponse>, ApiError> {
     // 检查是否强制重置
-    let force_reset = params.get("force")
+    let force_reset = params
+        .get("force")
         .and_then(|v| v.parse::<bool>().ok())
         .unwrap_or(false);
 
@@ -335,6 +336,51 @@ pub async fn add_video_source(
     Extension(db): Extension<Arc<DatabaseConnection>>,
     axum::Json(params): axum::Json<AddVideoSourceRequest>,
 ) -> Result<ApiResponse<AddVideoSourceResponse>, ApiError> {
+    // 检查是否正在扫描
+    if crate::task::is_scanning() {
+        // 正在扫描，将添加任务加入队列
+        let task_id = uuid::Uuid::new_v4().to_string();
+        let add_task = crate::task::AddVideoSourceTask {
+            source_type: params.source_type.clone(),
+            name: params.name.clone(),
+            source_id: params.source_id.clone(),
+            path: params.path.clone(),
+            up_id: params.up_id.clone(),
+            collection_type: params.collection_type.clone(),
+            media_id: params.media_id.clone(),
+            ep_id: params.ep_id.clone(),
+            download_all_seasons: params.download_all_seasons,
+            selected_seasons: params.selected_seasons.clone(),
+            task_id: task_id.clone(),
+        };
+
+        crate::task::enqueue_add_task(add_task).await;
+
+        info!(
+            "检测到正在扫描，添加任务已加入队列等待处理: {} 名称={}",
+            params.source_type, params.name
+        );
+
+        return Ok(ApiResponse::ok(AddVideoSourceResponse {
+            success: true,
+            source_id: 0, // 队列中的任务还没有ID
+            source_type: params.source_type,
+            message: "正在扫描中，添加任务已加入队列，将在扫描完成后自动处理".to_string(),
+        }));
+    }
+
+    // 没有扫描，直接执行添加
+    match add_video_source_internal(db, params).await {
+        Ok(response) => Ok(ApiResponse::ok(response)),
+        Err(e) => Err(e),
+    }
+}
+
+/// 内部添加视频源函数（用于队列处理和直接调用）
+pub async fn add_video_source_internal(
+    db: Arc<DatabaseConnection>,
+    params: AddVideoSourceRequest,
+) -> Result<AddVideoSourceResponse, ApiError> {
     let txn = db.begin().await?;
 
     let result = match params.source_type.as_str() {
@@ -475,30 +521,32 @@ pub async fn add_video_source(
             }
 
             // 检查是否已存在相同的番剧（Season ID完全匹配）
-            let existing_query = video_source::Entity::find()
-                .filter(video_source::Column::Type.eq(1)); // 番剧类型
+            let existing_query = video_source::Entity::find().filter(video_source::Column::Type.eq(1)); // 番剧类型
 
             // 1. 首先检查 Season ID 是否重复（精确匹配）
             let mut existing_bangumi = None;
-            
+
             if !params.source_id.is_empty() {
                 // 如果有 season_id，检查是否已存在该 season_id
-                existing_bangumi = existing_query.clone()
+                existing_bangumi = existing_query
+                    .clone()
                     .filter(video_source::Column::SeasonId.eq(&params.source_id))
                     .one(&txn)
                     .await?;
-            } 
-            
+            }
+
             if existing_bangumi.is_none() {
                 if let Some(ref media_id) = params.media_id {
                     // 如果只有 media_id，检查是否已存在该 media_id
-                    existing_bangumi = existing_query.clone()
+                    existing_bangumi = existing_query
+                        .clone()
                         .filter(video_source::Column::MediaId.eq(media_id))
                         .one(&txn)
                         .await?;
                 } else if let Some(ref ep_id) = params.ep_id {
                     // 如果只有 ep_id，检查是否已存在该 ep_id
-                    existing_bangumi = existing_query.clone()
+                    existing_bangumi = existing_query
+                        .clone()
                         .filter(video_source::Column::EpId.eq(ep_id))
                         .one(&txn)
                         .await?;
@@ -508,11 +556,11 @@ pub async fn add_video_source(
             if let Some(mut existing) = existing_bangumi {
                 // 情况1：Season ID 重复 → 合并到现有番剧源
                 info!("检测到重复番剧 Season ID，执行智能合并: {}", existing.name);
-                
-            let download_all_seasons = params.download_all_seasons.unwrap_or(false);
+
+                let download_all_seasons = params.download_all_seasons.unwrap_or(false);
                 let mut updated = false;
                 let mut merge_message = String::new();
-                
+
                 // 如果新请求要下载全部季度，直接更新现有配置
                 if download_all_seasons {
                     if !existing.download_all_seasons.unwrap_or(false) {
@@ -528,32 +576,32 @@ pub async fn add_video_source(
                     if let Some(new_seasons) = params.selected_seasons {
                         if !new_seasons.is_empty() {
                             let mut current_seasons: Vec<String> = Vec::new();
-                            
+
                             // 获取现有的季度选择
                             if let Some(ref seasons_json) = existing.selected_seasons {
                                 if let Ok(seasons) = serde_json::from_str::<Vec<String>>(seasons_json) {
                                     current_seasons = seasons;
                                 }
                             }
-                            
+
                             // 合并新的季度（去重）
                             let mut all_seasons = current_seasons.clone();
                             let mut added_seasons = Vec::new();
-                            
+
                             for season in new_seasons {
                                 if !all_seasons.contains(&season) {
                                     all_seasons.push(season.clone());
                                     added_seasons.push(season);
                                 }
                             }
-                            
+
                             if !added_seasons.is_empty() {
                                 // 有新季度需要添加
                                 let seasons_json = serde_json::to_string(&all_seasons)?;
                                 existing.selected_seasons = Some(seasons_json);
                                 existing.download_all_seasons = Some(false); // 确保不是全部下载模式
                                 updated = true;
-                                
+
                                 merge_message = if added_seasons.len() == 1 {
                                     format!("已添加新季度: {}", added_seasons.join(", "))
                                 } else {
@@ -566,29 +614,29 @@ pub async fn add_video_source(
                         }
                     }
                 }
-                
+
                 // 更新保存路径（如果提供了不同的路径）
                 if !params.path.is_empty() && params.path != existing.path {
                     existing.path = params.path.clone();
                     updated = true;
-                    
+
                     if !merge_message.is_empty() {
-                        merge_message.push_str("，");
+                        merge_message.push('，');
                     }
                     merge_message.push_str(&format!("保存路径已更新为: {}", params.path));
                 }
-                
+
                 // 更新番剧名称（如果提供了不同的名称）
                 if !params.name.is_empty() && params.name != existing.name {
                     existing.name = params.name.clone();
                     updated = true;
-                    
+
                     if !merge_message.is_empty() {
-                        merge_message.push_str("，");
+                        merge_message.push('，');
                     }
                     merge_message.push_str(&format!("番剧名称已更新为: {}", params.name));
                 }
-                
+
                 if updated {
                     // 更新数据库记录 - 修复：正确使用ActiveModel更新
                     let mut existing_update = video_source::ActiveModel {
@@ -596,7 +644,7 @@ pub async fn add_video_source(
                         latest_row_at: sea_orm::Set(chrono::Utc::now().naive_utc()),
                         ..Default::default()
                     };
-                    
+
                     // 根据实际修改的字段设置对应的ActiveModel字段
                     if download_all_seasons && !existing.download_all_seasons.unwrap_or(false) {
                         // 切换到下载全部季度模式
@@ -609,24 +657,24 @@ pub async fn add_video_source(
                             existing_update.download_all_seasons = sea_orm::Set(Some(false));
                         }
                     }
-                    
+
                     // 更新路径（如果有变更）
                     if !params.path.is_empty() && params.path != existing.path {
                         existing_update.path = sea_orm::Set(params.path.clone());
                     }
-                    
+
                     // 更新名称（如果有变更）
                     if !params.name.is_empty() && params.name != existing.name {
                         existing_update.name = sea_orm::Set(params.name.clone());
                     }
-                    
+
                     video_source::Entity::update(existing_update).exec(&txn).await?;
-                    
+
                     // 确保目标路径存在
                     std::fs::create_dir_all(&existing.path).map_err(|e| anyhow!("创建目录失败: {}", e))?;
-                    
+
                     info!("番剧配置合并成功: {}", merge_message);
-                    
+
                     AddVideoSourceResponse {
                         success: true,
                         source_id: existing.id,
@@ -647,7 +695,7 @@ pub async fn add_video_source(
                 let download_all_seasons = params.download_all_seasons.unwrap_or(false);
                 let mut final_selected_seasons = params.selected_seasons.clone();
                 let mut skipped_seasons = Vec::new();
-                
+
                 // 如果不是下载全部季度，且指定了特定季度，则检查季度重复
                 if !download_all_seasons {
                     if let Some(ref new_seasons) = params.selected_seasons {
@@ -657,15 +705,15 @@ pub async fn add_video_source(
                                 .filter(video_source::Column::Type.eq(1))
                                 .all(&txn)
                                 .await?;
-                            
+
                             let mut all_existing_seasons = std::collections::HashSet::new();
-                            
+
                             for source in all_existing_sources {
                                 // 如果该番剧源配置为下载全部季度，我们无法确定具体季度，跳过检查
                                 if source.download_all_seasons.unwrap_or(false) {
                                     continue;
                                 }
-                                
+
                                 // 获取该番剧源的已选季度
                                 if let Some(ref seasons_json) = source.selected_seasons {
                                     if let Ok(seasons) = serde_json::from_str::<Vec<String>>(seasons_json) {
@@ -675,7 +723,7 @@ pub async fn add_video_source(
                                     }
                                 }
                             }
-                            
+
                             // 过滤掉重复的季度
                             let mut unique_seasons = Vec::new();
                             for season in new_seasons {
@@ -685,68 +733,74 @@ pub async fn add_video_source(
                                     unique_seasons.push(season.clone());
                                 }
                             }
-                            
+
                             final_selected_seasons = Some(unique_seasons);
                         }
                     }
                 }
-                
+
                 // 如果所有季度都被跳过了，返回错误
-                if !download_all_seasons && final_selected_seasons.as_ref().map_or(true, |s| s.is_empty()) {
+                if !download_all_seasons && final_selected_seasons.as_ref().is_none_or(|s| s.is_empty()) {
                     let skipped_msg = if skipped_seasons.is_empty() {
                         "未选择任何季度".to_string()
                     } else {
                         format!("所选季度已在其他番剧源中存在，已跳过: {}", skipped_seasons.join(", "))
                     };
-                    
-                    return Err(anyhow!("无法添加番剧：{}。请选择其他季度或使用'下载全部季度'选项。", skipped_msg).into());
+
+                    return Err(anyhow!(
+                        "无法添加番剧：{}。请选择其他季度或使用'下载全部季度'选项。",
+                        skipped_msg
+                    )
+                    .into());
                 }
-            
-            // 处理选中的季度
+
+                // 处理选中的季度
                 let selected_seasons_json = if !download_all_seasons && final_selected_seasons.is_some() {
                     let seasons = final_selected_seasons.clone().unwrap();
                     if seasons.is_empty() {
                         None
                     } else {
-                Some(serde_json::to_string(&seasons)?)
+                        Some(serde_json::to_string(&seasons)?)
                     }
-            } else {
-                None
-            };
+                } else {
+                    None
+                };
 
-            let bangumi = video_source::ActiveModel {
-                id: sea_orm::ActiveValue::NotSet,
-                name: sea_orm::Set(params.name),
-                path: sea_orm::Set(params.path.clone()),
-                r#type: sea_orm::Set(1), // 1表示番剧类型
-                latest_row_at: sea_orm::Set(chrono::Utc::now().naive_utc()),
-                season_id: sea_orm::Set(Some(params.source_id.clone())),
-                media_id: sea_orm::Set(params.media_id),
-                ep_id: sea_orm::Set(params.ep_id),
-                download_all_seasons: sea_orm::Set(Some(download_all_seasons)),
-                selected_seasons: sea_orm::Set(selected_seasons_json),
-                ..Default::default()
-            };
+                let bangumi = video_source::ActiveModel {
+                    id: sea_orm::ActiveValue::NotSet,
+                    name: sea_orm::Set(params.name),
+                    path: sea_orm::Set(params.path.clone()),
+                    r#type: sea_orm::Set(1), // 1表示番剧类型
+                    latest_row_at: sea_orm::Set(chrono::Utc::now().naive_utc()),
+                    season_id: sea_orm::Set(Some(params.source_id.clone())),
+                    media_id: sea_orm::Set(params.media_id),
+                    ep_id: sea_orm::Set(params.ep_id),
+                    download_all_seasons: sea_orm::Set(Some(download_all_seasons)),
+                    selected_seasons: sea_orm::Set(selected_seasons_json),
+                    ..Default::default()
+                };
 
-            let insert_result = video_source::Entity::insert(bangumi).exec(&txn).await?;
+                let insert_result = video_source::Entity::insert(bangumi).exec(&txn).await?;
 
                 // 确保目标路径存在
                 std::fs::create_dir_all(&params.path).map_err(|e| anyhow!("创建目录失败: {}", e))?;
 
                 let success_message = if !skipped_seasons.is_empty() {
-                    format!("番剧添加成功！已跳过重复季度: {}，添加的季度: {}", 
-                           skipped_seasons.join(", "),
-                           final_selected_seasons.unwrap_or_default().join(", "))
+                    format!(
+                        "番剧添加成功！已跳过重复季度: {}，添加的季度: {}",
+                        skipped_seasons.join(", "),
+                        final_selected_seasons.unwrap_or_default().join(", ")
+                    )
                 } else {
                     "番剧添加成功".to_string()
                 };
 
                 info!("新番剧添加完成: {}", success_message);
 
-            AddVideoSourceResponse {
-                success: true,
-                source_id: insert_result.last_insert_id,
-                source_type: "bangumi".to_string(),
+                AddVideoSourceResponse {
+                    success: true,
+                    source_id: insert_result.last_insert_id,
+                    source_type: "bangumi".to_string(),
                     message: success_message,
                 }
             }
@@ -791,7 +845,7 @@ pub async fn add_video_source(
     std::fs::create_dir_all(&params.path).map_err(|e| anyhow!("创建目录失败: {}", e))?;
 
     txn.commit().await?;
-    Ok(ApiResponse::ok(result))
+    Ok(result)
 }
 
 /// 重新加载配置
@@ -803,6 +857,30 @@ pub async fn add_video_source(
     )
 )]
 pub async fn reload_config() -> Result<ApiResponse<bool>, ApiError> {
+    // 检查是否正在扫描
+    if crate::task::is_scanning() {
+        // 正在扫描，将重载配置任务加入队列
+        let task_id = uuid::Uuid::new_v4().to_string();
+        let reload_task = crate::task::ReloadConfigTask {
+            task_id: task_id.clone(),
+        };
+
+        crate::task::enqueue_reload_task(reload_task).await;
+
+        info!("检测到正在扫描，重载配置任务已加入队列等待处理");
+
+        return Ok(ApiResponse::ok(true));
+    }
+
+    // 没有扫描，直接执行重载配置
+    match reload_config_internal().await {
+        Ok(result) => Ok(ApiResponse::ok(result)),
+        Err(e) => Err(e),
+    }
+}
+
+/// 内部重载配置函数（用于队列处理和直接调用）
+pub async fn reload_config_internal() -> Result<bool, ApiError> {
     // 调用config中的reload_config函数获取新配置
     let _new_config = crate::config::reload_config();
 
@@ -811,7 +889,7 @@ pub async fn reload_config() -> Result<ApiResponse<bool>, ApiError> {
     info!("配置已重新加载");
 
     // 返回成功响应
-    Ok(ApiResponse::ok(true))
+    Ok(true)
 }
 
 /// 删除视频源
@@ -832,9 +910,46 @@ pub async fn delete_video_source(
     Path((source_type, id)): Path<(String, i32)>,
     Query(params): Query<crate::api::request::DeleteVideoSourceRequest>,
 ) -> Result<ApiResponse<crate::api::response::DeleteVideoSourceResponse>, ApiError> {
-    let txn = db.begin().await?;
-
     let delete_local_files = params.delete_local_files;
+
+    // 检查是否正在扫描
+    if crate::task::is_scanning() {
+        // 正在扫描，将删除任务加入队列
+        let task_id = uuid::Uuid::new_v4().to_string();
+        let delete_task = crate::task::DeleteVideoSourceTask {
+            source_type: source_type.clone(),
+            source_id: id,
+            delete_local_files,
+            task_id: task_id.clone(),
+        };
+
+        crate::task::enqueue_delete_task(delete_task).await;
+
+        info!("检测到正在扫描，删除任务已加入队列等待处理: {} ID={}", source_type, id);
+
+        return Ok(ApiResponse::ok(crate::api::response::DeleteVideoSourceResponse {
+            success: true,
+            source_id: id,
+            source_type,
+            message: "正在扫描中，删除任务已加入队列，将在扫描完成后自动处理".to_string(),
+        }));
+    }
+
+    // 没有扫描，直接执行删除
+    match delete_video_source_internal(db, source_type, id, delete_local_files).await {
+        Ok(response) => Ok(ApiResponse::ok(response)),
+        Err(e) => Err(e),
+    }
+}
+
+/// 内部删除视频源函数（用于队列处理和直接调用）
+pub async fn delete_video_source_internal(
+    db: Arc<DatabaseConnection>,
+    source_type: String,
+    id: i32,
+    delete_local_files: bool,
+) -> Result<crate::api::response::DeleteVideoSourceResponse, ApiError> {
+    let txn = db.begin().await?;
 
     // 根据不同类型的视频源执行不同的删除操作
     let result = match source_type.as_str() {
@@ -868,34 +983,58 @@ pub async fn delete_video_source(
             // 如果需要删除本地文件
             if delete_local_files {
                 // 添加安全检查
-                let path = &collection.path;
-                if path.is_empty() || path == "/" || path == "\\" {
-                    warn!("检测到危险路径，跳过删除: {}", path);
-                } else if !std::path::Path::new(path).exists() {
-                    info!("本地文件夹不存在，跳过删除: {}", path);
+                let base_path = &collection.path;
+                if base_path.is_empty() || base_path == "/" || base_path == "\\" {
+                    warn!("检测到危险路径，跳过删除: {}", base_path);
                 } else {
-                    info!("开始删除合集文件夹: {}", path);
-                    
-                    // 检查文件夹大小
-                    match get_directory_size(path) {
-                        Ok(size) => {
-                            let size_mb = size as f64 / 1024.0 / 1024.0;
-                            info!("即将删除文件夹，总大小: {:.2} MB", size_mb);
-                            
-                if let Err(e) = std::fs::remove_dir_all(path) {
-                                error!("删除合集文件夹失败: {} - {}", path, e);
-                            } else {
-                                info!("成功删除合集文件夹: {} ({:.2} MB)", path, size_mb);
+                    // 删除合集相关的具体视频文件夹，而不是删除整个合集基础目录
+                    info!("开始删除合集 {} 的相关文件夹", collection.name);
+
+                    // 获取所有相关的视频记录来确定需要删除的具体文件夹
+                    let mut deleted_folders = std::collections::HashSet::new();
+                    let mut total_deleted_size = 0u64;
+
+                    for video in &videos {
+                        // 对于每个视频，删除其对应的文件夹
+                        let video_path = std::path::Path::new(&video.path);
+
+                        if video_path.exists() && !deleted_folders.contains(&video.path) {
+                            match get_directory_size(&video.path) {
+                                Ok(size) => {
+                                    let size_mb = size as f64 / 1024.0 / 1024.0;
+                                    info!("删除合集视频文件夹: {} (大小: {:.2} MB)", video.path, size_mb);
+
+                                    if let Err(e) = std::fs::remove_dir_all(&video.path) {
+                                        error!("删除合集视频文件夹失败: {} - {}", video.path, e);
+                                    } else {
+                                        info!("成功删除合集视频文件夹: {} ({:.2} MB)", video.path, size_mb);
+                                        deleted_folders.insert(video.path.clone());
+                                        total_deleted_size += size;
+                                    }
+                                }
+                                Err(e) => {
+                                    warn!("无法计算文件夹大小: {} - {}", video.path, e);
+                                    if let Err(e) = std::fs::remove_dir_all(&video.path) {
+                                        error!("删除合集视频文件夹失败: {} - {}", video.path, e);
+                                    } else {
+                                        info!("成功删除合集视频文件夹: {}", video.path);
+                                        deleted_folders.insert(video.path.clone());
+                                    }
+                                }
                             }
                         }
-                        Err(e) => {
-                            warn!("无法计算文件夹大小: {} - {}", path, e);
-                            if let Err(e) = std::fs::remove_dir_all(path) {
-                                error!("删除合集文件夹失败: {} - {}", path, e);
-                            } else {
-                                info!("成功删除合集文件夹: {}", path);
-                            }
-                        }
+                    }
+
+                    if !deleted_folders.is_empty() {
+                        let total_size_mb = total_deleted_size as f64 / 1024.0 / 1024.0;
+                        info!(
+                            "合集 {} 删除完成，共删除 {} 个文件夹，总大小: {:.2} MB",
+                            collection.name,
+                            deleted_folders.len(),
+                            total_size_mb
+                        );
+                    } else {
+                        info!("合集 {} 没有找到需要删除的本地文件夹", collection.name);
                     }
                 }
             }
@@ -939,33 +1078,58 @@ pub async fn delete_video_source(
 
             // 如果需要删除本地文件
             if delete_local_files {
-                let path = &favorite.path;
-                if path.is_empty() || path == "/" || path == "\\" {
-                    warn!("检测到危险路径，跳过删除: {}", path);
-                } else if !std::path::Path::new(path).exists() {
-                    info!("本地文件夹不存在，跳过删除: {}", path);
+                let base_path = &favorite.path;
+                if base_path.is_empty() || base_path == "/" || base_path == "\\" {
+                    warn!("检测到危险路径，跳过删除: {}", base_path);
                 } else {
-                    info!("开始删除收藏夹文件夹: {}", path);
-                    
-                    match get_directory_size(path) {
-                        Ok(size) => {
-                            let size_mb = size as f64 / 1024.0 / 1024.0;
-                            info!("即将删除文件夹，总大小: {:.2} MB", size_mb);
-                            
-                if let Err(e) = std::fs::remove_dir_all(path) {
-                                error!("删除收藏夹文件夹失败: {} - {}", path, e);
-                            } else {
-                                info!("成功删除收藏夹文件夹: {} ({:.2} MB)", path, size_mb);
+                    // 删除收藏夹相关的具体视频文件夹，而不是删除整个收藏夹基础目录
+                    info!("开始删除收藏夹 {} 的相关文件夹", favorite.name);
+
+                    // 获取所有相关的视频记录来确定需要删除的具体文件夹
+                    let mut deleted_folders = std::collections::HashSet::new();
+                    let mut total_deleted_size = 0u64;
+
+                    for video in &videos {
+                        // 对于每个视频，删除其对应的文件夹
+                        let video_path = std::path::Path::new(&video.path);
+
+                        if video_path.exists() && !deleted_folders.contains(&video.path) {
+                            match get_directory_size(&video.path) {
+                                Ok(size) => {
+                                    let size_mb = size as f64 / 1024.0 / 1024.0;
+                                    info!("删除收藏夹视频文件夹: {} (大小: {:.2} MB)", video.path, size_mb);
+
+                                    if let Err(e) = std::fs::remove_dir_all(&video.path) {
+                                        error!("删除收藏夹视频文件夹失败: {} - {}", video.path, e);
+                                    } else {
+                                        info!("成功删除收藏夹视频文件夹: {} ({:.2} MB)", video.path, size_mb);
+                                        deleted_folders.insert(video.path.clone());
+                                        total_deleted_size += size;
+                                    }
+                                }
+                                Err(e) => {
+                                    warn!("无法计算文件夹大小: {} - {}", video.path, e);
+                                    if let Err(e) = std::fs::remove_dir_all(&video.path) {
+                                        error!("删除收藏夹视频文件夹失败: {} - {}", video.path, e);
+                                    } else {
+                                        info!("成功删除收藏夹视频文件夹: {}", video.path);
+                                        deleted_folders.insert(video.path.clone());
+                                    }
+                                }
                             }
                         }
-                        Err(e) => {
-                            warn!("无法计算文件夹大小: {} - {}", path, e);
-                            if let Err(e) = std::fs::remove_dir_all(path) {
-                                error!("删除收藏夹文件夹失败: {} - {}", path, e);
-                            } else {
-                                info!("成功删除收藏夹文件夹: {}", path);
-                            }
-                        }
+                    }
+
+                    if !deleted_folders.is_empty() {
+                        let total_size_mb = total_deleted_size as f64 / 1024.0 / 1024.0;
+                        info!(
+                            "收藏夹 {} 删除完成，共删除 {} 个文件夹，总大小: {:.2} MB",
+                            favorite.name,
+                            deleted_folders.len(),
+                            total_size_mb
+                        );
+                    } else {
+                        info!("收藏夹 {} 没有找到需要删除的本地文件夹", favorite.name);
                     }
                 }
             }
@@ -1009,33 +1173,58 @@ pub async fn delete_video_source(
 
             // 如果需要删除本地文件
             if delete_local_files {
-                let path = &submission.path;
-                if path.is_empty() || path == "/" || path == "\\" {
-                    warn!("检测到危险路径，跳过删除: {}", path);
-                } else if !std::path::Path::new(path).exists() {
-                    info!("本地文件夹不存在，跳过删除: {}", path);
+                let base_path = &submission.path;
+                if base_path.is_empty() || base_path == "/" || base_path == "\\" {
+                    warn!("检测到危险路径，跳过删除: {}", base_path);
                 } else {
-                    info!("开始删除UP主投稿文件夹: {}", path);
-                    
-                    match get_directory_size(path) {
-                        Ok(size) => {
-                            let size_mb = size as f64 / 1024.0 / 1024.0;
-                            info!("即将删除文件夹，总大小: {:.2} MB", size_mb);
-                            
-                if let Err(e) = std::fs::remove_dir_all(path) {
-                                error!("删除UP主投稿文件夹失败: {} - {}", path, e);
-                            } else {
-                                info!("成功删除UP主投稿文件夹: {} ({:.2} MB)", path, size_mb);
+                    // 删除UP主投稿相关的具体视频文件夹，而不是删除整个UP主投稿基础目录
+                    info!("开始删除UP主投稿 {} 的相关文件夹", submission.upper_name);
+
+                    // 获取所有相关的视频记录来确定需要删除的具体文件夹
+                    let mut deleted_folders = std::collections::HashSet::new();
+                    let mut total_deleted_size = 0u64;
+
+                    for video in &videos {
+                        // 对于每个视频，删除其对应的文件夹
+                        let video_path = std::path::Path::new(&video.path);
+
+                        if video_path.exists() && !deleted_folders.contains(&video.path) {
+                            match get_directory_size(&video.path) {
+                                Ok(size) => {
+                                    let size_mb = size as f64 / 1024.0 / 1024.0;
+                                    info!("删除UP主投稿视频文件夹: {} (大小: {:.2} MB)", video.path, size_mb);
+
+                                    if let Err(e) = std::fs::remove_dir_all(&video.path) {
+                                        error!("删除UP主投稿视频文件夹失败: {} - {}", video.path, e);
+                                    } else {
+                                        info!("成功删除UP主投稿视频文件夹: {} ({:.2} MB)", video.path, size_mb);
+                                        deleted_folders.insert(video.path.clone());
+                                        total_deleted_size += size;
+                                    }
+                                }
+                                Err(e) => {
+                                    warn!("无法计算文件夹大小: {} - {}", video.path, e);
+                                    if let Err(e) = std::fs::remove_dir_all(&video.path) {
+                                        error!("删除UP主投稿视频文件夹失败: {} - {}", video.path, e);
+                                    } else {
+                                        info!("成功删除UP主投稿视频文件夹: {}", video.path);
+                                        deleted_folders.insert(video.path.clone());
+                                    }
+                                }
                             }
                         }
-                        Err(e) => {
-                            warn!("无法计算文件夹大小: {} - {}", path, e);
-                            if let Err(e) = std::fs::remove_dir_all(path) {
-                                error!("删除UP主投稿文件夹失败: {} - {}", path, e);
-                            } else {
-                                info!("成功删除UP主投稿文件夹: {}", path);
-                            }
-                        }
+                    }
+
+                    if !deleted_folders.is_empty() {
+                        let total_size_mb = total_deleted_size as f64 / 1024.0 / 1024.0;
+                        info!(
+                            "UP主投稿 {} 删除完成，共删除 {} 个文件夹，总大小: {:.2} MB",
+                            submission.upper_name,
+                            deleted_folders.len(),
+                            total_size_mb
+                        );
+                    } else {
+                        info!("UP主投稿 {} 没有找到需要删除的本地文件夹", submission.upper_name);
                     }
                 }
             }
@@ -1079,33 +1268,57 @@ pub async fn delete_video_source(
 
             // 如果需要删除本地文件
             if delete_local_files {
-                let path = &watch_later.path;
-                if path.is_empty() || path == "/" || path == "\\" {
-                    warn!("检测到危险路径，跳过删除: {}", path);
-                } else if !std::path::Path::new(path).exists() {
-                    info!("本地文件夹不存在，跳过删除: {}", path);
+                let base_path = &watch_later.path;
+                if base_path.is_empty() || base_path == "/" || base_path == "\\" {
+                    warn!("检测到危险路径，跳过删除: {}", base_path);
                 } else {
-                    info!("开始删除稍后再看文件夹: {}", path);
-                    
-                    match get_directory_size(path) {
-                        Ok(size) => {
-                            let size_mb = size as f64 / 1024.0 / 1024.0;
-                            info!("即将删除文件夹，总大小: {:.2} MB", size_mb);
-                            
-                if let Err(e) = std::fs::remove_dir_all(path) {
-                                error!("删除稍后再看文件夹失败: {} - {}", path, e);
-                            } else {
-                                info!("成功删除稍后再看文件夹: {} ({:.2} MB)", path, size_mb);
+                    // 删除稍后再看相关的具体视频文件夹，而不是删除整个稍后再看基础目录
+                    info!("开始删除稍后再看的相关文件夹");
+
+                    // 获取所有相关的视频记录来确定需要删除的具体文件夹
+                    let mut deleted_folders = std::collections::HashSet::new();
+                    let mut total_deleted_size = 0u64;
+
+                    for video in &videos {
+                        // 对于每个视频，删除其对应的文件夹
+                        let video_path = std::path::Path::new(&video.path);
+
+                        if video_path.exists() && !deleted_folders.contains(&video.path) {
+                            match get_directory_size(&video.path) {
+                                Ok(size) => {
+                                    let size_mb = size as f64 / 1024.0 / 1024.0;
+                                    info!("删除稍后再看视频文件夹: {} (大小: {:.2} MB)", video.path, size_mb);
+
+                                    if let Err(e) = std::fs::remove_dir_all(&video.path) {
+                                        error!("删除稍后再看视频文件夹失败: {} - {}", video.path, e);
+                                    } else {
+                                        info!("成功删除稍后再看视频文件夹: {} ({:.2} MB)", video.path, size_mb);
+                                        deleted_folders.insert(video.path.clone());
+                                        total_deleted_size += size;
+                                    }
+                                }
+                                Err(e) => {
+                                    warn!("无法计算文件夹大小: {} - {}", video.path, e);
+                                    if let Err(e) = std::fs::remove_dir_all(&video.path) {
+                                        error!("删除稍后再看视频文件夹失败: {} - {}", video.path, e);
+                                    } else {
+                                        info!("成功删除稍后再看视频文件夹: {}", video.path);
+                                        deleted_folders.insert(video.path.clone());
+                                    }
+                                }
                             }
                         }
-                        Err(e) => {
-                            warn!("无法计算文件夹大小: {} - {}", path, e);
-                            if let Err(e) = std::fs::remove_dir_all(path) {
-                                error!("删除稍后再看文件夹失败: {} - {}", path, e);
-                            } else {
-                                info!("成功删除稍后再看文件夹: {}", path);
-                            }
-                        }
+                    }
+
+                    if !deleted_folders.is_empty() {
+                        let total_size_mb = total_deleted_size as f64 / 1024.0 / 1024.0;
+                        info!(
+                            "稍后再看删除完成，共删除 {} 个文件夹，总大小: {:.2} MB",
+                            deleted_folders.len(),
+                            total_size_mb
+                        );
+                    } else {
+                        info!("稍后再看没有找到需要删除的本地文件夹");
                     }
                 }
             }
@@ -1157,21 +1370,21 @@ pub async fn delete_video_source(
                 } else {
                     // 删除番剧相关的季度文件夹，而不是删除整个番剧基础目录
                     info!("开始删除番剧 {} 的相关文件夹", bangumi.name);
-                    
+
                     // 获取所有相关的视频记录来确定需要删除的具体文件夹
                     let mut deleted_folders = std::collections::HashSet::new();
                     let mut total_deleted_size = 0u64;
-                    
+
                     for video in &videos {
                         // 对于每个视频，删除其对应的文件夹
                         let video_path = std::path::Path::new(&video.path);
-                        
+
                         if video_path.exists() && !deleted_folders.contains(&video.path) {
                             match get_directory_size(&video.path) {
                                 Ok(size) => {
                                     let size_mb = size as f64 / 1024.0 / 1024.0;
                                     info!("删除番剧季度文件夹: {} (大小: {:.2} MB)", video.path, size_mb);
-                                    
+
                                     if let Err(e) = std::fs::remove_dir_all(&video.path) {
                                         error!("删除番剧季度文件夹失败: {} - {}", video.path, e);
                                     } else {
@@ -1192,11 +1405,15 @@ pub async fn delete_video_source(
                             }
                         }
                     }
-                    
+
                     if !deleted_folders.is_empty() {
                         let total_size_mb = total_deleted_size as f64 / 1024.0 / 1024.0;
-                        info!("番剧 {} 删除完成，共删除 {} 个文件夹，总大小: {:.2} MB", 
-                              bangumi.name, deleted_folders.len(), total_size_mb);
+                        info!(
+                            "番剧 {} 删除完成，共删除 {} 个文件夹，总大小: {:.2} MB",
+                            bangumi.name,
+                            deleted_folders.len(),
+                            total_size_mb
+                        );
                     } else {
                         info!("番剧 {} 没有找到需要删除的本地文件夹", bangumi.name);
                     }
@@ -1217,7 +1434,7 @@ pub async fn delete_video_source(
     };
 
     txn.commit().await?;
-    Ok(ApiResponse::ok(result))
+    Ok(result)
 }
 
 /// 更新配置文件的辅助函数
@@ -1305,6 +1522,48 @@ pub async fn update_config(
     Extension(db): Extension<Arc<DatabaseConnection>>,
     axum::Json(params): axum::Json<crate::api::request::UpdateConfigRequest>,
 ) -> Result<ApiResponse<crate::api::response::UpdateConfigResponse>, ApiError> {
+    // 检查是否正在扫描
+    if crate::task::is_scanning() {
+        // 正在扫描，将更新配置任务加入队列
+        let task_id = uuid::Uuid::new_v4().to_string();
+        let update_task = crate::task::UpdateConfigTask {
+            video_name: params.video_name.clone(),
+            page_name: params.page_name.clone(),
+            multi_page_name: params.multi_page_name.clone(),
+            bangumi_name: params.bangumi_name.clone(),
+            folder_structure: params.folder_structure.clone(),
+            time_format: params.time_format.clone(),
+            interval: params.interval,
+            nfo_time_type: params.nfo_time_type.clone(),
+            parallel_download_enabled: params.parallel_download_enabled,
+            parallel_download_threads: params.parallel_download_threads,
+            parallel_download_min_size: params.parallel_download_min_size,
+            task_id: task_id.clone(),
+        };
+
+        crate::task::enqueue_update_task(update_task).await;
+
+        info!("检测到正在扫描，更新配置任务已加入队列等待处理");
+
+        return Ok(ApiResponse::ok(crate::api::response::UpdateConfigResponse {
+            success: true,
+            message: "正在扫描中，更新配置任务已加入队列，将在扫描完成后自动处理".to_string(),
+            updated_files: None,
+        }));
+    }
+
+    // 没有扫描，直接执行更新配置
+    match update_config_internal(db, params).await {
+        Ok(response) => Ok(ApiResponse::ok(response)),
+        Err(e) => Err(e),
+    }
+}
+
+/// 内部更新配置函数（用于队列处理和直接调用）
+pub async fn update_config_internal(
+    db: Arc<DatabaseConnection>,
+    params: crate::api::request::UpdateConfigRequest,
+) -> Result<crate::api::response::UpdateConfigResponse, ApiError> {
     use std::borrow::Cow;
 
     // 获取当前配置的副本
@@ -1408,11 +1667,11 @@ pub async fn update_config(
     }
 
     if updated_fields.is_empty() {
-        return Ok(ApiResponse::ok(crate::api::response::UpdateConfigResponse {
+        return Ok(crate::api::response::UpdateConfigResponse {
             success: false,
             message: "没有提供有效的配置更新".to_string(),
             updated_files: None,
-        }));
+        });
     }
 
     // 保存配置到文件
@@ -1487,7 +1746,7 @@ pub async fn update_config(
         }
     }
 
-    Ok(ApiResponse::ok(crate::api::response::UpdateConfigResponse {
+    Ok(crate::api::response::UpdateConfigResponse {
         success: true,
         message: if should_rename && should_regenerate_nfo {
             format!(
@@ -1514,7 +1773,7 @@ pub async fn update_config(
         } else {
             None
         },
-    }))
+    })
 }
 
 /// 查找分页文件的原始命名模式
@@ -2137,20 +2396,20 @@ async fn regenerate_nfo_files(db: Arc<DatabaseConnection>, config: &crate::confi
                     let actual_page_name = if let Ok(entries) = std::fs::read_dir(video_path) {
                         let mut found_name = None;
                         let episode_number = video.episode_number.unwrap_or(page.pid);
-                        
+
                         for entry in entries.flatten() {
                             let file_name = entry.file_name();
                             let file_name_str = file_name.to_string_lossy();
                             if file_name_str.ends_with(".mp4") {
                                 // 尝试多种匹配模式
-                                let patterns = vec![
-                                    format!("第{:02}集", episode_number),  // 第01集
-                                    format!("第{}集", episode_number),     // 第1集
+                                let patterns = [
+                                    format!("第{:02}集", episode_number),       // 第01集
+                                    format!("第{}集", episode_number),          // 第1集
                                     format!("S{:02}E{:02}", 1, episode_number), // S01E01
-                                    format!("E{:02}", episode_number),     // E01
-                                    format!("{:02}", episode_number),      // 01
+                                    format!("E{:02}", episode_number),          // E01
+                                    format!("{:02}", episode_number),           // 01
                                 ];
-                                
+
                                 if patterns.iter().any(|pattern| file_name_str.contains(pattern)) {
                                     // 找到匹配的视频文件，提取基础名称
                                     found_name = Some(file_name_str.trim_end_matches(".mp4").to_string());
@@ -2170,56 +2429,57 @@ async fn regenerate_nfo_files(db: Arc<DatabaseConnection>, config: &crate::confi
                     } else {
                         // 如果找不到实际文件，则使用模板生成（兜底方案）
                         if let Some(bangumi_source) = &bangumi_source {
-                        let template = bangumi_source
-                            .page_name_template
-                            .as_deref()
-                            .unwrap_or("S{{season_pad}}E{{pid_pad}}-{{pid_pad}}");
+                            let template = bangumi_source
+                                .page_name_template
+                                .as_deref()
+                                .unwrap_or("S{{season_pad}}E{{pid_pad}}-{{pid_pad}}");
 
-                        // 构建番剧专用的模板数据
-                        let episode_number = video.episode_number.unwrap_or(page.pid);
-                        let season_number = video.season_number.unwrap_or(1);
+                            // 构建番剧专用的模板数据
+                            let episode_number = video.episode_number.unwrap_or(page.pid);
+                            let season_number = video.season_number.unwrap_or(1);
 
-                        let mut template_data = std::collections::HashMap::new();
-                        template_data.insert("bvid".to_string(), serde_json::Value::String(video.bvid.clone()));
-                        template_data.insert("title".to_string(), serde_json::Value::String(video.name.clone()));
-                        template_data.insert(
-                            "upper_name".to_string(),
-                            serde_json::Value::String(video.upper_name.clone()),
-                        );
-                        template_data.insert(
-                            "upper_mid".to_string(),
-                            serde_json::Value::String(video.upper_id.to_string()),
-                        );
-                        template_data.insert("ptitle".to_string(), serde_json::Value::String(page.name.clone()));
-                        template_data.insert("pid".to_string(), serde_json::Value::String(episode_number.to_string()));
-                        template_data.insert(
-                            "pid_pad".to_string(),
-                            serde_json::Value::String(format!("{:02}", episode_number)),
-                        );
-                        template_data.insert(
-                            "season".to_string(),
-                            serde_json::Value::String(season_number.to_string()),
-                        );
-                        template_data.insert(
-                            "season_pad".to_string(),
-                            serde_json::Value::String(format!("{:02}", season_number)),
-                        );
+                            let mut template_data = std::collections::HashMap::new();
+                            template_data.insert("bvid".to_string(), serde_json::Value::String(video.bvid.clone()));
+                            template_data.insert("title".to_string(), serde_json::Value::String(video.name.clone()));
+                            template_data.insert(
+                                "upper_name".to_string(),
+                                serde_json::Value::String(video.upper_name.clone()),
+                            );
+                            template_data.insert(
+                                "upper_mid".to_string(),
+                                serde_json::Value::String(video.upper_id.to_string()),
+                            );
+                            template_data.insert("ptitle".to_string(), serde_json::Value::String(page.name.clone()));
+                            template_data
+                                .insert("pid".to_string(), serde_json::Value::String(episode_number.to_string()));
+                            template_data.insert(
+                                "pid_pad".to_string(),
+                                serde_json::Value::String(format!("{:02}", episode_number)),
+                            );
+                            template_data.insert(
+                                "season".to_string(),
+                                serde_json::Value::String(season_number.to_string()),
+                            );
+                            template_data.insert(
+                                "season_pad".to_string(),
+                                serde_json::Value::String(format!("{:02}", season_number)),
+                            );
 
-                        let handlebars = Handlebars::new();
-                        let template_value = serde_json::Value::Object(template_data.into_iter().collect());
+                            let handlebars = Handlebars::new();
+                            let template_value = serde_json::Value::Object(template_data.into_iter().collect());
 
-                        match handlebars.render_template(template, &template_value) {
-                            Ok(rendered) => crate::utils::filenamify::filenamify(&rendered),
-                            Err(e) => {
-                                warn!("渲染番剧模板失败: {}, 使用默认格式", e);
-                                format!("S{:02}E{:02}-{:02}", season_number, episode_number, episode_number)
+                            match handlebars.render_template(template, &template_value) {
+                                Ok(rendered) => crate::utils::filenamify::filenamify(&rendered),
+                                Err(e) => {
+                                    warn!("渲染番剧模板失败: {}, 使用默认格式", e);
+                                    format!("S{:02}E{:02}-{:02}", season_number, episode_number, episode_number)
+                                }
                             }
-                        }
-                    } else {
-                        // 如果找不到番剧源配置，使用默认格式
-                        let season_number = video.season_number.unwrap_or(1);
-                        let episode_number = video.episode_number.unwrap_or(page.pid);
-                        format!("S{:02}E{:02}-{:02}", season_number, episode_number, episode_number)
+                        } else {
+                            // 如果找不到番剧源配置，使用默认格式
+                            let season_number = video.season_number.unwrap_or(1);
+                            let episode_number = video.episode_number.unwrap_or(page.pid);
+                            format!("S{:02}E{:02}-{:02}", season_number, episode_number, episode_number)
                         }
                     };
 
@@ -2343,64 +2603,72 @@ async fn regenerate_nfo_files(db: Arc<DatabaseConnection>, config: &crate::confi
 pub async fn get_bangumi_seasons(
     Path(season_id): Path<String>,
 ) -> Result<ApiResponse<crate::api::response::BangumiSeasonsResponse>, ApiError> {
-    use crate::bilibili::BiliClient;
     use crate::bilibili::bangumi::Bangumi;
+    use crate::bilibili::BiliClient;
     use futures::future::join_all;
-    
+
     // 创建 BiliClient，使用空 cookie（对于获取季度信息不需要登录）
     let bili_client = BiliClient::new(String::new());
-    
+
     // 创建 Bangumi 实例
     let bangumi = Bangumi::new(&bili_client, None, Some(season_id.clone()), None);
-    
+
     // 获取所有季度信息
     match bangumi.get_all_seasons().await {
         Ok(seasons) => {
             // 并发获取所有季度的详细信息
-            let season_details_futures: Vec<_> = seasons.iter().map(|s| {
-                let bili_client_clone = bili_client.clone();
-                let season_clone = s.clone();
-                async move {
-                    let season_bangumi = Bangumi::new(&bili_client_clone, season_clone.media_id.clone(), Some(season_clone.season_id.clone()), None);
-                    
-                    let (full_title, episode_count) = match season_bangumi.get_season_info().await {
-                        Ok(season_info) => {
-                            let full_title = season_info["title"].as_str().map(|t| t.to_string());
-                            
-                            // 获取集数信息
-                            let episode_count = if let Some(episodes) = season_info["episodes"].as_array() {
-                                Some(episodes.len() as i32)
-                            } else {
-                                None
-                            };
-                            
-                            (full_title, episode_count)
-                        }
-                        Err(e) => {
-                            warn!("获取季度 {} 的详细信息失败: {}", season_clone.season_id, e);
-                            (None, None)
-                        }
-                    };
-                    
-                    (season_clone, full_title, episode_count)
-                }
-            }).collect();
+            let season_details_futures: Vec<_> = seasons
+                .iter()
+                .map(|s| {
+                    let bili_client_clone = bili_client.clone();
+                    let season_clone = s.clone();
+                    async move {
+                        let season_bangumi = Bangumi::new(
+                            &bili_client_clone,
+                            season_clone.media_id.clone(),
+                            Some(season_clone.season_id.clone()),
+                            None,
+                        );
+
+                        let (full_title, episode_count) = match season_bangumi.get_season_info().await {
+                            Ok(season_info) => {
+                                let full_title = season_info["title"].as_str().map(|t| t.to_string());
+
+                                // 获取集数信息
+                                let episode_count =
+                                    season_info["episodes"].as_array().map(|episodes| episodes.len() as i32);
+
+                                (full_title, episode_count)
+                            }
+                            Err(e) => {
+                                warn!("获取季度 {} 的详细信息失败: {}", season_clone.season_id, e);
+                                (None, None)
+                            }
+                        };
+
+                        (season_clone, full_title, episode_count)
+                    }
+                })
+                .collect();
 
             // 等待所有并发请求完成
             let season_details = join_all(season_details_futures).await;
-            
+
             // 构建响应数据
-            let season_list: Vec<_> = season_details.into_iter().map(|(s, full_title, episode_count)| {
-                crate::api::response::BangumiSeasonInfo {
-                    season_id: s.season_id,
-                    season_title: s.season_title,
-                    full_title,
-                    media_id: s.media_id,
-                    cover: Some(s.cover),
-                    episode_count,
-                }
-            }).collect();
-            
+            let season_list: Vec<_> = season_details
+                .into_iter()
+                .map(
+                    |(s, full_title, episode_count)| crate::api::response::BangumiSeasonInfo {
+                        season_id: s.season_id,
+                        season_title: s.season_title,
+                        full_title,
+                        media_id: s.media_id,
+                        cover: Some(s.cover),
+                        episode_count,
+                    },
+                )
+                .collect();
+
             Ok(ApiResponse::ok(crate::api::response::BangumiSeasonsResponse {
                 success: true,
                 data: season_list,
@@ -2431,7 +2699,7 @@ pub async fn search_bilibili(
     Query(params): Query<crate::api::request::SearchRequest>,
 ) -> Result<ApiResponse<crate::api::response::SearchResponse>, ApiError> {
     use crate::bilibili::{BiliClient, SearchResult};
-    
+
     // 验证搜索类型
     let valid_types = ["video", "bili_user", "media_bangumi", "media_ft"];
     if !valid_types.contains(&params.search_type.as_str()) {
@@ -2445,19 +2713,22 @@ pub async fn search_bilibili(
 
     // 创建 BiliClient，使用空 cookie（搜索不需要登录）
     let bili_client = BiliClient::new(String::new());
-    
+
     // 特殊处理：当搜索类型为media_bangumi时，同时搜索番剧和影视
     let mut all_results = Vec::new();
     let mut total_results = 0u32;
-    
+
     if params.search_type == "media_bangumi" {
         // 搜索番剧
-        match bili_client.search(
-            &params.keyword, 
-            "media_bangumi", 
-            params.page, 
-            params.page_size / 2  // 每种类型分配一半的结果数
-        ).await {
+        match bili_client
+            .search(
+                &params.keyword,
+                "media_bangumi",
+                params.page,
+                params.page_size / 2, // 每种类型分配一半的结果数
+            )
+            .await
+        {
             Ok(bangumi_wrapper) => {
                 all_results.extend(bangumi_wrapper.results);
                 total_results += bangumi_wrapper.total;
@@ -2466,14 +2737,17 @@ pub async fn search_bilibili(
                 warn!("搜索番剧失败: {}", e);
             }
         }
-        
+
         // 搜索影视
-        match bili_client.search(
-            &params.keyword, 
-            "media_ft", 
-            params.page, 
-            params.page_size / 2  // 每种类型分配一半的结果数
-        ).await {
+        match bili_client
+            .search(
+                &params.keyword,
+                "media_ft",
+                params.page,
+                params.page_size / 2, // 每种类型分配一半的结果数
+            )
+            .await
+        {
             Ok(ft_wrapper) => {
                 all_results.extend(ft_wrapper.results);
                 total_results += ft_wrapper.total;
@@ -2482,20 +2756,18 @@ pub async fn search_bilibili(
                 warn!("搜索影视失败: {}", e);
             }
         }
-        
+
         // 如果两个搜索都失败了，返回错误
         if all_results.is_empty() && total_results == 0 {
             return Err(anyhow!("搜索失败：无法获取番剧或影视结果").into());
         }
     } else {
         // 其他类型正常搜索
-    match bili_client.search(
-        &params.keyword, 
-        &params.search_type, 
-        params.page, 
-        params.page_size
-    ).await {
-        Ok(search_wrapper) => {
+        match bili_client
+            .search(&params.keyword, &params.search_type, params.page, params.page_size)
+            .await
+        {
+            Ok(search_wrapper) => {
                 all_results = search_wrapper.results;
                 total_results = search_wrapper.total;
             }
@@ -2505,34 +2777,35 @@ pub async fn search_bilibili(
             }
         }
     }
-    
-            // 转换搜索结果格式
-    let api_results: Vec<crate::api::response::SearchResult> = all_results.into_iter().map(|r: SearchResult| {
-                crate::api::response::SearchResult {
-                    result_type: r.result_type,
-                    title: r.title,
-                    author: r.author,
-                    bvid: r.bvid,
-                    aid: r.aid,
-                    mid: r.mid,
-                    season_id: r.season_id,
-                    media_id: r.media_id,
-                    cover: r.cover,
-                    description: r.description,
-                    duration: r.duration,
-                    pubdate: r.pubdate,
-                    play: r.play,
-                    danmaku: r.danmaku,
-                }
-            }).collect();
 
-            Ok(ApiResponse::ok(crate::api::response::SearchResponse {
-                success: true,
-                results: api_results,
+    // 转换搜索结果格式
+    let api_results: Vec<crate::api::response::SearchResult> = all_results
+        .into_iter()
+        .map(|r: SearchResult| crate::api::response::SearchResult {
+            result_type: r.result_type,
+            title: r.title,
+            author: r.author,
+            bvid: r.bvid,
+            aid: r.aid,
+            mid: r.mid,
+            season_id: r.season_id,
+            media_id: r.media_id,
+            cover: r.cover,
+            description: r.description,
+            duration: r.duration,
+            pubdate: r.pubdate,
+            play: r.play,
+            danmaku: r.danmaku,
+        })
+        .collect();
+
+    Ok(ApiResponse::ok(crate::api::response::SearchResponse {
+        success: true,
+        results: api_results,
         total: total_results,
-                page: params.page,
-                page_size: params.page_size,
-            }))
+        page: params.page,
+        page_size: params.page_size,
+    }))
 }
 
 /// 获取用户收藏夹列表
@@ -2545,7 +2818,7 @@ pub async fn search_bilibili(
 )]
 pub async fn get_user_favorites() -> Result<ApiResponse<Vec<crate::api::response::UserFavoriteFolder>>, ApiError> {
     let bili_client = crate::bilibili::BiliClient::new(String::new());
-    
+
     match bili_client.get_user_favorite_folders(None).await {
         Ok(folders) => {
             let response_folders: Vec<crate::api::response::UserFavoriteFolder> = folders
@@ -2557,7 +2830,7 @@ pub async fn get_user_favorites() -> Result<ApiResponse<Vec<crate::api::response
                     media_count: folder.media_count,
                 })
                 .collect();
-            
+
             Ok(ApiResponse::ok(response_folders))
         }
         Err(e) => {
@@ -2584,15 +2857,14 @@ pub async fn get_user_collections(
     Path(mid): Path<i64>,
     Query(params): Query<std::collections::HashMap<String, String>>,
 ) -> Result<ApiResponse<crate::api::response::UserCollectionsResponse>, ApiError> {
-    let page = params.get("page")
-        .and_then(|p| p.parse::<u32>().ok())
-        .unwrap_or(1);
-    let page_size = params.get("page_size")
+    let page = params.get("page").and_then(|p| p.parse::<u32>().ok()).unwrap_or(1);
+    let page_size = params
+        .get("page_size")
         .and_then(|p| p.parse::<u32>().ok())
         .unwrap_or(20);
 
     let bili_client = crate::bilibili::BiliClient::new(String::new());
-    
+
     match bili_client.get_user_collections(mid, page, page_size).await {
         Ok(response) => Ok(ApiResponse::ok(response)),
         Err(e) => {
@@ -2619,7 +2891,7 @@ fn get_directory_size(path: &str) -> std::io::Result<u64> {
         }
         Ok(size)
     }
-    
+
     let path = std::path::Path::new(path);
     dir_size(path)
 }
@@ -2634,7 +2906,7 @@ fn get_directory_size(path: &str) -> std::io::Result<u64> {
 )]
 pub async fn get_user_followings() -> Result<ApiResponse<Vec<crate::api::response::UserFollowing>>, ApiError> {
     let bili_client = crate::bilibili::BiliClient::new(String::new());
-    
+
     match bili_client.get_user_followings().await {
         Ok(followings) => {
             let response_followings: Vec<crate::api::response::UserFollowing> = followings
@@ -2644,10 +2916,12 @@ pub async fn get_user_followings() -> Result<ApiResponse<Vec<crate::api::respons
                     name: following.name,
                     face: following.face,
                     sign: following.sign,
-                    official_verify: following.official_verify.map(|verify| crate::api::response::OfficialVerify {
-                        type_: verify.type_,
-                        desc: verify.desc,
-                    }),
+                    official_verify: following
+                        .official_verify
+                        .map(|verify| crate::api::response::OfficialVerify {
+                            type_: verify.type_,
+                            desc: verify.desc,
+                        }),
                 })
                 .collect();
             Ok(ApiResponse::ok(response_followings))
@@ -2667,9 +2941,10 @@ pub async fn get_user_followings() -> Result<ApiResponse<Vec<crate::api::respons
         (status = 200, body = ApiResponse<Vec<crate::api::response::UserCollectionInfo>>),
     )
 )]
-pub async fn get_subscribed_collections() -> Result<ApiResponse<Vec<crate::api::response::UserCollectionInfo>>, ApiError> {
+pub async fn get_subscribed_collections() -> Result<ApiResponse<Vec<crate::api::response::UserCollectionInfo>>, ApiError>
+{
     let bili_client = crate::bilibili::BiliClient::new(String::new());
-    
+
     match bili_client.get_subscribed_collections().await {
         Ok(collections) => Ok(ApiResponse::ok(collections)),
         Err(e) => {
@@ -2714,6 +2989,8 @@ pub struct LogsResponse {
 // 全局日志存储，使用Arc<Mutex<VecDeque<LogEntry>>>来存储最近的日志
 lazy_static::lazy_static! {
     static ref LOG_BUFFER: Arc<Mutex<VecDeque<LogEntry>>> = Arc::new(Mutex::new(VecDeque::with_capacity(100000)));
+    // 为debug日志单独设置缓冲区，容量较小
+    static ref DEBUG_LOG_BUFFER: Arc<Mutex<VecDeque<LogEntry>>> = Arc::new(Mutex::new(VecDeque::with_capacity(10000)));
     static ref LOG_BROADCASTER: broadcast::Sender<LogEntry> = {
         let (sender, _) = broadcast::channel(100);
         sender
@@ -2724,17 +3001,31 @@ lazy_static::lazy_static! {
 pub fn add_log_entry(level: LogLevel, message: String, target: Option<String>) {
     let entry = LogEntry {
         timestamp: Utc::now().to_rfc3339(),
-        level,
+        level: level.clone(), // 克隆level避免所有权问题
         message,
         target,
     };
 
-    // 添加到缓冲区
-    if let Ok(mut buffer) = LOG_BUFFER.lock() {
-        buffer.push_back(entry.clone());
-        // 保持缓冲区大小在100000条以内
-        if buffer.len() > 100000 {
-            buffer.pop_front();
+    match level {
+        LogLevel::Debug => {
+            // Debug日志使用单独的缓冲区，容量较小
+            if let Ok(mut buffer) = DEBUG_LOG_BUFFER.lock() {
+                buffer.push_back(entry.clone());
+                // Debug日志保持在10000条以内
+                if buffer.len() > 10000 {
+                    buffer.pop_front();
+                }
+            }
+        }
+        _ => {
+            // 其他级别日志使用主缓冲区
+            if let Ok(mut buffer) = LOG_BUFFER.lock() {
+                buffer.push_back(entry.clone());
+                // 主缓冲区保持在50000条以内（给debug留出空间）
+                if buffer.len() > 50000 {
+                    buffer.pop_front();
+                }
+            }
         }
     }
 
@@ -2779,47 +3070,226 @@ pub async fn get_logs(
         .unwrap_or(1)
         .max(1); // 页码最小为1
 
-    let logs = if let Ok(buffer) = LOG_BUFFER.lock() {
-        let total_logs: Vec<LogEntry> = buffer
-            .iter()
-            .rev() // 最新的在前
-            .filter(|entry| {
-                if let Some(ref filter_level) = level_filter {
-                    // 明确指定了级别，只显示该级别的日志
-                    &entry.level == filter_level
-                } else {
-                    // 没有指定级别（全部日志），排除debug级别
-                    entry.level != LogLevel::Debug
+    let logs = if let Some(ref filter_level) = level_filter {
+        if *filter_level == LogLevel::Debug {
+            // 如果筛选debug级别，从debug专用缓冲区获取
+            if let Ok(buffer) = DEBUG_LOG_BUFFER.lock() {
+                let total_logs: Vec<LogEntry> = buffer
+                    .iter()
+                    .rev() // 最新的在前
+                    .cloned()
+                    .collect();
+
+                let total = total_logs.len();
+                let offset = (page - 1) * limit;
+                let total_pages = if total == 0 { 0 } else { total.div_ceil(limit) };
+                let logs = total_logs.into_iter().skip(offset).take(limit).collect();
+
+                LogsResponse {
+                    logs,
+                    total,
+                    page,
+                    per_page: limit,
+                    total_pages,
                 }
-            })
-            .cloned()
-            .collect();
+            } else {
+                LogsResponse {
+                    logs: vec![],
+                    total: 0,
+                    page: 1,
+                    per_page: limit,
+                    total_pages: 0,
+                }
+            }
+        } else {
+            // 其他级别从主缓冲区获取
+            if let Ok(buffer) = LOG_BUFFER.lock() {
+                let total_logs: Vec<LogEntry> = buffer
+                    .iter()
+                    .rev() // 最新的在前
+                    .filter(|entry| &entry.level == filter_level)
+                    .cloned()
+                    .collect();
 
-        let total = total_logs.len();
-        let offset = (page - 1) * limit;
-        let total_pages = if total == 0 { 0 } else { (total + limit - 1) / limit };
-        let logs = total_logs
-            .into_iter()
-            .skip(offset)
-            .take(limit)
-            .collect();
+                let total = total_logs.len();
+                let offset = (page - 1) * limit;
+                let total_pages = if total == 0 { 0 } else { total.div_ceil(limit) };
+                let logs = total_logs.into_iter().skip(offset).take(limit).collect();
 
-        LogsResponse { 
-            logs, 
-            total,
-            page,
-            per_page: limit,
-            total_pages
+                LogsResponse {
+                    logs,
+                    total,
+                    page,
+                    per_page: limit,
+                    total_pages,
+                }
+            } else {
+                LogsResponse {
+                    logs: vec![],
+                    total: 0,
+                    page: 1,
+                    per_page: limit,
+                    total_pages: 0,
+                }
+            }
         }
     } else {
-        LogsResponse {
-            logs: vec![],
-            total: 0,
-            page: 1,
-            per_page: limit,
-            total_pages: 0,
+        // 没有指定级别（全部日志），合并两个缓冲区但排除debug级别
+        if let Ok(main_buffer) = LOG_BUFFER.lock() {
+            let total_logs: Vec<LogEntry> = main_buffer
+                .iter()
+                .rev() // 最新的在前
+                .filter(|entry| entry.level != LogLevel::Debug) // 排除debug级别
+                .cloned()
+                .collect();
+
+            let total = total_logs.len();
+            let offset = (page - 1) * limit;
+            let total_pages = if total == 0 { 0 } else { total.div_ceil(limit) };
+            let logs = total_logs.into_iter().skip(offset).take(limit).collect();
+
+            LogsResponse {
+                logs,
+                total,
+                page,
+                per_page: limit,
+                total_pages,
+            }
+        } else {
+            LogsResponse {
+                logs: vec![],
+                total: 0,
+                page: 1,
+                per_page: limit,
+                total_pages: 0,
+            }
         }
     };
 
     Ok(ApiResponse::ok(logs))
+}
+
+/// 队列任务信息结构体
+#[derive(Debug, Serialize, Deserialize, utoipa::ToSchema)]
+pub struct QueueTaskInfo {
+    pub task_id: String,
+    pub task_type: String,
+    pub description: String,
+    pub created_at: String,
+}
+
+/// 队列状态响应结构体
+#[derive(Debug, Serialize, Deserialize, utoipa::ToSchema)]
+pub struct QueueStatusResponse {
+    pub is_scanning: bool,
+    pub delete_queue: QueueInfo,
+    pub add_queue: QueueInfo,
+    pub config_queue: ConfigQueueInfo,
+}
+
+/// 队列信息结构体
+#[derive(Debug, Serialize, Deserialize, utoipa::ToSchema)]
+pub struct QueueInfo {
+    pub length: usize,
+    pub is_processing: bool,
+    pub tasks: Vec<QueueTaskInfo>,
+}
+
+/// 配置队列信息结构体
+#[derive(Debug, Serialize, Deserialize, utoipa::ToSchema)]
+pub struct ConfigQueueInfo {
+    pub update_length: usize,
+    pub reload_length: usize,
+    pub is_processing: bool,
+    pub update_tasks: Vec<QueueTaskInfo>,
+    pub reload_tasks: Vec<QueueTaskInfo>,
+}
+
+/// 获取队列状态
+#[utoipa::path(
+    get,
+    path = "/api/queue/status",
+    responses(
+        (status = 200, description = "获取队列状态成功", body = QueueStatusResponse),
+        (status = 500, description = "服务器内部错误", body = String)
+    )
+)]
+pub async fn get_queue_status() -> Result<ApiResponse<QueueStatusResponse>, ApiError> {
+    use crate::task::{ADD_TASK_QUEUE, CONFIG_TASK_QUEUE, DELETE_TASK_QUEUE, TASK_CONTROLLER};
+
+    // 获取扫描状态
+    let is_scanning = TASK_CONTROLLER.is_scanning();
+
+    // 获取删除队列状态
+    let delete_queue_length = DELETE_TASK_QUEUE.queue_length().await;
+    let delete_is_processing = DELETE_TASK_QUEUE.is_processing();
+
+    // 这里只获取队列长度，不获取具体任务内容以保护敏感信息
+    let delete_tasks = (0..delete_queue_length)
+        .map(|i| QueueTaskInfo {
+            task_id: format!("delete_{}", i + 1),
+            task_type: "delete_video_source".to_string(),
+            description: "删除视频源任务".to_string(),
+            created_at: chrono::Utc::now().to_rfc3339(),
+        })
+        .collect();
+
+    // 获取添加队列状态
+    let add_queue_length = ADD_TASK_QUEUE.queue_length().await;
+    let add_is_processing = ADD_TASK_QUEUE.is_processing();
+
+    let add_tasks = (0..add_queue_length)
+        .map(|i| QueueTaskInfo {
+            task_id: format!("add_{}", i + 1),
+            task_type: "add_video_source".to_string(),
+            description: "添加视频源任务".to_string(),
+            created_at: chrono::Utc::now().to_rfc3339(),
+        })
+        .collect();
+
+    // 获取配置队列状态
+    let config_update_length = CONFIG_TASK_QUEUE.update_queue_length().await;
+    let config_reload_length = CONFIG_TASK_QUEUE.reload_queue_length().await;
+    let config_is_processing = CONFIG_TASK_QUEUE.is_processing();
+
+    let config_update_tasks = (0..config_update_length)
+        .map(|i| QueueTaskInfo {
+            task_id: format!("config_update_{}", i + 1),
+            task_type: "update_config".to_string(),
+            description: "更新配置任务".to_string(),
+            created_at: chrono::Utc::now().to_rfc3339(),
+        })
+        .collect();
+
+    let config_reload_tasks = (0..config_reload_length)
+        .map(|i| QueueTaskInfo {
+            task_id: format!("config_reload_{}", i + 1),
+            task_type: "reload_config".to_string(),
+            description: "重载配置任务".to_string(),
+            created_at: chrono::Utc::now().to_rfc3339(),
+        })
+        .collect();
+
+    let response = QueueStatusResponse {
+        is_scanning,
+        delete_queue: QueueInfo {
+            length: delete_queue_length,
+            is_processing: delete_is_processing,
+            tasks: delete_tasks,
+        },
+        add_queue: QueueInfo {
+            length: add_queue_length,
+            is_processing: add_is_processing,
+            tasks: add_tasks,
+        },
+        config_queue: ConfigQueueInfo {
+            update_length: config_update_length,
+            reload_length: config_reload_length,
+            is_processing: config_is_processing,
+            update_tasks: config_update_tasks,
+            reload_tasks: config_reload_tasks,
+        },
+    };
+
+    Ok(ApiResponse::ok(response))
 }

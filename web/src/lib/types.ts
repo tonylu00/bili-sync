@@ -249,3 +249,35 @@ export interface UserCollectionInfo {
 	up_name: string;
 	up_mid: number;
 }
+
+// 队列任务信息类型
+export interface QueueTaskInfo {
+	task_id: string;
+	task_type: string;
+	description: string;
+	created_at: string;
+}
+
+// 队列信息类型
+export interface QueueInfo {
+	length: number;
+	is_processing: boolean;
+	tasks: QueueTaskInfo[];
+}
+
+// 配置队列信息类型
+export interface ConfigQueueInfo {
+	update_length: number;
+	reload_length: number;
+	is_processing: boolean;
+	update_tasks: QueueTaskInfo[];
+	reload_tasks: QueueTaskInfo[];
+}
+
+// 队列状态响应类型
+export interface QueueStatusResponse {
+	is_scanning: boolean;
+	delete_queue: QueueInfo;
+	add_queue: QueueInfo;
+	config_queue: ConfigQueueInfo;
+}

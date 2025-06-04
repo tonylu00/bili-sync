@@ -2,10 +2,10 @@ use std::sync::Arc;
 
 use anyhow::{Context, Result};
 use axum::extract::Request;
-use axum::http::{Uri, header};
+use axum::http::{header, Uri};
 use axum::response::IntoResponse;
 use axum::routing::{delete, get, post, put};
-use axum::{Extension, Router, ServiceExt, middleware};
+use axum::{middleware, Extension, Router, ServiceExt};
 use reqwest::StatusCode;
 use rust_embed::Embed;
 use sea_orm::DatabaseConnection;
@@ -14,9 +14,9 @@ use utoipa_swagger_ui::{Config, SwaggerUi};
 
 use crate::api::auth;
 use crate::api::handler::{
-    ApiDoc, add_video_source, delete_video_source, get_config, get_video, get_video_sources, get_videos, reload_config,
-    reset_video, update_config, get_bangumi_seasons, search_bilibili, get_user_favorites, get_user_collections,
-    get_user_followings, get_subscribed_collections, get_logs,
+    add_video_source, delete_video_source, get_bangumi_seasons, get_config, get_logs, get_queue_status,
+    get_subscribed_collections, get_user_collections, get_user_favorites, get_user_followings, get_video,
+    get_video_sources, get_videos, reload_config, reset_video, search_bilibili, update_config, ApiDoc,
 };
 use crate::config::CONFIG;
 
@@ -42,6 +42,7 @@ pub async fn http_server(database_connection: Arc<DatabaseConnection>) -> Result
         .route("/api/user/followings", get(get_user_followings))
         .route("/api/user/subscribed-collections", get(get_subscribed_collections))
         .route("/api/logs", get(get_logs))
+        .route("/api/queue-status", get(get_queue_status))
         .merge(
             SwaggerUi::new("/swagger-ui/")
                 .url("/api-docs/openapi.json", ApiDoc::openapi())
@@ -67,7 +68,7 @@ async fn frontend_files(uri: Uri) -> impl IntoResponse {
     if path.is_empty() {
         path = "index.html";
     }
-    
+
     match Asset::get(path) {
         Some(content) => {
             let mime = mime_guess::from_path(path).first_or_octet_stream();
@@ -79,9 +80,9 @@ async fn frontend_files(uri: Uri) -> impl IntoResponse {
                 match Asset::get("index.html") {
                     Some(content) => {
                         let mime = mime_guess::from_path("index.html").first_or_octet_stream();
-            ([(header::CONTENT_TYPE, mime.as_ref())], content.data).into_response()
-        }
-        None => (StatusCode::NOT_FOUND, "404 Not Found").into_response(),
+                        ([(header::CONTENT_TYPE, mime.as_ref())], content.data).into_response()
+                    }
+                    None => (StatusCode::NOT_FOUND, "404 Not Found").into_response(),
                 }
             } else {
                 (StatusCode::NOT_FOUND, "404 Not Found").into_response()

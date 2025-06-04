@@ -1,6 +1,6 @@
 use anyhow::Error;
-use axum::Json;
 use axum::response::IntoResponse;
+use axum::Json;
 use reqwest::StatusCode;
 use serde::Serialize;
 use utoipa::ToSchema;
@@ -41,6 +41,7 @@ impl<T: Serialize> IntoResponse for ApiResponse<T> {
     }
 }
 
+#[derive(Debug)]
 pub struct ApiError(Error);
 
 impl<E> From<E> for ApiError

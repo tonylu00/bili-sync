@@ -1,12 +1,12 @@
 use anyhow::Result;
 use bili_sync_entity::*;
 use chrono::NaiveDateTime;
-use quick_xml::Error;
 use quick_xml::events::{BytesCData, BytesText};
 use quick_xml::writer::Writer;
+use quick_xml::Error;
 use tokio::io::{AsyncWriteExt, BufWriter};
 
-use crate::config::{CONFIG, NFOTimeType};
+use crate::config::{NFOTimeType, CONFIG};
 
 #[allow(clippy::upper_case_acronyms)]
 pub enum NFO<'a> {
@@ -322,7 +322,7 @@ mod tests {
             tags: Some(serde_json::json!(["tag1", "tag2"])),
             ..Default::default()
         };
-        
+
         assert_eq!(
             NFO::Movie((&video).into()).generate_nfo().await.unwrap(),
             r#"<?xml version="1.0" encoding="utf-8" standalone="yes"?>
@@ -341,7 +341,7 @@ mod tests {
     <aired>2022-02-02</aired>
 </movie>"#
         );
-        
+
         assert_eq!(
             NFO::TVShow((&video).into()).generate_nfo().await.unwrap(),
             r#"<?xml version="1.0" encoding="utf-8" standalone="yes"?>
@@ -360,7 +360,7 @@ mod tests {
     <aired>2022-02-02</aired>
 </tvshow>"#,
         );
-        
+
         assert_eq!(
             NFO::Upper((&video).into()).generate_nfo().await.unwrap(),
             r#"<?xml version="1.0" encoding="utf-8" standalone="yes"?>
@@ -373,7 +373,7 @@ mod tests {
     <sorttitle>1</sorttitle>
 </person>"#,
         );
-        
+
         let page = page::Model {
             name: "name".to_string(),
             pid: 3,

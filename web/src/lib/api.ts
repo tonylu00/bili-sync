@@ -17,7 +17,8 @@ import type {
 	UserFavoriteFolder,
 	UserCollectionsResponse,
 	UserFollowing,
-	UserCollectionInfo
+	UserCollectionInfo,
+	QueueStatusResponse
 } from './types';
 
 // API 基础配置
@@ -250,6 +251,13 @@ class ApiClient {
 	async getSubscribedCollections(): Promise<ApiResponse<UserCollectionInfo[]>> {
 		return this.get<UserCollectionInfo[]>('/user/subscribed-collections');
 	}
+
+	/**
+	 * 获取队列状态
+	 */
+	async getQueueStatus(): Promise<ApiResponse<QueueStatusResponse>> {
+		return this.get<QueueStatusResponse>('/queue-status');
+	}
 }
 
 // 创建默认的 API 客户端实例
@@ -332,7 +340,12 @@ export const api = {
 	/**
 	 * 获取订阅的合集列表
 	 */
-	getSubscribedCollections: () => apiClient.getSubscribedCollections()
+	getSubscribedCollections: () => apiClient.getSubscribedCollections(),
+
+	/**
+	 * 获取队列状态
+	 */
+	getQueueStatus: () => apiClient.getQueueStatus()
 };
 
 // 默认导出

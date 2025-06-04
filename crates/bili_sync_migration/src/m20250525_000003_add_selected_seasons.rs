@@ -15,7 +15,7 @@ impl MigrationTrait for Migration {
                         ColumnDef::new(VideoSource::SelectedSeasons)
                             .text()
                             .null()
-                            .comment("选中的季度ID列表，JSON格式")
+                            .comment("选中的季度ID列表，JSON格式"),
                     )
                     .to_owned(),
             )
@@ -38,4 +38,4 @@ impl MigrationTrait for Migration {
 enum VideoSource {
     Table,
     SelectedSeasons,
-} 
+}

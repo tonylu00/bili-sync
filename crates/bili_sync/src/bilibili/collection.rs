@@ -1,6 +1,6 @@
 use std::fmt::{Display, Formatter};
 
-use anyhow::{Context, Result, anyhow};
+use anyhow::{anyhow, Context, Result};
 use async_stream::try_stream;
 use futures::Stream;
 use reqwest::Method;
@@ -8,7 +8,7 @@ use serde::Deserialize;
 use serde_json::Value;
 
 use crate::bilibili::credential::encoded_query;
-use crate::bilibili::{BiliClient, MIXIN_KEY, Validate, VideoInfo};
+use crate::bilibili::{BiliClient, Validate, VideoInfo, MIXIN_KEY};
 
 #[derive(PartialEq, Eq, Hash, Clone, Debug)]
 pub enum CollectionType {

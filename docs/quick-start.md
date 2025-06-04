@@ -2,6 +2,44 @@
 
 程序使用 Rust 编写，不需要 Runtime 且并为各个平台提供了预编译文件，绝大多数情况下是没有使用障碍的。
 
+> [!TIP]
+> **v2.6.2 重大变更**：视频源配置已完全迁移到数据库管理！现在通过 Web 界面添加和管理视频源，无需手动编辑配置文件。
+
+> [!IMPORTANT]
+> 如果您从旧版本升级，请查看 [配置迁移指南](../MIGRATION_GUIDE.md)。
+
+## 🚀 开发环境快速设置
+
+如果您想参与开发或从源码构建，推荐使用我们的一键设置：
+
+### Windows 用户（推荐）
+```bash
+# 一键设置开发环境
+.\make.bat setup
+
+# 启动开发服务器
+.\make.bat dev
+
+# 查看所有可用命令
+.\make.bat help
+```
+
+### 其他平台或传统方式
+```bash
+# 确保安装了 Rust 和 Node.js
+cargo --version
+node --version
+
+# 安装前端依赖
+cd web && npm install && cd ..
+
+# 构建前端
+cd web && npm run build && cd ..
+
+# 运行程序
+cargo run --bin bili-sync-rs
+```
+
 ## 程序获取
 
 程序为各个平台提供了预构建的二进制文件，并且打包了 `Linux/amd64` 与 `Linux/arm64` 两个平台的 Docker 镜像。用户可以自行选择使用哪种方式运行。
@@ -55,6 +93,12 @@ services:
 
 程序默认会将配置文件存储于 `${config_dir}/bili-sync/config.toml`，数据库文件存储于 `${config_dir}/bili-sync/data.sqlite`。
 
+> [!IMPORTANT]
+> **重大变更！** 视频源配置已从 `config.toml` 迁移到数据库：
+> - ❌ 不再需要在 `config.toml` 中配置 `favorite_list`、`collection_list`、`submission_list`、`watch_later`
+> - ✅ 所有视频源通过 Web 管理界面 `http://127.0.0.1:12345` 进行添加和管理
+> - 🔄 首次启动时程序会自动尝试迁移旧配置到数据库
+
 > [!CAUTION]
 >
 > 请注意，`config_dir` 的实际位置与操作系统和用户名有关。
@@ -69,7 +113,7 @@ services:
 
 在启动时程序会尝试加载配置文件，如果发现不存在会新建并写入默认配置。
 
-获得配置内容后，程序会对其做一次简单的校验，因为默认配置中不包含凭据信息与要下载的收藏夹、视频合集/视频列表，因此程序会拒绝运行而发生 panic。我们只需要在程序生成的默认配置上做一些简单修改即可成功运行。
+获得配置内容后，程序会对其做一次简单的校验，因为默认配置中不包含凭据信息，因此程序会拒绝运行而发生 panic。我们只需要在程序生成的默认配置上做一些简单修改即可成功运行。
 
 当前版本的默认示例文件如下：
 ```toml
@@ -119,16 +163,6 @@ bold = true
 outline = 0.8
 time_offset = 0.0
 
-[favorite_list]
-
-[collection_list]
-
-[submission_list]
-
-[watch_later]
-enabled = false
-path = ""
-
 [concurrent_limit]
 video = 3
 page = 2
@@ -176,45 +210,79 @@ UP 主头像和信息的保存位置。对于使用 Emby、Jellyfin 媒体服务
 
 而如果你的设备不支持，或者单纯懒得查询，那么推荐将 AVC 放在第一位以获得最好的兼容性。
 
-### `favorite_list`
+> [!NOTE]
+> **传统配置说明**：以下配置项在 v2.6.2 中已移除，仅作为参考。现在请使用 Web 界面管理视频源。
 
-你想要下载的收藏夹与想要保存的位置。简单示例：
+### ~~`favorite_list`~~ (已移除)
+
+~~你想要下载的收藏夹与想要保存的位置。简单示例：~~
 ```toml
-3115878158 = "/home/amtoaer/Downloads/bili-sync/测试收藏夹"
+# 这些配置已不再使用，请通过 Web 界面添加
+# 3115878158 = "/home/amtoaer/Downloads/bili-sync/测试收藏夹"
 ```
-收藏夹 ID 的获取方式可以参考[这里](/favorite)。
+收藏夹现在通过 Web 界面自动显示和管理，详见[收藏夹管理](/favorite)。
 
-### `collection_list`
+### ~~`collection_list`~~ (已移除)
 
-你想要下载的视频合集/视频列表与想要保存的位置。注意“视频合集”与“视频列表”是两种不同的类型。在配置文件中需要做区分：
+~~你想要下载的视频合集/视频列表与想要保存的位置。注意"视频合集"与"视频列表"是两种不同的类型。在配置文件中需要做区分：~~
 ```toml
-"series:387051756:432248" = "/home/amtoaer/Downloads/bili-sync/测试视频列表"
-"season:1728547:101343" = "/home/amtoaer/Downloads/bili-sync/测试合集"
+# 这些配置已不再使用，请通过 Web 界面添加
+# "series:387051756:432248" = "/home/amtoaer/Downloads/bili-sync/测试视频列表"
+# "season:1728547:101343" = "/home/amtoaer/Downloads/bili-sync/测试合集"
 ```
 
-具体说明可以参考[这里](/collection)。
+合集管理现在通过 Web 界面进行，支持 UP 主合集搜索和选择，详见[合集管理](/collection)。
 
-### `submission_list`
+### ~~`submission_list`~~ (已移除)
 
-你想要下载的 UP 主投稿与想要保存的位置。简单示例：
+~~你想要下载的 UP 主投稿与想要保存的位置。简单示例：~~
 ```toml
-9183758 = "/home/amtoaer/Downloads/bili-sync/测试投稿"
+# 这些配置已不再使用，请通过 Web 界面添加
+# 9183758 = "/home/amtoaer/Downloads/bili-sync/测试投稿"
 ```
-UP 主 ID 的获取方式可以参考[这里](/submission)。
+UP 主投稿管理现在通过 Web 界面进行，详见[UP主投稿](/submission)。
 
-### `watch_later`
+### ~~`watch_later`~~ (已移除)
 
-设置稍后再看的扫描开关与保存位置。
+~~设置稍后再看的扫描开关与保存位置。~~
 
-如果你希望下载稍后再看列表中的视频，可以将 `enabled` 设置为 `true`，并填写 `path`。
+~~如果你希望下载稍后再看列表中的视频，可以将 `enabled` 设置为 `true`，并填写 `path`。~~
 
 ```toml
-enabled = true
-path = "/home/amtoaer/Downloads/bili-sync/稍后再看"
+# 这些配置已不再使用，请通过 Web 界面添加
+# enabled = true
+# path = "/home/amtoaer/Downloads/bili-sync/稍后再看"
 ```
+
+稍后再看现在通过 Web 界面进行管理。
+
+## Web 界面管理
+
+> [!TIP]
+> **新的管理方式**：访问 `http://127.0.0.1:12345` 使用现代化的 Web 界面管理所有视频源！
+
+### 🎯 主要功能
+
+1. **收藏夹管理** - 自动显示所有收藏夹，一键选择
+2. **UP主合集** - 输入UP主ID，浏览选择合集
+3. **番剧下载** - 支持单季和全季下载
+4. **稍后再看** - 简单的路径配置
+5. **实时配置** - 配置修改立即生效
+
+### 📸 界面预览
+
+详细的 Web 界面功能请查看 [功能展示](/features) 页面，包含完整的操作截图。
 
 ## 运行
 
 在配置文件填写完毕后，我们可以直接运行程序。如果配置文件无误，程序会自动开始下载收藏夹中的视频。并每隔 `interval` 秒重新扫描一次。
+
+> [!SUCCESS]
+> **现代化工作流程**：
+> 1. 配置好 `credential` 和基本设置
+> 2. 启动程序
+> 3. 访问 `http://127.0.0.1:12345` Web 界面
+> 4. 通过界面添加和管理视频源
+> 5. 享受自动下载服务！
 
 如果你希望了解更详细的配置项说明，可以查询[这里](/configuration)。

@@ -1,7 +1,7 @@
 //! 视频源实体定义
 
-use sea_orm::ActiveModelBehavior;
 use sea_orm::entity::prelude::*;
+use sea_orm::ActiveModelBehavior;
 use strum::EnumIter;
 
 #[derive(Clone, Debug, PartialEq, Eq, DeriveActiveEnum, EnumIter, Default)]

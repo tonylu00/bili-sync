@@ -2,7 +2,7 @@
 	import ChevronRightIcon from '@lucide/svelte/icons/chevron-right';
 	import SettingsIcon from '@lucide/svelte/icons/settings';
 	import TrashIcon from '@lucide/svelte/icons/trash-2';
-	import { FileText } from '@lucide/svelte';
+	import { FileText, ListTodo } from '@lucide/svelte';
 	import * as Sidebar from '$lib/components/ui/sidebar/index.js';
 	import { useSidebar } from '$lib/components/ui/sidebar/context.svelte.js';
 	import { appStateStore, setVideoSourceFilter, clearAll, ToQuery } from '$lib/stores/filter';
@@ -172,6 +172,19 @@
 		<!-- 固定在底部的设置选项 -->
 		<div class="border-border mt-auto border-t pt-4">
 			<Sidebar.Menu class="space-y-1">
+				<Sidebar.MenuItem>
+					<Sidebar.MenuButton>
+						<a
+							href="/queue"
+							class="hover:bg-accent/50 text-foreground flex w-full cursor-pointer items-center justify-between rounded-lg px-3 py-2.5 font-medium transition-all duration-200"
+						>
+							<div class="flex flex-1 items-center gap-3">
+								<ListTodo class="text-muted-foreground h-4 w-4" />
+								<span class="text-sm">任务队列</span>
+							</div>
+						</a>
+					</Sidebar.MenuButton>
+				</Sidebar.MenuItem>
 				<Sidebar.MenuItem>
 					<Sidebar.MenuButton>
 						<a

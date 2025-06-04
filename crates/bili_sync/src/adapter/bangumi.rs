@@ -6,7 +6,7 @@ use anyhow::Result;
 use chrono::{DateTime, NaiveDateTime, Utc};
 use futures::Stream;
 use sea_orm::prelude::*;
-use sea_orm::{ActiveValue::Set};
+use sea_orm::ActiveValue::Set;
 use tracing::debug;
 use tracing::info;
 
@@ -57,7 +57,7 @@ impl BangumiSource {
         // 智能检测：检查同一番剧源的同一集是否有多个不同版本
         if !template.contains("{{title}}") && !template.contains("{{ title }}") {
             let should_add_title = self.check_multiple_versions(video_model, db).await;
-            
+
             if should_add_title {
                 // 如果检测到多版本，自动添加title后缀
                 template = format!("{}-{{{{title}}}}", template);
@@ -72,25 +72,32 @@ impl BangumiSource {
         // 创建配置了辅助函数的 handlebars 实例
         let mut handlebars = handlebars::Handlebars::new();
         // 注册 truncate 辅助函数
-        handlebars.register_helper("truncate", Box::new(|h: &handlebars::Helper, _: &handlebars::Handlebars, _: &handlebars::Context, _: &mut handlebars::RenderContext, out: &mut dyn handlebars::Output| -> handlebars::HelperResult {
-            let s = h.param(0).and_then(|v| v.value().as_str()).unwrap_or("");
-            let len = h.param(1).and_then(|v| v.value().as_u64()).unwrap_or(0) as usize;
-            let result = if s.chars().count() > len {
-                s.chars().take(len).collect::<String>()
-            } else {
-                s.to_string()
-            };
-            out.write(&result)?;
-            Ok(())
-        }));
+        handlebars.register_helper(
+            "truncate",
+            Box::new(
+                |h: &handlebars::Helper,
+                 _: &handlebars::Handlebars,
+                 _: &handlebars::Context,
+                 _: &mut handlebars::RenderContext,
+                 out: &mut dyn handlebars::Output|
+                 -> handlebars::HelperResult {
+                    let s = h.param(0).and_then(|v| v.value().as_str()).unwrap_or("");
+                    let len = h.param(1).and_then(|v| v.value().as_u64()).unwrap_or(0) as usize;
+                    let result = if s.chars().count() > len {
+                        s.chars().take(len).collect::<String>()
+                    } else {
+                        s.to_string()
+                    };
+                    out.write(&result)?;
+                    Ok(())
+                },
+            ),
+        );
 
         let format_args = bangumi_page_format_args(video_model, page_model);
-        
+
         // 使用最终模板渲染
-        let final_name = crate::utils::filenamify::filenamify(&handlebars.render_template(
-            &template,
-            &format_args,
-        )?);
+        let final_name = crate::utils::filenamify::filenamify(&handlebars.render_template(&template, &format_args)?);
 
         Ok(final_name)
     }
@@ -98,38 +105,35 @@ impl BangumiSource {
     /// 智能检测同一番剧源的同一集是否存在多个版本
     /// 通过检查相同episode_number的视频数量来判断
     async fn check_multiple_versions(
-        &self, 
+        &self,
         video_model: &bili_sync_entity::video::Model,
         db: &sea_orm::DatabaseConnection,
     ) -> bool {
-        use sea_orm::*;
         use bili_sync_entity::video;
-        
+        use sea_orm::*;
+
         let source_id = self.id;
         let episode_number = video_model.episode_number.unwrap_or(0);
         let season_id = &video_model.season_id;
-        
+
         // 查询同一番剧源、同一季度、同一集数的视频数量
         let mut query = video::Entity::find()
             .filter(video::Column::SourceId.eq(source_id))
             .filter(video::Column::SourceType.eq(1)); // 番剧类型
-        
+
         // 如果有episode_number，使用episode_number过滤
         if episode_number > 0 {
             query = query.filter(video::Column::EpisodeNumber.eq(episode_number));
         }
-        
+
         // 如果有season_id，使用season_id过滤
         if let Some(season_id_value) = season_id {
             query = query.filter(video::Column::SeasonId.eq(season_id_value));
         }
-        
+
         match query.count(db).await {
             Ok(count) => {
-                debug!(
-                    "番剧源{} 第{}集 共有{}个版本", 
-                    source_id, episode_number, count
-                );
+                debug!("番剧源{} 第{}集 共有{}个版本", source_id, episode_number, count);
                 count > 1
             }
             Err(e) => {
@@ -157,7 +161,9 @@ impl BangumiSource {
         } else if let Some(ref selected_seasons) = self.selected_seasons {
             // 如果有选中的季度，只下载选中的季度
             debug!("正在获取选中的 {} 个季度的番剧内容", selected_seasons.len());
-            Ok(Box::pin(bangumi.to_selected_seasons_video_stream(selected_seasons.clone())))
+            Ok(Box::pin(
+                bangumi.to_selected_seasons_video_stream(selected_seasons.clone()),
+            ))
         } else {
             debug!("仅获取当前季度的番剧内容");
             Ok(Box::pin(bangumi.to_video_stream()))

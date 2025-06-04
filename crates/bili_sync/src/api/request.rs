@@ -71,12 +71,12 @@ pub struct UpdateConfigRequest {
 
 #[derive(Debug, Deserialize, ToSchema)]
 pub struct SearchRequest {
-    pub keyword: String,           // 搜索关键词
-    pub search_type: String,       // 搜索类型：video, bili_user, media_bangumi
+    pub keyword: String,     // 搜索关键词
+    pub search_type: String, // 搜索类型：video, bili_user, media_bangumi
     #[serde(default = "default_page")]
-    pub page: u32,                 // 页码，默认1
+    pub page: u32, // 页码，默认1
     #[serde(default = "default_page_size")]
-    pub page_size: u32,            // 每页数量，默认20
+    pub page_size: u32, // 每页数量，默认20
 }
 
 fn default_page() -> u32 {

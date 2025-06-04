@@ -1,6 +1,6 @@
-use anyhow::{Result, ensure};
-use futures::TryStreamExt;
+use anyhow::{ensure, Result};
 use futures::stream::FuturesUnordered;
+use futures::TryStreamExt;
 use prost::Message;
 use reqwest::Method;
 use tracing::debug;
@@ -10,7 +10,7 @@ use crate::bilibili::client::BiliClient;
 use crate::bilibili::credential::encoded_query;
 use crate::bilibili::danmaku::{DanmakuElem, DanmakuWriter, DmSegMobileReply};
 use crate::bilibili::subtitle::{SubTitle, SubTitleBody, SubTitleInfo, SubTitlesInfo};
-use crate::bilibili::{MIXIN_KEY, Validate, VideoInfo};
+use crate::bilibili::{Validate, VideoInfo, MIXIN_KEY};
 
 static MASK_CODE: u64 = 2251799813685247;
 static XOR_CODE: u64 = 23442827791579;
@@ -130,10 +130,10 @@ impl<'a> Video<'a> {
     async fn get_danmaku_segment(&self, page: &PageInfo, segment_idx: i64) -> Result<Vec<DanmakuElem>> {
         // 添加调试日志
         debug!(
-            "请求弹幕片段: type=1, oid={}, pid={}, segment_index={}", 
+            "请求弹幕片段: type=1, oid={}, pid={}, segment_index={}",
             page.cid, self.aid, segment_idx
         );
-        
+
         let mut res = self
             .client
             .request(Method::GET, "http://api.bilibili.com/x/v2/dm/web/seg.so")
@@ -142,7 +142,7 @@ impl<'a> Video<'a> {
                 ("type", "1"),
                 ("oid", &page.cid.to_string()),
                 ("pid", &self.aid),
-                ("segment_index", &segment_idx.to_string())
+                ("segment_index", &segment_idx.to_string()),
             ])
             .send()
             .await?

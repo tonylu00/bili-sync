@@ -1,4 +1,4 @@
-use anyhow::{Context, Result, anyhow};
+use anyhow::{anyhow, Context, Result};
 use arc_swap::access::Access;
 use async_stream::try_stream;
 use futures::Stream;
@@ -7,7 +7,7 @@ use serde_json::Value;
 
 use crate::bilibili::credential::encoded_query;
 use crate::bilibili::favorite_list::Upper;
-use crate::bilibili::{BiliClient, MIXIN_KEY, Validate, VideoInfo};
+use crate::bilibili::{BiliClient, Validate, VideoInfo, MIXIN_KEY};
 pub struct Submission<'a> {
     client: &'a BiliClient,
     upper_id: String,

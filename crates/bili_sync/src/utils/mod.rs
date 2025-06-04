@@ -6,11 +6,11 @@ pub mod nfo;
 pub mod signal;
 pub mod status;
 
-use tracing_subscriber::util::SubscriberInitExt;
-use tracing_subscriber::layer::SubscriberExt;
-use tracing::{Event, Subscriber};
-use tracing_subscriber::Layer;
 use std::fmt;
+use tracing::{Event, Subscriber};
+use tracing_subscriber::layer::SubscriberExt;
+use tracing_subscriber::util::SubscriberInitExt;
+use tracing_subscriber::Layer;
 
 // 自定义日志层，用于将日志添加到API缓冲区
 struct LogCaptureLayer;
@@ -21,7 +21,7 @@ where
 {
     fn on_event(&self, event: &Event<'_>, _ctx: tracing_subscriber::layer::Context<'_, S>) {
         use crate::api::handler::{add_log_entry, LogLevel};
-        
+
         let level = match *event.metadata().level() {
             tracing::Level::ERROR => LogLevel::Error,
             tracing::Level::WARN => LogLevel::Warn,
@@ -33,13 +33,9 @@ where
         // 提取日志消息
         let mut visitor = MessageVisitor::new();
         event.record(&mut visitor);
-        
+
         if let Some(message) = visitor.message {
-            add_log_entry(
-                level,
-                message,
-                Some(event.metadata().target().to_string()),
-            );
+            add_log_entry(level, message, Some(event.metadata().target().to_string()));
         }
     }
 }
@@ -80,8 +76,7 @@ pub fn init_logger(log_level: &str) {
         .with_filter(tracing_subscriber::EnvFilter::builder().parse_lossy(log_level));
 
     // API日志捕获层 - 捕获debug级别及以上的所有日志
-    let log_capture_layer = LogCaptureLayer
-        .with_filter(tracing_subscriber::EnvFilter::new("debug"));
+    let log_capture_layer = LogCaptureLayer.with_filter(tracing_subscriber::EnvFilter::new("debug"));
 
     tracing_subscriber::registry()
         .with(fmt_layer)

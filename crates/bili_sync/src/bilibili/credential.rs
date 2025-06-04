@@ -1,11 +1,11 @@
 use std::borrow::Cow;
 use std::collections::HashSet;
 
-use anyhow::{Context, Result, bail, ensure};
+use anyhow::{bail, ensure, Context, Result};
 use cookie::Cookie;
 use cow_utils::CowUtils;
 use regex::Regex;
-use reqwest::{Method, header};
+use reqwest::{header, Method};
 use rsa::pkcs8::DecodePublicKey;
 use rsa::sha2::Sha256;
 use rsa::{Oaep, RsaPublicKey};

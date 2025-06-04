@@ -13,8 +13,8 @@ mod item;
 
 use crate::bilibili::{Credential, DanmakuOption, FilterOption};
 pub use crate::config::clap::version;
-pub use crate::config::global::{ARGS, CONFIG, CONFIG_DIR, TEMPLATE, reload_config};
-use crate::config::item::{ConcurrentLimit};
+pub use crate::config::global::{reload_config, ARGS, CONFIG, CONFIG_DIR, TEMPLATE};
+use crate::config::item::ConcurrentLimit;
 pub use crate::config::item::{NFOTimeType, PathSafeTemplate, RateLimit};
 
 // 移除不再需要的配置结构体，因为视频源现在存储在数据库中
@@ -110,6 +110,10 @@ fn default_bangumi_name() -> Cow<'static, str> {
     Cow::Borrowed("S{{season_pad}}E{{pid_pad}}-{{pid_pad}}")
 }
 
+fn default_folder_structure() -> Cow<'static, str> {
+    Cow::Borrowed("Season 1")
+}
+
 #[derive(Serialize, Deserialize)]
 pub struct Config {
     #[serde(default = "default_auth_token")]
@@ -126,6 +130,7 @@ pub struct Config {
     pub multi_page_name: Cow<'static, str>,
     #[serde(default = "default_bangumi_name")]
     pub bangumi_name: Cow<'static, str>,
+    #[serde(default = "default_folder_structure")]
     pub folder_structure: Cow<'static, str>,
     pub interval: u64,
     pub upper_path: PathBuf,
@@ -311,7 +316,7 @@ impl Config {
         //         );
         //     }
         // }
-        
+
         if !self.upper_path.is_absolute() {
             ok = false;
             error!("up 主头像保存的路径应为绝对路径");

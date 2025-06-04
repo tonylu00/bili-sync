@@ -71,7 +71,7 @@ fn init() {
     info!("原项目地址：https://github.com/amtoaer/bili-sync");
     debug!("系统初始化完成，日志级别: {}", ARGS.log_level);
     debug!("开始加载配置文件...");
-    
+
     Lazy::force(&CONFIG);
     debug!("配置文件加载完成");
 }

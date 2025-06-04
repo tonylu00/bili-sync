@@ -19,9 +19,9 @@ async fn database_connection() -> Result<DatabaseConnection> {
         .max_connections(100)
         .min_connections(5)
         .acquire_timeout(std::time::Duration::from_secs(90));
-    
+
     let connection = Database::connect(option).await?;
-    
+
     // 确保 WAL 模式已启用并应用额外的性能优化
     use sea_orm::ConnectionTrait;
     connection.execute_unprepared("PRAGMA journal_mode = WAL;").await?;
@@ -29,10 +29,12 @@ async fn database_connection() -> Result<DatabaseConnection> {
     connection.execute_unprepared("PRAGMA cache_size = 1000;").await?;
     connection.execute_unprepared("PRAGMA temp_store = memory;").await?;
     connection.execute_unprepared("PRAGMA mmap_size = 268435456;").await?; // 256MB
-    connection.execute_unprepared("PRAGMA wal_autocheckpoint = 1000;").await?;
-    
+    connection
+        .execute_unprepared("PRAGMA wal_autocheckpoint = 1000;")
+        .await?;
+
     info!("SQLite WAL 模式已启用，性能优化参数已应用");
-    
+
     Ok(connection)
 }
 

@@ -5,12 +5,12 @@ use anyhow::{Context, Result};
 use bili_sync_entity::*;
 use chrono::Utc;
 use futures::Stream;
-use sea_orm::ActiveValue::Set;
 use sea_orm::entity::prelude::*;
 use sea_orm::sea_query::{OnConflict, SimpleExpr};
+use sea_orm::ActiveValue::Set;
 use sea_orm::{DatabaseConnection, Unchanged};
 
-use crate::adapter::{_ActiveModel, VideoSource, VideoSourceEnum};
+use crate::adapter::{VideoSource, VideoSourceEnum, _ActiveModel};
 use crate::bilibili::{BiliClient, Collection, CollectionItem, CollectionType, VideoInfo};
 
 impl VideoSource for collection::Model {

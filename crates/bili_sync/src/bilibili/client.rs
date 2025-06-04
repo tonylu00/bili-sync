@@ -3,13 +3,13 @@ use std::time::Duration;
 
 use anyhow::{Context, Result};
 use leaky_bucket::RateLimiter;
-use reqwest::{Method, header};
+use reqwest::{header, Method};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-use crate::bilibili::{Credential, Validate};
 use crate::bilibili::credential::WbiImg;
-use crate::config::{CONFIG, RateLimit};
+use crate::bilibili::{Credential, Validate};
+use crate::config::{RateLimit, CONFIG};
 
 #[derive(Debug, Clone)]
 pub struct UserFollowingInfo {
@@ -37,20 +37,20 @@ pub struct SearchResponseWrapper {
 /// bilibili搜索结果类型
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SearchResult {
-    pub result_type: String,    // video, bili_user, media_bangumi等
-    pub title: String,          // 标题
-    pub author: String,         // 作者/UP主
-    pub bvid: Option<String>,   // 视频BV号
-    pub aid: Option<i64>,       // 视频AV号
-    pub mid: Option<i64>,       // UP主ID
+    pub result_type: String,       // video, bili_user, media_bangumi等
+    pub title: String,             // 标题
+    pub author: String,            // 作者/UP主
+    pub bvid: Option<String>,      // 视频BV号
+    pub aid: Option<i64>,          // 视频AV号
+    pub mid: Option<i64>,          // UP主ID
     pub season_id: Option<String>, // 番剧season_id
     pub media_id: Option<String>,  // 番剧media_id
-    pub cover: String,          // 封面图
-    pub description: String,    // 描述
-    pub duration: Option<String>, // 视频时长
-    pub pubdate: Option<i64>,   // 发布时间
-    pub play: Option<i64>,      // 播放量
-    pub danmaku: Option<i64>,   // 弹幕数
+    pub cover: String,             // 封面图
+    pub description: String,       // 描述
+    pub duration: Option<String>,  // 视频时长
+    pub pubdate: Option<i64>,      // 发布时间
+    pub play: Option<i64>,         // 播放量
+    pub danmaku: Option<i64>,      // 弹幕数
 }
 
 /// bilibili搜索响应
@@ -66,7 +66,7 @@ struct SearchData {
     result: Option<Vec<Value>>,
     #[serde(rename = "numPages")]
     num_pages: Option<i32>,
-    #[serde(rename = "numResults")]  
+    #[serde(rename = "numResults")]
     num_results: Option<i32>,
 }
 
@@ -144,7 +144,7 @@ impl BiliClient {
                         .refill(*limit)
                         .max(*limit)
                         .interval(Duration::from_millis(*duration))
-                        .build()
+                        .build(),
                 )
             });
         Self {
@@ -158,7 +158,9 @@ impl BiliClient {
     fn get_current_user_id(&self) -> Result<i64, anyhow::Error> {
         let credential = crate::config::CONFIG.credential.load();
         match credential.as_ref() {
-            Some(cred) => cred.dedeuserid.parse::<i64>()
+            Some(cred) => cred
+                .dedeuserid
+                .parse::<i64>()
                 .map_err(|_| anyhow::anyhow!("无效的用户ID")),
             None => Err(anyhow::anyhow!("未设置登录凭据")),
         }
@@ -207,7 +209,7 @@ impl BiliClient {
     }
 
     /// 搜索bilibili内容
-    /// 
+    ///
     /// # Arguments
     /// * `keyword` - 搜索关键词
     /// * `search_type` - 搜索类型：video(视频), bili_user(UP主), media_bangumi(番剧)等
@@ -221,29 +223,25 @@ impl BiliClient {
         page_size: u32,
     ) -> Result<SearchResponseWrapper> {
         let url = "https://api.bilibili.com/x/web-interface/search/type";
-        
+
         let params = [
             ("keyword", keyword),
             ("search_type", search_type),
             ("page", &page.to_string()),
             ("page_size", &page_size.to_string()),
             ("order", "totalrank"), // 按综合排序
-            ("duration", "0"),       // 不限时长
+            ("duration", "0"),      // 不限时长
             ("tids", "0"),          // 不限分区
         ];
 
-        let response = self.request(Method::GET, url)
-            .await
-            .query(&params)
-            .send()
-            .await?;
+        let response = self.request(Method::GET, url).await.query(&params).send().await?;
 
         if !response.status().is_success() {
             return Err(anyhow::anyhow!("搜索请求失败: {}", response.status()));
         }
 
         let search_response: SearchResponse = response.json().await?;
-        
+
         if search_response.code != 0 {
             return Err(anyhow::anyhow!("搜索API返回错误: {}", search_response.message));
         }
@@ -255,13 +253,13 @@ impl BiliClient {
         });
 
         let results = data.result.unwrap_or_default();
-        
+
         // 获取总数和页数
         let total = data.num_results.unwrap_or(0) as u32;
         let num_pages = data.num_pages.unwrap_or(0) as u32;
         let num_pages = if num_pages == 0 {
             if total > 0 {
-                (total + page_size - 1) / page_size  // 向上取整
+                total.div_ceil(page_size) // 向上取整
             } else {
                 1
             }
@@ -270,7 +268,7 @@ impl BiliClient {
         };
 
         let mut parsed_results = Vec::new();
-        
+
         for item in results {
             if let Ok(result) = self.parse_search_result(&item, search_type) {
                 parsed_results.push(result);
@@ -334,9 +332,13 @@ impl BiliClient {
                     bvid: None,
                     aid: None,
                     mid: None,
-                    season_id: item["season_id"].as_str().map(|s| s.to_string())
+                    season_id: item["season_id"]
+                        .as_str()
+                        .map(|s| s.to_string())
                         .or_else(|| item["season_id"].as_i64().map(|s| s.to_string())),
-                    media_id: item["media_id"].as_str().map(|s| s.to_string())
+                    media_id: item["media_id"]
+                        .as_str()
+                        .map(|s| s.to_string())
                         .or_else(|| item["media_id"].as_i64().map(|s| s.to_string())),
                     cover: item["cover"].as_str().unwrap_or("").to_string(),
                     description: item["desc"].as_str().unwrap_or("").to_string(),
@@ -355,9 +357,13 @@ impl BiliClient {
                     bvid: None,
                     aid: None,
                     mid: None,
-                    season_id: item["season_id"].as_str().map(|s| s.to_string())
+                    season_id: item["season_id"]
+                        .as_str()
+                        .map(|s| s.to_string())
                         .or_else(|| item["season_id"].as_i64().map(|s| s.to_string())),
-                    media_id: item["media_id"].as_str().map(|s| s.to_string())
+                    media_id: item["media_id"]
+                        .as_str()
+                        .map(|s| s.to_string())
                         .or_else(|| item["media_id"].as_i64().map(|s| s.to_string())),
                     cover: item["cover"].as_str().unwrap_or("").to_string(),
                     description: item["desc"].as_str().unwrap_or("").to_string(),
@@ -367,19 +373,25 @@ impl BiliClient {
                     danmaku: None,
                 })
             }
-            _ => Err(anyhow::anyhow!("不支持的搜索类型: {}", search_type))
+            _ => Err(anyhow::anyhow!("不支持的搜索类型: {}", search_type)),
         }
     }
 
     /// 获取用户创建的收藏夹列表
-    pub async fn get_user_favorite_folders(&self, uid: Option<i64>) -> Result<Vec<crate::api::UserFavoriteFolder>, anyhow::Error> {
+    pub async fn get_user_favorite_folders(
+        &self,
+        uid: Option<i64>,
+    ) -> Result<Vec<crate::api::UserFavoriteFolder>, anyhow::Error> {
         let uid = match uid {
             Some(uid) => uid,
             None => self.get_current_user_id()?,
         };
 
         let response = self
-            .request(reqwest::Method::GET, "https://api.bilibili.com/x/v3/fav/folder/created/list-all")
+            .request(
+                reqwest::Method::GET,
+                "https://api.bilibili.com/x/v3/fav/folder/created/list-all",
+            )
             .await
             .query(&[("up_mid", uid.to_string().as_str())])
             .send()
@@ -389,20 +401,23 @@ impl BiliClient {
             .await?
             .validate()?;
 
-        let folders: Vec<crate::api::UserFavoriteFolder> = serde_json::from_value(
-            response["data"]["list"].clone()
-        )?;
+        let folders: Vec<crate::api::UserFavoriteFolder> = serde_json::from_value(response["data"]["list"].clone())?;
 
         Ok(folders)
     }
 
     /// 获取UP主的合集和系列列表
-    pub async fn get_user_collections(&self, mid: i64, page: u32, page_size: u32) -> Result<crate::api::response::UserCollectionsResponse> {
+    pub async fn get_user_collections(
+        &self,
+        mid: i64,
+        page: u32,
+        page_size: u32,
+    ) -> Result<crate::api::response::UserCollectionsResponse> {
         use serde_json::Value;
-        
+
         // 同时获取合集(seasons)和系列(series)
         let mut all_collections = Vec::new();
-        
+
         // 获取合集（seasons）
         let seasons_url = "https://api.bilibili.com/x/polymer/web-space/seasons_series_list";
         let seasons_response = self
@@ -419,19 +434,20 @@ impl BiliClient {
             .json::<Value>()
             .await?
             .validate()?;
-        
+
         // 解析合集数据
         if let Some(seasons_list) = seasons_response["data"]["items_lists"]["seasons_list"].as_array() {
             for season in seasons_list {
                 if let Some(season_obj) = season.as_object() {
                     // 从不同的可能位置尝试获取封面
-                    let cover = season_obj["meta"]["cover"].as_str()
+                    let cover = season_obj["meta"]["cover"]
+                        .as_str()
                         .or_else(|| season_obj["cover"].as_str())
                         .or_else(|| season_obj["meta"]["square_cover"].as_str())
                         .or_else(|| season_obj["meta"]["horizontal_cover"].as_str())
                         .unwrap_or("")
                         .to_string();
-                    
+
                     all_collections.push(crate::api::response::UserCollection {
                         collection_type: "season".to_string(),
                         sid: season_obj["meta"]["season_id"]
@@ -449,19 +465,20 @@ impl BiliClient {
                 }
             }
         }
-        
+
         // 获取系列（series）
         if let Some(series_list) = seasons_response["data"]["items_lists"]["series_list"].as_array() {
             for series in series_list {
                 if let Some(series_obj) = series.as_object() {
                     // 从不同的可能位置尝试获取封面
-                    let cover = series_obj["meta"]["cover"].as_str()
+                    let cover = series_obj["meta"]["cover"]
+                        .as_str()
                         .or_else(|| series_obj["cover"].as_str())
                         .or_else(|| series_obj["meta"]["square_cover"].as_str())
                         .or_else(|| series_obj["meta"]["horizontal_cover"].as_str())
                         .unwrap_or("")
                         .to_string();
-                    
+
                     all_collections.push(crate::api::response::UserCollection {
                         collection_type: "series".to_string(),
                         sid: series_obj["meta"]["series_id"]
@@ -479,10 +496,10 @@ impl BiliClient {
                 }
             }
         }
-        
+
         // 获取总数
         let total = seasons_response["data"]["page"]["total"].as_i64().unwrap_or(0) as u32;
-        
+
         Ok(crate::api::response::UserCollectionsResponse {
             success: true,
             collections: all_collections,
@@ -495,16 +512,21 @@ impl BiliClient {
     /// 获取关注的UP主列表
     pub async fn get_user_followings(&self) -> Result<Vec<UserFollowingInfo>, anyhow::Error> {
         let uid = self.get_current_user_id()?;
-        
+
         let url = "https://api.bilibili.com/x/relation/followings";
         let mut all_followings = Vec::new();
         let mut page = 1;
         let page_size = 50; // bilibili API限制最大为50
-        
+
         loop {
-            let response = self.request(Method::GET, url)
+            let response = self
+                .request(Method::GET, url)
                 .await
-                .query(&[("vmid", &uid.to_string()), ("pn", &page.to_string()), ("ps", &page_size.to_string())])
+                .query(&[
+                    ("vmid", &uid.to_string()),
+                    ("pn", &page.to_string()),
+                    ("ps", &page_size.to_string()),
+                ])
                 .send()
                 .await?
                 .error_for_status()?
@@ -512,7 +534,8 @@ impl BiliClient {
                 .await?
                 .validate()?;
 
-            let list = response["data"]["list"].as_array()
+            let list = response["data"]["list"]
+                .as_array()
                 .ok_or_else(|| anyhow::anyhow!("响应格式错误：缺少list字段"))?;
 
             // 如果当前页没有数据，说明已经获取完毕
@@ -527,12 +550,10 @@ impl BiliClient {
                     let name = item["uname"].as_str()?.to_string();
                     let face = item["face"].as_str()?.to_string();
                     let sign = item["sign"].as_str().unwrap_or("").to_string();
-                    
-                    let official_verify = item["official_verify"].as_object().map(|verify| {
-                        UserOfficialVerify {
-                            type_: verify["type"].as_i64().unwrap_or(-1) as i32,
-                            desc: verify["desc"].as_str().unwrap_or("").to_string(),
-                        }
+
+                    let official_verify = item["official_verify"].as_object().map(|verify| UserOfficialVerify {
+                        type_: verify["type"].as_i64().unwrap_or(-1) as i32,
+                        desc: verify["desc"].as_str().unwrap_or("").to_string(),
                     });
 
                     Some(UserFollowingInfo {
@@ -546,14 +567,14 @@ impl BiliClient {
                 .collect();
 
             all_followings.extend(current_page_followings);
-            
+
             // 如果当前页数据不足50个，说明是最后一页
             if list.len() < page_size as usize {
                 break;
             }
-            
+
             page += 1;
-            
+
             // 添加延迟以避免请求过于频繁
             tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
         }
@@ -562,16 +583,19 @@ impl BiliClient {
     }
 
     /// 获取用户关注的收藏夹列表
-    pub async fn get_subscribed_collections(&self) -> Result<Vec<crate::api::response::UserCollectionInfo>, anyhow::Error> {
+    pub async fn get_subscribed_collections(
+        &self,
+    ) -> Result<Vec<crate::api::response::UserCollectionInfo>, anyhow::Error> {
         let uid = self.get_current_user_id()?;
-        
+
         let url = "https://api.bilibili.com/x/v3/fav/folder/collected/list";
         let mut all_collections = Vec::new();
         let mut page = 1;
         let page_size = 20;
-        
+
         loop {
-            let response = self.request(Method::GET, url)
+            let response = self
+                .request(Method::GET, url)
                 .await
                 .query(&[
                     ("up_mid", &uid.to_string()),
@@ -590,16 +614,20 @@ impl BiliClient {
             if list.is_none() || list.unwrap().is_empty() {
                 break;
             }
-            
+
             let list = list.unwrap();
-            
+
             for item in list {
                 if let Some(item_obj) = item.as_object() {
                     all_collections.push(crate::api::response::UserCollectionInfo {
                         sid: item_obj["id"].as_i64().unwrap_or(0).to_string(),
                         name: item_obj["title"].as_str().unwrap_or("").to_string(),
                         cover: item_obj.get("cover").and_then(|v| v.as_str()).unwrap_or("").to_string(),
-                        description: item_obj.get("description").and_then(|v| v.as_str()).unwrap_or("").to_string(),
+                        description: item_obj
+                            .get("description")
+                            .and_then(|v| v.as_str())
+                            .unwrap_or("")
+                            .to_string(),
                         total: item_obj["media_count"].as_i64().unwrap_or(0) as i32,
                         collection_type: "favorite".to_string(),
                         up_name: "".to_string(),
@@ -607,21 +635,21 @@ impl BiliClient {
                     });
                 }
             }
-            
+
             if list.len() < page_size {
                 break;
             }
-            
+
             page += 1;
             tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
         }
-        
+
         if all_collections.is_empty() {
             info!("当前用户暂无关注的收藏夹");
         } else {
             info!("获取到用户关注的 {} 个收藏夹", all_collections.len());
         }
-        
+
         Ok(all_collections)
     }
 }

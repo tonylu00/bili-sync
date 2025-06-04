@@ -144,20 +144,20 @@ pub struct BangumiSeasonsResponse {
 
 #[derive(Debug, Clone, Serialize, Deserialize, utoipa::ToSchema)]
 pub struct SearchResult {
-    pub result_type: String,    // video, bili_user, media_bangumi等
-    pub title: String,          // 标题
-    pub author: String,         // 作者/UP主
-    pub bvid: Option<String>,   // 视频BV号
-    pub aid: Option<i64>,       // 视频AV号
-    pub mid: Option<i64>,       // UP主ID
+    pub result_type: String,       // video, bili_user, media_bangumi等
+    pub title: String,             // 标题
+    pub author: String,            // 作者/UP主
+    pub bvid: Option<String>,      // 视频BV号
+    pub aid: Option<i64>,          // 视频AV号
+    pub mid: Option<i64>,          // UP主ID
     pub season_id: Option<String>, // 番剧season_id
     pub media_id: Option<String>,  // 番剧media_id
-    pub cover: String,          // 封面图
-    pub description: String,    // 描述
-    pub duration: Option<String>, // 视频时长
-    pub pubdate: Option<i64>,   // 发布时间
-    pub play: Option<i64>,      // 播放量
-    pub danmaku: Option<i64>,   // 弹幕数
+    pub cover: String,             // 封面图
+    pub description: String,       // 描述
+    pub duration: Option<String>,  // 视频时长
+    pub pubdate: Option<i64>,      // 发布时间
+    pub play: Option<i64>,         // 播放量
+    pub danmaku: Option<i64>,      // 弹幕数
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, utoipa::ToSchema)]
