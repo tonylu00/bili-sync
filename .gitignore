@@ -56,6 +56,11 @@ Thumbs.db
 *.tar.gz
 *.rar
 *.7z
+bili-sync-01-2.6.2
+Downloads
+config
+问题
+/make1.bat
 
 # 编译产物和发布文件
 releases/

@@ -11,6 +11,11 @@ use sea_orm::{
 };
 use tracing::{debug, error, info, warn};
 use utoipa::OpenApi;
+use serde::{Deserialize, Serialize};
+use std::collections::VecDeque;
+use std::sync::Mutex;
+use tokio::sync::broadcast;
+use chrono::Utc;
 
 use crate::api::auth::OpenAPIAuth;
 use crate::api::error::InnerApiError;
@@ -26,7 +31,7 @@ use crate::utils::nfo::NFO;
 
 #[derive(OpenApi)]
 #[openapi(
-    paths(get_video_sources, get_videos, get_video, reset_video, add_video_source, delete_video_source, reload_config, get_config, update_config, get_bangumi_seasons, search_bilibili, get_user_favorites, get_user_collections, get_user_followings, get_subscribed_collections),
+    paths(get_video_sources, get_videos, get_video, reset_video, add_video_source, delete_video_source, reload_config, get_config, update_config, get_bangumi_seasons, search_bilibili, get_user_favorites, get_user_collections, get_user_followings, get_subscribed_collections, get_logs),
     modifiers(&OpenAPIAuth),
     security(
         ("Token" = []),
@@ -2672,4 +2677,149 @@ pub async fn get_subscribed_collections() -> Result<ApiResponse<Vec<crate::api::
             Err(ApiError::from(anyhow::anyhow!("获取订阅合集失败: {}", e)))
         }
     }
+}
+
+/// 日志级别枚举
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, utoipa::ToSchema)]
+pub enum LogLevel {
+    #[serde(rename = "info")]
+    Info,
+    #[serde(rename = "warn")]
+    Warn,
+    #[serde(rename = "error")]
+    Error,
+    #[serde(rename = "debug")]
+    Debug,
+}
+
+/// 日志条目结构
+#[derive(Debug, Clone, Serialize, Deserialize, utoipa::ToSchema)]
+pub struct LogEntry {
+    pub timestamp: String,
+    pub level: LogLevel,
+    pub message: String,
+    pub target: Option<String>,
+}
+
+/// 日志响应结构
+#[derive(Debug, Serialize, Deserialize, utoipa::ToSchema)]
+pub struct LogsResponse {
+    pub logs: Vec<LogEntry>,
+    pub total: usize,
+    pub page: usize,
+    pub per_page: usize,
+    pub total_pages: usize,
+}
+
+// 全局日志存储，使用Arc<Mutex<VecDeque<LogEntry>>>来存储最近的日志
+lazy_static::lazy_static! {
+    static ref LOG_BUFFER: Arc<Mutex<VecDeque<LogEntry>>> = Arc::new(Mutex::new(VecDeque::with_capacity(100000)));
+    static ref LOG_BROADCASTER: broadcast::Sender<LogEntry> = {
+        let (sender, _) = broadcast::channel(100);
+        sender
+    };
+}
+
+/// 添加日志到缓冲区
+pub fn add_log_entry(level: LogLevel, message: String, target: Option<String>) {
+    let entry = LogEntry {
+        timestamp: Utc::now().to_rfc3339(),
+        level,
+        message,
+        target,
+    };
+
+    // 添加到缓冲区
+    if let Ok(mut buffer) = LOG_BUFFER.lock() {
+        buffer.push_back(entry.clone());
+        // 保持缓冲区大小在100000条以内
+        if buffer.len() > 100000 {
+            buffer.pop_front();
+        }
+    }
+
+    // 广播给实时订阅者
+    let _ = LOG_BROADCASTER.send(entry);
+}
+
+/// 获取历史日志
+#[utoipa::path(
+    get,
+    path = "/api/logs",
+    params(
+        ("level" = Option<String>, Query, description = "过滤日志级别: info, warn, error, debug"),
+        ("limit" = Option<usize>, Query, description = "每页返回的日志数量，默认100，最大10000"),
+        ("page" = Option<usize>, Query, description = "页码，从1开始，默认1")
+    ),
+    responses(
+        (status = 200, description = "获取日志成功", body = LogsResponse),
+        (status = 500, description = "服务器内部错误", body = String)
+    )
+)]
+pub async fn get_logs(
+    Query(params): Query<std::collections::HashMap<String, String>>,
+) -> Result<ApiResponse<LogsResponse>, ApiError> {
+    let level_filter = params.get("level").and_then(|l| match l.as_str() {
+        "info" => Some(LogLevel::Info),
+        "warn" => Some(LogLevel::Warn),
+        "error" => Some(LogLevel::Error),
+        "debug" => Some(LogLevel::Debug),
+        _ => None,
+    });
+
+    let limit = params
+        .get("limit")
+        .and_then(|l| l.parse::<usize>().ok())
+        .unwrap_or(100)
+        .min(10000); // 提高最大限制到10000条
+
+    let page = params
+        .get("page")
+        .and_then(|p| p.parse::<usize>().ok())
+        .unwrap_or(1)
+        .max(1); // 页码最小为1
+
+    let logs = if let Ok(buffer) = LOG_BUFFER.lock() {
+        let total_logs: Vec<LogEntry> = buffer
+            .iter()
+            .rev() // 最新的在前
+            .filter(|entry| {
+                if let Some(ref filter_level) = level_filter {
+                    // 明确指定了级别，只显示该级别的日志
+                    &entry.level == filter_level
+                } else {
+                    // 没有指定级别（全部日志），排除debug级别
+                    entry.level != LogLevel::Debug
+                }
+            })
+            .cloned()
+            .collect();
+
+        let total = total_logs.len();
+        let offset = (page - 1) * limit;
+        let total_pages = if total == 0 { 0 } else { (total + limit - 1) / limit };
+        let logs = total_logs
+            .into_iter()
+            .skip(offset)
+            .take(limit)
+            .collect();
+
+        LogsResponse { 
+            logs, 
+            total,
+            page,
+            per_page: limit,
+            total_pages
+        }
+    } else {
+        LogsResponse {
+            logs: vec![],
+            total: 0,
+            page: 1,
+            per_page: limit,
+            total_pages: 0,
+        }
+    };
+
+    Ok(ApiResponse::ok(logs))
 }

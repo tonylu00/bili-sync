@@ -631,32 +631,32 @@
 												onkeydown={(e) => e.key === 'Enter' && handleSearch()}
 											/>
 											<div class="flex gap-2">
-												<Button 
-													onclick={() => handleSearch()} 
-													disabled={searchLoading || !searchKeyword.trim()}
-													size="sm"
+											<Button 
+												onclick={() => handleSearch()} 
+												disabled={searchLoading || !searchKeyword.trim()}
+												size="sm"
 													class="{isMobile ? 'flex-1' : ''}"
-												>
-													{#if searchLoading}
-														搜索中...
-													{:else}
-														<Search class="h-4 w-4" />
-													{/if}
-												</Button>
-												{#if sourceType === 'collection' || sourceType === 'submission'}
-													<Button 
-														onclick={sourceType === 'collection' ? fetchSubscribedCollections : fetchUserFollowings} 
-														disabled={sourceType === 'collection' ? loadingSubscribedCollections : loadingFollowings}
-														size="sm"
-														variant="outline"
-														class="{isMobile ? 'flex-1' : ''}"
-													>
-														{sourceType === 'collection' 
-															? (loadingSubscribedCollections ? '获取中...' : '获取关注的合集')
-															: (loadingFollowings ? '获取中...' : '获取关注')
-														}
-													</Button>
+											>
+												{#if searchLoading}
+													搜索中...
+												{:else}
+													<Search class="h-4 w-4" />
 												{/if}
+											</Button>
+											{#if sourceType === 'collection' || sourceType === 'submission'}
+												<Button 
+													onclick={sourceType === 'collection' ? fetchSubscribedCollections : fetchUserFollowings} 
+													disabled={sourceType === 'collection' ? loadingSubscribedCollections : loadingFollowings}
+													size="sm"
+													variant="outline"
+														class="{isMobile ? 'flex-1' : ''}"
+												>
+													{sourceType === 'collection' 
+														? (loadingSubscribedCollections ? '获取中...' : '获取关注的合集')
+														: (loadingFollowings ? '获取中...' : '获取关注')
+													}
+												</Button>
+											{/if}
 											</div>
 										</div>
 										<p class="text-xs text-gray-600 mt-1">
@@ -1192,8 +1192,8 @@
 									<span class="text-sm text-purple-600 {isMobile ? 'block' : 'ml-2'}">
 										共 {subscribedCollections.length} 个合集
 									</span>
-								</div>
-							</div>
+			</div>
+		</div>
 							
 							<div class="flex-1 overflow-y-auto p-3">
 								<div class="grid {isMobile ? 'grid-cols-1 gap-3' : 'grid-cols-2 gap-4'}">

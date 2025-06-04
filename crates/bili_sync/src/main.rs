@@ -26,9 +26,10 @@ use crate::config::{ARGS, CONFIG};
 use crate::database::setup_database;
 use crate::utils::init_logger;
 use crate::utils::signal::terminate;
+use anyhow::Result;
 
 #[tokio::main]
-async fn main() {
+async fn main() -> Result<()> {
     init();
 
     let connection = Arc::new(setup_database().await);
@@ -39,7 +40,8 @@ async fn main() {
     spawn_task("定时下载", video_downloader(connection), &tracker, token.clone());
 
     tracker.close();
-    handle_shutdown(tracker, token).await
+    handle_shutdown(tracker, token).await;
+    Ok(())
 }
 
 fn spawn_task(
@@ -67,7 +69,11 @@ fn init() {
     info!("欢迎使用 Bili-Sync，当前程序版本：{}", config::version());
     info!("现项目地址：https://github.com/qq1582185982/bili-sync-01");
     info!("原项目地址：https://github.com/amtoaer/bili-sync");
+    debug!("系统初始化完成，日志级别: {}", ARGS.log_level);
+    debug!("开始加载配置文件...");
+    
     Lazy::force(&CONFIG);
+    debug!("配置文件加载完成");
 }
 
 async fn handle_shutdown(tracker: TaskTracker, token: CancellationToken) {
