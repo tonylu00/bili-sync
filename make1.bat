@@ -335,10 +335,12 @@ echo 包含: .gitignore
 copy ".gitignore" "%tempDir%\" >nul
 echo 包含: .dockerignore
 copy ".dockerignore" "%tempDir%\" >nul
-echo 包含: config.toml
-copy "config.toml" "%tempDir%\" >nul
+echo 包含: License
+copy "License" "%tempDir%\" >nul
 echo 包含: make.bat
 copy "make.bat" "%tempDir%\" >nul
+echo 包含: make1.bat
+copy "make1.bat" "%tempDir%\" >nul
 
 :: 清理临时目录中的不需要项
 if exist "%tempDir%\web\node_modules" rmdir /s /q "%tempDir%\web\node_modules"
