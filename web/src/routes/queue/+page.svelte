@@ -106,7 +106,7 @@
 	});
 </script>
 
-<div class="container max-w-6xl">
+<div class="container mx-auto px-4">
 	<div class="flex items-center justify-between mb-6">
 		<div>
 			<h1 class="text-3xl font-bold">任务队列</h1>
