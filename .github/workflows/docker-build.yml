@@ -117,8 +117,8 @@ jobs:
       if: github.event_name != 'pull_request'
       uses: docker/login-action@v3
       with:
-        registry: cnb.cool
-        username: ${{ secrets.CNB_USERNAME }}
+        registry: docker.cnb.cool
+        username: cnb
         password: ${{ secrets.CNB_PASSWORD }}
 
     - name: Build and push to Docker Hub
@@ -141,7 +141,7 @@ jobs:
         platforms: linux/amd64,linux/arm64
         push: true
         tags: |
-          cnb.cool/${{ env.CNB_IMAGE_NAME }}:main
-          cnb.cool/${{ env.CNB_IMAGE_NAME }}:latest
-          cnb.cool/${{ env.CNB_IMAGE_NAME }}:v2.7.0
+          docker.cnb.cool/${{ env.CNB_IMAGE_NAME }}:main
+          docker.cnb.cool/${{ env.CNB_IMAGE_NAME }}:latest
+          docker.cnb.cool/${{ env.CNB_IMAGE_NAME }}:v2.7.0
         cache-from: type=gha
