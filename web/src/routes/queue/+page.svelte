@@ -203,203 +203,305 @@
 		</div>
 
 		<!-- 队列详情 -->
-		<div class="grid gap-6 lg:grid-cols-2">
-			<!-- 删除队列 -->
-			<Card>
-				<CardHeader>
-					<CardTitle class="flex items-center gap-2">
-						<Trash2 class="h-5 w-5" />
-						删除队列
-						{#if queueStatus.delete_queue.is_processing}
-							<Badge variant="destructive">处理中</Badge>
-						{/if}
-					</CardTitle>
-					<CardDescription>
-						等待处理的视频源删除任务
-					</CardDescription>
-				</CardHeader>
-				<CardContent>
-					{#if queueStatus.delete_queue.tasks.length === 0}
-						<div class="flex items-center justify-center py-8 text-muted-foreground">
-							<div class="text-center">
-								<CheckCircle class="h-12 w-12 mx-auto mb-3 opacity-50" />
-								<p>队列为空</p>
+		<div class="grid gap-6 lg:grid-cols-3">
+			<div class="lg:col-span-2 space-y-6">
+				<!-- 删除队列 -->
+				<Card>
+					<CardHeader>
+						<CardTitle class="flex items-center gap-2">
+							<Trash2 class="h-5 w-5" />
+							删除队列
+							{#if queueStatus.delete_queue.is_processing}
+								<Badge variant="destructive">处理中</Badge>
+							{/if}
+						</CardTitle>
+						<CardDescription>
+							等待处理的视频源删除任务
+						</CardDescription>
+					</CardHeader>
+					<CardContent>
+						{#if queueStatus.delete_queue.tasks.length === 0}
+							<div class="flex items-center justify-center py-8 text-muted-foreground">
+								<div class="text-center">
+									<CheckCircle class="h-12 w-12 mx-auto mb-3 opacity-50" />
+									<p>队列为空</p>
+								</div>
 							</div>
-						</div>
-					{:else}
-						<div class="space-y-3">
-							{#each queueStatus.delete_queue.tasks as task (task.task_id)}
-								<div class="flex items-center justify-between p-3 bg-muted/50 rounded-lg">
-									<div class="flex items-center gap-3">
-										<svelte:component this={getTaskTypeIcon(task.task_type)} class="h-4 w-4 text-muted-foreground" />
-										<div>
-											<p class="text-sm font-medium">{getTaskTypeName(task.task_type)}</p>
-											<p class="text-xs text-muted-foreground">ID: {task.task_id}</p>
+						{:else}
+							<div class="space-y-3">
+								{#each queueStatus.delete_queue.tasks as task (task.task_id)}
+									<div class="flex items-center justify-between p-3 bg-muted/50 rounded-lg">
+										<div class="flex items-center gap-3">
+											<svelte:component this={getTaskTypeIcon(task.task_type)} class="h-4 w-4 text-muted-foreground" />
+											<div>
+												<p class="text-sm font-medium">{getTaskTypeName(task.task_type)}</p>
+												<p class="text-xs text-muted-foreground">ID: {task.task_id}</p>
+											</div>
+										</div>
+										<div class="text-right">
+											<p class="text-xs text-muted-foreground">{formatTime(task.created_at)}</p>
 										</div>
 									</div>
-									<div class="text-right">
-										<p class="text-xs text-muted-foreground">{formatTime(task.created_at)}</p>
-									</div>
-								</div>
-							{/each}
-						</div>
-					{/if}
-				</CardContent>
-			</Card>
-
-			<!-- 添加队列 -->
-			<Card>
-				<CardHeader>
-					<CardTitle class="flex items-center gap-2">
-						<Plus class="h-5 w-5" />
-						添加队列
-						{#if queueStatus.add_queue.is_processing}
-							<Badge variant="destructive">处理中</Badge>
-						{/if}
-					</CardTitle>
-					<CardDescription>
-						等待处理的视频源添加任务
-					</CardDescription>
-				</CardHeader>
-				<CardContent>
-					{#if queueStatus.add_queue.tasks.length === 0}
-						<div class="flex items-center justify-center py-8 text-muted-foreground">
-							<div class="text-center">
-								<CheckCircle class="h-12 w-12 mx-auto mb-3 opacity-50" />
-								<p>队列为空</p>
+								{/each}
 							</div>
-						</div>
-					{:else}
-						<div class="space-y-3">
-							{#each queueStatus.add_queue.tasks as task (task.task_id)}
-								<div class="flex items-center justify-between p-3 bg-muted/50 rounded-lg">
-									<div class="flex items-center gap-3">
-										<svelte:component this={getTaskTypeIcon(task.task_type)} class="h-4 w-4 text-muted-foreground" />
-										<div>
-											<p class="text-sm font-medium">{getTaskTypeName(task.task_type)}</p>
-											<p class="text-xs text-muted-foreground">ID: {task.task_id}</p>
+						{/if}
+					</CardContent>
+				</Card>
+
+				<!-- 添加队列 -->
+				<Card>
+					<CardHeader>
+						<CardTitle class="flex items-center gap-2">
+							<Plus class="h-5 w-5" />
+							添加队列
+							{#if queueStatus.add_queue.is_processing}
+								<Badge variant="destructive">处理中</Badge>
+							{/if}
+						</CardTitle>
+						<CardDescription>
+							等待处理的视频源添加任务
+						</CardDescription>
+					</CardHeader>
+					<CardContent>
+						{#if queueStatus.add_queue.tasks.length === 0}
+							<div class="flex items-center justify-center py-8 text-muted-foreground">
+								<div class="text-center">
+									<CheckCircle class="h-12 w-12 mx-auto mb-3 opacity-50" />
+									<p>队列为空</p>
+								</div>
+							</div>
+						{:else}
+							<div class="space-y-3">
+								{#each queueStatus.add_queue.tasks as task (task.task_id)}
+									<div class="flex items-center justify-between p-3 bg-muted/50 rounded-lg">
+										<div class="flex items-center gap-3">
+											<svelte:component this={getTaskTypeIcon(task.task_type)} class="h-4 w-4 text-muted-foreground" />
+											<div>
+												<p class="text-sm font-medium">{getTaskTypeName(task.task_type)}</p>
+												<p class="text-xs text-muted-foreground">ID: {task.task_id}</p>
+											</div>
+										</div>
+										<div class="text-right">
+											<p class="text-xs text-muted-foreground">{formatTime(task.created_at)}</p>
 										</div>
 									</div>
-									<div class="text-right">
-										<p class="text-xs text-muted-foreground">{formatTime(task.created_at)}</p>
+								{/each}
+							</div>
+						{/if}
+					</CardContent>
+				</Card>
+
+				<!-- 配置队列 -->
+				<Card>
+					<CardHeader>
+						<CardTitle class="flex items-center gap-2">
+							<Settings class="h-5 w-5" />
+							配置队列
+							{#if queueStatus.config_queue.is_processing}
+								<Badge variant="destructive">处理中</Badge>
+							{/if}
+						</CardTitle>
+						<CardDescription>
+							等待处理的配置更新和重载任务
+						</CardDescription>
+					</CardHeader>
+					<CardContent>
+						{#if queueStatus.config_queue.update_tasks.length === 0 && queueStatus.config_queue.reload_tasks.length === 0}
+							<div class="flex items-center justify-center py-8 text-muted-foreground">
+								<div class="text-center">
+									<CheckCircle class="h-12 w-12 mx-auto mb-3 opacity-50" />
+									<p>队列为空</p>
+								</div>
+							</div>
+						{:else}
+							<div class="grid gap-4 md:grid-cols-2">
+								<!-- 更新配置任务 -->
+								<div>
+									<h4 class="text-sm font-medium mb-3">更新配置任务 ({queueStatus.config_queue.update_length})</h4>
+									{#if queueStatus.config_queue.update_tasks.length === 0}
+										<p class="text-sm text-muted-foreground">暂无任务</p>
+									{:else}
+										<div class="space-y-3">
+											{#each queueStatus.config_queue.update_tasks as task (task.task_id)}
+												<div class="flex items-center justify-between p-3 bg-muted/50 rounded-lg">
+													<div class="flex items-center gap-3">
+														<svelte:component this={getTaskTypeIcon(task.task_type)} class="h-4 w-4 text-muted-foreground" />
+														<div>
+															<p class="text-sm font-medium">{getTaskTypeName(task.task_type)}</p>
+															<p class="text-xs text-muted-foreground">ID: {task.task_id}</p>
+														</div>
+													</div>
+													<div class="text-right">
+														<p class="text-xs text-muted-foreground">{formatTime(task.created_at)}</p>
+													</div>
+												</div>
+											{/each}
+										</div>
+									{/if}
+								</div>
+
+								<!-- 重载配置任务 -->
+								<div>
+									<h4 class="text-sm font-medium mb-3">重载配置任务 ({queueStatus.config_queue.reload_length})</h4>
+									{#if queueStatus.config_queue.reload_tasks.length === 0}
+										<p class="text-sm text-muted-foreground">暂无任务</p>
+									{:else}
+										<div class="space-y-3">
+											{#each queueStatus.config_queue.reload_tasks as task (task.task_id)}
+												<div class="flex items-center justify-between p-3 bg-muted/50 rounded-lg">
+													<div class="flex items-center gap-3">
+														<svelte:component this={getTaskTypeIcon(task.task_type)} class="h-4 w-4 text-muted-foreground" />
+														<div>
+															<p class="text-sm font-medium">{getTaskTypeName(task.task_type)}</p>
+															<p class="text-xs text-muted-foreground">ID: {task.task_id}</p>
+														</div>
+													</div>
+													<div class="text-right">
+														<p class="text-xs text-muted-foreground">{formatTime(task.created_at)}</p>
+													</div>
+												</div>
+											{/each}
+										</div>
+									{/if}
+								</div>
+							</div>
+						{/if}
+					</CardContent>
+				</Card>
+			</div>
+
+			<!-- 右侧说明面板 -->
+			<div class="space-y-6">
+				<!-- 任务队列说明 -->
+				<Card class="sticky top-6">
+					<CardHeader>
+						<CardTitle class="text-lg">📋 任务队列说明</CardTitle>
+						<CardDescription>
+							了解任务队列的工作原理和状态含义
+						</CardDescription>
+					</CardHeader>
+					<CardContent class="space-y-6">
+						<!-- 队列类型说明 -->
+						<div>
+							<h4 class="font-medium mb-3 flex items-center gap-2">
+								<ListTodo class="h-4 w-4" />
+								队列类型
+							</h4>
+							<div class="space-y-3 text-sm">
+								<div class="flex items-start gap-3 p-3 bg-red-50 dark:bg-red-950/20 rounded-lg">
+									<Trash2 class="h-4 w-4 text-red-600 mt-0.5" />
+									<div>
+										<p class="font-medium text-red-900 dark:text-red-100">删除队列</p>
+										<p class="text-red-700 dark:text-red-300 text-xs">处理视频源删除操作，确保数据一致性</p>
 									</div>
 								</div>
-							{/each}
-						</div>
-					{/if}
-				</CardContent>
-			</Card>
-
-			<!-- 配置队列 -->
-			<Card class="lg:col-span-2">
-				<CardHeader>
-					<CardTitle class="flex items-center gap-2">
-						<Settings class="h-5 w-5" />
-						配置队列
-						{#if queueStatus.config_queue.is_processing}
-							<Badge variant="destructive">处理中</Badge>
-						{/if}
-					</CardTitle>
-					<CardDescription>
-						等待处理的配置更新和重载任务
-					</CardDescription>
-				</CardHeader>
-				<CardContent>
-					{#if queueStatus.config_queue.update_tasks.length === 0 && queueStatus.config_queue.reload_tasks.length === 0}
-						<div class="flex items-center justify-center py-8 text-muted-foreground">
-							<div class="text-center">
-								<CheckCircle class="h-12 w-12 mx-auto mb-3 opacity-50" />
-								<p>队列为空</p>
-							</div>
-						</div>
-					{:else}
-						<div class="grid gap-4 md:grid-cols-2">
-							<!-- 更新配置任务 -->
-							<div>
-								<h4 class="text-sm font-medium mb-3">更新配置任务 ({queueStatus.config_queue.update_length})</h4>
-								{#if queueStatus.config_queue.update_tasks.length === 0}
-									<p class="text-sm text-muted-foreground">暂无任务</p>
-								{:else}
-									<div class="space-y-3">
-										{#each queueStatus.config_queue.update_tasks as task (task.task_id)}
-											<div class="flex items-center justify-between p-3 bg-muted/50 rounded-lg">
-												<div class="flex items-center gap-3">
-													<svelte:component this={getTaskTypeIcon(task.task_type)} class="h-4 w-4 text-muted-foreground" />
-													<div>
-														<p class="text-sm font-medium">{getTaskTypeName(task.task_type)}</p>
-														<p class="text-xs text-muted-foreground">ID: {task.task_id}</p>
-													</div>
-												</div>
-												<div class="text-right">
-													<p class="text-xs text-muted-foreground">{formatTime(task.created_at)}</p>
-												</div>
-											</div>
-										{/each}
+								<div class="flex items-start gap-3 p-3 bg-green-50 dark:bg-green-950/20 rounded-lg">
+									<Plus class="h-4 w-4 text-green-600 mt-0.5" />
+									<div>
+										<p class="font-medium text-green-900 dark:text-green-100">添加队列</p>
+										<p class="text-green-700 dark:text-green-300 text-xs">处理新视频源的添加和初始化</p>
 									</div>
-								{/if}
-							</div>
-
-							<!-- 重载配置任务 -->
-							<div>
-								<h4 class="text-sm font-medium mb-3">重载配置任务 ({queueStatus.config_queue.reload_length})</h4>
-								{#if queueStatus.config_queue.reload_tasks.length === 0}
-									<p class="text-sm text-muted-foreground">暂无任务</p>
-								{:else}
-									<div class="space-y-3">
-										{#each queueStatus.config_queue.reload_tasks as task (task.task_id)}
-											<div class="flex items-center justify-between p-3 bg-muted/50 rounded-lg">
-												<div class="flex items-center gap-3">
-													<svelte:component this={getTaskTypeIcon(task.task_type)} class="h-4 w-4 text-muted-foreground" />
-													<div>
-														<p class="text-sm font-medium">{getTaskTypeName(task.task_type)}</p>
-														<p class="text-xs text-muted-foreground">ID: {task.task_id}</p>
-													</div>
-												</div>
-												<div class="text-right">
-													<p class="text-xs text-muted-foreground">{formatTime(task.created_at)}</p>
-												</div>
-											</div>
-										{/each}
+								</div>
+								<div class="flex items-start gap-3 p-3 bg-blue-50 dark:bg-blue-950/20 rounded-lg">
+									<Settings class="h-4 w-4 text-blue-600 mt-0.5" />
+									<div>
+										<p class="font-medium text-blue-900 dark:text-blue-100">配置队列</p>
+										<p class="text-blue-700 dark:text-blue-300 text-xs">处理系统配置的更新和重载</p>
 									</div>
-								{/if}
+								</div>
 							</div>
 						</div>
-					{/if}
-				</CardContent>
-			</Card>
+
+						<!-- 状态说明 -->
+						<div>
+							<h4 class="font-medium mb-3 flex items-center gap-2">
+								<Clock class="h-4 w-4" />
+								状态说明
+							</h4>
+							<div class="space-y-2 text-sm">
+								<div class="flex items-center gap-3">
+									<Badge variant="outline" class="w-16 justify-center">空闲</Badge>
+									<span class="text-muted-foreground">队列为空，没有待处理任务</span>
+								</div>
+								<div class="flex items-center gap-3">
+									<Badge variant="secondary" class="w-16 justify-center">等待中</Badge>
+									<span class="text-muted-foreground">有任务排队，等待处理</span>
+								</div>
+								<div class="flex items-center gap-3">
+									<Badge variant="destructive" class="w-16 justify-center">处理中</Badge>
+									<span class="text-muted-foreground">正在执行队列中的任务</span>
+								</div>
+							</div>
+						</div>
+
+						<!-- 处理机制 -->
+						<div>
+							<h4 class="font-medium mb-3 flex items-center gap-2">
+								<RefreshCw class="h-4 w-4" />
+								处理机制
+							</h4>
+							<div class="space-y-2 text-sm text-muted-foreground">
+								<div class="flex items-start gap-2">
+									<span class="text-blue-600 font-mono">1.</span>
+									<span>扫描期间的所有操作会自动进入对应队列</span>
+								</div>
+								<div class="flex items-start gap-2">
+									<span class="text-blue-600 font-mono">2.</span>
+									<span>扫描完成后按优先级处理：配置 → 删除 → 添加</span>
+								</div>
+								<div class="flex items-start gap-2">
+									<span class="text-blue-600 font-mono">3.</span>
+									<span>同类型任务按时间顺序依次执行</span>
+								</div>
+								<div class="flex items-start gap-2">
+									<span class="text-blue-600 font-mono">4.</span>
+									<span>页面每5秒自动刷新状态</span>
+								</div>
+							</div>
+						</div>
+
+						<!-- 注意事项 -->
+						<div>
+							<h4 class="font-medium mb-3 flex items-center gap-2">
+								<AlertCircle class="h-4 w-4" />
+								注意事项
+							</h4>
+							<div class="space-y-2 text-sm text-muted-foreground bg-amber-50 dark:bg-amber-950/20 p-3 rounded-lg">
+								<p>• 扫描进行时，手动操作会进入队列等待</p>
+								<p>• 队列处理期间请避免频繁操作</p>
+								<p>• 配置更改会影响所有后续任务执行</p>
+								<p>• 删除操作不可逆，请谨慎操作</p>
+							</div>
+						</div>
+					</CardContent>
+				</Card>
+			</div>
 		</div>
 
-		<!-- 说明信息 -->
+		<!-- 简化版说明信息 -->
 		<Card class="mt-6">
 			<CardHeader>
-				<CardTitle class="text-lg">队列说明</CardTitle>
+				<CardTitle class="text-lg">快速参考</CardTitle>
 			</CardHeader>
 			<CardContent class="space-y-4">
 				<div class="grid gap-4 md:grid-cols-2">
 					<div>
-						<h4 class="font-medium mb-2">任务处理机制</h4>
+						<h4 class="font-medium mb-2">常见任务类型</h4>
 						<ul class="text-sm text-muted-foreground space-y-1">
-							<li>• 扫描期间的操作会自动加入对应队列等待处理</li>
-							<li>• 扫描完成后会按顺序自动处理所有队列中的任务</li>
-							<li>• 处理顺序：配置 → 删除 → 添加</li>
+							<li>• <strong>delete_video_source:</strong> 删除视频源</li>
+							<li>• <strong>add_video_source:</strong> 添加视频源</li>
+							<li>• <strong>update_config:</strong> 更新系统配置</li>
+							<li>• <strong>reload_config:</strong> 重载配置文件</li>
 						</ul>
 					</div>
 					<div>
-						<h4 class="font-medium mb-2">队列状态</h4>
-						<div class="space-y-2 text-sm">
-							<div class="flex items-center gap-2">
-								<Badge variant="outline">空闲</Badge>
-								<span class="text-muted-foreground">队列为空且未在处理</span>
-							</div>
-							<div class="flex items-center gap-2">
-								<Badge variant="secondary">等待中</Badge>
-								<span class="text-muted-foreground">有任务等待处理</span>
-							</div>
-							<div class="flex items-center gap-2">
-								<Badge variant="destructive">处理中</Badge>
-								<span class="text-muted-foreground">正在处理队列中的任务</span>
-							</div>
-						</div>
+						<h4 class="font-medium mb-2">性能提示</h4>
+						<ul class="text-sm text-muted-foreground space-y-1">
+							<li>• 批量操作会自动合并到队列中</li>
+							<li>• 避免在扫描期间进行大量操作</li>
+							<li>• 队列处理期间系统性能可能下降</li>
+							<li>• 建议在空闲时间进行配置更改</li>
+						</ul>
 					</div>
 				</div>
 			</CardContent>
