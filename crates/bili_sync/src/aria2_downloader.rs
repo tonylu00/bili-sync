@@ -8,7 +8,7 @@ use tokio::time::sleep;
 use tracing::{debug, info, warn};
 
 use crate::bilibili::Client;
-use crate::config::CONFIG;
+use crate::config::{CONFIG, CONFIG_DIR};
 
 /// 嵌入的aria2二进制文件 (编译时自动下载对应平台版本)
 #[cfg(target_os = "windows")]
@@ -49,13 +49,20 @@ impl Aria2Downloader {
 
     /// 提取嵌入的aria2二进制文件到临时目录，失败时回退到系统aria2
     async fn extract_aria2_binary() -> Result<PathBuf> {
-        let temp_dir = std::env::temp_dir();
+        // 使用配置文件夹存储aria2二进制文件，而不是临时目录
         let binary_name = if cfg!(target_os = "windows") {
             "aria2c.exe"
         } else {
             "aria2c"
         };
-        let binary_path = temp_dir.join(format!("bili-sync-{}", binary_name));
+        let binary_path = CONFIG_DIR.join(binary_name);
+        
+        // 确保配置目录存在
+        if let Err(e) = tokio::fs::create_dir_all(&*CONFIG_DIR).await {
+            warn!("创建配置目录失败: {}, 将使用临时目录", e);
+            let temp_dir = std::env::temp_dir();
+            return Self::extract_aria2_binary_to_temp(temp_dir, binary_name).await;
+        }
 
         // 如果文件已存在且可执行，直接返回
         if binary_path.exists() {
@@ -69,10 +76,10 @@ impl Aria2Downloader {
         }
 
         // 尝试写入嵌入的二进制文件
-        debug!("尝试提取aria2二进制文件到: {}", binary_path.display());
+        debug!("尝试提取aria2二进制文件到配置目录: {}", binary_path.display());
         match tokio::fs::write(&binary_path, ARIA2_BINARY).await {
             Ok(_) => {
-                debug!("aria2二进制文件写入成功，大小: {} bytes", ARIA2_BINARY.len());
+                debug!("aria2二进制文件写入配置目录成功，大小: {} bytes", ARIA2_BINARY.len());
                 
                 // 在Unix系统上设置执行权限
                 #[cfg(unix)]
@@ -87,21 +94,70 @@ impl Aria2Downloader {
                 }
 
                 // 验证提取的文件是否有效
-                debug!("开始验证提取的aria2二进制文件...");
+                debug!("开始验证提取到配置目录的aria2二进制文件...");
                 if Self::is_valid_aria2_binary(&binary_path).await {
-                    info!("aria2二进制文件已提取到: {}", binary_path.display());
+                    info!("aria2二进制文件已提取到配置目录: {}", binary_path.display());
                     return Ok(binary_path);
                 } else {
-                    warn!("提取的aria2二进制文件无效，尝试使用系统aria2");
+                    warn!("配置目录中的aria2二进制文件无效，尝试使用系统aria2");
                     let _ = tokio::fs::remove_file(&binary_path).await;
                 }
             }
             Err(e) => {
-                warn!("提取aria2二进制文件失败: {}, 尝试使用系统aria2", e);
+                warn!("提取aria2二进制文件到配置目录失败: {}, 尝试使用系统aria2", e);
             }
         }
 
         // 回退到系统安装的aria2
+        Self::find_system_aria2().await
+    }
+
+    /// 备用方案：提取到临时目录
+    async fn extract_aria2_binary_to_temp(temp_dir: PathBuf, binary_name: &str) -> Result<PathBuf> {
+        let binary_path = temp_dir.join(format!("bili-sync-{}", binary_name));
+        
+        debug!("尝试提取aria2二进制文件到临时目录: {}", binary_path.display());
+        
+        // 如果文件已存在且可执行，直接返回
+        if binary_path.exists() {
+            if Self::is_valid_aria2_binary(&binary_path).await {
+                return Ok(binary_path);
+            } else {
+                let _ = tokio::fs::remove_file(&binary_path).await;
+            }
+        }
+
+        // 尝试写入嵌入的二进制文件
+        match tokio::fs::write(&binary_path, ARIA2_BINARY).await {
+            Ok(_) => {
+                debug!("aria2二进制文件写入临时目录成功，大小: {} bytes", ARIA2_BINARY.len());
+                
+                // 在Unix系统上设置执行权限
+                #[cfg(unix)]
+                {
+                    use std::os::unix::fs::PermissionsExt;
+                    if let Ok(metadata) = tokio::fs::metadata(&binary_path).await {
+                        let mut perms = metadata.permissions();
+                        perms.set_mode(0o755);
+                        let _ = tokio::fs::set_permissions(&binary_path, perms).await;
+                    }
+                }
+
+                // 验证提取的文件是否有效
+                if Self::is_valid_aria2_binary(&binary_path).await {
+                    info!("aria2二进制文件已提取到临时目录: {}", binary_path.display());
+                    return Ok(binary_path);
+                } else {
+                    warn!("临时目录中的aria2二进制文件无效");
+                    let _ = tokio::fs::remove_file(&binary_path).await;
+                }
+            }
+            Err(e) => {
+                warn!("提取aria2二进制文件到临时目录失败: {}", e);
+            }
+        }
+
+        // 最终回退到系统安装的aria2
         Self::find_system_aria2().await
     }
 
