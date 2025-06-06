@@ -44,26 +44,71 @@ fn main() {
 }
 
 fn get_aria2_for_ci(target: &str, out_dir: &str, binary_name: &str) -> Result<(), Box<dyn std::error::Error>> {
-    // 为不同平台下载对应的静态编译版本
-    match target {
-        t if t.contains("windows") => {
-            let url = "https://github.com/aria2/aria2/releases/download/release-1.37.0/aria2-1.37.0-win-64bit-build1.zip";
-            let archive_name = "aria2-1.37.0-win-64bit-build1.zip";
-            download_and_extract_windows(url, archive_name, out_dir, binary_name)
-        }
-        t if t.contains("linux") => {
-            // Linux: 下载静态编译版本
-            download_static_aria2_linux(target, out_dir, binary_name)
-        }
-        t if t.contains("darwin") => {
-            // macOS: 下载静态编译版本或使用homebrew
-            download_static_aria2_macos(target, out_dir, binary_name)
-        }
-        _ => {
-            println!("cargo:warning=不支持的目标平台: {}", target);
-            Err(format!("不支持的目标平台: {}", target).into())
+    if target.contains("windows") {
+        // Windows: 下载预编译版本
+        let url = "https://github.com/aria2/aria2/releases/download/release-1.37.0/aria2-1.37.0-win-64bit-build1.zip";
+        let archive_name = "aria2-1.37.0-win-64bit-build1.zip";
+        download_and_extract_windows(url, archive_name, out_dir, binary_name)
+    } else if target.contains("linux") {
+        // Linux: 下载静态链接版本
+        download_static_aria2_linux(target, out_dir, binary_name)
+    } else if target.contains("darwin") {
+        // macOS: 下载预编译版本
+        download_aria2_macos(out_dir, binary_name)
+    } else {
+        // 其他平台: 回退到系统安装方式
+        install_aria2_from_system(out_dir, binary_name)
+    }
+}
+
+fn download_static_aria2_linux(target: &str, out_dir: &str, binary_name: &str) -> Result<(), Box<dyn std::error::Error>> {
+    let binary_path = Path::new(out_dir).join(binary_name);
+    
+    // 使用静态链接的aria2 builds from johang/aria2-static-builds
+    let url = if target.contains("x86_64") {
+        "https://github.com/johang/aria2-static-builds/releases/download/1.37.0/aria2-x86_64-linux"
+    } else if target.contains("aarch64") {
+        "https://github.com/johang/aria2-static-builds/releases/download/1.37.0/aria2-arm64-linux"
+    } else {
+        println!("cargo:warning=不支持的Linux架构: {}", target);
+        return Err("不支持的Linux架构".into());
+    };
+    
+    println!("cargo:warning=下载静态链接的aria2: {}", url);
+    
+    // 下载aria2二进制文件
+    #[cfg(target_os = "windows")]
+    {
+        download_with_powershell(url, &binary_path)?;
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        download_with_curl_or_wget(url, &binary_path)?;
+    }
+    
+    if !binary_path.exists() {
+        return Err("下载的aria2文件不存在".into());
+    }
+    
+    // 设置可执行权限
+    set_executable_permissions(&binary_path)?;
+    
+    // 验证下载的文件
+    if let Ok(output) = Command::new(&binary_path).arg("--version").output() {
+        if output.status.success() {
+            let version_info = String::from_utf8_lossy(&output.stdout);
+            println!("cargo:warning=成功下载静态aria2: {}", version_info.lines().next().unwrap_or("unknown"));
+            return Ok(());
         }
     }
+    
+    println!("cargo:warning=下载的aria2验证失败，回退到系统安装");
+    install_aria2_from_system(out_dir, binary_name)
+}
+
+fn download_aria2_macos(out_dir: &str, binary_name: &str) -> Result<(), Box<dyn std::error::Error>> {
+    println!("cargo:warning=macOS暂时使用系统安装方式");
+    install_aria2_from_system(out_dir, binary_name)
 }
 
 fn install_aria2_from_system(out_dir: &str, binary_name: &str) -> Result<(), Box<dyn std::error::Error>> {
@@ -188,93 +233,6 @@ fn install_aria2_from_system(out_dir: &str, binary_name: &str) -> Result<(), Box
     }
 }
 
-fn download_static_aria2_linux(target: &str, out_dir: &str, binary_name: &str) -> Result<(), Box<dyn std::error::Error>> {
-    // 使用第三方静态编译的aria2版本
-    let url = if target.contains("x86_64") {
-        "https://github.com/P3TERX/Aria2-Pro-Core/releases/download/1.37.0_2023.06.14/aria2-1.37.0-static-linux-amd64.tar.gz"
-    } else if target.contains("aarch64") {
-        "https://github.com/P3TERX/Aria2-Pro-Core/releases/download/1.37.0_2023.06.14/aria2-1.37.0-static-linux-arm64.tar.gz"
-    } else {
-        return Err("不支持的Linux架构".into());
-    };
-    
-    let archive_name = url.split('/').last().unwrap();
-    let archive_path = Path::new(out_dir).join(archive_name);
-    let binary_path = Path::new(out_dir).join(binary_name);
-    
-    println!("cargo:warning=下载Linux静态aria2: {}", url);
-    
-    // 使用wget或curl下载
-    let download_success = if Command::new("wget").arg("--version").output().is_ok() {
-        Command::new("wget")
-            .args(["-O", archive_path.to_str().unwrap(), url])
-            .status()
-            .map(|s| s.success())
-            .unwrap_or(false)
-    } else if Command::new("curl").arg("--version").output().is_ok() {
-        Command::new("curl")
-            .args(["-L", "-o", archive_path.to_str().unwrap(), url])
-            .status()
-            .map(|s| s.success())
-            .unwrap_or(false)
-    } else {
-        false
-    };
-    
-    if !download_success || !archive_path.exists() {
-        return Err("下载aria2静态版本失败".into());
-    }
-    
-    // 解压tar.gz
-    println!("cargo:warning=解压 {} 到 {}", archive_path.display(), out_dir);
-    let extract_status = Command::new("tar")
-        .args(["-xzf", archive_path.to_str().unwrap(), "-C", out_dir, "--strip-components=1"])
-        .status()?;
-    
-    if !extract_status.success() {
-        return Err("解压aria2失败".into());
-    }
-    
-    // 删除压缩包
-    let _ = fs::remove_file(&archive_path);
-    
-    // 确保二进制文件存在并设置权限
-    if binary_path.exists() {
-        set_executable_permissions(&binary_path)?;
-        println!("cargo:warning=成功提取Linux静态aria2: {}", binary_path.display());
-        Ok(())
-    } else {
-        Err("解压后找不到aria2二进制文件".into())
-    }
-}
-
-fn download_static_aria2_macos(target: &str, out_dir: &str, binary_name: &str) -> Result<(), Box<dyn std::error::Error>> {
-    // macOS先尝试使用homebrew，失败则回退到系统安装
-    if Command::new("brew").arg("--version").output().is_ok() {
-        println!("cargo:warning=使用homebrew安装aria2");
-        let install_status = Command::new("brew").args(["install", "aria2"]).status()?;
-        
-        if install_status.success() {
-            // 复制homebrew安装的aria2
-            if let Ok(output) = Command::new("which").arg("aria2c").output() {
-                if output.status.success() {
-                    let system_path = String::from_utf8_lossy(&output.stdout).trim();
-                    let binary_path = Path::new(out_dir).join(binary_name);
-                    
-                    if fs::copy(system_path, &binary_path).is_ok() {
-                        set_executable_permissions(&binary_path)?;
-                        println!("cargo:warning=成功复制macOS aria2: {}", binary_path.display());
-                        return Ok(());
-                    }
-                }
-            }
-        }
-    }
-    
-    // 回退到系统安装方式
-    install_aria2_from_system(out_dir, binary_name)
-}
-
 fn download_and_extract_windows(
     url: &str,
     archive_name: &str,
@@ -305,6 +263,38 @@ fn download_and_extract_windows(
     } else {
         Err("提取后的二进制文件不存在".into())
     }
+}
+
+fn download_with_curl_or_wget(url: &str, output: &Path) -> Result<(), Box<dyn std::error::Error>> {
+    // 首先尝试curl
+    if Command::new("curl").arg("--version").output().is_ok() {
+        println!("cargo:warning=使用curl下载: {}", url);
+        let status = Command::new("curl")
+            .args(["-L", "-o"])
+            .arg(output)
+            .arg(url)
+            .status()?;
+        
+        if status.success() {
+            return Ok(());
+        }
+    }
+    
+    // 如果curl失败，尝试wget
+    if Command::new("wget").arg("--version").output().is_ok() {
+        println!("cargo:warning=使用wget下载: {}", url);
+        let status = Command::new("wget")
+            .args(["-O"])
+            .arg(output)
+            .arg(url)
+            .status()?;
+        
+        if status.success() {
+            return Ok(());
+        }
+    }
+    
+    Err("curl和wget都不可用或下载失败".into())
 }
 
 fn download_with_powershell(url: &str, output: &Path) -> Result<(), Box<dyn std::error::Error>> {
