@@ -193,34 +193,56 @@ jobs:
       
     - name: Check binary sizes and aria2 embedding
       run: |
+        echo "=== Downloaded artifacts ==="
+        find . -type f -name "*.zip" -o -name "*.tar.gz" | sort
+        
         echo "=== Binary sizes with embedded aria2 ==="
         find . -name "*.zip" -o -name "*.tar.gz" | while read archive; do
           echo "Archive: $archive"
           if [[ "$archive" == *.zip ]]; then
-            unzip -l "$archive" | grep bili-sync-rs
+            echo "Contents of zip file:"
+            unzip -l "$archive"
           else
-            tar -tzf "$archive" | grep bili-sync-rs | xargs tar -tzf "$archive" --verbose
+            echo "Contents of tar.gz file:"
+            tar -tzf "$archive"
+            echo "Archive details:"
+            tar -tzvf "$archive"
           fi
           echo "---"
         done
         
         echo "=== Extracting and testing binaries ==="
         # 解压Windows版本测试
-        if [ -f "./bili-sync-rs-Windows-x86_64.zip/bili-sync-rs-Windows-x86_64.zip" ]; then
-          echo "Found Windows binary archive"
-          unzip -q "./bili-sync-rs-Windows-x86_64.zip/bili-sync-rs-Windows-x86_64.zip"
-          ls -lh bili-sync-rs.exe 2>/dev/null || echo "Windows binary not found"
+        windows_archive=$(find . -name "*Windows*.zip" | head -1)
+        if [ -n "$windows_archive" ] && [ -f "$windows_archive" ]; then
+          echo "Found Windows binary archive: $windows_archive"
+          unzip -q "$windows_archive" -d windows_extract/
+          if [ -f "windows_extract/bili-sync-rs.exe" ]; then
+            echo "Windows binary size:"
+            ls -lh windows_extract/bili-sync-rs.exe
+            echo "Windows binary info:"
+            file windows_extract/bili-sync-rs.exe || echo "file command failed"
+          else
+            echo "Windows binary not found after extraction"
+            ls -la windows_extract/
+          fi
         fi
         
         # 解压Linux版本测试
-        if [ -f "./bili-sync-rs-Linux-x86_64-musl.tar.gz/bili-sync-rs-Linux-x86_64-musl.tar.gz" ]; then
-          echo "Found Linux binary archive"
-          tar -xzf "./bili-sync-rs-Linux-x86_64-musl.tar.gz/bili-sync-rs-Linux-x86_64-musl.tar.gz"
-          ls -lh bili-sync-rs 2>/dev/null || echo "Linux binary not found"
+        linux_archive=$(find . -name "*Linux*x86_64*.tar.gz" | head -1)
+        if [ -n "$linux_archive" ] && [ -f "$linux_archive" ]; then
+          echo "Found Linux binary archive: $linux_archive"
+          tar -xzf "$linux_archive" -C .
           if [ -f "./bili-sync-rs" ]; then
-            echo "Testing Linux binary:"
+            echo "Linux binary size:"
+            ls -lh ./bili-sync-rs
+            echo "Linux binary info:"
             file ./bili-sync-rs
+            echo "Testing Linux binary execution:"
             chmod +x ./bili-sync-rs
-            ./bili-sync-rs --help | head -3 || echo "Binary execution failed"
+            ./bili-sync-rs --help | head -3 || echo "Binary execution failed (expected for embedded aria2 check)"
+          else
+            echo "Linux binary not found after extraction"
+            ls -la .
           fi
         fi 
