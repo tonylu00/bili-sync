@@ -15,6 +15,9 @@ publish = false
 bili_sync_entity = { path = "crates/bili_sync_entity" }
 bili_sync_migration = { path = "crates/bili_sync_migration" }
 
+# Build script dependencies
+walkdir = "2.4.0"
+
 anyhow = { version = "1.0.98", features = ["backtrace"] }
 arc-swap = { version = "1.7.1", features = ["serde"] }
 assert_matches = "1.5.0"

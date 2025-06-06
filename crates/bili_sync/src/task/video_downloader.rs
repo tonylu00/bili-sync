@@ -10,6 +10,7 @@ use crate::bilibili::{self, BiliClient, CollectionItem, CollectionType};
 use crate::config::{Config, CONFIG};
 use crate::initialization;
 use crate::task::TASK_CONTROLLER;
+use crate::unified_downloader::UnifiedDownloader;
 use crate::workflow::process_video_source;
 use bili_sync_entity::entities;
 
@@ -194,6 +195,9 @@ pub async fn video_downloader(connection: Arc<DatabaseConnection>) {
                 }
             }
 
+            // 创建共享的下载器实例，供所有视频源使用
+            let downloader = UnifiedDownloader::new_smart(bili_client.client.clone()).await;
+
             let mut processed_sources = 0;
             let mut sources_with_new_content = 0;
             for (args, path) in &video_sources {
@@ -203,7 +207,7 @@ pub async fn video_downloader(connection: Arc<DatabaseConnection>) {
                     break;
                 }
 
-                match process_video_source(*args, &bili_client, path, &connection).await {
+                match process_video_source(*args, &bili_client, path, &connection, &downloader).await {
                     Ok(new_video_count) => {
                         processed_sources += 1;
                         if new_video_count > 0 {

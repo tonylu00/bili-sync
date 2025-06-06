@@ -113,6 +113,29 @@ impl Client {
         }
         req
     }
+
+    /// Get raw reqwest client (for aria2 downloader)
+    #[allow(dead_code)]
+    pub fn raw_client(&self) -> &reqwest::Client {
+        &self.0
+    }
+
+    /// POST request wrapper
+    pub fn post(&self, url: &str) -> reqwest::RequestBuilder {
+        self.0.post(url)
+    }
+
+    /// GET request wrapper  
+    #[allow(dead_code)]
+    pub fn get(&self, url: &str) -> reqwest::RequestBuilder {
+        self.0.get(url)
+    }
+
+    /// HEAD request wrapper
+    #[allow(dead_code)]
+    pub fn head(&self, url: &str) -> reqwest::RequestBuilder {
+        self.0.head(url)
+    }
 }
 
 // clippy 建议实现 Default trait

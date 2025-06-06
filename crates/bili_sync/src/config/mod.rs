@@ -236,7 +236,9 @@ impl Config {
                 // 为并行下载子部分添加注释
                 if let Some(parallel_item) = table.get_mut("parallel_download") {
                     if let Some(sub_table) = parallel_item.as_table_mut() {
-                        sub_table.decor_mut().set_prefix("\n# 多线程下载配置\n# enabled: 是否启用多线程下载\n# threads: 每个文件的下载线程数\n# min_size: 最小文件大小(字节)，小于此大小的文件不使用多线程下载\n");
+                        sub_table.decor_mut().set_prefix(
+                            "\n# 多线程下载配置\n# enabled: 是否启用多线程下载\n# threads: 每个文件的下载线程数\n",
+                        );
                     }
                 }
             }

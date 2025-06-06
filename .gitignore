@@ -95,6 +95,13 @@ Dockerfile - 副本
 *.tar.gz.zip
 *_2.zip
 
+# aria2 相关临时文件
+download-aria2*.ps1
+bili-sync-rs.exe
+bili-sync-rs
+aria2c.exe
+aria2c
+
 # Root directory build outputs
 /_app/
 /index.html

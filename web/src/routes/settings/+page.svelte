@@ -23,7 +23,40 @@
 	let nfoTimeType = 'favtime';
 	let parallelDownloadEnabled = false;
 	let parallelDownloadThreads = 4;
-	let parallelDownloadMinSize = 10485760;
+	
+	// 视频质量设置
+	let videoMaxQuality = 'Quality8k';
+	let videoMinQuality = 'Quality360p';
+	let audioMaxQuality = 'QualityHiRES';
+	let audioMinQuality = 'Quality64k';
+	let codecs = ['AVC', 'HEV', 'AV1'];
+	let noDolbyVideo = false;
+	let noDolbyAudio = false;
+	let noHdr = false;
+	let noHires = false;
+	
+	// 弹幕设置
+	let danmakuDuration = 15.0;
+	let danmakuFont = '黑体';
+	let danmakuFontSize = 25;
+	let danmakuWidthRatio = 1.2;
+	let danmakuHorizontalGap = 20.0;
+	let danmakuLaneSize = 32;
+	let danmakuFloatPercentage = 0.5;
+	let danmakuBottomPercentage = 0.3;
+	let danmakuOpacity = 76;
+	let danmakuBold = true;
+	let danmakuOutline = 0.8;
+	let danmakuTimeOffset = 0.0;
+	
+	// 并发控制设置
+	let concurrentVideo = 3;
+	let concurrentPage = 2;
+	let rateLimit = 4;
+	let rateDuration = 250;
+	
+	// 其他设置
+	let cdnSorting = false;
 
 	// 显示帮助信息的状态
 	let showHelp = false;
@@ -65,10 +98,81 @@
 		{ value: 'pubtime', label: '发布时间' }
 	];
 
+	// 视频质量选项
+	const videoQualityOptions = [
+		{ value: 'Quality8k', label: '8K超高清' },
+		{ value: 'Quality4k', label: '4K超高清' },
+		{ value: 'Quality1080pplus', label: '1080P+高码率' },
+		{ value: 'Quality1080p60', label: '1080P 60fps' },
+		{ value: 'Quality1080p', label: '1080P高清' },
+		{ value: 'Quality720p60', label: '720P 60fps' },
+		{ value: 'Quality720p', label: '720P高清' },
+		{ value: 'Quality480p', label: '480P清晰' },
+		{ value: 'Quality360p', label: '360P流畅' }
+	];
+
+	// 音频质量选项
+	const audioQualityOptions = [
+		{ value: 'QualityHiRES', label: 'Hi-Res无损' },
+		{ value: 'Quality320k', label: '320k高品质' },
+		{ value: 'Quality128k', label: '128k标准' },
+		{ value: 'Quality64k', label: '64k省流' }
+	];
+
+	// 编解码器选项
+	const codecOptions = [
+		{ value: 'AVC', label: 'AVC/H.264' },
+		{ value: 'HEV', label: 'HEVC/H.265' },
+		{ value: 'AV1', label: 'AV1' }
+	];
+
 	// 响应式相关
 	let innerWidth: number;
 	let isMobile: boolean = false;
 	$: isMobile = innerWidth < 768; // md断点
+
+	// 拖拽排序相关
+	let draggedIndex: number | null = null;
+
+	function handleDragStart(e: DragEvent, index: number) {
+		if (e.dataTransfer) {
+			draggedIndex = index;
+			e.dataTransfer.effectAllowed = 'move';
+			e.dataTransfer.setData('text/html', '');
+		}
+	}
+
+	function handleDragOver(e: DragEvent) {
+		e.preventDefault();
+		if (e.dataTransfer) {
+			e.dataTransfer.dropEffect = 'move';
+		}
+	}
+
+	function handleDrop(e: DragEvent, dropIndex: number) {
+		e.preventDefault();
+		if (draggedIndex !== null && draggedIndex !== dropIndex) {
+			const newCodecs = [...codecs];
+			const draggedItem = newCodecs[draggedIndex];
+			newCodecs.splice(draggedIndex, 1);
+			newCodecs.splice(dropIndex, 0, draggedItem);
+			codecs = newCodecs;
+		}
+		draggedIndex = null;
+	}
+
+	function removeCodec(index: number) {
+		codecs = codecs.filter((_, i) => i !== index);
+	}
+
+	function handleAddCodec(e: Event) {
+		const target = e.target as HTMLSelectElement;
+		const value = target.value;
+		if (value && !codecs.includes(value)) {
+			codecs = [...codecs, value];
+			target.value = '';
+		}
+	}
 
 	onMount(async () => {
 		setBreadcrumb([
@@ -96,7 +200,40 @@
 			nfoTimeType = config.nfo_time_type || 'favtime';
 			parallelDownloadEnabled = config.parallel_download_enabled || false;
 			parallelDownloadThreads = config.parallel_download_threads || 4;
-			parallelDownloadMinSize = config.parallel_download_min_size || 10485760;
+			
+			// 视频质量设置
+			videoMaxQuality = config.video_max_quality || 'Quality8k';
+			videoMinQuality = config.video_min_quality || 'Quality360p';
+			audioMaxQuality = config.audio_max_quality || 'QualityHiRES';
+			audioMinQuality = config.audio_min_quality || 'Quality64k';
+			codecs = config.codecs || ['AVC', 'HEV', 'AV1'];
+			noDolbyVideo = config.no_dolby_video || false;
+			noDolbyAudio = config.no_dolby_audio || false;
+			noHdr = config.no_hdr || false;
+			noHires = config.no_hires || false;
+			
+			// 弹幕设置
+			danmakuDuration = config.danmaku_duration || 15.0;
+			danmakuFont = config.danmaku_font || '黑体';
+			danmakuFontSize = config.danmaku_font_size || 25;
+			danmakuWidthRatio = config.danmaku_width_ratio || 1.2;
+			danmakuHorizontalGap = config.danmaku_horizontal_gap || 20.0;
+			danmakuLaneSize = config.danmaku_lane_size || 32;
+			danmakuFloatPercentage = config.danmaku_float_percentage || 0.5;
+			danmakuBottomPercentage = config.danmaku_bottom_percentage || 0.3;
+			danmakuOpacity = config.danmaku_opacity || 76;
+			danmakuBold = config.danmaku_bold !== undefined ? config.danmaku_bold : true;
+			danmakuOutline = config.danmaku_outline || 0.8;
+			danmakuTimeOffset = config.danmaku_time_offset || 0.0;
+			
+			// 并发控制设置
+			concurrentVideo = config.concurrent_video || 3;
+			concurrentPage = config.concurrent_page || 2;
+			rateLimit = config.rate_limit || 4;
+			rateDuration = config.rate_duration || 250;
+			
+			// 其他设置
+			cdnSorting = config.cdn_sorting || false;
 		} catch (error: any) {
 			console.error('加载配置失败:', error);
 			toast.error('加载配置失败', { description: error.message });
@@ -119,7 +256,36 @@
 				nfo_time_type: nfoTimeType,
 				parallel_download_enabled: parallelDownloadEnabled,
 				parallel_download_threads: parallelDownloadThreads,
-				parallel_download_min_size: parallelDownloadMinSize
+				// 视频质量设置
+				video_max_quality: videoMaxQuality,
+				video_min_quality: videoMinQuality,
+				audio_max_quality: audioMaxQuality,
+				audio_min_quality: audioMinQuality,
+				codecs: codecs,
+				no_dolby_video: noDolbyVideo,
+				no_dolby_audio: noDolbyAudio,
+				no_hdr: noHdr,
+				no_hires: noHires,
+				// 弹幕设置
+				danmaku_duration: danmakuDuration,
+				danmaku_font: danmakuFont,
+				danmaku_font_size: danmakuFontSize,
+				danmaku_width_ratio: danmakuWidthRatio,
+				danmaku_horizontal_gap: danmakuHorizontalGap,
+				danmaku_lane_size: danmakuLaneSize,
+				danmaku_float_percentage: danmakuFloatPercentage,
+				danmaku_bottom_percentage: danmakuBottomPercentage,
+				danmaku_opacity: danmakuOpacity,
+				danmaku_bold: danmakuBold,
+				danmaku_outline: danmakuOutline,
+				danmaku_time_offset: danmakuTimeOffset,
+				// 并发控制设置
+				concurrent_video: concurrentVideo,
+				concurrent_page: concurrentPage,
+				rate_limit: rateLimit,
+				rate_duration: rateDuration,
+				// 其他设置
+				cdn_sorting: cdnSorting
 			};
 
 			const response = await api.updateConfig(params);
@@ -281,32 +447,411 @@
 									</Label>
 								</div>
 
-								{#if parallelDownloadEnabled}
-									<div class="space-y-2 ml-6">
-										<Label for="threads">下载线程数</Label>
-										<Input 
-											id="threads" 
-											type="number"
-											bind:value={parallelDownloadThreads} 
-											min="1"
-											max="16"
-											placeholder="4"
-										/>
-									</div>
+															{#if parallelDownloadEnabled}
+								<div class="space-y-2 ml-6">
+									<Label for="threads">下载线程数</Label>
+									<Input 
+										id="threads" 
+										type="number"
+										bind:value={parallelDownloadThreads} 
+										min="1"
+										max="16"
+										placeholder="4"
+									/>
+								</div>
+							{/if}
+						</div>
 
-									<div class="space-y-2 ml-6">
-										<Label for="min-size">最小文件大小（字节）</Label>
-										<Input 
-											id="min-size" 
-											type="number"
-											bind:value={parallelDownloadMinSize} 
-											min="0"
-											placeholder="10485760"
-										/>
-										<p class="text-sm text-muted-foreground">小于此大小的文件不使用多线程下载（默认 10MB）</p>
-									</div>
-								{/if}
+						<!-- 视频质量设置 -->
+						<div class="space-y-6">
+							<h2 class="text-lg font-semibold">视频质量设置</h2>
+							
+							<div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+								<div class="space-y-2">
+									<Label for="video-max-quality">视频最高质量</Label>
+									<select 
+										id="video-max-quality"
+										bind:value={videoMaxQuality}
+										class="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+									>
+										{#each videoQualityOptions as option}
+											<option value={option.value}>{option.label}</option>
+										{/each}
+									</select>
+								</div>
+
+								<div class="space-y-2">
+									<Label for="video-min-quality">视频最低质量</Label>
+									<select 
+										id="video-min-quality"
+										bind:value={videoMinQuality}
+										class="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+									>
+										{#each videoQualityOptions as option}
+											<option value={option.value}>{option.label}</option>
+										{/each}
+									</select>
+								</div>
+
+								<div class="space-y-2">
+									<Label for="audio-max-quality">音频最高质量</Label>
+									<select 
+										id="audio-max-quality"
+										bind:value={audioMaxQuality}
+										class="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+									>
+										{#each audioQualityOptions as option}
+											<option value={option.value}>{option.label}</option>
+										{/each}
+									</select>
+								</div>
+
+								<div class="space-y-2">
+									<Label for="audio-min-quality">音频最低质量</Label>
+									<select 
+										id="audio-min-quality"
+										bind:value={audioMinQuality}
+										class="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+									>
+										{#each audioQualityOptions as option}
+											<option value={option.value}>{option.label}</option>
+										{/each}
+									</select>
+								</div>
 							</div>
+
+							<div class="space-y-2">
+								<Label>编解码器优先级顺序</Label>
+								<p class="text-sm text-muted-foreground mb-3">拖拽以调整优先级，越靠前优先级越高。根据设备硬件解码支持情况选择：</p>
+								<div class="bg-blue-50 p-3 rounded-lg border border-blue-200 mb-3">
+									<div class="text-xs text-blue-700 space-y-2">
+										<div><strong>🎯 AVC (H.264)：</strong>兼容性最好，几乎所有设备都支持硬件解码，播放流畅，但文件体积较大</div>
+										<div><strong>🚀 HEV (H.265)：</strong>新一代编码，体积更小，需要较新设备硬件解码支持</div>
+										<div><strong>⚡ AV1：</strong>最新编码格式，压缩率最高，需要最新设备支持，软解可能卡顿</div>
+										<div class="pt-1 border-t border-blue-300 mt-2">
+											<strong>💡 推荐设置：</strong>如果设备较老或追求兼容性，将AVC放首位；如果设备支持新编码且网络较慢，可优先HEV或AV1
+										</div>
+									</div>
+								</div>
+								<div class="space-y-2">
+									{#each codecs as codec, index}
+										<div class="flex items-center gap-3 p-3 bg-gray-50 rounded-lg border cursor-move" 
+											 draggable="true"
+											 ondragstart={(e) => handleDragStart(e, index)}
+											 ondragover={handleDragOver}
+											 ondrop={(e) => handleDrop(e, index)}
+											 role="button"
+											 tabindex="0">
+											<div class="flex items-center gap-2 text-gray-400">
+												<svg class="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
+													<path d="M7 2a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2V4a2 2 0 0 0-2-2H7zM8 6h4v2H8V6zm0 4h4v2H8v-2z"/>
+												</svg>
+											</div>
+											<div class="flex items-center gap-2 flex-1">
+												<span class="w-6 h-6 bg-primary text-primary-foreground rounded-full flex items-center justify-center text-sm font-medium">
+													{index + 1}
+												</span>
+												<span class="font-medium">
+													{codecOptions.find(option => option.value === codec)?.label || codec}
+												</span>
+											</div>
+											<button 
+												type="button"
+												class="text-red-500 hover:text-red-700 p-1"
+												onclick={() => removeCodec(index)}
+												title="移除此编解码器"
+												aria-label="移除此编解码器">
+												<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+													<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+												</svg>
+											</button>
+										</div>
+									{/each}
+									
+									{#if codecs.length < codecOptions.length}
+										<div class="mt-2">
+											<select 
+												class="w-full p-2 border rounded-md text-sm"
+												onchange={handleAddCodec}
+												value="">
+												<option value="" disabled>添加编解码器...</option>
+												{#each codecOptions as option}
+													{#if !codecs.includes(option.value)}
+														<option value={option.value}>{option.label}</option>
+													{/if}
+												{/each}
+											</select>
+										</div>
+									{/if}
+								</div>
+							</div>
+
+							<div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+								<div class="flex items-center space-x-2">
+									<input 
+										type="checkbox"
+										id="no-dolby-video" 
+										bind:checked={noDolbyVideo}
+										class="h-4 w-4 rounded border-gray-300 text-primary focus:ring-primary"
+									/>
+									<Label for="no-dolby-video" class="text-sm">禁用杜比视界</Label>
+								</div>
+
+								<div class="flex items-center space-x-2">
+									<input 
+										type="checkbox"
+										id="no-dolby-audio" 
+										bind:checked={noDolbyAudio}
+										class="h-4 w-4 rounded border-gray-300 text-primary focus:ring-primary"
+									/>
+									<Label for="no-dolby-audio" class="text-sm">禁用杜比全景声</Label>
+								</div>
+
+								<div class="flex items-center space-x-2">
+									<input 
+										type="checkbox"
+										id="no-hdr" 
+										bind:checked={noHdr}
+										class="h-4 w-4 rounded border-gray-300 text-primary focus:ring-primary"
+									/>
+									<Label for="no-hdr" class="text-sm">禁用HDR</Label>
+								</div>
+
+								<div class="flex items-center space-x-2">
+									<input 
+										type="checkbox"
+										id="no-hires" 
+										bind:checked={noHires}
+										class="h-4 w-4 rounded border-gray-300 text-primary focus:ring-primary"
+									/>
+									<Label for="no-hires" class="text-sm">禁用Hi-Res音频</Label>
+								</div>
+							</div>
+						</div>
+
+						<!-- 弹幕设置 -->
+						<div class="space-y-6">
+							<h2 class="text-lg font-semibold">弹幕设置</h2>
+							
+							<div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+								<div class="space-y-2">
+									<Label for="danmaku-duration">弹幕持续时间（秒）</Label>
+									<Input 
+										id="danmaku-duration" 
+										type="number"
+										bind:value={danmakuDuration} 
+										min="1"
+										max="60"
+										step="0.1"
+										placeholder="15.0"
+									/>
+								</div>
+
+								<div class="space-y-2">
+									<Label for="danmaku-font">字体</Label>
+									<Input 
+										id="danmaku-font" 
+										bind:value={danmakuFont} 
+										placeholder="黑体"
+									/>
+								</div>
+
+								<div class="space-y-2">
+									<Label for="danmaku-font-size">字体大小</Label>
+									<Input 
+										id="danmaku-font-size" 
+										type="number"
+										bind:value={danmakuFontSize} 
+										min="10"
+										max="100"
+										placeholder="25"
+									/>
+								</div>
+
+								<div class="space-y-2">
+									<Label for="danmaku-width-ratio">宽度比例</Label>
+									<Input 
+										id="danmaku-width-ratio" 
+										type="number"
+										bind:value={danmakuWidthRatio} 
+										min="0.1"
+										max="3.0"
+										step="0.1"
+										placeholder="1.2"
+									/>
+								</div>
+
+								<div class="space-y-2">
+									<Label for="danmaku-horizontal-gap">水平间距</Label>
+									<Input 
+										id="danmaku-horizontal-gap" 
+										type="number"
+										bind:value={danmakuHorizontalGap} 
+										min="0"
+										max="100"
+										step="1"
+										placeholder="20.0"
+									/>
+								</div>
+
+								<div class="space-y-2">
+									<Label for="danmaku-lane-size">轨道高度</Label>
+									<Input 
+										id="danmaku-lane-size" 
+										type="number"
+										bind:value={danmakuLaneSize} 
+										min="10"
+										max="100"
+										placeholder="32"
+									/>
+								</div>
+
+								<div class="space-y-2">
+									<Label for="danmaku-float-percentage">滚动弹幕占比</Label>
+									<Input 
+										id="danmaku-float-percentage" 
+										type="number"
+										bind:value={danmakuFloatPercentage} 
+										min="0"
+										max="1"
+										step="0.1"
+										placeholder="0.5"
+									/>
+								</div>
+
+								<div class="space-y-2">
+									<Label for="danmaku-bottom-percentage">底部弹幕占比</Label>
+									<Input 
+										id="danmaku-bottom-percentage" 
+										type="number"
+										bind:value={danmakuBottomPercentage} 
+										min="0"
+										max="1"
+										step="0.1"
+										placeholder="0.3"
+									/>
+								</div>
+
+								<div class="space-y-2">
+									<Label for="danmaku-opacity">不透明度</Label>
+									<Input 
+										id="danmaku-opacity" 
+										type="number"
+										bind:value={danmakuOpacity} 
+										min="0"
+										max="100"
+										placeholder="76"
+									/>
+								</div>
+
+								<div class="space-y-2">
+									<Label for="danmaku-outline">描边宽度</Label>
+									<Input 
+										id="danmaku-outline" 
+										type="number"
+										bind:value={danmakuOutline} 
+										min="0"
+										max="5"
+										step="0.1"
+										placeholder="0.8"
+									/>
+								</div>
+
+								<div class="space-y-2">
+									<Label for="danmaku-time-offset">时间偏移（秒）</Label>
+									<Input 
+										id="danmaku-time-offset" 
+										type="number"
+										bind:value={danmakuTimeOffset} 
+										step="0.1"
+										placeholder="0.0"
+									/>
+								</div>
+
+								<div class="flex items-center space-x-2">
+									<input 
+										type="checkbox"
+										id="danmaku-bold" 
+										bind:checked={danmakuBold}
+										class="h-4 w-4 rounded border-gray-300 text-primary focus:ring-primary"
+									/>
+									<Label for="danmaku-bold" class="text-sm">加粗字体</Label>
+								</div>
+							</div>
+						</div>
+
+						<!-- 并发控制设置 -->
+						<div class="space-y-6">
+							<h2 class="text-lg font-semibold">并发控制设置</h2>
+							
+							<div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+								<div class="space-y-2">
+									<Label for="concurrent-video">同时处理视频数</Label>
+									<Input 
+										id="concurrent-video" 
+										type="number"
+										bind:value={concurrentVideo} 
+										min="1"
+										max="10"
+										placeholder="3"
+									/>
+								</div>
+
+								<div class="space-y-2">
+									<Label for="concurrent-page">每个视频并发分页数</Label>
+									<Input 
+										id="concurrent-page" 
+										type="number"
+										bind:value={concurrentPage} 
+										min="1"
+										max="10"
+										placeholder="2"
+									/>
+								</div>
+
+								<div class="space-y-2">
+									<Label for="rate-limit">请求频率限制</Label>
+									<Input 
+										id="rate-limit" 
+										type="number"
+										bind:value={rateLimit} 
+										min="1"
+										max="100"
+										placeholder="4"
+									/>
+									<p class="text-sm text-muted-foreground">每个时间窗口内的最大请求数</p>
+								</div>
+
+								<div class="space-y-2">
+									<Label for="rate-duration">时间窗口（毫秒）</Label>
+									<Input 
+										id="rate-duration" 
+										type="number"
+										bind:value={rateDuration} 
+										min="100"
+										max="5000"
+										placeholder="250"
+									/>
+									<p class="text-sm text-muted-foreground">请求频率限制的时间窗口</p>
+								</div>
+							</div>
+						</div>
+
+						<!-- 其他设置 -->
+						<div class="space-y-6">
+							<h2 class="text-lg font-semibold">其他设置</h2>
+							
+							<div class="flex items-center space-x-2">
+								<input 
+									type="checkbox"
+									id="cdn-sorting" 
+									bind:checked={cdnSorting}
+									class="h-4 w-4 rounded border-gray-300 text-primary focus:ring-primary"
+								/>
+								<Label for="cdn-sorting" class="text-sm">启用CDN排序</Label>
+								<p class="text-sm text-muted-foreground ml-2">优化下载节点选择</p>
+							</div>
+						</div>
 
 							<!-- 提交按钮 -->
 							<div class="flex {isMobile ? 'flex-col' : ''} gap-2 pt-4 border-t">
@@ -325,11 +870,73 @@
 						<div class="{isMobile ? 'w-full mt-6' : 'flex-1'}">
 							<div class="bg-white rounded-lg border {isMobile ? '' : 'h-full'} overflow-hidden flex flex-col {isMobile ? '' : 'sticky top-6'} max-h-[calc(100vh-200px)]">
 								<div class="p-4 border-b bg-gray-50">
-									<h3 class="text-base font-medium">📝 支持的模板变量</h3>
+									<h3 class="text-base font-medium">📖 配置说明与模板变量</h3>
 								</div>
 								
 								<div class="flex-1 overflow-y-auto p-4">
-									<div class="grid grid-cols-1 gap-4">
+									<div class="grid grid-cols-1 gap-6">
+										<!-- 配置项说明 -->
+										<div>
+											<h4 class="font-medium text-red-600 mb-3">🛠️ 配置项说明</h4>
+											<div class="space-y-4 text-sm">
+												<div class="bg-red-50 p-3 rounded-lg border border-red-200">
+													<h5 class="font-medium text-red-800 mb-2">文件命名模板</h5>
+													<div class="text-red-700 space-y-1">
+														<p><strong>video_name：</strong>视频文件夹名称，支持路径分隔符实现分类存储</p>
+														<p><strong>page_name：</strong>单P视频文件名</p>
+														<p><strong>multi_page_name：</strong>多P视频文件名，必须包含分页标识符</p>
+														<p><strong>bangumi_name：</strong>番剧文件名，建议使用 S01E01 格式</p>
+														<p><strong>folder_structure：</strong>文件夹结构模板</p>
+													</div>
+												</div>
+
+												<div class="bg-blue-50 p-3 rounded-lg border border-blue-200">
+													<h5 class="font-medium text-blue-800 mb-2">视频质量过滤</h5>
+													<div class="text-blue-700 space-y-1">
+														<p><strong>视频质量范围：</strong>8K > 4K > 1080P+ > 1080P60 > 1080P > 720P60 > 720P > 480P > 360P</p>
+														<p><strong>音频质量范围：</strong>Hi-Res > 320k > 128k > 64k，设置范围避免筛选不到符合要求的流</p>
+														<p><strong>编解码器优先级：</strong></p>
+														<p class="ml-3">• AVC(H.264): 兼容性最佳，硬解支持广泛，文件较大</p>
+														<p class="ml-3">• HEV(H.265): 压缩率更高，需要较新设备硬解支持</p>
+														<p class="ml-3">• AV1: 最新编码，压缩率最高，需要最新硬件支持</p>
+														<p><strong>杜比/HDR选项：</strong>杜比视界、杜比全景声、HDR视频流、Hi-Res音频流开关</p>
+													</div>
+												</div>
+
+												<div class="bg-green-50 p-3 rounded-lg border border-green-200">
+													<h5 class="font-medium text-green-800 mb-2">弹幕设置</h5>
+													<div class="text-green-700 space-y-1">
+														<p><strong>持续时间：</strong>弹幕在屏幕上显示的时间（秒）</p>
+														<p><strong>字体样式：</strong>字体、大小、加粗、描边等外观设置</p>
+														<p><strong>布局设置：</strong>轨道高度、间距、占比等位置控制</p>
+														<p><strong>时间偏移：</strong>正值延后弹幕，负值提前弹幕</p>
+													</div>
+												</div>
+
+												<div class="bg-purple-50 p-3 rounded-lg border border-purple-200">
+													<h5 class="font-medium text-purple-800 mb-2">并发控制</h5>
+													<div class="text-purple-700 space-y-1">
+														<p><strong>视频并发数：</strong>同时处理的视频数量（建议1-5）</p>
+														<p><strong>分页并发数：</strong>每个视频内的并发分页数（建议1-3）</p>
+														<p><strong>请求频率限制：</strong>防止API请求过频繁导致风控，调小limit可减少被限制</p>
+														<p><strong>总并行度：</strong>约等于 视频并发数 × 分页并发数</p>
+													</div>
+												</div>
+
+												<div class="bg-orange-50 p-3 rounded-lg border border-orange-200">
+													<h5 class="font-medium text-orange-800 mb-2">其他设置</h5>
+													<div class="text-orange-700 space-y-1">
+														<p><strong>扫描间隔：</strong>每次扫描下载的时间间隔（秒）</p>
+														<p><strong>NFO时间类型：</strong>favtime（收藏时间）或 pubtime（发布时间）</p>
+														<p><strong>时间格式：</strong>控制时间变量在文件名中的显示格式</p>
+														<p><strong>CDN排序：</strong>启用后优先使用质量更高的CDN，可能提升下载速度</p>
+														<p><strong>多线程下载：</strong>启用aria2多线程下载功能</p>
+													</div>
+												</div>
+											</div>
+										</div>
+
+										<!-- 模板变量说明 -->
 										<div>
 											<h4 class="font-medium text-blue-600 mb-2">🎬 视频变量</h4>
 											<div class="space-y-1 text-sm">

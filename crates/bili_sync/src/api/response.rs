@@ -115,7 +115,36 @@ pub struct ConfigResponse {
     // 多线程下载配置
     pub parallel_download_enabled: bool,
     pub parallel_download_threads: usize,
-    pub parallel_download_min_size: u64,
+    // 视频质量设置
+    pub video_max_quality: String,
+    pub video_min_quality: String,
+    pub audio_max_quality: String,
+    pub audio_min_quality: String,
+    pub codecs: Vec<String>,
+    pub no_dolby_video: bool,
+    pub no_dolby_audio: bool,
+    pub no_hdr: bool,
+    pub no_hires: bool,
+    // 弹幕设置
+    pub danmaku_duration: f64,
+    pub danmaku_font: String,
+    pub danmaku_font_size: u32,
+    pub danmaku_width_ratio: f64,
+    pub danmaku_horizontal_gap: f64,
+    pub danmaku_lane_size: u32,
+    pub danmaku_float_percentage: f64,
+    pub danmaku_bottom_percentage: f64,
+    pub danmaku_opacity: u8,
+    pub danmaku_bold: bool,
+    pub danmaku_outline: f64,
+    pub danmaku_time_offset: f64,
+    // 并发控制设置
+    pub concurrent_video: usize,
+    pub concurrent_page: usize,
+    pub rate_limit: Option<usize>,
+    pub rate_duration: Option<u64>,
+    // 其他设置
+    pub cdn_sorting: bool,
 }
 
 // 更新配置的响应结构体
@@ -133,7 +162,8 @@ pub struct BangumiSeasonInfo {
     pub full_title: Option<String>, // 完整的番剧标题
     pub media_id: Option<String>,
     pub cover: Option<String>,
-    pub episode_count: Option<i32>, // 集数
+    pub episode_count: Option<i32>,  // 集数
+    pub description: Option<String>, // 简介
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, utoipa::ToSchema)]

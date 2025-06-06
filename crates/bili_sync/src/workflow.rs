@@ -16,8 +16,8 @@ use tracing::{debug, error, info, warn};
 use crate::adapter::{video_source_from, Args, VideoSource, VideoSourceEnum};
 use crate::bilibili::{BestStream, BiliClient, BiliError, Dimension, PageInfo, Video, VideoInfo};
 use crate::config::{PathSafeTemplate, ARGS, CONFIG, TEMPLATE};
-use crate::downloader::Downloader;
 use crate::error::{DownloadAbortError, ExecutionStatus, ProcessPageError};
+use crate::unified_downloader::UnifiedDownloader;
 use crate::utils::format_arg::{page_format_args, video_format_args};
 use crate::utils::model::{
     create_pages, create_videos, filter_unfilled_videos, filter_unhandled_video_pages, update_pages_model,
@@ -25,6 +25,20 @@ use crate::utils::model::{
 };
 use crate::utils::nfo::NFO;
 use crate::utils::status::{PageStatus, VideoStatus, STATUS_OK};
+
+// 新增：番剧季信息结构体
+#[derive(Debug, Clone)]
+struct SeasonInfo {
+    title: String,
+    episodes: Vec<EpisodeInfo>,
+}
+
+#[derive(Debug, Clone)]
+struct EpisodeInfo {
+    ep_id: String,
+    cid: i64,
+    duration: u32, // 秒
+}
 
 /// 创建一个配置了 truncate 辅助函数的 handlebars 实例
 fn create_handlebars_with_helpers() -> handlebars::Handlebars<'static> {
@@ -60,19 +74,32 @@ pub async fn process_video_source(
     bili_client: &BiliClient,
     path: &Path,
     connection: &DatabaseConnection,
+    downloader: &UnifiedDownloader,
 ) -> Result<usize> {
     // 记录当前处理的参数和路径
     if let Args::Bangumi {
-        season_id: _,
+        season_id,
         media_id: _,
         ep_id: _,
     } = args
     {
-        // 获取番剧标题，从路径中提取
-        let title = path
-            .file_name()
-            .map(|name| name.to_string_lossy().to_string())
-            .unwrap_or_else(|| "未知番剧".to_string());
+        // 尝试从API获取真实的番剧标题
+        let title = if let Some(season_id) = season_id {
+            // 如果有season_id，尝试获取番剧标题
+            get_season_title_from_api(bili_client, season_id)
+                .await
+                .unwrap_or_else(|| {
+                    // API获取失败，回退到路径名
+                    path.file_name()
+                        .map(|name| name.to_string_lossy().to_string())
+                        .unwrap_or_else(|| "未知番剧".to_string())
+                })
+        } else {
+            // 没有season_id，使用路径名
+            path.file_name()
+                .map(|name| name.to_string_lossy().to_string())
+                .unwrap_or_else(|| "未知番剧".to_string())
+        };
         info!("处理番剧下载: {}", title);
     }
 
@@ -135,11 +162,11 @@ pub async fn process_video_source(
         warn!("已开启仅扫描模式，跳过视频下载..");
     } else {
         // 从数据库中查找所有未下载的视频与分页，下载并处理
-        if let Err(e) = download_unprocessed_videos(bili_client, &video_source, connection).await {
+        if let Err(e) = download_unprocessed_videos(bili_client, &video_source, connection, downloader).await {
             let error_msg = format!("{:#}", e);
             if retry_with_refresh(error_msg).await.is_ok() {
                 // 刷新成功，重试
-                download_unprocessed_videos(bili_client, &video_source, connection).await?;
+                download_unprocessed_videos(bili_client, &video_source, connection, downloader).await?;
             } else {
                 return Err(e);
             }
@@ -215,77 +242,123 @@ pub async fn fetch_video_details(
     let (bangumi_videos, normal_videos): (Vec<_>, Vec<_>) =
         videos_model.into_iter().partition(|v| v.source_type == Some(1));
 
-    // 并发获取所有番剧的信息
+    // 优化后的番剧信息获取 - 使用数据库缓存和按季分组
     if !bangumi_videos.is_empty() {
-        info!("开始并发获取 {} 个番剧的详细信息", bangumi_videos.len());
-        let bangumi_info_futures: FuturesUnordered<_> = bangumi_videos
-            .iter()
-            .filter_map(|video| {
-                video.ep_id.as_ref().map(|ep_id| {
-                    let ep_id = ep_id.clone();
-                    let name = video.name.clone();
-                    async move {
-                        let info = get_bangumi_info_from_api(bili_client, &ep_id).await;
-                        (ep_id, name, info)
+        info!("开始处理 {} 个番剧视频", bangumi_videos.len());
+
+        // 按 season_id 分组番剧视频
+        let mut videos_by_season: HashMap<String, Vec<video::Model>> = HashMap::new();
+        let mut videos_without_season = Vec::new();
+
+        for video in bangumi_videos {
+            if let Some(season_id) = &video.season_id {
+                videos_by_season.entry(season_id.clone()).or_default().push(video);
+            } else {
+                videos_without_season.push(video);
+            }
+        }
+
+        // 处理每个季
+        for (season_id, videos) in videos_by_season {
+            // 首先尝试获取番剧季标题用于日志显示
+            let season_title = get_season_title_from_api(bili_client, &season_id).await;
+            let display_name = season_title.as_deref().unwrap_or(&season_id);
+
+            info!(
+                "处理番剧季 {} 「{}」的 {} 个视频",
+                season_id,
+                display_name,
+                videos.len()
+            );
+
+            // 1. 首先从现有数据库中查找该季已有的分集信息
+            let mut existing_episodes = get_existing_episodes_for_season(connection, &season_id, bili_client).await?;
+
+            // 2. 检查哪些ep_id还没有信息
+            let missing_ep_ids: Vec<String> = videos
+                .iter()
+                .filter_map(|v| v.ep_id.as_ref())
+                .filter(|ep_id| !existing_episodes.contains_key(*ep_id))
+                .cloned()
+                .collect();
+
+            // 3. 只对缺失的信息发起API请求（每个季只请求一次）
+            if !missing_ep_ids.is_empty() {
+                info!(
+                    "需要从API获取番剧季 {} 「{}」的信息（包含 {} 个新分集）",
+                    season_id,
+                    display_name,
+                    missing_ep_ids.len()
+                );
+
+                match get_season_info_from_api(bili_client, &season_id).await {
+                    Ok(season_info) => {
+                        // 将新获取的信息添加到映射中
+                        for episode in season_info.episodes {
+                            existing_episodes.insert(episode.ep_id, (episode.cid, episode.duration));
+                        }
+                        info!("成功获取番剧季 {} 「{}」的完整信息", season_id, season_info.title);
                     }
-                })
-            })
-            .collect();
-
-        // 收集所有番剧信息
-        let bangumi_infos: HashMap<String, (i64, u32)> = bangumi_info_futures
-            .collect::<Vec<_>>()
-            .await
-            .into_iter()
-            .filter_map(|(ep_id, name, info)| match info {
-                Some(info) => {
-                    debug!("成功获取番剧 {} (EP{}) 的信息", name, ep_id);
-                    Some((ep_id, info))
-                }
-                None => {
-                    warn!("无法获取番剧 {} (EP{}) 的信息", name, ep_id);
-                    None
-                }
-            })
-            .collect();
-
-        // 批量处理番剧视频
-        for video_model in bangumi_videos {
-            let txn = connection.begin().await?;
-
-            // 从预先获取的信息中查找
-            let (actual_cid, duration) = if let Some(ep_id) = &video_model.ep_id {
-                match bangumi_infos.get(ep_id).copied() {
-                    Some(info) => info,
-                    None => {
-                        error!("番剧 {} (EP{}) 信息获取失败，将跳过弹幕下载", &video_model.name, ep_id);
-                        // 使用 -1 作为特殊标记，表示信息获取失败
-                        (-1, 1440) // CID为-1时，后续弹幕下载会自动跳过
+                    Err(e) => {
+                        error!("获取番剧季 {} 「{}」信息失败: {}", season_id, display_name, e);
+                        // 即使API失败，已有缓存的分集仍可正常处理
                     }
                 }
             } else {
-                error!("番剧 {} 缺少EP ID，无法获取详细信息，将跳过弹幕下载", &video_model.name);
-                (-1, 1440)
-            };
+                info!(
+                    "番剧季 {} 「{}」的所有分集信息已缓存，无需API请求",
+                    season_id, display_name
+                );
+            }
 
-            let page_info = PageInfo {
-                cid: actual_cid,
-                page: 1,
-                name: video_model.name.clone(),
-                duration, // 已经是秒了
-                first_frame: None,
-                dimension: None,
-            };
+            // 4. 使用合并后的信息处理所有视频
+            for video_model in videos {
+                if let Err(e) = process_bangumi_video(video_model, &existing_episodes, connection, video_source).await {
+                    error!("处理番剧视频失败: {}", e);
+                }
+            }
+        }
 
-            create_pages(vec![page_info], &video_model, &txn).await?;
+        // 处理没有season_id的番剧视频（回退到原逻辑）
+        if !videos_without_season.is_empty() {
+            warn!(
+                "发现 {} 个缺少season_id的番剧视频，使用原有逻辑处理",
+                videos_without_season.len()
+            );
+            for video_model in videos_without_season {
+                let txn = connection.begin().await?;
 
-            // 更新视频模型，标记为单页并设置已处理
-            let mut video_active_model: bili_sync_entity::video::ActiveModel = video_model.into();
-            video_source.set_relation_id(&mut video_active_model);
-            video_active_model.single_page = Set(Some(true)); // 番剧的每一集都是单页
-            video_active_model.tags = Set(Some(serde_json::Value::Array(vec![]))); // 空标签数组
-            video_active_model.save(&txn).await?;
-            txn.commit().await?;
+                let (actual_cid, duration) = if let Some(ep_id) = &video_model.ep_id {
+                    match get_bangumi_info_from_api(bili_client, ep_id).await {
+                        Some(info) => info,
+                        None => {
+                            error!("番剧 {} (EP{}) 信息获取失败，将跳过弹幕下载", &video_model.name, ep_id);
+                            (-1, 1440)
+                        }
+                    }
+                } else {
+                    error!("番剧 {} 缺少EP ID，无法获取详细信息", &video_model.name);
+                    (-1, 1440)
+                };
+
+                let page_info = PageInfo {
+                    cid: actual_cid,
+                    page: 1,
+                    name: video_model.name.clone(),
+                    duration,
+                    first_frame: None,
+                    dimension: None,
+                };
+
+                create_pages(vec![page_info], &video_model, &txn).await?;
+
+                let mut video_active_model: bili_sync_entity::video::ActiveModel = video_model.into();
+                video_source.set_relation_id(&mut video_active_model);
+                video_active_model.single_page = Set(Some(true));
+                video_active_model.tags = Set(Some(serde_json::Value::Array(vec![])));
+                video_active_model.save(&txn).await?;
+                txn.commit().await?;
+            }
         }
     }
 
@@ -332,10 +405,10 @@ pub async fn download_unprocessed_videos(
     bili_client: &BiliClient,
     video_source: &VideoSourceEnum,
     connection: &DatabaseConnection,
+    downloader: &UnifiedDownloader,
 ) -> Result<()> {
     video_source.log_download_video_start();
     let semaphore = Semaphore::new(CONFIG.concurrent_limit.video);
-    let downloader = Downloader::new(bili_client.client.clone());
     let unhandled_videos_pages = filter_unhandled_video_pages(video_source.filter_expr(), connection).await?;
 
     // 只有当有未处理视频时才显示日志
@@ -357,7 +430,7 @@ pub async fn download_unprocessed_videos(
                 pages_model,
                 connection,
                 &semaphore,
-                &downloader,
+                downloader,
                 should_download_upper,
             )
         })
@@ -396,7 +469,7 @@ pub struct DownloadPageArgs<'a> {
     pub video_model: &'a video::Model,
     pub pages: Vec<page::Model>,
     pub connection: &'a DatabaseConnection,
-    pub downloader: &'a Downloader,
+    pub downloader: &'a UnifiedDownloader,
     pub base_path: &'a Path,
 }
 
@@ -408,7 +481,7 @@ pub async fn download_video_pages(
     pages: Vec<page::Model>,
     connection: &DatabaseConnection,
     semaphore: &Semaphore,
-    downloader: &Downloader,
+    downloader: &UnifiedDownloader,
     should_download_upper: bool,
 ) -> Result<video::ActiveModel> {
     let _permit = semaphore.acquire().await.context("acquire semaphore failed")?;
@@ -637,7 +710,7 @@ pub async fn download_page(
     page_model: page::Model,
     connection: &DatabaseConnection,
     semaphore: &Semaphore,
-    downloader: &Downloader,
+    downloader: &UnifiedDownloader,
     base_path: &Path,
 ) -> Result<page::ActiveModel> {
     let _permit = semaphore.acquire().await.context("acquire semaphore failed")?;
@@ -824,7 +897,7 @@ pub async fn fetch_page_poster(
     should_run: bool,
     video_model: &video::Model,
     page_model: &page::Model,
-    downloader: &Downloader,
+    downloader: &UnifiedDownloader,
     poster_path: PathBuf,
     fanart_path: Option<PathBuf>,
 ) -> Result<ExecutionStatus> {
@@ -842,63 +915,18 @@ pub async fn fetch_page_poster(
             None => video_model.cover.as_str(),
         }
     };
-    downloader.fetch(url, &poster_path).await?;
+    downloader.fetch_with_fallback(&[url], &poster_path).await?;
     if let Some(fanart_path) = fanart_path {
         fs::copy(&poster_path, &fanart_path).await?;
     }
     Ok(ExecutionStatus::Succeeded)
 }
 
-/// 下载单个流文件并返回文件大小
-async fn download_stream(
-    downloader: &Downloader,
-    urls: &[&str],
-    path: &Path,
-    use_parallel: bool,
-    threads: usize,
-) -> Result<u64> {
-    // 获取多线程下载配置
-    let parallel_config = &CONFIG.concurrent_limit.parallel_download;
-
-    // 智能判断是否使用多线程下载
-    let should_use_parallel = if use_parallel && parallel_config.enabled {
-        // 先尝试获取文件大小来判断是否需要多线程下载
-        if let Some(url) = urls.first() {
-            match downloader.get_content_length(url).await {
-                Ok(size) => {
-                    let use_parallel = size >= parallel_config.min_size;
-                    if use_parallel {
-                        debug!(
-                            "文件大小 {:.2} MB >= 最小阈值 {:.2} MB，使用多线程下载",
-                            size as f64 / 1_048_576.0,
-                            parallel_config.min_size as f64 / 1_048_576.0
-                        );
-                    } else {
-                        debug!(
-                            "文件大小 {:.2} MB < 最小阈值 {:.2} MB，使用普通下载",
-                            size as f64 / 1_048_576.0,
-                            parallel_config.min_size as f64 / 1_048_576.0
-                        );
-                    }
-                    use_parallel
-                }
-                Err(_) => {
-                    debug!("无法获取文件大小，使用普通下载");
-                    false
-                }
-            }
-        } else {
-            false
-        }
-    } else {
-        false
-    };
-
-    let download_result = if should_use_parallel {
-        downloader.fetch_with_fallback_parallel(urls, path, threads).await
-    } else {
-        downloader.fetch_with_fallback(urls, path).await
-    };
+/// 下载单个流文件并返回文件大小（使用UnifiedDownloader智能选择下载方式）
+async fn download_stream(downloader: &UnifiedDownloader, urls: &[&str], path: &Path) -> Result<u64> {
+    // 直接使用UnifiedDownloader，它会智能选择aria2或原生下载器
+    // aria2本身就支持多线程，原生下载器作为备选方案使用单线程
+    let download_result = downloader.fetch_with_fallback(urls, path).await;
 
     match download_result {
         Ok(_) => {
@@ -924,7 +952,7 @@ pub async fn fetch_page_video(
     should_run: bool,
     bili_client: &BiliClient,
     video_model: &video::Model,
-    downloader: &Downloader,
+    downloader: &UnifiedDownloader,
     page_info: &PageInfo,
     page_path: &Path,
 ) -> Result<ExecutionStatus> {
@@ -968,10 +996,7 @@ pub async fn fetch_page_video(
         }
     }
 
-    // 获取多线程下载配置
-    let parallel_config = &CONFIG.concurrent_limit.parallel_download;
-    let use_parallel = parallel_config.enabled;
-    let threads = parallel_config.threads;
+    // UnifiedDownloader会自动选择最佳下载方式
 
     // 记录开始时间
     let start_time = std::time::Instant::now();
@@ -980,14 +1005,14 @@ pub async fn fetch_page_video(
     let total_bytes = match streams {
         BestStream::Mixed(mix_stream) => {
             let urls = mix_stream.urls();
-            download_stream(downloader, &urls, page_path, use_parallel, threads).await?
+            download_stream(downloader, &urls, page_path).await?
         }
         BestStream::VideoAudio {
             video: video_stream,
             audio: None,
         } => {
             let urls = video_stream.urls();
-            download_stream(downloader, &urls, page_path, use_parallel, threads).await?
+            download_stream(downloader, &urls, page_path).await?
         }
         BestStream::VideoAudio {
             video: video_stream,
@@ -999,7 +1024,7 @@ pub async fn fetch_page_video(
             );
 
             let video_urls = video_stream.urls();
-            let video_size = download_stream(downloader, &video_urls, &tmp_video_path, use_parallel, threads)
+            let video_size = download_stream(downloader, &video_urls, &tmp_video_path)
                 .await
                 .map_err(|e| {
                     error!("视频流下载失败: {:#}", e);
@@ -1007,7 +1032,7 @@ pub async fn fetch_page_video(
                 })?;
 
             let audio_urls = audio_stream.urls();
-            let audio_size = download_stream(downloader, &audio_urls, &tmp_audio_path, use_parallel, threads)
+            let audio_size = download_stream(downloader, &audio_urls, &tmp_audio_path)
                 .await
                 .map_err(|e| {
                     error!("音频流下载失败: {:#}", e);
@@ -1162,14 +1187,16 @@ pub async fn generate_page_nfo(
 pub async fn fetch_video_poster(
     should_run: bool,
     video_model: &video::Model,
-    downloader: &Downloader,
+    downloader: &UnifiedDownloader,
     poster_path: PathBuf,
     fanart_path: PathBuf,
 ) -> Result<ExecutionStatus> {
     if !should_run {
         return Ok(ExecutionStatus::Skipped);
     }
-    downloader.fetch(&video_model.cover, &poster_path).await?;
+    downloader
+        .fetch_with_fallback(&[&video_model.cover], &poster_path)
+        .await?;
     fs::copy(&poster_path, &fanart_path).await?;
     Ok(ExecutionStatus::Succeeded)
 }
@@ -1177,7 +1204,7 @@ pub async fn fetch_video_poster(
 pub async fn fetch_upper_face(
     should_run: bool,
     video_model: &video::Model,
-    downloader: &Downloader,
+    downloader: &UnifiedDownloader,
     upper_face_path: PathBuf,
 ) -> Result<ExecutionStatus> {
     if !should_run {
@@ -1191,7 +1218,9 @@ pub async fn fetch_upper_face(
         return Ok(ExecutionStatus::Ignored(anyhow::anyhow!("无效的作者头像URL")));
     }
 
-    downloader.fetch(upper_face_url, &upper_face_path).await?;
+    downloader
+        .fetch_with_fallback(&[upper_face_url], &upper_face_path)
+        .await?;
     Ok(ExecutionStatus::Succeeded)
 }
 
@@ -1338,6 +1367,151 @@ async fn get_bangumi_info_from_api(bili_client: &BiliClient, ep_id: &str) -> Opt
     }
 
     None
+}
+
+/// 从现有数据库中获取该季已有的分集信息
+async fn get_existing_episodes_for_season(
+    connection: &DatabaseConnection,
+    season_id: &str,
+    bili_client: &BiliClient,
+) -> Result<HashMap<String, (i64, u32)>> {
+    use sea_orm::*;
+
+    // 查询该season_id下所有已有page信息的视频
+    let existing_data = video::Entity::find()
+        .filter(video::Column::SeasonId.eq(season_id))
+        .filter(video::Column::SourceType.eq(1)) // 番剧类型
+        .filter(video::Column::EpId.is_not_null())
+        .find_with_related(page::Entity)
+        .all(connection)
+        .await?;
+
+    let mut episodes_map = HashMap::new();
+
+    for (video, pages) in existing_data {
+        if let Some(ep_id) = video.ep_id {
+            // 每个番剧视频通常只有一个page（单集）
+            if let Some(page) = pages.first() {
+                episodes_map.insert(ep_id, (page.cid, page.duration));
+            }
+        }
+    }
+
+    if !episodes_map.is_empty() {
+        // 尝试获取番剧标题用于显示
+        let season_title = get_season_title_from_api(bili_client, season_id).await;
+        let display_name = season_title.as_deref().unwrap_or(season_id);
+
+        info!(
+            "从数据库缓存中找到季 {} 「{}」的 {} 个分集信息",
+            season_id,
+            display_name,
+            episodes_map.len()
+        );
+    }
+
+    Ok(episodes_map)
+}
+
+/// 从API获取整个番剧季的信息（单次请求）
+async fn get_season_info_from_api(bili_client: &BiliClient, season_id: &str) -> Result<SeasonInfo> {
+    let url = format!("https://api.bilibili.com/pgc/view/web/season?season_id={}", season_id);
+
+    let res = bili_client
+        .get(&url)
+        .await
+        .with_context(|| format!("请求番剧季 {} 信息失败", season_id))?;
+
+    if !res.status().is_success() {
+        bail!("获取番剧季信息失败，HTTP状态码: {}", res.status());
+    }
+
+    let json: serde_json::Value = res
+        .json()
+        .await
+        .with_context(|| format!("解析番剧季 {} 响应失败", season_id))?;
+
+    if json["code"].as_i64().unwrap_or(-1) != 0 {
+        bail!("API返回错误: {}", json["message"].as_str().unwrap_or("未知错误"));
+    }
+
+    let result = &json["result"];
+    // 获取番剧标题
+    let title = result["title"]
+        .as_str()
+        .unwrap_or(&format!("番剧{}", season_id))
+        .to_string();
+
+    let episodes: Vec<EpisodeInfo> = result["episodes"]
+        .as_array()
+        .context("找不到分集列表")?
+        .iter()
+        .filter_map(|ep| {
+            let ep_id = ep["id"].as_i64()?.to_string();
+            let cid = ep["cid"].as_i64()?;
+            let duration_ms = ep["duration"].as_i64()?;
+            let duration = (duration_ms / 1000) as u32;
+
+            Some(EpisodeInfo { ep_id, cid, duration })
+        })
+        .collect();
+
+    info!(
+        "成功获取番剧季 {} 「{}」信息，包含 {} 集",
+        season_id,
+        title,
+        episodes.len()
+    );
+
+    Ok(SeasonInfo { title, episodes })
+}
+
+/// 处理单个番剧视频
+async fn process_bangumi_video(
+    video_model: video::Model,
+    episodes_map: &HashMap<String, (i64, u32)>,
+    connection: &DatabaseConnection,
+    video_source: &VideoSourceEnum,
+) -> Result<()> {
+    let txn = connection.begin().await?;
+
+    let (actual_cid, duration) = if let Some(ep_id) = &video_model.ep_id {
+        match episodes_map.get(ep_id) {
+            Some(&info) => {
+                debug!("使用缓存信息: EP{} -> CID={}, Duration={}s", ep_id, info.0, info.1);
+                info
+            }
+            None => {
+                warn!("找不到分集 {} 的信息，使用默认值", ep_id);
+                (-1, 1440) // 默认值
+            }
+        }
+    } else {
+        error!("番剧 {} 缺少EP ID", video_model.name);
+        (-1, 1440)
+    };
+
+    let page_info = PageInfo {
+        cid: actual_cid,
+        page: 1,
+        name: video_model.name.clone(),
+        duration,
+        first_frame: None,
+        dimension: None,
+    };
+
+    // 创建page记录（这里会自动缓存cid和duration到数据库）
+    create_pages(vec![page_info], &video_model, &txn).await?;
+
+    // 更新视频状态
+    let mut video_active_model: bili_sync_entity::video::ActiveModel = video_model.into();
+    video_source.set_relation_id(&mut video_active_model);
+    video_active_model.single_page = Set(Some(true)); // 番剧的每一集都是单页
+    video_active_model.tags = Set(Some(serde_json::Value::Array(vec![]))); // 空标签数组
+    video_active_model.save(&txn).await?;
+
+    txn.commit().await?;
+    Ok(())
 }
 
 /// 获取特定视频源的视频数量

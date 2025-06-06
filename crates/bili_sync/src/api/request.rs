@@ -66,7 +66,36 @@ pub struct UpdateConfigRequest {
     // 多线程下载配置
     pub parallel_download_enabled: Option<bool>,
     pub parallel_download_threads: Option<usize>,
-    pub parallel_download_min_size: Option<u64>,
+    // 视频质量设置
+    pub video_max_quality: Option<String>,
+    pub video_min_quality: Option<String>,
+    pub audio_max_quality: Option<String>,
+    pub audio_min_quality: Option<String>,
+    pub codecs: Option<Vec<String>>,
+    pub no_dolby_video: Option<bool>,
+    pub no_dolby_audio: Option<bool>,
+    pub no_hdr: Option<bool>,
+    pub no_hires: Option<bool>,
+    // 弹幕设置
+    pub danmaku_duration: Option<f64>,
+    pub danmaku_font: Option<String>,
+    pub danmaku_font_size: Option<u32>,
+    pub danmaku_width_ratio: Option<f64>,
+    pub danmaku_horizontal_gap: Option<f64>,
+    pub danmaku_lane_size: Option<u32>,
+    pub danmaku_float_percentage: Option<f64>,
+    pub danmaku_bottom_percentage: Option<f64>,
+    pub danmaku_opacity: Option<u8>,
+    pub danmaku_bold: Option<bool>,
+    pub danmaku_outline: Option<f64>,
+    pub danmaku_time_offset: Option<f64>,
+    // 并发控制设置
+    pub concurrent_video: Option<usize>,
+    pub concurrent_page: Option<usize>,
+    pub rate_limit: Option<usize>,
+    pub rate_duration: Option<u64>,
+    // 其他设置
+    pub cdn_sorting: Option<bool>,
 }
 
 #[derive(Debug, Deserialize, ToSchema)]

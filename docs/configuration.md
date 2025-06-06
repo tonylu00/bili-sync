@@ -113,7 +113,7 @@ UP 主头像和信息的保存位置。对于使用 Emby、Jellyfin 媒体服务
 
 ### `video_min_quality`
 
-视频流允许的最低质量。
+视频流允许的最低质量。可选值包括：`Quality8k`, `Quality4k`, `Quality1080pplus`, `Quality1080p60`, `Quality1080p`, `Quality720p60`, `Quality720p`, `Quality480p`, `Quality360p`。
 
 ### `audio_max_quality`
 
@@ -121,7 +121,7 @@ UP 主头像和信息的保存位置。对于使用 Emby、Jellyfin 媒体服务
 
 ### `audio_min_quality`
 
-音频流允许的最低质量。
+音频流允许的最低质量。可选值包括：`QualityHiRES`, `Quality320k`, `Quality128k`, `Quality64k`。
 
 ### `codecs`
 
@@ -189,7 +189,7 @@ UP 主头像和信息的保存位置。对于使用 Emby、Jellyfin 媒体服务
 
 ### `opacity`
 
-透明度，取值范围为 0-255。透明度可以通过 opacity / 255 计算得到。
+透明度，取值范围为 0-100。
 
 ### `bold`
 
@@ -272,3 +272,23 @@ duration = 250
 season_id = "98757"
 path = "D:/Downloads/假面骑士利维斯_往事_假面骑士贝尔"
 download_all_seasons = true
+
+## Aria2 多线程下载配置
+
+这些选项用于控制 `aria2` 下载器的行为。
+
+### `parallel_download_enabled`
+
+是否启用 `aria2` 进行多线程下载，`true` 为启用，`false` 为禁用。启用后，所有视频和音频的下载将由 `aria2` 接管。
+
+### `parallel_download_threads`
+
+`aria2` 的下载线程数。此设置仅在 `parallel_download_enabled` 为 `true` 时生效。建议设置为 CPU 核心数的 1-2 倍，或根据网络情况调整。
+
+## `filter_option`
+
+过滤选项，用于设置程序的过滤规则，程序会从过滤结果中选择最优的视频、音频流下载。
+
+这些内容的可选值可前往 [analyzer.rs](https://github.com/amtoaer/bili-sync/blob/24d0da0bf3ea65fd45d07587e4dcdbb24d11a589/crates/bili_sync/src/bilibili/analyzer.rs#L10-L55) 中查看。
+
+注意将过滤范围设置过小可能导致筛选不到符合要求的流导致下载失败，建议谨慎修改。

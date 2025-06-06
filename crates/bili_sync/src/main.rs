@@ -3,6 +3,7 @@ extern crate tracing;
 
 mod adapter;
 mod api;
+mod aria2_downloader;
 mod bilibili;
 mod config;
 mod database;
@@ -10,6 +11,7 @@ mod downloader;
 mod error;
 mod initialization;
 mod task;
+mod unified_downloader;
 mod utils;
 mod workflow;
 

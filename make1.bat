@@ -244,13 +244,43 @@ goto end
 
 :clean
 echo 正在清理构建文件...
+
+echo 清理 Rust 构建文件...
 cargo clean
+if exist "target" rmdir /s /q "target"
+
+echo 清理前端构建文件...
 if exist "web\build" rmdir /s /q "web\build"
 if exist "web\.svelte-kit" rmdir /s /q "web\.svelte-kit"
 if exist "web\node_modules" rmdir /s /q "web\node_modules"
+if exist "web\package-lock.json" del /q "web\package-lock.json"
+if exist "web\.npm" rmdir /s /q "web\.npm"
+
+echo 清理文档构建文件...
 if exist "docs\.vitepress\dist" rmdir /s /q "docs\.vitepress\dist"
+if exist "docs\.vitepress\cache" rmdir /s /q "docs\.vitepress\cache"
 if exist "docs\node_modules" rmdir /s /q "docs\node_modules"
-echo 清理完成
+if exist "docs\package-lock.json" del /q "docs\package-lock.json"
+if exist "docs\.npm" rmdir /s /q "docs\.npm"
+
+echo 清理临时文件和缓存...
+if exist "temp_package" rmdir /s /q "temp_package"
+if exist "*.tmp" del /q "*.tmp"
+if exist "*.log" del /q "*.log"
+if exist ".DS_Store" del /q ".DS_Store"
+if exist "Thumbs.db" del /q "Thumbs.db"
+
+echo 清理 aria2 相关文件...
+if exist "aria2c.exe" del /q "aria2c.exe"
+if exist "aria2c" del /q "aria2c"
+if exist "aria2-*.zip" del /q "aria2-*.zip"
+if exist "aria2-*.tar.bz2" del /q "aria2-*.tar.bz2"
+if exist "aria2-*.dmg" del /q "aria2-*.dmg"
+
+echo 清理包文件...
+if exist "bili-sync-source-*.zip" del /q "bili-sync-source-*.zip"
+
+echo 彻底清理完成
 goto end
 
 :package

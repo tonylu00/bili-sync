@@ -5,6 +5,11 @@
 > 当前最新程序版本为 v2.7.0，文档将始终与最新程序版本保持一致。
 
 > [!IMPORTANT]
+> **项目来源说明**
+> 
+> 本项目 (`qq1582185982/bili-sync-01`) 是从原作者 [amtoaer/bili-sync](https://github.com/amtoaer/bili-sync) 的项目 `fork` 并进行大量更新和优化的版本。我们对原作者的贡献表示感谢，并在此基础上持续迭代。
+
+> [!NOTE]
 > **重大架构升级！** 从 v2.6.x 开始，视频源配置已完全迁移到数据库管理，并提供现代化的 Web 管理界面。如果您从旧版本升级，请参阅 [配置迁移指南](../MIGRATION_GUIDE.md)。
 
 bili-sync 是一款专为 NAS 用户编写的哔哩哔哩同步工具，由 Rust & Tokio 驱动。

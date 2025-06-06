@@ -30,9 +30,6 @@ pub struct ParallelDownloadConfig {
     /// 每个文件的下载线程数
     #[serde(default = "default_parallel_download_threads")]
     pub threads: usize,
-    /// 最小文件大小（字节），小于此大小的文件不使用多线程下载
-    #[serde(default = "default_parallel_download_min_size")]
-    pub min_size: u64,
 }
 
 fn default_parallel_download_enabled() -> bool {
@@ -43,16 +40,11 @@ fn default_parallel_download_threads() -> usize {
     4
 }
 
-fn default_parallel_download_min_size() -> u64 {
-    10 * 1024 * 1024 // 10MB
-}
-
 impl Default for ParallelDownloadConfig {
     fn default() -> Self {
         Self {
             enabled: default_parallel_download_enabled(),
             threads: default_parallel_download_threads(),
-            min_size: default_parallel_download_min_size(),
         }
     }
 }

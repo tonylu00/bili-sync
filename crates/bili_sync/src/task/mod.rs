@@ -49,7 +49,36 @@ pub struct UpdateConfigTask {
     pub nfo_time_type: Option<String>,
     pub parallel_download_enabled: Option<bool>,
     pub parallel_download_threads: Option<usize>,
-    pub parallel_download_min_size: Option<u64>,
+    // 视频质量设置
+    pub video_max_quality: Option<String>,
+    pub video_min_quality: Option<String>,
+    pub audio_max_quality: Option<String>,
+    pub audio_min_quality: Option<String>,
+    pub codecs: Option<Vec<String>>,
+    pub no_dolby_video: Option<bool>,
+    pub no_dolby_audio: Option<bool>,
+    pub no_hdr: Option<bool>,
+    pub no_hires: Option<bool>,
+    // 弹幕设置
+    pub danmaku_duration: Option<f64>,
+    pub danmaku_font: Option<String>,
+    pub danmaku_font_size: Option<u32>,
+    pub danmaku_width_ratio: Option<f64>,
+    pub danmaku_horizontal_gap: Option<f64>,
+    pub danmaku_lane_size: Option<u32>,
+    pub danmaku_float_percentage: Option<f64>,
+    pub danmaku_bottom_percentage: Option<f64>,
+    pub danmaku_opacity: Option<u8>,
+    pub danmaku_bold: Option<bool>,
+    pub danmaku_outline: Option<f64>,
+    pub danmaku_time_offset: Option<f64>,
+    // 并发控制设置
+    pub concurrent_video: Option<usize>,
+    pub concurrent_page: Option<usize>,
+    pub rate_limit: Option<usize>,
+    pub rate_duration: Option<u64>,
+    // 其他设置
+    pub cdn_sorting: Option<bool>,
     pub task_id: String, // 唯一任务ID，用于追踪
 }
 
@@ -395,7 +424,36 @@ impl ConfigTaskQueue {
                 nfo_time_type: task.nfo_time_type.clone(),
                 parallel_download_enabled: task.parallel_download_enabled,
                 parallel_download_threads: task.parallel_download_threads,
-                parallel_download_min_size: task.parallel_download_min_size,
+                // 视频质量设置
+                video_max_quality: task.video_max_quality.clone(),
+                video_min_quality: task.video_min_quality.clone(),
+                audio_max_quality: task.audio_max_quality.clone(),
+                audio_min_quality: task.audio_min_quality.clone(),
+                codecs: task.codecs.clone(),
+                no_dolby_video: task.no_dolby_video,
+                no_dolby_audio: task.no_dolby_audio,
+                no_hdr: task.no_hdr,
+                no_hires: task.no_hires,
+                // 弹幕设置
+                danmaku_duration: task.danmaku_duration,
+                danmaku_font: task.danmaku_font.clone(),
+                danmaku_font_size: task.danmaku_font_size,
+                danmaku_width_ratio: task.danmaku_width_ratio,
+                danmaku_horizontal_gap: task.danmaku_horizontal_gap,
+                danmaku_lane_size: task.danmaku_lane_size,
+                danmaku_float_percentage: task.danmaku_float_percentage,
+                danmaku_bottom_percentage: task.danmaku_bottom_percentage,
+                danmaku_opacity: task.danmaku_opacity,
+                danmaku_bold: task.danmaku_bold,
+                danmaku_outline: task.danmaku_outline,
+                danmaku_time_offset: task.danmaku_time_offset,
+                // 并发控制设置
+                concurrent_video: task.concurrent_video,
+                concurrent_page: task.concurrent_page,
+                rate_limit: task.rate_limit,
+                rate_duration: task.rate_duration,
+                // 其他设置
+                cdn_sorting: task.cdn_sorting,
             };
 
             match update_config_internal(db.clone(), request).await {

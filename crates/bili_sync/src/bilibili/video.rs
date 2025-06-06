@@ -1,9 +1,10 @@
+use anyhow::bail;
 use anyhow::{ensure, Result};
 use futures::stream::FuturesUnordered;
 use futures::TryStreamExt;
 use prost::Message;
 use reqwest::Method;
-use tracing::debug;
+use tracing::{debug, warn};
 
 use crate::bilibili::analyzer::PageAnalyzer;
 use crate::bilibili::client::BiliClient;
@@ -117,36 +118,86 @@ impl<'a> Video<'a> {
     }
 
     pub async fn get_danmaku_writer(&self, page: &'a PageInfo) -> Result<DanmakuWriter> {
-        let tasks = FuturesUnordered::new();
-        for i in 1..=page.duration.div_ceil(360) {
-            tasks.push(self.get_danmaku_segment(page, i as i64));
+        let segment_count = page.duration.div_ceil(360);
+        debug!("开始获取弹幕，共{}个分段", segment_count);
+
+        // 串行获取弹幕分段，避免并发过多
+        let mut all_danmaku: Vec<DanmakuElem> = Vec::new();
+
+        for i in 1..=segment_count {
+            match self.get_danmaku_segment_with_retry(page, i as i64, 3).await {
+                Ok(mut segment_danmaku) => {
+                    debug!("成功获取弹幕分段 {}/{}", i, segment_count);
+                    all_danmaku.append(&mut segment_danmaku);
+                }
+                Err(e) => {
+                    warn!("获取弹幕分段 {}/{} 失败: {:#}", i, segment_count, e);
+                    // 继续处理其他分段，不因单个分段失败而整体失败
+                }
+            }
         }
-        let result: Vec<Vec<DanmakuElem>> = tasks.try_collect().await?;
-        let mut result: Vec<DanmakuElem> = result.into_iter().flatten().collect();
-        result.sort_by_key(|d| d.progress);
-        Ok(DanmakuWriter::new(page, result.into_iter().map(|x| x.into()).collect()))
+
+        // 按时间排序
+        all_danmaku.sort_by_key(|d| d.progress);
+        debug!("弹幕获取完成，共{}条弹幕", all_danmaku.len());
+
+        Ok(DanmakuWriter::new(
+            page,
+            all_danmaku.into_iter().map(|x| x.into()).collect(),
+        ))
+    }
+
+    /// 带重试机制的弹幕分段获取
+    async fn get_danmaku_segment_with_retry(
+        &self,
+        page: &PageInfo,
+        segment_idx: i64,
+        max_retries: usize,
+    ) -> Result<Vec<DanmakuElem>> {
+        let mut last_error = None;
+
+        for attempt in 1..=max_retries {
+            match self.get_danmaku_segment(page, segment_idx).await {
+                Ok(result) => return Ok(result),
+                Err(e) => {
+                    last_error = Some(e);
+                    if attempt < max_retries {
+                        let delay = std::time::Duration::from_millis(1000 * attempt as u64);
+                        debug!(
+                            "弹幕分段{}获取失败，{}ms后重试({}/{}): {:#}",
+                            segment_idx,
+                            delay.as_millis(),
+                            attempt,
+                            max_retries,
+                            last_error.as_ref().unwrap()
+                        );
+                        tokio::time::sleep(delay).await;
+                    }
+                }
+            }
+        }
+
+        Err(last_error.unwrap())
     }
 
     async fn get_danmaku_segment(&self, page: &PageInfo, segment_idx: i64) -> Result<Vec<DanmakuElem>> {
-        // 添加调试日志
         debug!(
             "请求弹幕片段: type=1, oid={}, pid={}, segment_index={}",
             page.cid, self.aid, segment_idx
         );
 
-        let mut res = self
-            .client
-            .request(Method::GET, "http://api.bilibili.com/x/v2/dm/web/seg.so")
-            .await
-            .query(&[
-                ("type", "1"),
-                ("oid", &page.cid.to_string()),
-                ("pid", &self.aid),
-                ("segment_index", &segment_idx.to_string()),
-            ])
-            .send()
-            .await?
-            .error_for_status()?;
+        // ✅ 使用 BiliClient 的 get 方法，包含速率限制
+        let url = format!(
+            "http://api.bilibili.com/x/v2/dm/web/seg.so?type=1&oid={}&pid={}&segment_index={}",
+            page.cid, self.aid, segment_idx
+        );
+
+        let mut res = self.client.get(&url).await?;
+
+        if !res.status().is_success() {
+            bail!("弹幕API请求失败，状态码: {}", res.status());
+        }
+
         let headers = std::mem::take(res.headers_mut());
         let content_type = headers.get("content-type");
         ensure!(

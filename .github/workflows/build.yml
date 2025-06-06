@@ -88,6 +88,19 @@ jobs:
         sudo apt-get update
         sudo apt-get install -y musl-tools
 
+    # 为编译时自动下载aria2安装必要的系统工具
+    - name: Install system tools for aria2 download (Linux)
+      if: runner.os == 'Linux'
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y curl wget tar bzip2 unzip
+
+    - name: Install system tools for aria2 download (macOS)
+      if: runner.os == 'macOS'
+      run: |
+        # macOS通常已有curl和tar，确保wget可用
+        brew install wget || true
+
     - name: Build binary
       run: |
         if [ "${{ matrix.target }}" = "aarch64-unknown-linux-musl" ]; then
@@ -96,6 +109,10 @@ jobs:
           cargo build --release --target ${{ matrix.target }} -p bili_sync
         fi
       shell: bash
+      env:
+        # 设置CI环境变量，让build脚本知道这是CI环境
+        CI: true
+        GITHUB_ACTIONS: true
 
     - name: Prepare binary
       run: |
@@ -114,6 +131,23 @@ jobs:
           7z a ${{ matrix.archive_name }} bili-sync-rs${{ matrix.extension }}
         else
           tar -czf ${{ matrix.archive_name }} bili-sync-rs
+        fi
+      shell: bash
+
+    # 检查aria2集成状态
+    - name: Verify aria2 integration
+      run: |
+        echo "Checking binary size (should include embedded aria2):"
+        if [ "${{ runner.os }}" = "Windows" ]; then
+          ls -lh target/${{ matrix.target }}/release/bili-sync-rs${{ matrix.extension }}
+        else
+          ls -lh target/${{ matrix.target }}/release/bili-sync-rs
+        fi
+        echo "Testing binary execution:"
+        if [ "${{ runner.os }}" = "Windows" ]; then
+          target/${{ matrix.target }}/release/bili-sync-rs${{ matrix.extension }} --help | head -5
+        else
+          target/${{ matrix.target }}/release/bili-sync-rs --help | head -5
         fi
       shell: bash
 
@@ -143,4 +177,48 @@ jobs:
         prerelease: false
         generate_release_notes: true
       env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }} 
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  # 检查所有平台的aria2集成状态
+  check-aria2-integration:
+    name: Check aria2 integration
+    runs-on: ubuntu-latest
+    needs: build
+    if: always()  # 即使某些构建失败也要运行检查
+    steps:
+    - name: Download all build artifacts
+      uses: actions/download-artifact@v4
+      
+    - name: Check binary sizes and aria2 embedding
+      run: |
+        echo "=== Binary sizes with embedded aria2 ==="
+        find . -name "*.zip" -o -name "*.tar.gz" | while read archive; do
+          echo "Archive: $archive"
+          if [[ "$archive" == *.zip ]]; then
+            unzip -l "$archive" | grep bili-sync-rs
+          else
+            tar -tzf "$archive" | grep bili-sync-rs | xargs tar -tzf "$archive" --verbose
+          fi
+          echo "---"
+        done
+        
+        echo "=== Extracting and testing binaries ==="
+        # 解压Windows版本测试
+        if [ -f "./bili-sync-rs-Windows-x86_64.zip/bili-sync-rs-Windows-x86_64.zip" ]; then
+          echo "Found Windows binary archive"
+          unzip -q "./bili-sync-rs-Windows-x86_64.zip/bili-sync-rs-Windows-x86_64.zip"
+          ls -lh bili-sync-rs.exe 2>/dev/null || echo "Windows binary not found"
+        fi
+        
+        # 解压Linux版本测试
+        if [ -f "./bili-sync-rs-Linux-x86_64-musl.tar.gz/bili-sync-rs-Linux-x86_64-musl.tar.gz" ]; then
+          echo "Found Linux binary archive"
+          tar -xzf "./bili-sync-rs-Linux-x86_64-musl.tar.gz/bili-sync-rs-Linux-x86_64-musl.tar.gz"
+          ls -lh bili-sync-rs 2>/dev/null || echo "Linux binary not found"
+          if [ -f "./bili-sync-rs" ]; then
+            echo "Testing Linux binary:"
+            file ./bili-sync-rs
+            chmod +x ./bili-sync-rs
+            ./bili-sync-rs --help | head -3 || echo "Binary execution failed"
+          fi
+        fi 

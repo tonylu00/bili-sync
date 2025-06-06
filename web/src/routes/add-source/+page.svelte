@@ -9,6 +9,8 @@
 	import { onMount, onDestroy } from 'svelte';
 	import type { VideoCategory, SearchResultItem } from '$lib/types';
 	import { Search, X } from '@lucide/svelte';
+	import { fly, fade } from 'svelte/transition';
+	import { flip } from 'svelte/animate';
 
 	let sourceType: VideoCategory = 'collection';
 	let sourceId = '';
@@ -27,8 +29,7 @@
 	let searchLoading = false;
 	let searchResults: SearchResultItem[] = [];
 	let showSearchResults = false;
-	let searchCurrentPage = 1;
-	let searchTotalPages = 0;
+
 	let searchTotalResults = 0;
 
 	// 收藏夹相关
@@ -51,7 +52,7 @@
 	let seasonIdTimeout: any;
 
 	// 悬停详情相关
-	let hoveredResult: SearchResultItem | null = null;
+	let hoveredItem: { type: 'search' | 'season', data: any } | null = null;
 	let hoverTimeout: any;
 	let mousePosition = { x: 0, y: 0 };
 
@@ -94,7 +95,7 @@
 	});
 
 	// 搜索B站内容
-	async function handleSearch(page = 1) {
+	async function handleSearch() {
 		if (!searchKeyword.trim()) {
 			toast.error('请输入搜索关键词');
 			return;
@@ -121,14 +122,12 @@
 			const result = await api.searchBilibili({
 				keyword: searchKeyword,
 				search_type: searchType,
-				page: page,
-				page_size: 12
+				page: 1,
+				page_size: 50  // 增加页面大小，一次显示更多结果
 			});
 
 			if (result.data.success) {
 				searchResults = result.data.results;
-				searchCurrentPage = page;
-				searchTotalPages = Math.ceil(result.data.total / 12);
 				searchTotalResults = result.data.total;
 				showSearchResults = true;
 			} else {
@@ -179,11 +178,9 @@
 		searchResults = [];
 		searchKeyword = '';
 		searchTotalResults = 0;
-		searchCurrentPage = 1;
-		searchTotalPages = 0;
 		
 		// 清除悬停状态
-		hoveredResult = null;
+		hoveredItem = null;
 		
 		if (sourceType !== 'collection') {
 			toast.success('已填充信息', { description: '请检查并完善其他必要信息' });
@@ -469,9 +466,21 @@
 		selectedSeasons = [];
 	}
 	
-	// 监听sourceType变化，重置手动输入标志
+	// 监听sourceType变化，重置手动输入标志和清空所有缓存
 	$: if (sourceType) {
 		isManualInput = false;
+		// 清空搜索相关状态
+		searchResults = [];
+		searchKeyword = '';
+		searchTotalResults = 0;
+		showSearchResults = false;
+		hoveredItem = null;
+		// 清空各类型的缓存数据
+		userFollowings = [];
+		userCollections = [];
+		userFavorites = [];
+		subscribedCollections = [];
+		// 注意：bangumiSeasons 和 selectedSeasons 在另一个响应式语句中处理
 	}
 	
 	// 监听 source_id 变化，自动获取季度信息
@@ -479,30 +488,72 @@
 		fetchBangumiSeasons();
 	}
 
-	// 处理鼠标悬停
-	function handleMouseEnter(result: SearchResultItem, event: MouseEvent) {
-		hoveredResult = result;
+	// 统一的悬浮处理函数
+	function handleItemMouseEnter(type: 'search' | 'season', data: any, event: MouseEvent) {
+		hoveredItem = { type, data };
 		updateTooltipPosition(event);
 	}
 
-	function handleMouseMove(event: MouseEvent) {
-		if (hoveredResult) {
+	function handleItemMouseMove(event: MouseEvent) {
+		if (hoveredItem) {
 			updateTooltipPosition(event);
 		}
 	}
 	
 	function updateTooltipPosition(event: MouseEvent) {
-		const x = event.pageX + 20;
-		const y = event.pageY - 100;
+		// 获取视窗尺寸
+		const viewportWidth = window.innerWidth;
+		const viewportHeight = window.innerHeight;
+		const tooltipWidth = 400; // 预估悬浮窗宽度
+		const tooltipHeight = 300; // 预估悬浮窗高度
 		
+		let x = event.pageX + 20;
+		let y = event.pageY - 100;
+		
+		// 防止悬浮窗超出右边界
+		if (x + tooltipWidth > viewportWidth) {
+			x = event.pageX - tooltipWidth - 20;
+		}
+		
+		// 防止悬浮窗超出下边界
+		if (y + tooltipHeight > viewportHeight) {
+			y = event.pageY - tooltipHeight - 20;
+		}
+		
+		// 防止悬浮窗超出上边界和左边界
 		mousePosition = { 
 			x: Math.max(10, x), 
 			y: Math.max(10, y) 
 		};
 	}
 
+	function handleItemMouseLeave() {
+		hoveredItem = null;
+	}
+
+	// 为了向后兼容，保留旧的函数名但重定向到新的统一函数
+	function handleMouseEnter(result: SearchResultItem, event: MouseEvent) {
+		handleItemMouseEnter('search', result, event);
+	}
+
+	function handleMouseMove(event: MouseEvent) {
+		handleItemMouseMove(event);
+	}
+
 	function handleMouseLeave() {
-		hoveredResult = null;
+		handleItemMouseLeave();
+	}
+
+	function handleSeasonMouseEnter(season: any, event: MouseEvent) {
+		handleItemMouseEnter('season', season, event);
+	}
+
+	function handleSeasonMouseMove(event: MouseEvent) {
+		handleItemMouseMove(event);
+	}
+
+	function handleSeasonMouseLeave() {
+		handleItemMouseLeave();
 	}
 
 	// 获取关注的UP主列表
@@ -826,13 +877,13 @@
 
 				<!-- 右侧：搜索结果区域 -->
 				{#if showSearchResults && searchResults.length > 0}
-					<div class="{isMobile ? 'w-full mt-6' : 'flex-1'}">
+					<div class="{isMobile ? 'w-full mt-6' : 'flex-1'}" transition:fly="{{ x: 300, duration: 300 }}">
 						<div class="bg-white rounded-lg border {isMobile ? '' : 'h-full'} overflow-hidden flex flex-col {isMobile ? '' : 'sticky top-6'} max-h-[calc(100vh-200px)]">
 							<div class="flex justify-between items-center p-4 border-b bg-gray-50">
 								<div>
 									<span class="text-base font-medium">搜索结果</span>
 									<span class="text-sm text-gray-600 {isMobile ? 'block' : 'ml-2'}">
-										共找到 {searchTotalResults} 个结果，当前第 {searchCurrentPage} 页
+										共找到 {searchTotalResults} 个结果
 									</span>
 								</div>
 								<button 
@@ -840,8 +891,6 @@
 										showSearchResults = false; 
 										searchResults = []; 
 										searchTotalResults = 0;
-										searchCurrentPage = 1;
-										searchTotalPages = 0;
 									}}
 									class="text-gray-500 hover:text-gray-700 text-xl p-1"
 								>
@@ -849,15 +898,18 @@
 								</button>
 							</div>
 							
-							<div class="flex-1 overflow-y-auto p-3">
-								<div class="grid {isMobile ? 'grid-cols-1 gap-3' : 'grid-cols-3 gap-4'}">
-									{#each searchResults as result}
+							<div class="flex-1 overflow-hidden p-3">
+								<div class="seasons-grid-container h-full">
+									<div class="grid {isMobile ? 'grid-cols-1 gap-3' : 'grid-cols-3 gap-4'}">
+										{#each searchResults as result, i (result.bvid || result.season_id || result.mid || i)}
 										<button 
 											onclick={() => selectSearchResult(result)}
 											onmouseenter={(e) => handleMouseEnter(result, e)}
 											onmouseleave={handleMouseLeave}
 											onmousemove={handleMouseMove}
-											class="p-4 hover:bg-gray-50 border rounded-lg flex gap-3 text-left transition-colors items-start relative"
+											class="p-4 hover:bg-gray-50 border rounded-lg flex gap-3 text-left transition-all duration-300 items-start relative transform hover:scale-102 hover:shadow-md"
+											transition:fly="{{ y: 50, duration: 300, delay: i * 50 }}"
+											animate:flip="{{ duration: 300 }}"
 										>
 											{#if result.cover}
 												<img 
@@ -875,38 +927,33 @@
 												</div>
 											{/if}
 											<div class="flex-1 min-w-0">
-												<h4 class="font-medium text-sm truncate">{@html result.title}</h4>
-												<p class="text-xs text-gray-600 truncate mt-1">{result.author}</p>
+												<div class="flex items-center gap-2 mb-1">
+													<h4 class="font-medium text-sm truncate flex-1">{@html result.title}</h4>
+													{#if result.result_type}
+														<span class="text-xs px-1.5 py-0.5 rounded flex-shrink-0 {result.result_type === 'media_bangumi' ? 'bg-purple-100 text-purple-700' : result.result_type === 'media_ft' ? 'bg-red-100 text-red-700' : result.result_type === 'bili_user' ? 'bg-blue-100 text-blue-700' : result.result_type === 'video' ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-700'}">
+															{result.result_type === 'media_bangumi' ? '番剧' : result.result_type === 'media_ft' ? '影视' : result.result_type === 'bili_user' ? 'UP主' : result.result_type === 'video' ? '视频' : result.result_type}
+														</span>
+													{/if}
+												</div>
+												<p class="text-xs text-gray-600 truncate">{result.author}</p>
 												{#if result.description}
 													<p class="text-xs text-gray-500 line-clamp-2 mt-1">{result.description}</p>
 												{/if}
 											</div>
 										</button>
-									{/each}
+																			{/each}
+									</div>
 								</div>
 							</div>
 
-							{#if searchTotalPages > 1}
-								<div class="flex justify-center items-center gap-2 p-3 border-t">
-									<Button 
-										size="sm" 
-										variant="outline"
-										onclick={() => handleSearch(searchCurrentPage - 1)}
-										disabled={searchCurrentPage <= 1 || searchLoading}
-									>
-										上一页
-									</Button>
-									<span class="text-sm text-gray-600">
-										{searchCurrentPage} / {searchTotalPages}
+							{#if searchResults.length > 0}
+								<div class="text-center p-3 border-t">
+									<span class="text-xs text-gray-600">
+										共显示 {searchResults.length} 个结果
+										{#if searchTotalResults > searchResults.length}
+											（总共 {searchTotalResults} 个）
+										{/if}
 									</span>
-									<Button 
-										size="sm" 
-										variant="outline"
-										onclick={() => handleSearch(searchCurrentPage + 1)}
-										disabled={searchCurrentPage >= searchTotalPages || searchLoading}
-									>
-										下一页
-									</Button>
 								</div>
 							{/if}
 						</div>
@@ -1118,8 +1165,19 @@
 								{:else if bangumiSeasons.length > 0}
 									<div class="seasons-grid-container">
 										<div class="grid {isMobile ? 'grid-cols-1 gap-3' : 'grid-cols-3 gap-4'}">
-											{#each bangumiSeasons as season}
-												<div class="p-4 border rounded-lg hover:bg-purple-50 transition-colors relative {isMobile ? 'h-auto' : 'h-[120px]'}">
+											{#each bangumiSeasons as season, i (season.season_id)}
+												<div 
+													role="button"
+													tabindex="0"
+													class="p-4 border rounded-lg hover:bg-purple-50 transition-all duration-300 relative {isMobile ? 'h-auto' : 'h-[120px]'} transform hover:scale-102 hover:shadow-md"
+													onmouseenter={(e) => handleSeasonMouseEnter(season, e)}
+													onmouseleave={handleSeasonMouseLeave}
+													onmousemove={handleSeasonMouseMove}
+													onclick={() => toggleSeasonSelection(season.season_id)}
+													onkeydown={(e) => (e.key === 'Enter' || e.key === ' ') && toggleSeasonSelection(season.season_id)}
+													transition:fly="{{ y: 50, duration: 300, delay: i * 100 }}"
+													animate:flip="{{ duration: 300 }}"
+												>
 													<div class="flex gap-3 {isMobile ? '' : 'h-full'}">
 														{#if season.cover}
 															<img 
@@ -1245,53 +1303,123 @@
 	</div>
 </div>
 
-<!-- 悬停详情框 -->
-{#if hoveredResult}
+<!-- 统一的悬停详情框 -->
+{#if hoveredItem}
 	<div 
-		class="fixed z-50 bg-white rounded-lg shadow-2xl border p-4 max-w-md pointer-events-none"
+		class="fixed z-50 bg-white rounded-lg shadow-2xl border p-4 max-w-md pointer-events-none transition-all duration-150 ease-out"
 		style="left: {mousePosition.x}px; top: {mousePosition.y}px;"
+		transition:fade="{{ duration: 200 }}"
 	>
-		<div class="flex gap-4">
-			{#if hoveredResult.cover}
-				<img 
-					src={processBilibiliImageUrl(hoveredResult.cover)}
-					alt={hoveredResult.title}
-					class="{sourceType === 'bangumi' ? 'w-24 h-32' : 'w-32 h-20'} object-cover rounded flex-shrink-0"
-					loading="lazy"
-					crossorigin="anonymous"
-					referrerpolicy="no-referrer"
-				/>
-			{:else}
-				<div class="{sourceType === 'bangumi' ? 'w-24 h-32' : 'w-32 h-20'} bg-gray-200 rounded flex items-center justify-center text-sm text-gray-400 flex-shrink-0">
-					无图片
-				</div>
-			{/if}
-			<div class="flex-1 min-w-0">
-				<h4 class="font-semibold text-sm mb-1">{@html hoveredResult.title}</h4>
-				<p class="text-xs text-gray-600 mb-2">作者：{hoveredResult.author}</p>
-				{#if hoveredResult.description}
-					<p class="text-xs text-gray-500 line-clamp-4 mb-2">{hoveredResult.description}</p>
+		{#if hoveredItem.type === 'search'}
+			<!-- 搜索结果详情内容 -->
+			<div class="flex gap-4">
+				{#if hoveredItem.data.cover}
+					<img 
+						src={processBilibiliImageUrl(hoveredItem.data.cover)}
+						alt={hoveredItem.data.title}
+						class="{sourceType === 'bangumi' ? 'w-24 h-32' : 'w-32 h-20'} object-cover rounded flex-shrink-0"
+						loading="lazy"
+						crossorigin="anonymous"
+						referrerpolicy="no-referrer"
+					/>
+				{:else}
+					<div class="{sourceType === 'bangumi' ? 'w-24 h-32' : 'w-32 h-20'} bg-gray-200 rounded flex items-center justify-center text-sm text-gray-400 flex-shrink-0">
+						无图片
+					</div>
 				{/if}
-				<div class="flex flex-wrap gap-2 text-xs">
-					{#if hoveredResult.play}
-						<span class="flex items-center gap-1 text-gray-500">
-							<span>▶</span> 播放：{hoveredResult.play > 10000 ? (hoveredResult.play / 10000).toFixed(1) + '万' : hoveredResult.play}
-						</span>
+				<div class="flex-1 min-w-0">
+					<div class="flex items-center gap-2 mb-1">
+						<h4 class="font-semibold text-sm flex-1">{@html hoveredItem.data.title}</h4>
+						{#if hoveredItem.data.result_type}
+							<span class="text-xs px-1.5 py-0.5 rounded flex-shrink-0 {hoveredItem.data.result_type === 'media_bangumi' ? 'bg-purple-100 text-purple-700' : hoveredItem.data.result_type === 'media_ft' ? 'bg-red-100 text-red-700' : hoveredItem.data.result_type === 'bili_user' ? 'bg-blue-100 text-blue-700' : hoveredItem.data.result_type === 'video' ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-700'}">
+								{hoveredItem.data.result_type === 'media_bangumi' ? '番剧' : hoveredItem.data.result_type === 'media_ft' ? '影视' : hoveredItem.data.result_type === 'bili_user' ? 'UP主' : hoveredItem.data.result_type === 'video' ? '视频' : hoveredItem.data.result_type}
+							</span>
+						{/if}
+					</div>
+					<p class="text-xs text-gray-600 mb-2">作者：{hoveredItem.data.author}</p>
+					{#if hoveredItem.data.description}
+						<p class="text-xs text-gray-500 line-clamp-4 mb-2">{hoveredItem.data.description}</p>
 					{/if}
-					{#if hoveredResult.danmaku}
-						<span class="flex items-center gap-1 text-gray-500">
-							<span>💬</span> 弹幕：{hoveredResult.danmaku > 10000 ? (hoveredResult.danmaku / 10000).toFixed(1) + '万' : hoveredResult.danmaku}
-						</span>
-					{/if}
-					{#if sourceType === 'bangumi' && hoveredResult.season_id}
-						<span class="text-gray-500">Season ID: {hoveredResult.season_id}</span>
-					{/if}
-					{#if hoveredResult.bvid}
-						<span class="text-gray-500">BV号: {hoveredResult.bvid}</span>
-					{/if}
+					<div class="flex flex-wrap gap-2 text-xs">
+						{#if hoveredItem.data.play}
+							<span class="flex items-center gap-1 text-gray-500">
+								<span>▶</span> 播放：{hoveredItem.data.play > 10000 ? (hoveredItem.data.play / 10000).toFixed(1) + '万' : hoveredItem.data.play}
+							</span>
+						{/if}
+						{#if hoveredItem.data.danmaku}
+							<span class="flex items-center gap-1 text-gray-500">
+								<span>💬</span> 弹幕：{hoveredItem.data.danmaku > 10000 ? (hoveredItem.data.danmaku / 10000).toFixed(1) + '万' : hoveredItem.data.danmaku}
+							</span>
+						{/if}
+						{#if sourceType === 'bangumi' && hoveredItem.data.season_id}
+							<span class="text-gray-500">Season ID: {hoveredItem.data.season_id}</span>
+						{/if}
+						{#if hoveredItem.data.bvid}
+							<span class="text-gray-500">BV号: {hoveredItem.data.bvid}</span>
+						{/if}
+					</div>
 				</div>
 			</div>
-		</div>
+		{:else if hoveredItem.type === 'season'}
+			<!-- 季度选择详情内容 -->
+			<div class="flex gap-4">
+				{#if hoveredItem.data.cover}
+					<img 
+						src={processBilibiliImageUrl(hoveredItem.data.cover)}
+						alt={hoveredItem.data.season_title || hoveredItem.data.title}
+						class="w-24 h-32 object-cover rounded flex-shrink-0"
+						loading="lazy"
+						crossorigin="anonymous"
+						referrerpolicy="no-referrer"
+					/>
+				{:else}
+					<div class="w-24 h-32 bg-gray-200 rounded flex items-center justify-center text-sm text-gray-400 flex-shrink-0">
+						无封面
+					</div>
+				{/if}
+				<div class="flex-1 min-w-0">
+					<div class="flex items-center gap-2 mb-1">
+						<h4 class="font-semibold text-sm flex-1">{hoveredItem.data.full_title || hoveredItem.data.season_title || hoveredItem.data.title}</h4>
+						<span class="text-xs px-1.5 py-0.5 rounded flex-shrink-0 bg-purple-100 text-purple-700">
+							番剧
+						</span>
+					</div>
+					
+					<div class="space-y-2 text-xs">
+						{#if hoveredItem.data.description}
+							<div class="text-gray-700 line-clamp-3 mb-3 text-sm leading-relaxed">
+								{hoveredItem.data.description}
+							</div>
+						{/if}
+						
+						<div class="flex flex-wrap gap-3">
+							<span class="text-gray-600">Season ID: <span class="font-mono text-gray-800">{hoveredItem.data.season_id}</span></span>
+							{#if hoveredItem.data.media_id}
+								<span class="text-gray-600">Media ID: <span class="font-mono text-gray-800">{hoveredItem.data.media_id}</span></span>
+							{/if}
+						</div>
+						
+						{#if hoveredItem.data.episode_count}
+							<div class="flex items-center gap-1 text-gray-500">
+								<span>📺</span> 总集数：{hoveredItem.data.episode_count} 集
+							</div>
+						{/if}
+						
+						{#if hoveredItem.data.season_id === sourceId}
+							<div class="text-purple-600 font-medium">
+								🎯 当前选择的季度
+							</div>
+						{/if}
+						
+						{#if selectedSeasons.includes(hoveredItem.data.season_id)}
+							<div class="text-green-600 font-medium">
+								✅ 已选择下载
+							</div>
+						{/if}
+					</div>
+				</div>
+			</div>
+		{/if}
 	</div>
 {/if}
 
@@ -1309,11 +1437,27 @@
 		overflow: hidden;
 	}
 	
+	.line-clamp-3 {
+		display: -webkit-box;
+		-webkit-line-clamp: 3;
+		-webkit-box-orient: vertical;
+		overflow: hidden;
+	}
+	
 	.line-clamp-4 {
 		display: -webkit-box;
 		-webkit-line-clamp: 4;
 		-webkit-box-orient: vertical;
 		overflow: hidden;
+	}
+	
+	/* 悬停动画效果 */
+	.hover\:scale-102:hover {
+		transform: scale(1.02);
+	}
+	
+	.transform {
+		transition: transform 0.3s ease, box-shadow 0.3s ease;
 	}
 	
 	/* 季度网格容器滚动样式 */

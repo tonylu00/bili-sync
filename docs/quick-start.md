@@ -1,5 +1,10 @@
 # 快速开始
 
+> [!IMPORTANT]
+> **项目来源说明**
+> 
+> 本项目 (`qq1582185982/bili-sync-01`) 是从原作者 [amtoaer/bili-sync](https://github.com/amtoaer/bili-sync) 的项目 `fork` 并进行大量更新和优化的版本。我们对原作者的贡献表示感谢，并在此基础上持续迭代。
+
 程序使用 Rust 编写，不需要 Runtime 且并为各个平台提供了预编译文件，绝大多数情况下是没有使用障碍的。
 
 > [!TIP]

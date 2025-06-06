@@ -113,7 +113,36 @@ export interface ConfigResponse {
 	nfo_time_type: string;
 	parallel_download_enabled: boolean;
 	parallel_download_threads: number;
-	parallel_download_min_size: number;
+	// 新增视频质量设置
+	video_max_quality?: string;
+	video_min_quality?: string;
+	audio_max_quality?: string;
+	audio_min_quality?: string;
+	codecs?: string[];
+	no_dolby_video?: boolean;
+	no_dolby_audio?: boolean;
+	no_hdr?: boolean;
+	no_hires?: boolean;
+	// 新增弹幕设置
+	danmaku_duration?: number;
+	danmaku_font?: string;
+	danmaku_font_size?: number;
+	danmaku_width_ratio?: number;
+	danmaku_horizontal_gap?: number;
+	danmaku_lane_size?: number;
+	danmaku_float_percentage?: number;
+	danmaku_bottom_percentage?: number;
+	danmaku_opacity?: number;
+	danmaku_bold?: boolean;
+	danmaku_outline?: number;
+	danmaku_time_offset?: number;
+	// 新增并发控制设置
+	concurrent_video?: number;
+	concurrent_page?: number;
+	rate_limit?: number;
+	rate_duration?: number;
+	// 新增其他设置
+	cdn_sorting?: boolean;
 }
 
 // 更新配置请求类型
@@ -128,7 +157,36 @@ export interface UpdateConfigRequest {
 	nfo_time_type?: string;
 	parallel_download_enabled?: boolean;
 	parallel_download_threads?: number;
-	parallel_download_min_size?: number;
+	// 新增视频质量设置
+	video_max_quality?: string;
+	video_min_quality?: string;
+	audio_max_quality?: string;
+	audio_min_quality?: string;
+	codecs?: string[];
+	no_dolby_video?: boolean;
+	no_dolby_audio?: boolean;
+	no_hdr?: boolean;
+	no_hires?: boolean;
+	// 新增弹幕设置
+	danmaku_duration?: number;
+	danmaku_font?: string;
+	danmaku_font_size?: number;
+	danmaku_width_ratio?: number;
+	danmaku_horizontal_gap?: number;
+	danmaku_lane_size?: number;
+	danmaku_float_percentage?: number;
+	danmaku_bottom_percentage?: number;
+	danmaku_opacity?: number;
+	danmaku_bold?: boolean;
+	danmaku_outline?: number;
+	danmaku_time_offset?: number;
+	// 新增并发控制设置
+	concurrent_video?: number;
+	concurrent_page?: number;
+	rate_limit?: number;
+	rate_duration?: number;
+	// 新增其他设置
+	cdn_sorting?: boolean;
 }
 
 // 更新配置响应类型
@@ -216,6 +274,7 @@ export interface BangumiSeasonInfo {
 	media_id?: string;
 	cover?: string;
 	episode_count?: number; // 集数
+	description?: string; // 简介
 }
 
 // 番剧季度响应类型

@@ -1503,7 +1503,36 @@ pub async fn get_config() -> Result<ApiResponse<crate::api::response::ConfigResp
         nfo_time_type: nfo_time_type.to_string(),
         parallel_download_enabled: config.concurrent_limit.parallel_download.enabled,
         parallel_download_threads: config.concurrent_limit.parallel_download.threads,
-        parallel_download_min_size: config.concurrent_limit.parallel_download.min_size,
+        // 视频质量设置
+        video_max_quality: format!("{:?}", config.filter_option.video_max_quality),
+        video_min_quality: format!("{:?}", config.filter_option.video_min_quality),
+        audio_max_quality: format!("{:?}", config.filter_option.audio_max_quality),
+        audio_min_quality: format!("{:?}", config.filter_option.audio_min_quality),
+        codecs: config.filter_option.codecs.iter().map(|c| format!("{}", c)).collect(),
+        no_dolby_video: config.filter_option.no_dolby_video,
+        no_dolby_audio: config.filter_option.no_dolby_audio,
+        no_hdr: config.filter_option.no_hdr,
+        no_hires: config.filter_option.no_hires,
+        // 弹幕设置
+        danmaku_duration: config.danmaku_option.duration,
+        danmaku_font: config.danmaku_option.font.clone(),
+        danmaku_font_size: config.danmaku_option.font_size,
+        danmaku_width_ratio: config.danmaku_option.width_ratio,
+        danmaku_horizontal_gap: config.danmaku_option.horizontal_gap,
+        danmaku_lane_size: config.danmaku_option.lane_size,
+        danmaku_float_percentage: config.danmaku_option.float_percentage,
+        danmaku_bottom_percentage: config.danmaku_option.bottom_percentage,
+        danmaku_opacity: config.danmaku_option.opacity,
+        danmaku_bold: config.danmaku_option.bold,
+        danmaku_outline: config.danmaku_option.outline,
+        danmaku_time_offset: config.danmaku_option.time_offset,
+        // 并发控制设置
+        concurrent_video: config.concurrent_limit.video,
+        concurrent_page: config.concurrent_limit.page,
+        rate_limit: config.concurrent_limit.rate_limit.as_ref().map(|r| r.limit),
+        rate_duration: config.concurrent_limit.rate_limit.as_ref().map(|r| r.duration),
+        // 其他设置
+        cdn_sorting: config.cdn_sorting,
     }))
 }
 
@@ -1537,7 +1566,36 @@ pub async fn update_config(
             nfo_time_type: params.nfo_time_type.clone(),
             parallel_download_enabled: params.parallel_download_enabled,
             parallel_download_threads: params.parallel_download_threads,
-            parallel_download_min_size: params.parallel_download_min_size,
+            // 视频质量设置
+            video_max_quality: params.video_max_quality.clone(),
+            video_min_quality: params.video_min_quality.clone(),
+            audio_max_quality: params.audio_max_quality.clone(),
+            audio_min_quality: params.audio_min_quality.clone(),
+            codecs: params.codecs.clone(),
+            no_dolby_video: params.no_dolby_video,
+            no_dolby_audio: params.no_dolby_audio,
+            no_hdr: params.no_hdr,
+            no_hires: params.no_hires,
+            // 弹幕设置
+            danmaku_duration: params.danmaku_duration,
+            danmaku_font: params.danmaku_font.clone(),
+            danmaku_font_size: params.danmaku_font_size,
+            danmaku_width_ratio: params.danmaku_width_ratio,
+            danmaku_horizontal_gap: params.danmaku_horizontal_gap,
+            danmaku_lane_size: params.danmaku_lane_size,
+            danmaku_float_percentage: params.danmaku_float_percentage,
+            danmaku_bottom_percentage: params.danmaku_bottom_percentage,
+            danmaku_opacity: params.danmaku_opacity,
+            danmaku_bold: params.danmaku_bold,
+            danmaku_outline: params.danmaku_outline,
+            danmaku_time_offset: params.danmaku_time_offset,
+            // 并发控制设置
+            concurrent_video: params.concurrent_video,
+            concurrent_page: params.concurrent_page,
+            rate_limit: params.rate_limit,
+            rate_duration: params.rate_duration,
+            // 其他设置
+            cdn_sorting: params.cdn_sorting,
             task_id: task_id.clone(),
         };
 
@@ -1659,10 +1717,238 @@ pub async fn update_config_internal(
         }
     }
 
-    if let Some(min_size) = params.parallel_download_min_size {
-        if min_size > 0 && min_size != config.concurrent_limit.parallel_download.min_size {
-            config.concurrent_limit.parallel_download.min_size = min_size;
-            updated_fields.push("parallel_download_min_size");
+    // 处理视频质量设置
+    if let Some(quality) = params.video_max_quality {
+        use crate::bilibili::VideoQuality;
+        if let Ok(new_quality) = quality.parse::<VideoQuality>() {
+            if new_quality != config.filter_option.video_max_quality {
+                config.filter_option.video_max_quality = new_quality;
+                updated_fields.push("video_max_quality");
+            }
+        }
+    }
+
+    if let Some(quality) = params.video_min_quality {
+        use crate::bilibili::VideoQuality;
+        if let Ok(new_quality) = quality.parse::<VideoQuality>() {
+            if new_quality != config.filter_option.video_min_quality {
+                config.filter_option.video_min_quality = new_quality;
+                updated_fields.push("video_min_quality");
+            }
+        }
+    }
+
+    if let Some(quality) = params.audio_max_quality {
+        use crate::bilibili::AudioQuality;
+        if let Ok(new_quality) = quality.parse::<AudioQuality>() {
+            if new_quality != config.filter_option.audio_max_quality {
+                config.filter_option.audio_max_quality = new_quality;
+                updated_fields.push("audio_max_quality");
+            }
+        }
+    }
+
+    if let Some(quality) = params.audio_min_quality {
+        use crate::bilibili::AudioQuality;
+        if let Ok(new_quality) = quality.parse::<AudioQuality>() {
+            if new_quality != config.filter_option.audio_min_quality {
+                config.filter_option.audio_min_quality = new_quality;
+                updated_fields.push("audio_min_quality");
+            }
+        }
+    }
+
+    if let Some(codecs) = params.codecs {
+        use crate::bilibili::VideoCodecs;
+        let mut new_codecs = Vec::new();
+        for codec_str in codecs {
+            if let Ok(codec) = codec_str.parse::<VideoCodecs>() {
+                new_codecs.push(codec);
+            }
+        }
+        if !new_codecs.is_empty() && new_codecs != config.filter_option.codecs {
+            config.filter_option.codecs = new_codecs;
+            updated_fields.push("codecs");
+        }
+    }
+
+    if let Some(no_dolby_video) = params.no_dolby_video {
+        if no_dolby_video != config.filter_option.no_dolby_video {
+            config.filter_option.no_dolby_video = no_dolby_video;
+            updated_fields.push("no_dolby_video");
+        }
+    }
+
+    if let Some(no_dolby_audio) = params.no_dolby_audio {
+        if no_dolby_audio != config.filter_option.no_dolby_audio {
+            config.filter_option.no_dolby_audio = no_dolby_audio;
+            updated_fields.push("no_dolby_audio");
+        }
+    }
+
+    if let Some(no_hdr) = params.no_hdr {
+        if no_hdr != config.filter_option.no_hdr {
+            config.filter_option.no_hdr = no_hdr;
+            updated_fields.push("no_hdr");
+        }
+    }
+
+    if let Some(no_hires) = params.no_hires {
+        if no_hires != config.filter_option.no_hires {
+            config.filter_option.no_hires = no_hires;
+            updated_fields.push("no_hires");
+        }
+    }
+
+    // 处理弹幕设置
+    if let Some(duration) = params.danmaku_duration {
+        if duration != config.danmaku_option.duration {
+            config.danmaku_option.duration = duration;
+            updated_fields.push("danmaku_duration");
+        }
+    }
+
+    if let Some(font) = params.danmaku_font {
+        if !font.trim().is_empty() && font != config.danmaku_option.font {
+            config.danmaku_option.font = font;
+            updated_fields.push("danmaku_font");
+        }
+    }
+
+    if let Some(font_size) = params.danmaku_font_size {
+        if font_size != config.danmaku_option.font_size {
+            config.danmaku_option.font_size = font_size;
+            updated_fields.push("danmaku_font_size");
+        }
+    }
+
+    if let Some(width_ratio) = params.danmaku_width_ratio {
+        if width_ratio != config.danmaku_option.width_ratio {
+            config.danmaku_option.width_ratio = width_ratio;
+            updated_fields.push("danmaku_width_ratio");
+        }
+    }
+
+    if let Some(horizontal_gap) = params.danmaku_horizontal_gap {
+        if horizontal_gap != config.danmaku_option.horizontal_gap {
+            config.danmaku_option.horizontal_gap = horizontal_gap;
+            updated_fields.push("danmaku_horizontal_gap");
+        }
+    }
+
+    if let Some(lane_size) = params.danmaku_lane_size {
+        if lane_size != config.danmaku_option.lane_size {
+            config.danmaku_option.lane_size = lane_size;
+            updated_fields.push("danmaku_lane_size");
+        }
+    }
+
+    if let Some(float_percentage) = params.danmaku_float_percentage {
+        if float_percentage != config.danmaku_option.float_percentage {
+            config.danmaku_option.float_percentage = float_percentage;
+            updated_fields.push("danmaku_float_percentage");
+        }
+    }
+
+    if let Some(bottom_percentage) = params.danmaku_bottom_percentage {
+        if bottom_percentage != config.danmaku_option.bottom_percentage {
+            config.danmaku_option.bottom_percentage = bottom_percentage;
+            updated_fields.push("danmaku_bottom_percentage");
+        }
+    }
+
+    if let Some(opacity) = params.danmaku_opacity {
+        if opacity != config.danmaku_option.opacity {
+            config.danmaku_option.opacity = opacity;
+            updated_fields.push("danmaku_opacity");
+        }
+    }
+
+    if let Some(bold) = params.danmaku_bold {
+        if bold != config.danmaku_option.bold {
+            config.danmaku_option.bold = bold;
+            updated_fields.push("danmaku_bold");
+        }
+    }
+
+    if let Some(outline) = params.danmaku_outline {
+        if outline != config.danmaku_option.outline {
+            config.danmaku_option.outline = outline;
+            updated_fields.push("danmaku_outline");
+        }
+    }
+
+    if let Some(time_offset) = params.danmaku_time_offset {
+        if time_offset != config.danmaku_option.time_offset {
+            config.danmaku_option.time_offset = time_offset;
+            updated_fields.push("danmaku_time_offset");
+        }
+    }
+
+    // 处理并发控制设置
+    if let Some(concurrent_video) = params.concurrent_video {
+        if concurrent_video > 0 && concurrent_video != config.concurrent_limit.video {
+            config.concurrent_limit.video = concurrent_video;
+            updated_fields.push("concurrent_video");
+        }
+    }
+
+    if let Some(concurrent_page) = params.concurrent_page {
+        if concurrent_page > 0 && concurrent_page != config.concurrent_limit.page {
+            config.concurrent_limit.page = concurrent_page;
+            updated_fields.push("concurrent_page");
+        }
+    }
+
+    if let Some(rate_limit) = params.rate_limit {
+        if rate_limit > 0 {
+            let current_limit = config
+                .concurrent_limit
+                .rate_limit
+                .as_ref()
+                .map(|r| r.limit)
+                .unwrap_or(0);
+            if rate_limit != current_limit {
+                if let Some(ref mut rate) = config.concurrent_limit.rate_limit {
+                    rate.limit = rate_limit;
+                } else {
+                    config.concurrent_limit.rate_limit = Some(crate::config::RateLimit {
+                        limit: rate_limit,
+                        duration: 250, // 默认值
+                    });
+                }
+                updated_fields.push("rate_limit");
+            }
+        }
+    }
+
+    if let Some(rate_duration) = params.rate_duration {
+        if rate_duration > 0 {
+            let current_duration = config
+                .concurrent_limit
+                .rate_limit
+                .as_ref()
+                .map(|r| r.duration)
+                .unwrap_or(0);
+            if rate_duration != current_duration {
+                if let Some(ref mut rate) = config.concurrent_limit.rate_limit {
+                    rate.duration = rate_duration;
+                } else {
+                    config.concurrent_limit.rate_limit = Some(crate::config::RateLimit {
+                        limit: 4, // 默认值
+                        duration: rate_duration,
+                    });
+                }
+                updated_fields.push("rate_duration");
+            }
+        }
+    }
+
+    // 处理其他设置
+    if let Some(cdn_sorting) = params.cdn_sorting {
+        if cdn_sorting != config.cdn_sorting {
+            config.cdn_sorting = cdn_sorting;
+            updated_fields.push("cdn_sorting");
         }
     }
 
@@ -2630,7 +2916,7 @@ pub async fn get_bangumi_seasons(
                             None,
                         );
 
-                        let (full_title, episode_count) = match season_bangumi.get_season_info().await {
+                        let (full_title, episode_count, description) = match season_bangumi.get_season_info().await {
                             Ok(season_info) => {
                                 let full_title = season_info["title"].as_str().map(|t| t.to_string());
 
@@ -2638,15 +2924,18 @@ pub async fn get_bangumi_seasons(
                                 let episode_count =
                                     season_info["episodes"].as_array().map(|episodes| episodes.len() as i32);
 
-                                (full_title, episode_count)
+                                // 获取简介信息
+                                let description = season_info["evaluate"].as_str().map(|d| d.to_string());
+
+                                (full_title, episode_count, description)
                             }
                             Err(e) => {
                                 warn!("获取季度 {} 的详细信息失败: {}", season_clone.season_id, e);
-                                (None, None)
+                                (None, None, None)
                             }
                         };
 
-                        (season_clone, full_title, episode_count)
+                        (season_clone, full_title, episode_count, description)
                     }
                 })
                 .collect();
@@ -2658,13 +2947,14 @@ pub async fn get_bangumi_seasons(
             let season_list: Vec<_> = season_details
                 .into_iter()
                 .map(
-                    |(s, full_title, episode_count)| crate::api::response::BangumiSeasonInfo {
+                    |(s, full_title, episode_count, description)| crate::api::response::BangumiSeasonInfo {
                         season_id: s.season_id,
                         season_title: s.season_title,
                         full_title,
                         media_id: s.media_id,
                         cover: Some(s.cover),
                         episode_count,
+                        description,
                     },
                 )
                 .collect();

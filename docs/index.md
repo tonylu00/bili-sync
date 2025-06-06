@@ -18,12 +18,15 @@ hero:
       link: /quick-start
     - theme: alt
       text: GitHub
-      link: https://github.com/amtoaer/bili-sync
+      link: https://github.com/qq1582185982/bili-sync-01
   image:
     src: /logo.webp
     alt: bili-sync
 
 features:
+  - icon: 🔄
+    title: 持续进化
+    details: 在原项目基础上大量重构和优化，并由新团队积极维护
   - icon: 🤖
     title: 无需干预
     details: 自动选择最优的视频和音频配置
