@@ -44,14 +44,25 @@ fn main() {
 }
 
 fn get_aria2_for_ci(target: &str, out_dir: &str, binary_name: &str) -> Result<(), Box<dyn std::error::Error>> {
-    if target.contains("windows") {
-        // Windows: 下载预编译版本
-        let url = "https://github.com/aria2/aria2/releases/download/release-1.37.0/aria2-1.37.0-win-64bit-build1.zip";
-        let archive_name = "aria2-1.37.0-win-64bit-build1.zip";
-        download_and_extract_windows(url, archive_name, out_dir, binary_name)
-    } else {
-        // Linux/macOS: 使用系统包管理器安装
-        install_aria2_from_system(out_dir, binary_name)
+    // 为不同平台下载对应的静态编译版本
+    match target {
+        t if t.contains("windows") => {
+            let url = "https://github.com/aria2/aria2/releases/download/release-1.37.0/aria2-1.37.0-win-64bit-build1.zip";
+            let archive_name = "aria2-1.37.0-win-64bit-build1.zip";
+            download_and_extract_windows(url, archive_name, out_dir, binary_name)
+        }
+        t if t.contains("linux") => {
+            // Linux: 下载静态编译版本
+            download_static_aria2_linux(target, out_dir, binary_name)
+        }
+        t if t.contains("darwin") => {
+            // macOS: 下载静态编译版本或使用homebrew
+            download_static_aria2_macos(target, out_dir, binary_name)
+        }
+        _ => {
+            println!("cargo:warning=不支持的目标平台: {}", target);
+            Err(format!("不支持的目标平台: {}", target).into())
+        }
     }
 }
 
@@ -175,6 +186,93 @@ fn install_aria2_from_system(out_dir: &str, binary_name: &str) -> Result<(), Box
         Ok(_) => Err("aria2安装失败".into()),
         Err(e) => Err(format!("安装aria2时出错: {}", e).into()),
     }
+}
+
+fn download_static_aria2_linux(target: &str, out_dir: &str, binary_name: &str) -> Result<(), Box<dyn std::error::Error>> {
+    // 使用第三方静态编译的aria2版本
+    let url = if target.contains("x86_64") {
+        "https://github.com/P3TERX/Aria2-Pro-Core/releases/download/1.37.0_2023.06.14/aria2-1.37.0-static-linux-amd64.tar.gz"
+    } else if target.contains("aarch64") {
+        "https://github.com/P3TERX/Aria2-Pro-Core/releases/download/1.37.0_2023.06.14/aria2-1.37.0-static-linux-arm64.tar.gz"
+    } else {
+        return Err("不支持的Linux架构".into());
+    };
+    
+    let archive_name = url.split('/').last().unwrap();
+    let archive_path = Path::new(out_dir).join(archive_name);
+    let binary_path = Path::new(out_dir).join(binary_name);
+    
+    println!("cargo:warning=下载Linux静态aria2: {}", url);
+    
+    // 使用wget或curl下载
+    let download_success = if Command::new("wget").arg("--version").output().is_ok() {
+        Command::new("wget")
+            .args(["-O", archive_path.to_str().unwrap(), url])
+            .status()
+            .map(|s| s.success())
+            .unwrap_or(false)
+    } else if Command::new("curl").arg("--version").output().is_ok() {
+        Command::new("curl")
+            .args(["-L", "-o", archive_path.to_str().unwrap(), url])
+            .status()
+            .map(|s| s.success())
+            .unwrap_or(false)
+    } else {
+        false
+    };
+    
+    if !download_success || !archive_path.exists() {
+        return Err("下载aria2静态版本失败".into());
+    }
+    
+    // 解压tar.gz
+    println!("cargo:warning=解压 {} 到 {}", archive_path.display(), out_dir);
+    let extract_status = Command::new("tar")
+        .args(["-xzf", archive_path.to_str().unwrap(), "-C", out_dir, "--strip-components=1"])
+        .status()?;
+    
+    if !extract_status.success() {
+        return Err("解压aria2失败".into());
+    }
+    
+    // 删除压缩包
+    let _ = fs::remove_file(&archive_path);
+    
+    // 确保二进制文件存在并设置权限
+    if binary_path.exists() {
+        set_executable_permissions(&binary_path)?;
+        println!("cargo:warning=成功提取Linux静态aria2: {}", binary_path.display());
+        Ok(())
+    } else {
+        Err("解压后找不到aria2二进制文件".into())
+    }
+}
+
+fn download_static_aria2_macos(target: &str, out_dir: &str, binary_name: &str) -> Result<(), Box<dyn std::error::Error>> {
+    // macOS先尝试使用homebrew，失败则回退到系统安装
+    if Command::new("brew").arg("--version").output().is_ok() {
+        println!("cargo:warning=使用homebrew安装aria2");
+        let install_status = Command::new("brew").args(["install", "aria2"]).status()?;
+        
+        if install_status.success() {
+            // 复制homebrew安装的aria2
+            if let Ok(output) = Command::new("which").arg("aria2c").output() {
+                if output.status.success() {
+                    let system_path = String::from_utf8_lossy(&output.stdout).trim();
+                    let binary_path = Path::new(out_dir).join(binary_name);
+                    
+                    if fs::copy(system_path, &binary_path).is_ok() {
+                        set_executable_permissions(&binary_path)?;
+                        println!("cargo:warning=成功复制macOS aria2: {}", binary_path.display());
+                        return Ok(());
+                    }
+                }
+            }
+        }
+    }
+    
+    // 回退到系统安装方式
+    install_aria2_from_system(out_dir, binary_name)
 }
 
 fn download_and_extract_windows(
