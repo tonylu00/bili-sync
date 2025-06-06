@@ -7,7 +7,8 @@ WORKDIR /app
 RUN apk update && apk add --no-cache \
     ca-certificates \
     tzdata \
-    ffmpeg
+    ffmpeg \
+    aria2
 
 COPY ./bili-sync-rs-Linux-*.tar.gz  ./targets/
 

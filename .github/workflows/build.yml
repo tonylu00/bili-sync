@@ -88,18 +88,17 @@ jobs:
         sudo apt-get update
         sudo apt-get install -y musl-tools
 
-    # 为编译时自动下载aria2安装必要的系统工具
-    - name: Install system tools for aria2 download (Linux)
+    # 安装aria2用于构建集成
+    - name: Install aria2 (Linux)
       if: runner.os == 'Linux'
       run: |
         sudo apt-get update
-        sudo apt-get install -y curl wget tar bzip2 unzip
+        sudo apt-get install -y aria2
 
-    - name: Install system tools for aria2 download (macOS)
+    - name: Install aria2 (macOS)
       if: runner.os == 'macOS'
       run: |
-        # macOS通常已有curl和tar，确保wget可用
-        brew install wget || true
+        brew install aria2
 
     - name: Build binary
       run: |
@@ -143,11 +142,18 @@ jobs:
         else
           ls -lh target/${{ matrix.target }}/release/bili-sync-rs
         fi
-        echo "Testing binary execution:"
-        if [ "${{ runner.os }}" = "Windows" ]; then
-          target/${{ matrix.target }}/release/bili-sync-rs${{ matrix.extension }} --help | head -5
+        echo "Testing binary execution (only for native targets):"
+        # 只在本地架构匹配时执行二进制测试
+        if [ "${{ matrix.target }}" = "x86_64-pc-windows-msvc" ] || 
+           [ "${{ matrix.target }}" = "x86_64-unknown-linux-musl" ] || 
+           [ "${{ matrix.target }}" = "x86_64-apple-darwin" ]; then
+          if [ "${{ runner.os }}" = "Windows" ]; then
+            target/${{ matrix.target }}/release/bili-sync-rs${{ matrix.extension }} --help | head -5
+          else
+            target/${{ matrix.target }}/release/bili-sync-rs --help | head -5
+          fi
         else
-          target/${{ matrix.target }}/release/bili-sync-rs --help | head -5
+          echo "Skipping binary execution test for cross-compiled target ${{ matrix.target }}"
         fi
       shell: bash
 

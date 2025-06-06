@@ -16,23 +16,27 @@ fn main() {
     let out_dir = env::var("OUT_DIR").unwrap();
     let target = env::var("TARGET").unwrap();
 
-    // 确定aria2下载信息
-    let (download_url, archive_name, binary_name) = get_aria2_info(&target);
+    // 确定目标平台的二进制文件名
+    let binary_name = if target.contains("windows") {
+        "aria2c.exe"
+    } else {
+        "aria2c"
+    };
 
     let binary_path = Path::new(&out_dir).join(binary_name);
 
-    // 如果二进制文件已存在，跳过下载
+    // 如果二进制文件已存在，跳过获取
     if binary_path.exists() {
         println!("cargo:warning=aria2二进制文件已存在: {}", binary_path.display());
         return;
     }
 
     if is_ci {
-        println!("cargo:warning=检测到CI环境，尝试下载aria2二进制文件");
+        println!("cargo:warning=检测到CI环境，尝试获取aria2二进制文件");
 
-        // 在CI环境中尝试下载
-        if let Err(e) = download_and_extract(download_url, archive_name, &out_dir, binary_name) {
-            println!("cargo:warning=下载失败: {}", e);
+        // 在CI环境中根据平台获取aria2
+        if let Err(e) = get_aria2_for_ci(&target, &out_dir, binary_name) {
+            println!("cargo:warning=获取aria2失败: {}", e);
             handle_download_failure(&binary_path);
         }
     } else {
@@ -45,48 +49,131 @@ fn main() {
             println!("cargo:warning=环境变量设置禁用下载，创建占位文件");
             handle_download_failure(&binary_path);
         } else if force_download {
-            println!("cargo:warning=环境变量设置强制下载aria2二进制文件");
-            if let Err(e) = download_and_extract(download_url, archive_name, &out_dir, binary_name) {
-                println!("cargo:warning=下载失败: {}", e);
+            println!("cargo:warning=环境变量设置强制获取aria2二进制文件");
+            if let Err(e) = get_aria2_for_ci(&target, &out_dir, binary_name) {
+                println!("cargo:warning=获取失败: {}", e);
                 handle_download_failure(&binary_path);
             }
         } else {
-            // 本地环境直接尝试下载，失败则回退到占位文件
-            println!("cargo:warning=本地环境，尝试下载aria2二进制文件...");
-            if let Err(e) = download_and_extract(download_url, archive_name, &out_dir, binary_name) {
-                println!("cargo:warning=下载失败，回退到占位文件: {}", e);
-                handle_download_failure(&binary_path);
-            }
+            // 本地环境直接创建占位文件
+            println!("cargo:warning=本地环境，创建aria2占位文件");
+            handle_download_failure(&binary_path);
         }
     }
 }
 
-fn get_aria2_info(target: &str) -> (&'static str, &'static str, &'static str) {
-    match target {
-        t if t.contains("windows") => (
-            "https://github.com/aria2/aria2/releases/download/release-1.37.0/aria2-1.37.0-win-64bit-build1.zip",
-            "aria2-1.37.0-win-64bit-build1.zip",
-            "aria2c.exe"
-        ),
-        t if t.contains("linux") && t.contains("musl") => (
-            "https://github.com/aria2/aria2/releases/download/release-1.37.0/aria2-1.37.0-linux-gnu-64bit-build1.tar.bz2",
-            "aria2-1.37.0-linux-gnu-64bit-build1.tar.bz2",
-            "aria2c"
-        ),
-        t if t.contains("apple") => (
-            "https://github.com/aria2/aria2/releases/download/release-1.37.0/aria2-1.37.0-osx-darwin.dmg",
-            "aria2-1.37.0-osx-darwin.dmg",
-            "aria2c"
-        ),
-        _ => (
-            "https://github.com/aria2/aria2/releases/download/release-1.37.0/aria2-1.37.0-linux-gnu-64bit-build1.tar.bz2",
-            "aria2-1.37.0-linux-gnu-64bit-build1.tar.bz2",
-            "aria2c"
-        ),
+fn get_aria2_for_ci(target: &str, out_dir: &str, binary_name: &str) -> Result<(), Box<dyn std::error::Error>> {
+    if target.contains("windows") {
+        // Windows: 下载预编译版本
+        let url = "https://github.com/aria2/aria2/releases/download/release-1.37.0/aria2-1.37.0-win-64bit-build1.zip";
+        let archive_name = "aria2-1.37.0-win-64bit-build1.zip";
+        download_and_extract_windows(url, archive_name, out_dir, binary_name)
+    } else {
+        // Linux/macOS: 使用系统包管理器安装
+        install_aria2_from_system(out_dir, binary_name)
     }
 }
 
-fn download_and_extract(
+fn install_aria2_from_system(out_dir: &str, binary_name: &str) -> Result<(), Box<dyn std::error::Error>> {
+    let binary_path = Path::new(out_dir).join(binary_name);
+    
+    println!("cargo:warning=尝试从系统包管理器安装aria2");
+    
+    // 检查aria2是否已经安装
+    if let Ok(output) = Command::new("which").arg("aria2c").output() {
+        if output.status.success() {
+            let system_path = String::from_utf8_lossy(&output.stdout).trim();
+            println!("cargo:warning=找到系统aria2: {}", system_path);
+            
+            // 复制系统的aria2c到我们的输出目录
+            if let Err(e) = fs::copy(system_path, &binary_path) {
+                println!("cargo:warning=复制系统aria2失败: {}", e);
+                
+                // 如果复制失败，尝试创建符号链接或硬链接
+                #[cfg(unix)]
+                if std::os::unix::fs::symlink(system_path, &binary_path).is_err() {
+                    // 如果符号链接也失败，创建一个简单的包装脚本
+                    let wrapper_script = format!("#!/bin/bash\nexec {} \"$@\"\n", system_path);
+                    fs::write(&binary_path, wrapper_script)?;
+                }
+            }
+            
+            // 设置可执行权限
+            set_executable_permissions(&binary_path)?;
+            
+            if binary_path.exists() {
+                println!("cargo:warning=成功设置aria2二进制文件: {}", binary_path.display());
+                return Ok(());
+            }
+        }
+    }
+    
+    println!("cargo:warning=系统未安装aria2，尝试安装...");
+    
+    // 检测操作系统并安装aria2
+    let install_result = if cfg!(target_os = "linux") {
+        // 尝试不同的Linux包管理器
+        if Command::new("apt-get").arg("--version").output().is_ok() {
+            println!("cargo:warning=使用apt-get安装aria2");
+            Command::new("sudo").args(["apt-get", "update", "-y"]).status().ok();
+            Command::new("sudo").args(["apt-get", "install", "-y", "aria2"]).status()
+        } else if Command::new("yum").arg("--version").output().is_ok() {
+            println!("cargo:warning=使用yum安装aria2");
+            Command::new("sudo").args(["yum", "install", "-y", "aria2"]).status()
+        } else if Command::new("dnf").arg("--version").output().is_ok() {
+            println!("cargo:warning=使用dnf安装aria2");
+            Command::new("sudo").args(["dnf", "install", "-y", "aria2"]).status()
+        } else if Command::new("pacman").arg("--version").output().is_ok() {
+            println!("cargo:warning=使用pacman安装aria2");
+            Command::new("sudo").args(["pacman", "-S", "--noconfirm", "aria2"]).status()
+        } else {
+            println!("cargo:warning=未找到支持的包管理器");
+            return Err("未找到支持的包管理器".into());
+        }
+    } else if cfg!(target_os = "macos") {
+        // macOS使用homebrew
+        if Command::new("brew").arg("--version").output().is_ok() {
+            println!("cargo:warning=使用homebrew安装aria2");
+            Command::new("brew").args(["install", "aria2"]).status()
+        } else {
+            println!("cargo:warning=macOS未安装homebrew");
+            return Err("macOS未安装homebrew".into());
+        }
+    } else {
+        println!("cargo:warning=不支持的操作系统");
+        return Err("不支持的操作系统".into());
+    };
+    
+    match install_result {
+        Ok(status) if status.success() => {
+            println!("cargo:warning=aria2安装成功");
+            
+            // 再次尝试复制已安装的aria2
+            if let Ok(output) = Command::new("which").arg("aria2c").output() {
+                if output.status.success() {
+                    let system_path = String::from_utf8_lossy(&output.stdout).trim();
+                    println!("cargo:warning=找到新安装的aria2: {}", system_path);
+                    
+                    // 复制到我们的输出目录
+                    if fs::copy(system_path, &binary_path).is_ok() {
+                        set_executable_permissions(&binary_path)?;
+                        
+                        if binary_path.exists() {
+                            println!("cargo:warning=成功复制aria2二进制文件: {}", binary_path.display());
+                            return Ok(());
+                        }
+                    }
+                }
+            }
+            
+            Err("安装成功但找不到aria2二进制文件".into())
+        }
+        Ok(_) => Err("aria2安装失败".into()),
+        Err(e) => Err(format!("安装aria2时出错: {}", e).into()),
+    }
+}
+
+fn download_and_extract_windows(
     url: &str,
     archive_name: &str,
     out_dir: &str,
@@ -97,12 +184,7 @@ fn download_and_extract(
 
     // 下载文件
     println!("cargo:warning=下载 {} 到 {}", url, archive_path.display());
-
-    if cfg!(target_os = "windows") {
-        download_with_powershell(url, &archive_path)?;
-    } else {
-        download_with_curl_or_wget(url, &archive_path)?;
-    }
+    download_with_powershell(url, &archive_path)?;
 
     if !archive_path.exists() {
         return Err("下载的文件不存在".into());
@@ -110,28 +192,17 @@ fn download_and_extract(
 
     // 解压文件
     println!("cargo:warning=解压 {} 到 {}", archive_path.display(), out_dir);
-
-    if archive_name.ends_with(".zip") {
-        extract_zip(&archive_path, out_dir, binary_name)?;
-    } else if archive_name.ends_with(".tar.bz2") {
-        extract_tar_bz2(&archive_path, out_dir, binary_name)?;
-    }
+    extract_zip(&archive_path, out_dir, binary_name)?;
 
     // 删除下载的压缩包
     let _ = fs::remove_file(&archive_path);
 
-    // 在Unix系统上设置可执行权限
-    if !cfg!(target_os = "windows") {
-        set_executable_permissions(&binary_path)?;
-    }
-
     if binary_path.exists() {
         println!("cargo:warning=成功提取aria2二进制文件: {}", binary_path.display());
+        Ok(())
     } else {
-        return Err("提取后的二进制文件不存在".into());
+        Err("提取后的二进制文件不存在".into())
     }
-
-    Ok(())
 }
 
 fn download_with_powershell(url: &str, output: &Path) -> Result<(), Box<dyn std::error::Error>> {
@@ -149,107 +220,62 @@ fn download_with_powershell(url: &str, output: &Path) -> Result<(), Box<dyn std:
     Ok(())
 }
 
-fn download_with_curl_or_wget(url: &str, output: &Path) -> Result<(), Box<dyn std::error::Error>> {
-    // 首先尝试curl
-    let curl_status = Command::new("curl")
-        .args(["-L", "-o", &output.to_string_lossy(), url])
-        .status();
-
-    if let Ok(status) = curl_status {
-        if status.success() {
-            return Ok(());
-        }
-    }
-
-    // 如果curl失败，尝试wget
-    let wget_status = Command::new("wget")
-        .args(["-O", &output.to_string_lossy(), url])
-        .status()?;
-
-    if !wget_status.success() {
-        return Err("curl和wget都下载失败".into());
-    }
-
-    Ok(())
-}
-
 fn extract_zip(archive_path: &Path, out_dir: &str, binary_name: &str) -> Result<(), Box<dyn std::error::Error>> {
     // 在Windows上使用PowerShell解压
-    if cfg!(target_os = "windows") {
-        let extract_script = format!(
-            "Add-Type -AssemblyName System.IO.Compression.FileSystem; \
-             $zip = [System.IO.Compression.ZipFile]::OpenRead('{}'); \
-             $entry = $zip.Entries | Where-Object {{ $_.Name -eq '{}' }}; \
-             if ($entry) {{ \
-                 [System.IO.Compression.ZipFileExtensions]::ExtractToFile($entry, '{}', $true); \
-             }}; \
-             $zip.Dispose()",
-            archive_path.display(),
-            binary_name,
-            Path::new(out_dir).join(binary_name).display()
-        );
+    let extract_script = format!(
+        "Add-Type -AssemblyName System.IO.Compression.FileSystem; \
+         $zip = [System.IO.Compression.ZipFile]::OpenRead('{}'); \
+         $entry = $zip.Entries | Where-Object {{ $_.Name -eq '{}' }}; \
+         if ($entry) {{ \
+             [System.IO.Compression.ZipFileExtensions]::ExtractToFile($entry, '{}', $true); \
+         }}; \
+         $zip.Dispose()",
+        archive_path.display(),
+        binary_name,
+        Path::new(out_dir).join(binary_name).display()
+    );
 
-        let status = Command::new("powershell")
-            .args(["-Command", &extract_script])
-            .status()?;
-
-        if !status.success() {
-            return Err("PowerShell解压失败".into());
-        }
-    } else {
-        // 在Unix系统上使用unzip
-        let status = Command::new("unzip")
-            .args(["-j", &archive_path.to_string_lossy(), binary_name, "-d", out_dir])
-            .status()?;
-
-        if !status.success() {
-            return Err("unzip解压失败".into());
-        }
-    }
-
-    Ok(())
-}
-
-fn extract_tar_bz2(archive_path: &Path, out_dir: &str, binary_name: &str) -> Result<(), Box<dyn std::error::Error>> {
-    let status = Command::new("tar")
-        .args([
-            "-xjf",
-            &archive_path.to_string_lossy(),
-            "-C",
-            out_dir,
-            "--strip-components=1",
-            &format!("*/bin/{}", binary_name),
-        ])
+    let status = Command::new("powershell")
+        .args(["-Command", &extract_script])
         .status()?;
 
     if !status.success() {
-        return Err("tar解压失败".into());
+        return Err("PowerShell解压失败".into());
     }
 
     Ok(())
 }
 
 fn handle_download_failure(binary_path: &Path) {
-    println!("cargo:warning=无法下载aria2，创建占位文件: {}", binary_path.display());
-    println!("cargo:warning=提示：可设置环境变量控制下载行为：");
-    println!("cargo:warning=  BILI_SYNC_DOWNLOAD_ARIA2=true  强制下载");
-    println!("cargo:warning=  BILI_SYNC_DOWNLOAD_ARIA2=false 禁用下载");
+    println!("cargo:warning=创建aria2占位文件，运行时需要系统安装aria2");
 
-    // 创建一个简单的占位文件
-    let placeholder_content = b"placeholder";
-    if let Err(e) = fs::write(binary_path, placeholder_content) {
-        println!("cargo:warning=创建占位文件失败: {}", e);
+    // 创建父目录
+    if let Some(parent) = binary_path.parent() {
+        let _ = fs::create_dir_all(parent);
+    }
+
+    // 创建占位文件
+    let content = if binary_path.extension().unwrap_or_default() == "exe" {
+        // Windows可执行文件
+        b"echo Please install aria2 manually && pause"
+    } else {
+        // Unix可执行脚本
+        b"#!/bin/bash\necho 'Please install aria2 manually (apt install aria2 / brew install aria2)'\nread -p 'Press Enter to continue...'"
+    };
+
+    if fs::write(binary_path, content).is_ok() {
+        let _ = set_executable_permissions(binary_path);
+        println!("cargo:warning=已创建占位文件: {}", binary_path.display());
     }
 }
 
 #[cfg(unix)]
 fn set_executable_permissions(binary_path: &Path) -> Result<(), Box<dyn std::error::Error>> {
     use std::os::unix::fs::PermissionsExt;
-
-    let mut perms = fs::metadata(binary_path)?.permissions();
-    perms.set_mode(0o755);
-    fs::set_permissions(binary_path, perms)?;
-
+    let metadata = fs::metadata(binary_path)?;
+    let mut permissions = metadata.permissions();
+    permissions.set_mode(0o755);
+    fs::set_permissions(binary_path, permissions)?;
     Ok(())
 }
 
