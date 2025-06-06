@@ -69,8 +69,11 @@ impl Aria2Downloader {
         }
 
         // 尝试写入嵌入的二进制文件
+        debug!("尝试提取aria2二进制文件到: {}", binary_path.display());
         match tokio::fs::write(&binary_path, ARIA2_BINARY).await {
             Ok(_) => {
+                debug!("aria2二进制文件写入成功，大小: {} bytes", ARIA2_BINARY.len());
+                
                 // 在Unix系统上设置执行权限
                 #[cfg(unix)]
                 {
@@ -79,10 +82,12 @@ impl Aria2Downloader {
                         let mut perms = metadata.permissions();
                         perms.set_mode(0o755);
                         let _ = tokio::fs::set_permissions(&binary_path, perms).await;
+                        debug!("已设置aria2二进制文件执行权限");
                     }
                 }
 
                 // 验证提取的文件是否有效
+                debug!("开始验证提取的aria2二进制文件...");
                 if Self::is_valid_aria2_binary(&binary_path).await {
                     info!("aria2二进制文件已提取到: {}", binary_path.display());
                     return Ok(binary_path);
@@ -103,6 +108,7 @@ impl Aria2Downloader {
     /// 验证aria2二进制文件是否有效
     async fn is_valid_aria2_binary(path: &Path) -> bool {
         if !path.exists() {
+            warn!("aria2二进制文件不存在: {}", path.display());
             return false;
         }
 
@@ -113,10 +119,22 @@ impl Aria2Downloader {
             .await
         {
             Ok(output) => {
-                output.status.success() && 
-                String::from_utf8_lossy(&output.stdout).contains("aria2")
+                let stdout = String::from_utf8_lossy(&output.stdout);
+                let stderr = String::from_utf8_lossy(&output.stderr);
+                
+                if output.status.success() && stdout.contains("aria2") {
+                    debug!("aria2二进制文件验证成功: {}", path.display());
+                    true
+                } else {
+                    warn!("aria2二进制文件验证失败: {}，退出码: {:?}，stdout: {}，stderr: {}", 
+                          path.display(), output.status.code(), stdout.trim(), stderr.trim());
+                    false
+                }
             }
-            Err(_) => false,
+            Err(e) => {
+                warn!("无法执行aria2二进制文件 {}: {}", path.display(), e);
+                false
+            }
         }
     }
 
