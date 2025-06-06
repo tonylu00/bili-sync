@@ -9,9 +9,16 @@ fn main() {
 
     println!("cargo:rerun-if-changed=build.rs");
 
-    // 检查是否在CI环境中
-    let is_ci =
-        env::var("CI").unwrap_or_default() == "true" || env::var("GITHUB_ACTIONS").unwrap_or_default() == "true";
+    // 调试：打印环境变量值
+    let ci_var = env::var("CI").unwrap_or("UNSET".to_string());
+    let github_actions_var = env::var("GITHUB_ACTIONS").unwrap_or("UNSET".to_string());
+    println!("cargo:warning=环境变量 CI: {}", ci_var);
+    println!("cargo:warning=环境变量 GITHUB_ACTIONS: {}", github_actions_var);
+
+    // 检查是否在CI环境中 - 根据GitHub Actions文档，GITHUB_ACTIONS默认为"true"
+    let is_ci = ci_var == "true" || github_actions_var == "true" || github_actions_var != "UNSET";
+
+    println!("cargo:warning=CI环境检测结果: {}", is_ci);
 
     let out_dir = env::var("OUT_DIR").unwrap();
     let target = env::var("TARGET").unwrap();
