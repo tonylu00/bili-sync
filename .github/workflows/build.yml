@@ -15,6 +15,10 @@ jobs:
   build:
     name: Build ${{ matrix.target }}
     runs-on: ${{ matrix.os }}
+    env:
+      # 设置CI环境变量，让build脚本知道这是CI环境
+      CI: true
+      GITHUB_ACTIONS: true
     strategy:
       matrix:
         include:
@@ -108,10 +112,6 @@ jobs:
           cargo build --release --target ${{ matrix.target }} -p bili_sync
         fi
       shell: bash
-      env:
-        # 设置CI环境变量，让build脚本知道这是CI环境
-        CI: true
-        GITHUB_ACTIONS: true
 
     - name: Prepare binary
       run: |
