@@ -47,7 +47,7 @@ impl Aria2Downloader {
         Ok(downloader)
     }
 
-    /// 提取嵌入的aria2二进制文件到临时目录
+    /// 提取嵌入的aria2二进制文件到临时目录，失败时回退到系统aria2
     async fn extract_aria2_binary() -> Result<PathBuf> {
         let temp_dir = std::env::temp_dir();
         let binary_name = if cfg!(target_os = "windows") {
@@ -59,25 +59,136 @@ impl Aria2Downloader {
 
         // 如果文件已存在且可执行，直接返回
         if binary_path.exists() {
-            return Ok(binary_path);
+            // 验证文件是否为有效的aria2可执行文件
+            if Self::is_valid_aria2_binary(&binary_path).await {
+                return Ok(binary_path);
+            } else {
+                // 如果是无效的文件（如占位文件），删除它
+                let _ = tokio::fs::remove_file(&binary_path).await;
+            }
         }
 
-        // 写入二进制文件
-        tokio::fs::write(&binary_path, ARIA2_BINARY)
+        // 尝试写入嵌入的二进制文件
+        match tokio::fs::write(&binary_path, ARIA2_BINARY).await {
+            Ok(_) => {
+                // 在Unix系统上设置执行权限
+                #[cfg(unix)]
+                {
+                    use std::os::unix::fs::PermissionsExt;
+                    if let Ok(metadata) = tokio::fs::metadata(&binary_path).await {
+                        let mut perms = metadata.permissions();
+                        perms.set_mode(0o755);
+                        let _ = tokio::fs::set_permissions(&binary_path, perms).await;
+                    }
+                }
+
+                // 验证提取的文件是否有效
+                if Self::is_valid_aria2_binary(&binary_path).await {
+                    info!("aria2二进制文件已提取到: {}", binary_path.display());
+                    return Ok(binary_path);
+                } else {
+                    warn!("提取的aria2二进制文件无效，尝试使用系统aria2");
+                    let _ = tokio::fs::remove_file(&binary_path).await;
+                }
+            }
+            Err(e) => {
+                warn!("提取aria2二进制文件失败: {}, 尝试使用系统aria2", e);
+            }
+        }
+
+        // 回退到系统安装的aria2
+        Self::find_system_aria2().await
+    }
+
+    /// 验证aria2二进制文件是否有效
+    async fn is_valid_aria2_binary(path: &Path) -> bool {
+        if !path.exists() {
+            return false;
+        }
+
+        // 尝试执行 aria2c --version 来验证
+        match tokio::process::Command::new(path)
+            .arg("--version")
+            .output()
             .await
-            .context("Failed to write aria2 binary")?;
-
-        // 在Unix系统上设置执行权限
-        #[cfg(unix)]
         {
-            use std::os::unix::fs::PermissionsExt;
-            let mut perms = tokio::fs::metadata(&binary_path).await?.permissions();
-            perms.set_mode(0o755);
-            tokio::fs::set_permissions(&binary_path, perms).await?;
+            Ok(output) => {
+                output.status.success() && 
+                String::from_utf8_lossy(&output.stdout).contains("aria2")
+            }
+            Err(_) => false,
+        }
+    }
+
+    /// 查找系统安装的aria2
+    async fn find_system_aria2() -> Result<PathBuf> {
+        let binary_name = if cfg!(target_os = "windows") {
+            "aria2c.exe"
+        } else {
+            "aria2c"
+        };
+
+        // 尝试使用which命令查找
+        match tokio::process::Command::new("which")
+            .arg("aria2c")
+            .output()
+            .await
+        {
+            Ok(output) if output.status.success() => {
+                let path_str = String::from_utf8_lossy(&output.stdout).trim().to_string();
+                let system_path = PathBuf::from(path_str);
+                
+                if Self::is_valid_aria2_binary(&system_path).await {
+                    info!("使用系统安装的aria2: {}", system_path.display());
+                    return Ok(system_path);
+                }
+            }
+            _ => {}
         }
 
-        info!("aria2二进制文件已提取到: {}", binary_path.display());
-        Ok(binary_path)
+        // 在Windows上尝试where命令
+        #[cfg(target_os = "windows")]
+        {
+            match tokio::process::Command::new("where")
+                .arg("aria2c")
+                .output()
+                .await
+            {
+                Ok(output) if output.status.success() => {
+                    let path_str = String::from_utf8_lossy(&output.stdout).trim().to_string();
+                    let system_path = PathBuf::from(path_str);
+                    
+                    if Self::is_valid_aria2_binary(&system_path).await {
+                        info!("使用系统安装的aria2: {}", system_path.display());
+                        return Ok(system_path);
+                    }
+                }
+                _ => {}
+            }
+        }
+
+        // 尝试常见的安装路径
+        let common_paths = if cfg!(target_os = "windows") {
+            vec![
+                PathBuf::from("C:\\Program Files\\aria2\\aria2c.exe"),
+                PathBuf::from("C:\\Program Files (x86)\\aria2\\aria2c.exe"),
+            ]
+        } else {
+            vec![
+                PathBuf::from("/usr/bin/aria2c"),
+                PathBuf::from("/usr/local/bin/aria2c"),
+                PathBuf::from("/opt/homebrew/bin/aria2c"),
+            ]
+        };
+
+        for path in common_paths {
+            if Self::is_valid_aria2_binary(&path).await {
+                info!("使用系统安装的aria2: {}", path.display());
+                return Ok(path);
+            }
+        }
+
+        bail!("未找到可用的aria2二进制文件，请确保系统已安装aria2")
     }
 
     /// 查找可用的端口

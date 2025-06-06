@@ -1,12 +1,10 @@
-version: '3'
-
 services:
   bili-sync:
-    image: bili-sync:latest
+    # image: bili-sync:latest
     # 如果想本地构建，取消注释下面三行
-    # build:
-    #   context: .
-    #   dockerfile: Dockerfile
+    build:
+      context: .
+      dockerfile: Dockerfile
     restart: unless-stopped
     network_mode: bridge
     # 该选项请仅在日志终端支持彩色输出时启用，否则日志中可能会出现乱码

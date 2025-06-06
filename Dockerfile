@@ -10,21 +10,29 @@ RUN apk update && apk add --no-cache \
     ffmpeg \
     aria2
 
-COPY ./bili-sync-rs-Linux-*.tar.gz  ./targets/
+# 安装Rust构建环境
+RUN apk add --no-cache \
+    rust \
+    cargo \
+    musl-dev \
+    nodejs \
+    npm
 
-RUN if [ "$TARGETPLATFORM" = "linux/amd64" ]; then \
-    tar xzvf ./targets/bili-sync-rs-Linux-x86_64-musl.tar.gz -C ./; \
-    else \
-    tar xzvf ./targets/bili-sync-rs-Linux-aarch64-musl.tar.gz -C ./; \
-    fi
+# 复制源代码
+COPY . .
 
-RUN rm -rf ./targets && chmod +x ./bili-sync-rs
+# 构建前端
+WORKDIR /app/web
+RUN npm install && npm run build
 
-FROM alpine
+# 构建后端
+WORKDIR /app
+RUN cargo build --release
+
+FROM alpine AS runtime
 
 WORKDIR /app
 
-# 安装运行时需要的依赖
 RUN apk update && apk add --no-cache \
     ca-certificates \
     tzdata \
@@ -37,8 +45,13 @@ ENV LANG=zh_CN.UTF-8 \
     RUST_BACKTRACE=1 \
     RUST_LOG=None,bili_sync=info
 
-# 只复制必要的文件
-COPY --from=base /app/bili-sync-rs /app/bili-sync-rs
+# 从构建阶段复制二进制文件
+COPY --from=base /app/target/release/bili-sync-rs /app/bili-sync-rs
+
+# 复制前端构建结果
+COPY --from=base /app/web/build /app/web/build
+
+RUN chmod +x /app/bili-sync-rs
 
 ENTRYPOINT [ "/app/bili-sync-rs" ]
 
