@@ -82,7 +82,8 @@ fn install_aria2_from_system(out_dir: &str, binary_name: &str) -> Result<(), Box
     // 检查aria2是否已经安装
     if let Ok(output) = Command::new("which").arg("aria2c").output() {
         if output.status.success() {
-            let system_path = String::from_utf8_lossy(&output.stdout).trim();
+            let system_path_raw = String::from_utf8_lossy(&output.stdout);
+            let system_path = system_path_raw.trim();
             println!("cargo:warning=找到系统aria2: {}", system_path);
             
             // 复制系统的aria2c到我们的输出目录
@@ -151,7 +152,8 @@ fn install_aria2_from_system(out_dir: &str, binary_name: &str) -> Result<(), Box
             // 再次尝试复制已安装的aria2
             if let Ok(output) = Command::new("which").arg("aria2c").output() {
                 if output.status.success() {
-                    let system_path = String::from_utf8_lossy(&output.stdout).trim();
+                    let system_path_raw = String::from_utf8_lossy(&output.stdout);
+                    let system_path = system_path_raw.trim();
                     println!("cargo:warning=找到新安装的aria2: {}", system_path);
                     
                     // 复制到我们的输出目录
@@ -255,12 +257,12 @@ fn handle_download_failure(binary_path: &Path) {
     }
 
     // 创建占位文件
-    let content = if binary_path.extension().unwrap_or_default() == "exe" {
+    let content: Vec<u8> = if binary_path.extension().unwrap_or_default() == "exe" {
         // Windows可执行文件
-        b"echo Please install aria2 manually && pause"
+        b"echo Please install aria2 manually && pause".to_vec()
     } else {
         // Unix可执行脚本
-        b"#!/bin/bash\necho 'Please install aria2 manually (apt install aria2 / brew install aria2)'\nread -p 'Press Enter to continue...'"
+        b"#!/bin/bash\necho 'Please install aria2 manually (apt install aria2 / brew install aria2)'\nread -p 'Press Enter to continue...'".to_vec()
     };
 
     if fs::write(binary_path, content).is_ok() {
