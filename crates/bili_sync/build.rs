@@ -9,17 +9,6 @@ fn main() {
 
     println!("cargo:rerun-if-changed=build.rs");
 
-    // 调试：打印环境变量值
-    let ci_var = env::var("CI").unwrap_or("UNSET".to_string());
-    let github_actions_var = env::var("GITHUB_ACTIONS").unwrap_or("UNSET".to_string());
-    println!("cargo:warning=环境变量 CI: {}", ci_var);
-    println!("cargo:warning=环境变量 GITHUB_ACTIONS: {}", github_actions_var);
-
-    // 检查是否在CI环境中 - 根据GitHub Actions文档，GITHUB_ACTIONS默认为"true"
-    let is_ci = ci_var == "true" || github_actions_var == "true" || github_actions_var != "UNSET";
-
-    println!("cargo:warning=CI环境检测结果: {}", is_ci);
-
     let out_dir = env::var("OUT_DIR").unwrap();
     let target = env::var("TARGET").unwrap();
 
@@ -38,32 +27,17 @@ fn main() {
         return;
     }
 
-    if is_ci {
-        println!("cargo:warning=检测到CI环境，尝试获取aria2二进制文件");
+    // 检查是否强制禁用下载（通过环境变量 BILI_SYNC_DOWNLOAD_ARIA2=false）
+    let force_disable = env::var("BILI_SYNC_DOWNLOAD_ARIA2").unwrap_or_default() == "false";
 
-        // 在CI环境中根据平台获取aria2
+    if force_disable {
+        println!("cargo:warning=环境变量设置禁用下载，创建占位文件");
+        handle_download_failure(&binary_path);
+    } else {
+        // 默认尝试获取aria2二进制文件
+        println!("cargo:warning=尝试获取aria2二进制文件");
         if let Err(e) = get_aria2_for_ci(&target, &out_dir, binary_name) {
             println!("cargo:warning=获取aria2失败: {}", e);
-            handle_download_failure(&binary_path);
-        }
-    } else {
-        // 检查是否强制下载（通过环境变量 BILI_SYNC_DOWNLOAD_ARIA2=true）
-        let force_download = env::var("BILI_SYNC_DOWNLOAD_ARIA2").unwrap_or_default() == "true";
-        // 检查是否强制禁用下载（通过环境变量 BILI_SYNC_DOWNLOAD_ARIA2=false）
-        let force_disable = env::var("BILI_SYNC_DOWNLOAD_ARIA2").unwrap_or_default() == "false";
-
-        if force_disable {
-            println!("cargo:warning=环境变量设置禁用下载，创建占位文件");
-            handle_download_failure(&binary_path);
-        } else if force_download {
-            println!("cargo:warning=环境变量设置强制获取aria2二进制文件");
-            if let Err(e) = get_aria2_for_ci(&target, &out_dir, binary_name) {
-                println!("cargo:warning=获取失败: {}", e);
-                handle_download_failure(&binary_path);
-            }
-        } else {
-            // 本地环境直接创建占位文件
-            println!("cargo:warning=本地环境，创建aria2占位文件");
             handle_download_failure(&binary_path);
         }
     }
