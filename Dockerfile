@@ -20,9 +20,16 @@ RUN if [ "$TARGETPLATFORM" = "linux/amd64" ]; then \
 
 RUN rm -rf ./targets && chmod +x ./bili-sync-rs
 
-FROM scratch
+FROM alpine
 
 WORKDIR /app
+
+# 安装运行时需要的依赖
+RUN apk update && apk add --no-cache \
+    ca-certificates \
+    tzdata \
+    ffmpeg \
+    aria2
 
 ENV LANG=zh_CN.UTF-8 \
     TZ=Asia/Shanghai \
@@ -30,7 +37,8 @@ ENV LANG=zh_CN.UTF-8 \
     RUST_BACKTRACE=1 \
     RUST_LOG=None,bili_sync=info
 
-COPY --from=base / /
+# 只复制必要的文件
+COPY --from=base /app/bili-sync-rs /app/bili-sync-rs
 
 ENTRYPOINT [ "/app/bili-sync-rs" ]
 
