@@ -109,3 +109,6 @@ aria2c
 /settings.html
 /favicon.png
 /*.html
+
+# GitHub Actions 构建日志
+logs_*/

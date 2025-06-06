@@ -106,9 +106,12 @@ jobs:
 
     - name: Install aria2 (Windows)
       if: runner.os == 'Windows'
+      shell: powershell
       run: |
-        winget install aria2.aria2 --accept-source-agreements --accept-package-agreements
+        # 使用Chocolatey安装aria2
+        choco install aria2 -y
         echo "Aria2 installation completed"
+        aria2c --version
 
     - name: Build binary
       run: |

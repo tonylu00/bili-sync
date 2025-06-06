@@ -122,7 +122,7 @@ impl Aria2Downloader {
 
     /// 查找系统安装的aria2
     async fn find_system_aria2() -> Result<PathBuf> {
-        let binary_name = if cfg!(target_os = "windows") {
+        let _binary_name = if cfg!(target_os = "windows") {
             "aria2c.exe"
         } else {
             "aria2c"
