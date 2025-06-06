@@ -92,22 +92,43 @@ fn install_aria2_from_system(out_dir: &str, binary_name: &str) -> Result<(), Box
     
     println!("cargo:warning=系统未安装aria2，尝试安装...");
     
+    // 检测是否在容器中（通常cross编译时没有sudo）
+    let use_sudo = Command::new("sudo").arg("--version").output().is_ok();
+    
     // 检测操作系统并安装aria2
     let install_result = if cfg!(target_os = "linux") {
         // 尝试不同的Linux包管理器
         if Command::new("apt-get").arg("--version").output().is_ok() {
             println!("cargo:warning=使用apt-get安装aria2");
-            Command::new("sudo").args(["apt-get", "update", "-y"]).status().ok();
-            Command::new("sudo").args(["apt-get", "install", "-y", "aria2"]).status()
+            if use_sudo {
+                Command::new("sudo").args(["apt-get", "update", "-y"]).status().ok();
+                Command::new("sudo").args(["apt-get", "install", "-y", "aria2"]).status()
+            } else {
+                println!("cargo:warning=容器环境，直接使用apt-get");
+                Command::new("apt-get").args(["update", "-y"]).status().ok();
+                Command::new("apt-get").args(["install", "-y", "aria2"]).status()
+            }
         } else if Command::new("yum").arg("--version").output().is_ok() {
             println!("cargo:warning=使用yum安装aria2");
-            Command::new("sudo").args(["yum", "install", "-y", "aria2"]).status()
+            if use_sudo {
+                Command::new("sudo").args(["yum", "install", "-y", "aria2"]).status()
+            } else {
+                Command::new("yum").args(["install", "-y", "aria2"]).status()
+            }
         } else if Command::new("dnf").arg("--version").output().is_ok() {
             println!("cargo:warning=使用dnf安装aria2");
-            Command::new("sudo").args(["dnf", "install", "-y", "aria2"]).status()
+            if use_sudo {
+                Command::new("sudo").args(["dnf", "install", "-y", "aria2"]).status()
+            } else {
+                Command::new("dnf").args(["install", "-y", "aria2"]).status()
+            }
         } else if Command::new("pacman").arg("--version").output().is_ok() {
             println!("cargo:warning=使用pacman安装aria2");
-            Command::new("sudo").args(["pacman", "-S", "--noconfirm", "aria2"]).status()
+            if use_sudo {
+                Command::new("sudo").args(["pacman", "-S", "--noconfirm", "aria2"]).status()
+            } else {
+                Command::new("pacman").args(["-S", "--noconfirm", "aria2"]).status()
+            }
         } else {
             println!("cargo:warning=未找到支持的包管理器");
             return Err("未找到支持的包管理器".into());
