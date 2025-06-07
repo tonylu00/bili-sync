@@ -362,6 +362,8 @@ fn extract_zip(archive_path: &Path, out_dir: &str, binary_name: &str) -> Result<
         if !status.success() {
             return Err("PowerShell解压失败".into());
         }
+        
+        Ok(())
     }
     
     #[cfg(not(target_os = "windows"))]
@@ -416,8 +418,6 @@ fn extract_zip(archive_path: &Path, out_dir: &str, binary_name: &str) -> Result<
         // 如果unzip失败，尝试使用Rust的zip库（但我们需要确保它在build.rs中可用）
         return Err("无法解压zip文件：未找到unzip命令或zip内容不匹配".into());
     }
-
-    Ok(())
 }
 
 fn handle_download_failure(binary_path: &Path) {
