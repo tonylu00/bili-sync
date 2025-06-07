@@ -4,7 +4,50 @@ on:
   push:
     branches: [ beta, dev ]  # 只在beta和dev分支触发
     tags: [ 'beta*', 'v*-beta*' ]  # 支持beta标签，如 beta1.0.0, v2.7.0-beta1
-  # workflow_dispatch:  # 临时禁用手动触发
+  workflow_dispatch:  # 支持手动触发
+    inputs:
+      custom_tags:
+        description: '自定义镜像标签 (用逗号分隔多个标签，例如: v2.7.1,latest,stable)'
+        required: false
+        default: ''
+        type: string
+      tag_prefix:
+        description: '标签前缀'
+        required: false
+        default: 'manual'
+        type: choice
+        options:
+          - 'manual'
+          - 'test'
+          - 'debug'
+          - 'dev'
+          - 'staging'
+          - 'hotfix'
+          - 'feature'
+      include_beta_tags:
+        description: '是否包含默认的 beta 标签'
+        required: false
+        default: true
+        type: boolean
+      push_to_dockerhub:
+        description: '推送到 Docker Hub'
+        required: false
+        default: true
+        type: boolean
+      push_to_cnb:
+        description: '推送到 CNB.Cool'
+        required: false
+        default: true
+        type: boolean
+      platforms:
+        description: '构建平台'
+        required: false
+        default: 'linux/amd64,linux/arm64'
+        type: choice
+        options:
+          - 'linux/amd64,linux/arm64'
+          - 'linux/amd64'
+          - 'linux/arm64'
 
 env:
   REGISTRY: docker.io
@@ -39,6 +82,54 @@ jobs:
         username: cnb
         password: ${{ secrets.CNB_PASSWORD }}
 
+    - name: Prepare Docker tags
+      id: tags
+      run: |
+        # 初始化标签数组
+        DOCKERHUB_TAGS=""
+        CNB_TAGS=""
+        
+        # 默认 beta 标签（仅在自动触发或手动触发时启用了 beta 标签）
+        if [[ "${{ github.event_name }}" != "workflow_dispatch" ]] || [[ "${{ github.event.inputs.include_beta_tags }}" == "true" ]]; then
+          DOCKERHUB_TAGS="${{ env.IMAGE_NAME }}:beta,${{ env.IMAGE_NAME }}:beta-latest"
+          CNB_TAGS="docker.cnb.cool/${{ env.CNB_IMAGE_NAME }}:beta,docker.cnb.cool/${{ env.CNB_IMAGE_NAME }}:beta-latest"
+        fi
+        
+        # 手动触发时的自定义标签
+        if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+          PREFIX="${{ github.event.inputs.tag_prefix }}"
+          
+          # 如果有自定义标签，使用自定义标签
+          if [[ -n "${{ github.event.inputs.custom_tags }}" ]]; then
+            IFS=',' read -ra CUSTOM_TAGS <<< "${{ github.event.inputs.custom_tags }}"
+            for tag in "${CUSTOM_TAGS[@]}"; do
+              tag=$(echo "$tag" | xargs)  # 去除空格
+              if [[ -n "$DOCKERHUB_TAGS" ]]; then
+                DOCKERHUB_TAGS="$DOCKERHUB_TAGS,${{ env.IMAGE_NAME }}:$tag"
+                CNB_TAGS="$CNB_TAGS,docker.cnb.cool/${{ env.CNB_IMAGE_NAME }}:$tag"
+              else
+                DOCKERHUB_TAGS="${{ env.IMAGE_NAME }}:$tag"
+                CNB_TAGS="docker.cnb.cool/${{ env.CNB_IMAGE_NAME }}:$tag"
+              fi
+            done
+          else
+            # 使用前缀生成标签
+            TIMESTAMP=$(date +%Y%m%d-%H%M%S)
+            if [[ -n "$DOCKERHUB_TAGS" ]]; then
+              DOCKERHUB_TAGS="$DOCKERHUB_TAGS,${{ env.IMAGE_NAME }}:$PREFIX-$TIMESTAMP"
+              CNB_TAGS="$CNB_TAGS,docker.cnb.cool/${{ env.CNB_IMAGE_NAME }}:$PREFIX-$TIMESTAMP"
+            else
+              DOCKERHUB_TAGS="${{ env.IMAGE_NAME }}:$PREFIX-$TIMESTAMP"
+              CNB_TAGS="docker.cnb.cool/${{ env.CNB_IMAGE_NAME }}:$PREFIX-$TIMESTAMP"
+            fi
+          fi
+        fi
+        
+        echo "dockerhub_tags=$DOCKERHUB_TAGS" >> $GITHUB_OUTPUT
+        echo "cnb_tags=$CNB_TAGS" >> $GITHUB_OUTPUT
+        echo "推送到 Docker Hub 的标签: $DOCKERHUB_TAGS"
+        echo "推送到 CNB.Cool 的标签: $CNB_TAGS"
+
     - name: Extract metadata
       id: meta
       uses: docker/metadata-action@v4
@@ -54,14 +145,13 @@ jobs:
           type=raw,value=latest,enable={{is_default_branch}}
 
     - name: Build and push to Docker Hub
+      if: (github.event_name != 'pull_request') && (github.event_name != 'workflow_dispatch' || github.event.inputs.push_to_dockerhub == 'true')
       uses: docker/build-push-action@v4
       with:
         context: .
-        platforms: linux/amd64,linux/arm64
-        push: ${{ github.event_name != 'pull_request' }}
-        tags: |
-          ${{ env.IMAGE_NAME }}:beta
-          ${{ env.IMAGE_NAME }}:beta-latest
+        platforms: ${{ github.event.inputs.platforms || 'linux/amd64,linux/arm64' }}
+        push: true
+        tags: ${{ steps.tags.outputs.dockerhub_tags }}
         labels: ${{ steps.meta.outputs.labels }}
         cache-from: type=gha
         cache-to: type=gha,mode=max
@@ -69,16 +159,13 @@ jobs:
           BUILDKIT_INLINE_CACHE=1
 
     - name: Build and push to CNB.Cool Registry
-      if: github.event_name != 'pull_request'
+      if: (github.event_name != 'pull_request') && (github.event_name != 'workflow_dispatch' || github.event.inputs.push_to_cnb == 'true')
       uses: docker/build-push-action@v4
       with:
         context: .
-        platforms: linux/amd64,linux/arm64
+        platforms: ${{ github.event.inputs.platforms || 'linux/amd64,linux/arm64' }}
         push: true
-        tags: |
-          docker.cnb.cool/${{ env.CNB_IMAGE_NAME }}:beta
-          docker.cnb.cool/${{ env.CNB_IMAGE_NAME }}:beta-latest
-          docker.cnb.cool/${{ env.CNB_IMAGE_NAME }}:v2.7.0-beta
+        tags: ${{ steps.tags.outputs.cnb_tags }}
         labels: ${{ steps.meta.outputs.labels }}
         cache-from: type=gha
         build-args: |
@@ -88,4 +175,11 @@ jobs:
       if: github.event_name != 'pull_request'
       run: |
         echo "Testing Docker image..."
-        docker run --rm ${{ env.IMAGE_NAME }}:beta-latest --help | head -5 || echo "Docker image test completed"
+        # 获取第一个推送的标签进行测试
+        FIRST_TAG=$(echo "${{ steps.tags.outputs.dockerhub_tags }}" | cut -d',' -f1)
+        if [[ -n "$FIRST_TAG" ]]; then
+          echo "Testing image: $FIRST_TAG"
+          docker run --rm $FIRST_TAG --help | head -5 || echo "Docker image test completed"
+        else
+          echo "No tags to test"
+        fi

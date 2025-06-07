@@ -133,7 +133,46 @@ fn download_static_aria2_linux(target: &str, out_dir: &str, binary_name: &str) -
 }
 
 fn download_aria2_macos(out_dir: &str, binary_name: &str) -> Result<(), Box<dyn std::error::Error>> {
-    println!("cargo:warning=macOS暂时使用系统安装方式");
+    let _binary_path = Path::new(out_dir).join(binary_name);
+    
+    // 尝试下载官方macOS预编译版本
+    println!("cargo:warning=macOS检测aria2安装状态");
+    
+    // aria2官方仓库不提供独立的macOS二进制文件，只有源码
+    // 最新版本1.37.0可通过以下方式获取：
+    // 1. 使用Homebrew: brew install aria2  
+    // 2. 使用MacPorts: port install aria2
+    // 3. 从源码编译
+    println!("cargo:warning=aria2官方不提供macOS预编译二进制文件");
+    println!("cargo:warning=将尝试通过Homebrew自动安装aria2");
+    
+    // 检查Homebrew是否存在，如果存在则尝试安装aria2
+    if let Ok(output) = Command::new("brew").arg("--version").output() {
+        if output.status.success() {
+            println!("cargo:warning=检测到Homebrew，尝试安装aria2");
+            
+            // 检查aria2是否已安装
+            if let Ok(output) = Command::new("brew").args(["list", "aria2"]).output() {
+                if output.status.success() {
+                    println!("cargo:warning=aria2已通过Homebrew安装");
+                } else {
+                    println!("cargo:warning=通过Homebrew安装aria2");
+                    let install_result = Command::new("brew").args(["install", "aria2"]).status();
+                    match install_result {
+                        Ok(status) if status.success() => {
+                            println!("cargo:warning=aria2安装成功");
+                        }
+                        _ => {
+                            println!("cargo:warning=aria2安装失败，将使用现有系统版本");
+                        }
+                    }
+                }
+            }
+        }
+    } else {
+        println!("cargo:warning=未检测到Homebrew，使用现有系统aria2");
+    }
+    
     install_aria2_from_system(out_dir, binary_name)
 }
 
@@ -421,20 +460,55 @@ fn extract_zip(archive_path: &Path, out_dir: &str, binary_name: &str) -> Result<
 }
 
 fn handle_download_failure(binary_path: &Path) {
-    println!("cargo:warning=创建aria2占位文件，运行时需要系统安装aria2");
+    println!("cargo:warning=创建aria2占位文件，程序会在运行时自动检测系统安装的aria2");
+    
+    // 根据平台给出安装建议
+    let install_hint = if cfg!(target_os = "macos") {
+        "程序可自动使用系统aria2，如需手动安装请运行: brew install aria2"
+    } else if cfg!(target_os = "linux") {
+        "程序可自动使用系统aria2，如需手动安装请运行: apt install aria2 或 yum install aria2"
+    } else if cfg!(target_os = "windows") {
+        "程序可自动使用系统aria2，如需手动安装请访问: https://aria2.github.io/"
+    } else {
+        "程序可自动使用系统aria2，请手动安装aria2"
+    };
+    
+    println!("cargo:warning={}", install_hint);
 
     // 创建父目录
     if let Some(parent) = binary_path.parent() {
         let _ = fs::create_dir_all(parent);
     }
 
-    // 创建占位文件
+    // 创建占位文件（更友好的内容）
     let content: Vec<u8> = if binary_path.extension().unwrap_or_default() == "exe" {
-        // Windows可执行文件
-        b"echo Please install aria2 manually && pause".to_vec()
+        // Windows占位文件
+        format!(
+            "@echo off\n\
+            echo ===== bili-sync aria2 占位文件 =====\n\
+            echo 此文件为占位文件，程序运行时会自动检测系统安装的aria2\n\
+            echo 如需手动安装，请访问: https://aria2.github.io/\n\
+            echo 或使用 scoop install aria2 / choco install aria2\n\
+            echo ==================================\n\
+            pause"
+        ).into_bytes()
     } else {
-        // Unix可执行脚本
-        b"#!/bin/bash\necho 'Please install aria2 manually (apt install aria2 / brew install aria2)'\nread -p 'Press Enter to continue...'".to_vec()
+        // Unix占位文件
+        let install_cmd = if cfg!(target_os = "macos") {
+            "brew install aria2"
+        } else {
+            "apt install aria2  # 或 yum install aria2"
+        };
+        
+        format!(
+            "#!/bin/bash\n\
+            echo '===== bili-sync aria2 占位文件 ====='\n\
+            echo '此文件为占位文件，程序运行时会自动检测系统安装的aria2'\n\
+            echo '如需手动安装，请运行: {}'\n\
+            echo '=================================='\n\
+            read -p '按 Enter 键继续...'",
+            install_cmd
+        ).into_bytes()
     };
 
     if fs::write(binary_path, content).is_ok() {
