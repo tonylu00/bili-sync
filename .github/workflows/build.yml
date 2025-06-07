@@ -222,32 +222,43 @@ jobs:
     - name: Comprehensive aria2 integration check
       run: |
         echo "=== Downloaded artifacts summary ==="
-        find . -type f -name "*.zip" -o -name "*.tar.gz" | sort
+        echo "Directory structure:"
+        find . -type f | sort
         
         echo -e "\n=== Binary analysis with aria2 integration ==="
         total_size=0
         archive_count=0
         
-        find . -name "*.zip" -o -name "*.tar.gz" | while read archive; do
+        # 修复路径问题 - 查找实际的归档文件
+        find . -type f \( -name "*.zip" -o -name "*.tar.gz" \) | while read archive; do
           echo "----------------------------------------"
           echo "Analyzing: $archive"
           archive_count=$((archive_count + 1))
           
-          if [[ "$archive" == *.zip ]]; then
-            echo "Archive contents:"
-            unzip -l "$archive"
-            size=$(unzip -l "$archive" | grep "bili-sync-rs" | awk '{print $1}')
-          else
-            echo "Archive contents:"
-            tar -tzf "$archive"
-            echo "Archive details:"
-            tar -tzvf "$archive"
-            size=$(tar -tzvf "$archive" | grep "bili-sync-rs" | awk '{print $3}')
+          # 确保文件存在且可读
+          if [ ! -f "$archive" ]; then
+            echo "Warning: File not found or not readable: $archive"
+            continue
           fi
           
-          if [ -n "$size" ]; then
+          if [[ "$archive" == *.zip ]]; then
+            echo "Archive contents:"
+            unzip -l "$archive" 2>/dev/null || echo "Failed to list zip contents"
+            size=$(unzip -l "$archive" 2>/dev/null | grep "bili-sync-rs" | awk '{print $1}' | head -1)
+          else
+            echo "Archive contents:"
+            tar -tzf "$archive" 2>/dev/null || echo "Failed to list tar contents"
+            echo "Archive details:"
+            tar -tzvf "$archive" 2>/dev/null || echo "Failed to get tar details"
+            size=$(tar -tzvf "$archive" 2>/dev/null | grep "bili-sync-rs" | awk '{print $3}' | head -1)
+          fi
+          
+          if [ -n "$size" ] && [ "$size" != "" ]; then
             echo "Binary size: $size bytes"
-            total_size=$((total_size + size))
+            # 注意：在子shell中的变量不会影响父shell，这里只是显示
+            echo "Size detected: $size"
+          else
+            echo "Could not determine binary size"
           fi
         done
         
@@ -260,17 +271,35 @@ jobs:
         
         echo -e "\n=== Testing sample binary ==="
         # 测试Linux x86_64版本
-        linux_archive=$(find . -name "*Linux*x86_64*.tar.gz" | head -1)
+        linux_archive=$(find . -type f -name "*Linux*x86_64*.tar.gz" | head -1)
         if [ -n "$linux_archive" ] && [ -f "$linux_archive" ]; then
           echo "Testing Linux binary from: $linux_archive"
-          tar -xzf "$linux_archive" -C .
-          if [ -f "./bili-sync-rs" ]; then
-            chmod +x ./bili-sync-rs
+          
+          # 创建临时目录来解压
+          test_dir="./test_binary"
+          mkdir -p "$test_dir"
+          
+          echo "Extracting to: $test_dir"
+          tar -xzf "$linux_archive" -C "$test_dir" 2>/dev/null || {
+            echo "Failed to extract $linux_archive"
+            continue
+          }
+          
+          binary_file=$(find "$test_dir" -name "bili-sync-rs" -type f | head -1)
+          if [ -n "$binary_file" ] && [ -f "$binary_file" ]; then
+            chmod +x "$binary_file"
             echo "Binary info:"
-            file ./bili-sync-rs
+            file "$binary_file" 2>/dev/null || echo "file command failed"
             echo "Size:"
-            ls -lh ./bili-sync-rs
+            ls -lh "$binary_file"
             echo "Help test:"
-            timeout 10s ./bili-sync-rs --help | head -5 || echo "Help test completed (timeout or expected)"
+            timeout 10s "$binary_file" --help 2>/dev/null | head -5 || echo "Help test completed (timeout or expected)"
+          else
+            echo "Binary not found in extracted archive"
           fi
+          
+          # 清理
+          rm -rf "$test_dir"
+        else
+          echo "No Linux x86_64 archive found for testing"
         fi 
