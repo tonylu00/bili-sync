@@ -9,15 +9,21 @@ RUN apk update && apk add --no-cache \
     tzdata \
     ffmpeg
 
-COPY ./bili-sync-rs-Linux-*.tar.gz  ./targets/
+# 复制所有Linux二进制文件
+COPY ./bili-sync-rs-Linux-*.tar.gz ./
 
+# 根据目标平台解压对应的二进制文件
 RUN if [ "$TARGETPLATFORM" = "linux/amd64" ]; then \
-    tar xzvf ./targets/bili-sync-rs-Linux-x86_64-musl.tar.gz -C ./; \
+    tar xzvf ./bili-sync-rs-Linux-x86_64-musl.tar.gz; \
+    elif [ "$TARGETPLATFORM" = "linux/arm64" ]; then \
+    tar xzvf ./bili-sync-rs-Linux-aarch64-musl.tar.gz; \
     else \
-    tar xzvf ./targets/bili-sync-rs-Linux-aarch64-musl.tar.gz -C ./; \
+    echo "Unsupported platform: $TARGETPLATFORM" && exit 1; \
     fi
 
-RUN rm -rf ./targets && chmod +x ./bili-sync-rs
+# 清理压缩文件并设置权限
+RUN rm -f ./bili-sync-rs-Linux-*.tar.gz && \
+    chmod +x ./bili-sync-rs
 
 FROM scratch
 

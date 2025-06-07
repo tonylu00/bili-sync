@@ -1,0 +1,46 @@
+﻿2025-06-07T21:56:00.3036597Z ##[group]Run ALL_TAGS=""
+2025-06-07T21:56:00.3036909Z [36;1mALL_TAGS=""[0m
+2025-06-07T21:56:00.3037108Z [36;1m[0m
+2025-06-07T21:56:00.3037286Z [36;1m# 添加 Docker Hub 标签[0m
+2025-06-07T21:56:00.3037518Z [36;1mif [[ "true" == "true" ]]; then[0m
+2025-06-07T21:56:00.3037856Z [36;1m  if [[ -n "***/bili-sync:beta" ]]; then[0m
+2025-06-07T21:56:00.3038163Z [36;1m    ALL_TAGS="***/bili-sync:beta"[0m
+2025-06-07T21:56:00.3038405Z [36;1m  fi[0m
+2025-06-07T21:56:00.3038573Z [36;1mfi[0m
+2025-06-07T21:56:00.3038737Z [36;1m[0m
+2025-06-07T21:56:00.3038908Z [36;1m# 添加 CNB.Cool 标签[0m
+2025-06-07T21:56:00.3039154Z [36;1mif [[ "true" == "true" ]]; then[0m
+2025-06-07T21:56:00.3039485Z [36;1m  if [[ -n "docker.cnb.cool/sviplk.com/docker/bili-sync:beta" ]]; then[0m
+2025-06-07T21:56:00.3039851Z [36;1m    if [[ -n "$ALL_TAGS" ]]; then[0m
+2025-06-07T21:56:00.3040219Z [36;1m      ALL_TAGS="$ALL_TAGS,docker.cnb.cool/sviplk.com/docker/bili-sync:beta"[0m
+2025-06-07T21:56:00.3040563Z [36;1m    else[0m
+2025-06-07T21:56:00.3040863Z [36;1m      ALL_TAGS="docker.cnb.cool/sviplk.com/docker/bili-sync:beta"[0m
+2025-06-07T21:56:00.3041174Z [36;1m    fi[0m
+2025-06-07T21:56:00.3041349Z [36;1m  fi[0m
+2025-06-07T21:56:00.3041511Z [36;1mfi[0m
+2025-06-07T21:56:00.3041672Z [36;1m[0m
+2025-06-07T21:56:00.3041876Z [36;1mecho "all_tags=$ALL_TAGS" >> $GITHUB_OUTPUT[0m
+2025-06-07T21:56:00.3042154Z [36;1mecho "合并后的标签: $ALL_TAGS"[0m
+2025-06-07T21:56:00.3093323Z shell: /usr/bin/bash -e {0}
+2025-06-07T21:56:00.3093803Z env:
+2025-06-07T21:56:00.3094060Z   REGISTRY: docker.io
+2025-06-07T21:56:00.3094467Z   IMAGE_NAME: ***/bili-sync
+2025-06-07T21:56:00.3095135Z   CNB_REGISTRY: docker.cnb.cool
+2025-06-07T21:56:00.3095568Z   CNB_IMAGE_NAME: sviplk.com/docker/bili-sync
+2025-06-07T21:56:00.3095985Z   DOCKER_METADATA_OUTPUT_VERSION: main
+2025-06-07T21:56:00.3097168Z   DOCKER_METADATA_OUTPUT_TAGS: ***/bili-sync:main
+***/bili-sync:latest
+docker.cnb.cool/sviplk.com/docker/bili-sync:main
+docker.cnb.cool/sviplk.com/docker/bili-sync:latest
+2025-06-07T21:56:00.3100622Z   DOCKER_METADATA_OUTPUT_LABELS: org.opencontainers.image.created=2025-06-07T21:56:00.274Z
+org.opencontainers.image.description=由 Rust & Tokio 驱动的哔哩哔哩同步工具有更新
+org.opencontainers.image.licenses=MIT
+org.opencontainers.image.revision=7d9d3f417509ed6fa7a8ea17a555cf08a2fab79d
+org.opencontainers.image.source=https://github.com/***/bili-sync-01
+org.opencontainers.image.title=bili-sync-01
+org.opencontainers.image.url=https://github.com/***/bili-sync-01
+org.opencontainers.image.version=main
+2025-06-07T21:56:00.3105456Z   DOCKER_METADATA_OUTPUT_JSON: {"tags":["***/bili-sync:main","***/bili-sync:latest","docker.cnb.cool/sviplk.com/docker/bili-sync:main","docker.cnb.cool/sviplk.com/docker/bili-sync:latest"],"labels":{"org.opencontainers.image.created":"2025-06-07T21:56:00.274Z","org.opencontainers.image.description":"由 Rust & Tokio 驱动的哔哩哔哩同步工具有更新","org.opencontainers.image.licenses":"MIT","org.opencontainers.image.revision":"7d9d3f417509ed6fa7a8ea17a555cf08a2fab79d","org.opencontainers.image.source":"https://github.com/***/bili-sync-01","org.opencontainers.image.title":"bili-sync-01","org.opencontainers.image.url":"https://github.com/***/bili-sync-01","org.opencontainers.image.version":"main"}}
+2025-06-07T21:56:00.3107955Z   DOCKER_METADATA_OUTPUT_BAKE_FILE: /tmp/docker-actions-toolkit-eoFSqh/docker-metadata-action-bake.json
+2025-06-07T21:56:00.3108405Z ##[endgroup]
+2025-06-07T21:56:00.3179930Z 合并后的标签: ***/bili-sync:beta,docker.cnb.cool/sviplk.com/docker/bili-sync:beta

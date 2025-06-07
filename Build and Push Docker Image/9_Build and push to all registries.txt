@@ -1,0 +1,380 @@
+﻿2025-06-07T21:56:00.3237436Z ##[group]Run docker/build-push-action@v4
+2025-06-07T21:56:00.3237728Z with:
+2025-06-07T21:56:00.3237923Z   context: .
+2025-06-07T21:56:00.3238113Z   platforms: linux/amd64,linux/arm64
+2025-06-07T21:56:00.3238354Z   push: true
+2025-06-07T21:56:00.3238719Z   tags: ***/bili-sync:beta,docker.cnb.cool/sviplk.com/docker/bili-sync:beta
+2025-06-07T21:56:00.3240545Z   labels: org.opencontainers.image.created=2025-06-07T21:56:00.274Z
+org.opencontainers.image.description=由 Rust & Tokio 驱动的哔哩哔哩同步工具有更新
+org.opencontainers.image.licenses=MIT
+org.opencontainers.image.revision=7d9d3f417509ed6fa7a8ea17a555cf08a2fab79d
+org.opencontainers.image.source=https://github.com/***/bili-sync-01
+org.opencontainers.image.title=bili-sync-01
+org.opencontainers.image.url=https://github.com/***/bili-sync-01
+org.opencontainers.image.version=main
+2025-06-07T21:56:00.3242175Z   cache-from: type=gha
+2025-06-07T21:56:00.3242388Z   cache-to: type=gha,mode=max
+2025-06-07T21:56:00.3242622Z   build-args: BUILDKIT_INLINE_CACHE=1
+
+2025-06-07T21:56:00.3242898Z   load: false
+2025-06-07T21:56:00.3243071Z   no-cache: false
+2025-06-07T21:56:00.3243249Z   pull: false
+2025-06-07T21:56:00.3243719Z   github-token: ***
+2025-06-07T21:56:00.3243903Z env:
+2025-06-07T21:56:00.3244068Z   REGISTRY: docker.io
+2025-06-07T21:56:00.3244281Z   IMAGE_NAME: ***/bili-sync
+2025-06-07T21:56:00.3244500Z   CNB_REGISTRY: docker.cnb.cool
+2025-06-07T21:56:00.3244740Z   CNB_IMAGE_NAME: sviplk.com/docker/bili-sync
+2025-06-07T21:56:00.3245015Z   DOCKER_METADATA_OUTPUT_VERSION: main
+2025-06-07T21:56:00.3245733Z   DOCKER_METADATA_OUTPUT_TAGS: ***/bili-sync:main
+***/bili-sync:latest
+docker.cnb.cool/sviplk.com/docker/bili-sync:main
+docker.cnb.cool/sviplk.com/docker/bili-sync:latest
+2025-06-07T21:56:00.3247912Z   DOCKER_METADATA_OUTPUT_LABELS: org.opencontainers.image.created=2025-06-07T21:56:00.274Z
+org.opencontainers.image.description=由 Rust & Tokio 驱动的哔哩哔哩同步工具有更新
+org.opencontainers.image.licenses=MIT
+org.opencontainers.image.revision=7d9d3f417509ed6fa7a8ea17a555cf08a2fab79d
+org.opencontainers.image.source=https://github.com/***/bili-sync-01
+org.opencontainers.image.title=bili-sync-01
+org.opencontainers.image.url=https://github.com/***/bili-sync-01
+org.opencontainers.image.version=main
+2025-06-07T21:56:00.3251883Z   DOCKER_METADATA_OUTPUT_JSON: {"tags":["***/bili-sync:main","***/bili-sync:latest","docker.cnb.cool/sviplk.com/docker/bili-sync:main","docker.cnb.cool/sviplk.com/docker/bili-sync:latest"],"labels":{"org.opencontainers.image.created":"2025-06-07T21:56:00.274Z","org.opencontainers.image.description":"由 Rust & Tokio 驱动的哔哩哔哩同步工具有更新","org.opencontainers.image.licenses":"MIT","org.opencontainers.image.revision":"7d9d3f417509ed6fa7a8ea17a555cf08a2fab79d","org.opencontainers.image.source":"https://github.com/***/bili-sync-01","org.opencontainers.image.title":"bili-sync-01","org.opencontainers.image.url":"https://github.com/***/bili-sync-01","org.opencontainers.image.version":"main"}}
+2025-06-07T21:56:00.3254531Z   DOCKER_METADATA_OUTPUT_BAKE_FILE: /tmp/docker-actions-toolkit-eoFSqh/docker-metadata-action-bake.json
+2025-06-07T21:56:00.3254989Z ##[endgroup]
+2025-06-07T21:56:00.4737638Z ##[group]GitHub Actions runtime token ACs
+2025-06-07T21:56:00.4756610Z refs/heads/main: read/write
+2025-06-07T21:56:00.4770564Z ##[endgroup]
+2025-06-07T21:56:00.4771770Z ##[group]Docker info
+2025-06-07T21:56:00.4816185Z [command]/usr/bin/docker version
+2025-06-07T21:56:00.4999715Z Client: Docker Engine - Community
+2025-06-07T21:56:00.5000224Z  Version:           28.0.4
+2025-06-07T21:56:00.5000594Z  API version:       1.48
+2025-06-07T21:56:00.5000945Z  Go version:        go1.23.7
+2025-06-07T21:56:00.5002810Z  Git commit:        b8034c0
+2025-06-07T21:56:00.5003211Z  Built:             Tue Mar 25 15:07:16 2025
+2025-06-07T21:56:00.5003826Z  OS/Arch:           linux/amd64
+2025-06-07T21:56:00.5004193Z  Context:           default
+2025-06-07T21:56:00.5004420Z 
+2025-06-07T21:56:00.5004571Z Server: Docker Engine - Community
+2025-06-07T21:56:00.5004949Z  Engine:
+2025-06-07T21:56:00.5005222Z   Version:          28.0.4
+2025-06-07T21:56:00.5006010Z   API version:      1.48 (minimum version 1.24)
+2025-06-07T21:56:00.5006498Z   Go version:       go1.23.7
+2025-06-07T21:56:00.5006852Z   Git commit:       6430e49
+2025-06-07T21:56:00.5007201Z   Built:            Tue Mar 25 15:07:16 2025
+2025-06-07T21:56:00.5007627Z   OS/Arch:          linux/amd64
+2025-06-07T21:56:00.5007983Z   Experimental:     false
+2025-06-07T21:56:00.5008318Z  containerd:
+2025-06-07T21:56:00.5008585Z   Version:          1.7.27
+2025-06-07T21:56:00.5009003Z   GitCommit:        05044ec0a9a75232cad458027ca83437aae3f4da
+2025-06-07T21:56:00.5009496Z  runc:
+2025-06-07T21:56:00.5009792Z   Version:          1.2.5
+2025-06-07T21:56:00.5010176Z   GitCommit:        v1.2.5-0-g59923ef
+2025-06-07T21:56:00.5010607Z  docker-init:
+2025-06-07T21:56:00.5010929Z   Version:          0.19.0
+2025-06-07T21:56:00.5011291Z   GitCommit:        de40ad0
+2025-06-07T21:56:00.5049534Z [command]/usr/bin/docker info
+2025-06-07T21:56:00.5480639Z Client: Docker Engine - Community
+2025-06-07T21:56:00.5481811Z  Version:    28.0.4
+2025-06-07T21:56:00.5482485Z  Context:    default
+2025-06-07T21:56:00.5484509Z  Debug Mode: false
+2025-06-07T21:56:00.5484846Z  Plugins:
+2025-06-07T21:56:00.5485166Z   buildx: Docker Buildx (Docker Inc.)
+2025-06-07T21:56:00.5485574Z     Version:  v0.23.0
+2025-06-07T21:56:00.5486002Z     Path:     /usr/libexec/docker/cli-plugins/docker-buildx
+2025-06-07T21:56:00.5486531Z   compose: Docker Compose (Docker Inc.)
+2025-06-07T21:56:00.5486943Z     Version:  v2.35.1
+2025-06-07T21:56:00.5487358Z     Path:     /usr/libexec/docker/cli-plugins/docker-compose
+2025-06-07T21:56:00.5487734Z 
+2025-06-07T21:56:00.5487848Z Server:
+2025-06-07T21:56:00.5488120Z  Containers: 1
+2025-06-07T21:56:00.5488412Z   Running: 1
+2025-06-07T21:56:00.5488686Z   Paused: 0
+2025-06-07T21:56:00.5488957Z   Stopped: 0
+2025-06-07T21:56:00.5489228Z  Images: 1
+2025-06-07T21:56:00.5489511Z  Server Version: 28.0.4
+2025-06-07T21:56:00.5489867Z  Storage Driver: overlay2
+2025-06-07T21:56:00.5490227Z   Backing Filesystem: extfs
+2025-06-07T21:56:00.5490600Z   Supports d_type: true
+2025-06-07T21:56:00.5490940Z   Using metacopy: false
+2025-06-07T21:56:00.5491622Z   Native Overlay Diff: false
+2025-06-07T21:56:00.5491980Z   userxattr: false
+2025-06-07T21:56:00.5492297Z  Logging Driver: json-file
+2025-06-07T21:56:00.5492640Z  Cgroup Driver: systemd
+2025-06-07T21:56:00.5492971Z  Cgroup Version: 2
+2025-06-07T21:56:00.5493264Z  Plugins:
+2025-06-07T21:56:00.5493903Z   Volume: local
+2025-06-07T21:56:00.5494288Z   Network: bridge host ipvlan macvlan null overlay
+2025-06-07T21:56:00.5494952Z   Log: awslogs fluentd gcplogs gelf journald json-file local splunk syslog
+2025-06-07T21:56:00.5495543Z  Swarm: inactive
+2025-06-07T21:56:00.5495877Z  Runtimes: io.containerd.runc.v2 runc
+2025-06-07T21:56:00.5496298Z  Default Runtime: runc
+2025-06-07T21:56:00.5496643Z  Init Binary: docker-init
+2025-06-07T21:56:00.5497112Z  containerd version: 05044ec0a9a75232cad458027ca83437aae3f4da
+2025-06-07T21:56:00.5497617Z  runc version: v1.2.5-0-g59923ef
+2025-06-07T21:56:00.5498009Z  init version: de40ad0
+2025-06-07T21:56:00.5498376Z  Security Options:
+2025-06-07T21:56:00.5498715Z   apparmor
+2025-06-07T21:56:00.5499015Z   seccomp
+2025-06-07T21:56:00.5499301Z    Profile: builtin
+2025-06-07T21:56:00.5499631Z   cgroupns
+2025-06-07T21:56:00.5499937Z  Kernel Version: 6.11.0-1014-azure
+2025-06-07T21:56:00.5500390Z  Operating System: Ubuntu 24.04.2 LTS
+2025-06-07T21:56:00.5500838Z  OSType: linux
+2025-06-07T21:56:00.5501183Z  Architecture: x86_64
+2025-06-07T21:56:00.5501522Z  CPUs: 4
+2025-06-07T21:56:00.5501812Z  Total Memory: 15.62GiB
+2025-06-07T21:56:00.5502160Z  Name: pkrvmf6wy0o8zjz
+2025-06-07T21:56:00.5502520Z  ID: 3c185bab-9bf5-45bf-b0a2-ee913669905d
+2025-06-07T21:56:00.5502987Z  Docker Root Dir: /var/lib/docker
+2025-06-07T21:56:00.5503381Z  Debug Mode: false
+2025-06-07T21:56:00.5504034Z  Username: ***
+2025-06-07T21:56:00.5504340Z  Experimental: false
+2025-06-07T21:56:00.5504690Z  Insecure Registries:
+2025-06-07T21:56:00.5505036Z   ::1/128
+2025-06-07T21:56:00.5505298Z   127.0.0.0/8
+2025-06-07T21:56:00.5505935Z  Live Restore Enabled: false
+2025-06-07T21:56:00.5506207Z 
+2025-06-07T21:56:00.5506754Z ##[endgroup]
+2025-06-07T21:56:00.5507345Z ##[group]Proxy configuration
+2025-06-07T21:56:00.5509583Z No proxy configuration found
+2025-06-07T21:56:00.5511592Z ##[endgroup]
+2025-06-07T21:56:00.6020370Z ##[group]Buildx version
+2025-06-07T21:56:00.6042998Z [command]/usr/bin/docker buildx version
+2025-06-07T21:56:00.6463075Z github.com/docker/buildx v0.23.0 28c90eadc4c12cc78155ad59ca5f486220241d2a
+2025-06-07T21:56:00.6494193Z ##[endgroup]
+2025-06-07T21:56:01.0377337Z [command]/usr/bin/docker buildx build --build-arg BUILDKIT_INLINE_CACHE=1 --cache-from type=gha --cache-to type=gha,mode=max --iidfile /tmp/docker-actions-toolkit-yj4x1S/iidfile --label org.opencontainers.image.created=2025-06-07T21:56:00.274Z --label org.opencontainers.image.description=由 Rust & Tokio 驱动的哔哩哔哩同步工具有更新 --label org.opencontainers.image.licenses=MIT --label org.opencontainers.image.revision=7d9d3f417509ed6fa7a8ea17a555cf08a2fab79d --label org.opencontainers.image.source=https://github.com/***/bili-sync-01 --label org.opencontainers.image.title=bili-sync-01 --label org.opencontainers.image.url=https://github.com/***/bili-sync-01 --label org.opencontainers.image.version=main --platform linux/amd64,linux/arm64 --tag ***/bili-sync:beta --tag docker.cnb.cool/sviplk.com/docker/bili-sync:beta --metadata-file /tmp/docker-actions-toolkit-yj4x1S/metadata-file --push .
+2025-06-07T21:56:01.3256509Z #0 building with "builder-c95b79c9-a34f-45c4-9a97-ca7d1bdc0707" instance using docker-container driver
+2025-06-07T21:56:01.3256990Z 
+2025-06-07T21:56:01.3257133Z #1 [internal] load build definition from Dockerfile
+2025-06-07T21:56:01.3257440Z #1 transferring dockerfile: 731B done
+2025-06-07T21:56:01.3257682Z #1 DONE 0.0s
+2025-06-07T21:56:01.3257795Z 
+2025-06-07T21:56:01.3257988Z #2 [linux/amd64 internal] load metadata for docker.io/library/alpine:latest
+2025-06-07T21:56:01.5545999Z #2 ...
+2025-06-07T21:56:01.5546210Z 
+2025-06-07T21:56:01.5546402Z #3 [auth] library/alpine:pull token for registry-1.docker.io
+2025-06-07T21:56:01.5546739Z #3 DONE 0.0s
+2025-06-07T21:56:01.7048032Z 
+2025-06-07T21:56:01.7048871Z #4 [linux/arm64 internal] load metadata for docker.io/library/alpine:latest
+2025-06-07T21:56:02.1683429Z #4 ...
+2025-06-07T21:56:02.1684355Z 
+2025-06-07T21:56:02.1684963Z #2 [linux/amd64 internal] load metadata for docker.io/library/alpine:latest
+2025-06-07T21:56:02.1685965Z #2 DONE 1.0s
+2025-06-07T21:56:02.3863671Z 
+2025-06-07T21:56:02.3864248Z #5 [internal] load .dockerignore
+2025-06-07T21:56:02.3864716Z #5 transferring context: 719B done
+2025-06-07T21:56:02.3864997Z #5 DONE 0.0s
+2025-06-07T21:56:02.3865115Z 
+2025-06-07T21:56:02.3865331Z #4 [linux/arm64 internal] load metadata for docker.io/library/alpine:latest
+2025-06-07T21:56:02.3865734Z #4 DONE 1.1s
+2025-06-07T21:56:02.3865852Z 
+2025-06-07T21:56:02.3865943Z #6 [internal] load build context
+2025-06-07T21:56:02.3866188Z #6 DONE 0.0s
+2025-06-07T21:56:02.3866296Z 
+2025-06-07T21:56:02.3866403Z #7 [linux/amd64 stage-1 1/2] WORKDIR /app
+2025-06-07T21:56:02.3866700Z #7 DONE 0.0s
+2025-06-07T21:56:02.3866830Z 
+2025-06-07T21:56:02.3867261Z #8 [linux/amd64 base 1/6] FROM docker.io/library/alpine:latest@sha256:8a1f59ffb675680d47db6337b49d22281a139e9d709335b492be023728e11715
+2025-06-07T21:56:02.3868159Z #8 resolve docker.io/library/alpine:latest@sha256:8a1f59ffb675680d47db6337b49d22281a139e9d709335b492be023728e11715 done
+2025-06-07T21:56:02.3868716Z #8 DONE 0.0s
+2025-06-07T21:56:02.3868828Z 
+2025-06-07T21:56:02.3868977Z #9 importing cache manifest from gha:3815657817687703230
+2025-06-07T21:56:02.7588462Z #9 DONE 0.5s
+2025-06-07T21:56:02.8594226Z 
+2025-06-07T21:56:02.8595130Z #7 [linux/amd64 stage-1 1/2] WORKDIR /app
+2025-06-07T21:56:02.8595679Z #7 DONE 0.0s
+2025-06-07T21:56:02.8595864Z 
+2025-06-07T21:56:02.8596516Z #10 [linux/arm64 base 1/6] FROM docker.io/library/alpine:latest@sha256:8a1f59ffb675680d47db6337b49d22281a139e9d709335b492be023728e11715
+2025-06-07T21:56:02.8597963Z #10 resolve docker.io/library/alpine:latest@sha256:8a1f59ffb675680d47db6337b49d22281a139e9d709335b492be023728e11715 done
+2025-06-07T21:56:02.8598769Z #10 DONE 0.0s
+2025-06-07T21:56:02.8598885Z 
+2025-06-07T21:56:02.8598980Z #6 [internal] load build context
+2025-06-07T21:56:02.8599219Z #6 transferring context: 2B done
+2025-06-07T21:56:02.8599432Z #6 DONE 0.0s
+2025-06-07T21:56:02.8599536Z 
+2025-06-07T21:56:02.8599635Z #11 [linux/arm64 base 2/6] WORKDIR /app
+2025-06-07T21:56:03.1479486Z #11 sha256:d69d4d41cfe2ee680d6972795e2a1eb9e4dc4ec3b3c5e0797c9ab43bb3726fa7 0B / 4.14MB 0.2s
+2025-06-07T21:56:03.9062620Z #11 sha256:d69d4d41cfe2ee680d6972795e2a1eb9e4dc4ec3b3c5e0797c9ab43bb3726fa7 1.05MB / 4.14MB 0.9s
+2025-06-07T21:56:04.0395167Z #11 ...
+2025-06-07T21:56:04.0395476Z 
+2025-06-07T21:56:04.0395633Z #12 [linux/amd64 base 2/6] WORKDIR /app
+2025-06-07T21:56:04.0396408Z #12 sha256:3e6089ead427bad0808498644f9c3575daef46165f5bc7131be58872b6c75db5 91B / 91B 0.3s done
+2025-06-07T21:56:04.0397488Z #12 sha256:fe07684b16b82247c3539ed86a65ff37a76138ec25d380bd80c869a1a4c73236 3.80MB / 3.80MB 1.2s done
+2025-06-07T21:56:04.0398257Z #12 DONE 1.3s
+2025-06-07T21:56:04.0398450Z 
+2025-06-07T21:56:04.0398596Z #11 [linux/arm64 base 2/6] WORKDIR /app
+2025-06-07T21:56:04.0399148Z #11 sha256:d69d4d41cfe2ee680d6972795e2a1eb9e4dc4ec3b3c5e0797c9ab43bb3726fa7 2.10MB / 4.14MB 1.1s
+2025-06-07T21:56:04.1971117Z #11 ...
+2025-06-07T21:56:04.1971440Z 
+2025-06-07T21:56:04.1972564Z #12 [linux/amd64 base 2/6] WORKDIR /app
+2025-06-07T21:56:04.1973391Z #12 extracting sha256:fe07684b16b82247c3539ed86a65ff37a76138ec25d380bd80c869a1a4c73236 0.1s done
+2025-06-07T21:56:04.1974734Z #12 extracting sha256:3e6089ead427bad0808498644f9c3575daef46165f5bc7131be58872b6c75db5 done
+2025-06-07T21:56:04.1975550Z #12 DONE 1.4s
+2025-06-07T21:56:04.1975729Z 
+2025-06-07T21:56:04.1975890Z #11 [linux/arm64 base 2/6] WORKDIR /app
+2025-06-07T21:56:04.1976703Z #11 sha256:d69d4d41cfe2ee680d6972795e2a1eb9e4dc4ec3b3c5e0797c9ab43bb3726fa7 4.14MB / 4.14MB 1.2s done
+2025-06-07T21:56:04.1977754Z #11 extracting sha256:d69d4d41cfe2ee680d6972795e2a1eb9e4dc4ec3b3c5e0797c9ab43bb3726fa7
+2025-06-07T21:56:04.3049233Z #11 extracting sha256:d69d4d41cfe2ee680d6972795e2a1eb9e4dc4ec3b3c5e0797c9ab43bb3726fa7 0.1s done
+2025-06-07T21:56:04.3051075Z #11 extracting sha256:3e6089ead427bad0808498644f9c3575daef46165f5bc7131be58872b6c75db5 done
+2025-06-07T21:56:04.3051807Z #11 DONE 1.4s
+2025-06-07T21:56:04.3051992Z 
+2025-06-07T21:56:04.3052445Z #13 [linux/amd64 base 3/6] RUN apk update && apk add --no-cache     ca-certificates     tzdata     ffmpeg
+2025-06-07T21:56:04.3053663Z #13 0.066 fetch https://dl-cdn.alpinelinux.org/alpine/v3.22/main/x86_64/APKINDEX.tar.gz
+2025-06-07T21:56:04.3054676Z #13 0.174 fetch https://dl-cdn.alpinelinux.org/alpine/v3.22/community/x86_64/APKINDEX.tar.gz
+2025-06-07T21:56:04.6301705Z #13 0.499 v3.22.0-62-g55c90d20f6a [https://dl-cdn.alpinelinux.org/alpine/v3.22/main]
+2025-06-07T21:56:04.6302990Z #13 0.499 v3.22.0-64-gdd0143189ad [https://dl-cdn.alpinelinux.org/alpine/v3.22/community]
+2025-06-07T21:56:04.6303977Z #13 0.499 OK: 26294 distinct packages available
+2025-06-07T21:56:04.7825077Z #13 0.579 fetch https://dl-cdn.alpinelinux.org/alpine/v3.22/main/x86_64/APKINDEX.tar.gz
+2025-06-07T21:56:04.7826028Z #13 0.652 fetch https://dl-cdn.alpinelinux.org/alpine/v3.22/community/x86_64/APKINDEX.tar.gz
+2025-06-07T21:56:05.2981356Z #13 0.967 (1/114) Installing ca-certificates (20241121-r2)
+2025-06-07T21:56:05.2982319Z #13 1.017 (2/114) Installing libSvtAv1Enc (2.3.0-r0)
+2025-06-07T21:56:05.3052828Z #13 1.175 (3/114) Installing aom-libs (3.12.1-r0)
+2025-06-07T21:56:05.4186373Z #13 1.224 (4/114) Installing libxau (1.0.12-r0)
+2025-06-07T21:56:05.4188442Z #13 1.228 (5/114) Installing libmd (1.1.0-r0)
+2025-06-07T21:56:05.4188951Z #13 1.231 (6/114) Installing libbsd (0.12.2-r0)
+2025-06-07T21:56:05.4189448Z #13 1.236 (7/114) Installing libxdmcp (1.1.5-r1)
+2025-06-07T21:56:05.4189948Z #13 1.239 (8/114) Installing libxcb (1.17.0-r0)
+2025-06-07T21:56:05.4190436Z #13 1.252 (9/114) Installing libx11 (1.8.11-r0)
+2025-06-07T21:56:05.4190938Z #13 1.288 (10/114) Installing hwdata-pci (0.395-r0)
+2025-06-07T21:56:05.5313273Z #13 1.300 (11/114) Installing libpciaccess (0.18.1-r0)
+2025-06-07T21:56:05.5315089Z #13 1.304 (12/114) Installing libdrm (2.4.124-r0)
+2025-06-07T21:56:05.5315863Z #13 1.313 (13/114) Installing libxext (1.3.6-r2)
+2025-06-07T21:56:05.5316537Z #13 1.318 (14/114) Installing libxfixes (6.0.1-r4)
+2025-06-07T21:56:05.5317022Z #13 1.322 (15/114) Installing libffi (3.4.8-r0)
+2025-06-07T21:56:05.5317573Z #13 1.326 (16/114) Installing wayland-libs-client (1.23.1-r3)
+2025-06-07T21:56:05.5318102Z #13 1.331 (17/114) Installing libva (2.22.0-r1)
+2025-06-07T21:56:05.5318570Z #13 1.342 (18/114) Installing libvdpau (1.5-r4)
+2025-06-07T21:56:05.5319041Z #13 1.347 (19/114) Installing libgcc (14.2.0-r6)
+2025-06-07T21:56:05.5319514Z #13 1.351 (20/114) Installing libstdc++ (14.2.0-r6)
+2025-06-07T21:56:05.5320025Z #13 1.368 (21/114) Installing onevpl-libs (2023.3.1-r2)
+2025-06-07T21:56:05.5320577Z #13 1.374 (22/114) Installing ffmpeg-libavutil (6.1.2-r2)
+2025-06-07T21:56:05.5321108Z #13 1.385 (23/114) Installing libdav1d (1.5.1-r0)
+2025-06-07T21:56:05.5321627Z #13 1.401 (24/114) Installing openexr-libiex (3.3.2-r0)
+2025-06-07T21:56:05.6591974Z #13 1.407 (25/114) Installing openexr-libilmthread (3.3.2-r0)
+2025-06-07T21:56:05.6592595Z #13 1.410 (26/114) Installing imath (3.1.12-r0)
+2025-06-07T21:56:05.6592906Z #13 1.416 (27/114) Installing libdeflate (1.23-r0)
+2025-06-07T21:56:05.6593264Z #13 1.420 (28/114) Installing openexr-libopenexrcore (3.3.2-r0)
+2025-06-07T21:56:05.6593914Z #13 1.435 (29/114) Installing openexr-libopenexr (3.3.2-r0)
+2025-06-07T21:56:05.6594243Z #13 1.449 (30/114) Installing brotli-libs (1.1.0-r2)
+2025-06-07T21:56:05.6594530Z #13 1.464 (31/114) Installing giflib (5.2.2-r1)
+2025-06-07T21:56:05.6594800Z #13 1.469 (32/114) Installing libhwy (1.0.7-r1)
+2025-06-07T21:56:05.6595090Z #13 1.474 (33/114) Installing libjpeg-turbo (3.1.0-r0)
+2025-06-07T21:56:05.6595384Z #13 1.483 (34/114) Installing lcms2 (2.16-r0)
+2025-06-07T21:56:05.6595653Z #13 1.490 (35/114) Installing libpng (1.6.47-r0)
+2025-06-07T21:56:05.6595948Z #13 1.495 (36/114) Installing libjxl (0.10.3-r2)
+2025-06-07T21:56:05.6596521Z #13 1.528 (37/114) Installing lame-libs (3.100-r5)
+2025-06-07T21:56:05.7746285Z #13 1.535 (38/114) Installing opus (1.5.2-r1)
+2025-06-07T21:56:05.7746904Z #13 1.543 (39/114) Installing rav1e-libs (0.7.1-r0)
+2025-06-07T21:56:05.7747408Z #13 1.563 (40/114) Installing libgomp (14.2.0-r6)
+2025-06-07T21:56:05.7747903Z #13 1.571 (41/114) Installing soxr (0.1.3-r7)
+2025-06-07T21:56:05.7748445Z #13 1.582 (42/114) Installing ffmpeg-libswresample (6.1.2-r2)
+2025-06-07T21:56:05.7749049Z #13 1.594 (43/114) Installing libogg (1.3.5-r5)
+2025-06-07T21:56:05.7749526Z #13 1.600 (44/114) Installing libtheora (1.1.1-r18)
+2025-06-07T21:56:05.7750021Z #13 1.610 (45/114) Installing libvorbis (1.3.7-r2)
+2025-06-07T21:56:05.7750506Z #13 1.618 (46/114) Installing libvpx (1.15.0-r0)
+2025-06-07T21:56:05.7750997Z #13 1.644 (47/114) Installing libsharpyuv (1.5.0-r0)
+2025-06-07T21:56:05.9025886Z #13 1.657 (48/114) Installing libwebp (1.5.0-r0)
+2025-06-07T21:56:05.9026577Z #13 1.667 (49/114) Installing libwebpmux (1.5.0-r0)
+2025-06-07T21:56:05.9027116Z #13 1.671 (50/114) Installing x264-libs (0.164.3108-r0)
+2025-06-07T21:56:05.9027578Z #13 1.691 (51/114) Installing numactl (2.0.18-r0)
+2025-06-07T21:56:05.9027968Z #13 1.696 (52/114) Installing x265-libs (3.6-r0)
+2025-06-07T21:56:05.9028359Z #13 1.772 (53/114) Installing xvidcore (1.3.7-r2)
+2025-06-07T21:56:06.0179718Z #13 1.780 (54/114) Installing ffmpeg-libavcodec (6.1.2-r2)
+2025-06-07T21:56:06.0180489Z #13 1.887 (55/114) Installing sdl3 (3.2.14-r0)
+2025-06-07T21:56:06.1201527Z #13 1.906 (56/114) Installing sdl2-compat (2.32.56-r0)
+2025-06-07T21:56:06.1201989Z #13 1.912 (57/114) Installing alsa-lib (1.2.14-r0)
+2025-06-07T21:56:06.1202329Z #13 1.933 (58/114) Installing libexpat (2.7.1-r0)
+2025-06-07T21:56:06.1202649Z #13 1.937 (59/114) Installing libbz2 (1.0.8-r6)
+2025-06-07T21:56:06.1202968Z #13 1.940 (60/114) Installing freetype (2.13.3-r0)
+2025-06-07T21:56:06.1203743Z #13 1.949 (61/114) Installing fontconfig (2.15.0-r3)
+2025-06-07T21:56:06.1204102Z #13 1.966 (62/114) Installing fribidi (1.0.16-r1)
+2025-06-07T21:56:06.1204411Z #13 1.972 (63/114) Installing libintl (0.24.1-r0)
+2025-06-07T21:56:06.1204715Z #13 1.977 (64/114) Installing libeconf (0.6.3-r0)
+2025-06-07T21:56:06.1205015Z #13 1.982 (65/114) Installing libblkid (2.41-r9)
+2025-06-07T21:56:06.1205310Z #13 1.989 (66/114) Installing libmount (2.41-r9)
+2025-06-07T21:56:06.2227845Z #13 1.996 (67/114) Installing pcre2 (10.43-r1)
+2025-06-07T21:56:06.2228441Z #13 2.008 (68/114) Installing glib (2.84.2-r0)
+2025-06-07T21:56:06.2228951Z #13 2.053 (69/114) Installing graphite2 (1.3.14-r6)
+2025-06-07T21:56:06.2229455Z #13 2.060 (70/114) Installing harfbuzz (11.2.1-r0)
+2025-06-07T21:56:06.2229950Z #13 2.074 (71/114) Installing libunibreak (6.1-r0)
+2025-06-07T21:56:06.2230445Z #13 2.079 (72/114) Installing libass (0.17.3-r0)
+2025-06-07T21:56:06.2230931Z #13 2.084 (73/114) Installing libbluray (1.3.4-r1)
+2025-06-07T21:56:06.2231476Z #13 2.092 (74/114) Installing mpg123-libs (1.32.10-r0)
+2025-06-07T21:56:06.3253791Z #13 2.107 (75/114) Installing libopenmpt (0.7.13-r0)
+2025-06-07T21:56:06.3254405Z #13 2.125 (76/114) Installing cjson (1.7.18-r1)
+2025-06-07T21:56:06.3254769Z #13 2.129 (77/114) Installing mbedtls (3.6.3.1-r0)
+2025-06-07T21:56:06.3255095Z #13 2.143 (78/114) Installing librist (0.2.10-r1)
+2025-06-07T21:56:06.3255400Z #13 2.149 (79/114) Installing libsrt (1.5.3-r1)
+2025-06-07T21:56:06.3255694Z #13 2.163 (80/114) Installing libssh (0.11.1-r0)
+2025-06-07T21:56:06.3255992Z #13 2.172 (81/114) Installing xz-libs (5.8.1-r0)
+2025-06-07T21:56:06.3256287Z #13 2.180 (82/114) Installing libxml2 (2.13.8-r0)
+2025-06-07T21:56:06.3256591Z #13 2.195 (83/114) Installing libsodium (1.0.20-r0)
+2025-06-07T21:56:06.4600149Z #13 2.202 (84/114) Installing libzmq (4.3.5-r2)
+2025-06-07T21:56:06.4600798Z #13 2.219 (85/114) Installing ffmpeg-libavformat (6.1.2-r2)
+2025-06-07T21:56:06.4601656Z #13 2.253 (86/114) Installing serd-libs (0.32.4-r0)
+2025-06-07T21:56:06.4602205Z #13 2.258 (87/114) Installing zix-libs (0.6.2-r0)
+2025-06-07T21:56:06.4603090Z #13 2.262 (88/114) Installing sord-libs (0.16.18-r0)
+2025-06-07T21:56:06.4603976Z #13 2.267 (89/114) Installing sratom (0.6.18-r0)
+2025-06-07T21:56:06.4604443Z #13 2.274 (90/114) Installing lilv-libs (0.24.26-r0)
+2025-06-07T21:56:06.4604737Z #13 2.279 (91/114) Installing libdovi (3.3.1-r1)
+2025-06-07T21:56:06.4605082Z #13 2.290 (92/114) Installing spirv-tools (1.4.313.0-r0)
+2025-06-07T21:56:06.4605460Z #13 2.329 (93/114) Installing glslang-libs (1.4.309.0-r0)
+2025-06-07T21:56:06.5735114Z #13 2.356 (94/114) Installing shaderc (2024.4-r0)
+2025-06-07T21:56:06.5735815Z #13 2.362 (95/114) Installing vulkan-loader (1.4.313.0-r0)
+2025-06-07T21:56:06.5736188Z #13 2.371 (96/114) Installing libplacebo (6.338.2-r3)
+2025-06-07T21:56:06.5736674Z #13 2.383 (97/114) Installing ffmpeg-libpostproc (6.1.2-r2)
+2025-06-07T21:56:06.5737016Z #13 2.388 (98/114) Installing ffmpeg-libswscale (6.1.2-r2)
+2025-06-07T21:56:06.5737474Z #13 2.395 (99/114) Installing vidstab (1.1.1-r0)
+2025-06-07T21:56:06.5737759Z #13 2.399 (100/114) Installing zimg (3.0.5-r3)
+2025-06-07T21:56:06.5738122Z #13 2.408 (101/114) Installing ffmpeg-libavfilter (6.1.2-r2)
+2025-06-07T21:56:06.5738508Z #13 2.443 (102/114) Installing libasyncns (0.8-r4)
+2025-06-07T21:56:06.6746163Z #13 2.469 (103/114) Installing dbus-libs (1.16.2-r1)
+2025-06-07T21:56:06.6748900Z #13 2.476 (104/114) Installing libltdl (2.5.4-r1)
+2025-06-07T21:56:06.6749428Z #13 2.481 (105/114) Installing orc (0.4.40-r1)
+2025-06-07T21:56:06.6749895Z #13 2.490 (106/114) Installing libflac (1.4.3-r1)
+2025-06-07T21:56:06.6750378Z #13 2.512 (107/114) Installing libsndfile (1.2.2-r2)
+2025-06-07T21:56:06.6750861Z #13 2.521 (108/114) Installing speexdsp (1.2.1-r2)
+2025-06-07T21:56:06.6751347Z #13 2.525 (109/114) Installing tdb-libs (1.4.12-r0)
+2025-06-07T21:56:06.6751821Z #13 2.529 (110/114) Installing libpulse (17.0-r5)
+2025-06-07T21:56:06.6752186Z #13 2.544 (111/114) Installing v4l-utils-libs (1.28.1-r1)
+2025-06-07T21:56:06.8177227Z #13 2.551 (112/114) Installing ffmpeg-libavdevice (6.1.2-r2)
+2025-06-07T21:56:06.8178038Z #13 2.559 (113/114) Installing ffmpeg (6.1.2-r2)
+2025-06-07T21:56:06.8178637Z #13 2.572 (114/114) Installing tzdata (2025b-r0)
+2025-06-07T21:56:06.8179090Z #13 2.634 Executing busybox-1.37.0-r18.trigger
+2025-06-07T21:56:06.8179777Z #13 2.642 Executing ca-certificates-20241121-r2.trigger
+2025-06-07T21:56:06.8180523Z #13 2.687 Executing glib-2.84.2-r0.trigger
+2025-06-07T21:56:06.9741815Z #13 2.693 OK: 132 MiB in 130 packages
+2025-06-07T21:56:07.1314678Z #13 DONE 2.9s
+2025-06-07T21:56:07.1315095Z 
+2025-06-07T21:56:07.1315465Z #14 [linux/amd64 base 4/6] COPY ./bili-sync-rs-Linux-*.tar.gz  ./targets/
+2025-06-07T21:56:07.1316084Z #14 DONE 0.0s
+2025-06-07T21:56:07.1316272Z 
+2025-06-07T21:56:07.1317295Z #15 [linux/amd64 base 5/6] RUN if [ "linux/amd64" = "linux/amd64" ]; then     tar xzvf ./targets/bili-sync-rs-Linux-x86_64-musl.tar.gz -C ./;     else     tar xzvf ./targets/bili-sync-rs-Linux-aarch64-musl.tar.gz -C ./;     fi
+2025-06-07T21:56:07.1318914Z #15 0.055 tar: can't open './targets/bili-sync-rs-Linux-x86_64-musl.tar.gz': No such file or directory
+2025-06-07T21:56:07.1906968Z #15 ERROR: process "/bin/sh -c if [ \"$TARGETPLATFORM\" = \"linux/amd64\" ]; then     tar xzvf ./targets/bili-sync-rs-Linux-x86_64-musl.tar.gz -C ./;     else     tar xzvf ./targets/bili-sync-rs-Linux-aarch64-musl.tar.gz -C ./;     fi" did not complete successfully: exit code: 1
+2025-06-07T21:56:07.1908696Z 
+2025-06-07T21:56:07.1909158Z #16 [linux/arm64 base 3/6] RUN apk update && apk add --no-cache     ca-certificates     tzdata     ffmpeg
+2025-06-07T21:56:07.1910176Z #16 0.169 fetch https://dl-cdn.alpinelinux.org/alpine/v3.22/main/aarch64/APKINDEX.tar.gz
+2025-06-07T21:56:07.1911195Z #16 0.891 fetch https://dl-cdn.alpinelinux.org/alpine/v3.22/community/aarch64/APKINDEX.tar.gz
+2025-06-07T21:56:07.1912149Z #16 2.539 v3.22.0-62-g55c90d20f6a [https://dl-cdn.alpinelinux.org/alpine/v3.22/main]
+2025-06-07T21:56:07.1913648Z #16 2.539 v3.22.0-64-gdd0143189ad [https://dl-cdn.alpinelinux.org/alpine/v3.22/community]
+2025-06-07T21:56:07.1916823Z #16 2.539 OK: 26136 distinct packages available
+2025-06-07T21:56:07.1917851Z #16 2.816 fetch https://dl-cdn.alpinelinux.org/alpine/v3.22/main/aarch64/APKINDEX.tar.gz
+2025-06-07T21:56:07.1918567Z #16 CANCELED
+2025-06-07T21:56:07.1918869Z ------
+2025-06-07T21:56:07.1920235Z  > [linux/amd64 base 5/6] RUN if [ "linux/amd64" = "linux/amd64" ]; then     tar xzvf ./targets/bili-sync-rs-Linux-x86_64-musl.tar.gz -C ./;     else     tar xzvf ./targets/bili-sync-rs-Linux-aarch64-musl.tar.gz -C ./;     fi:
+2025-06-07T21:56:07.1921887Z 0.055 tar: can't open './targets/bili-sync-rs-Linux-x86_64-musl.tar.gz': No such file or directory
+2025-06-07T21:56:07.1923808Z ------
+2025-06-07T21:56:07.1951866Z Dockerfile:14
+2025-06-07T21:56:07.1952561Z --------------------
+2025-06-07T21:56:07.1952948Z   13 |     
+2025-06-07T21:56:07.1953338Z   14 | >>> RUN if [ "$TARGETPLATFORM" = "linux/amd64" ]; then \
+2025-06-07T21:56:07.1954285Z   15 | >>>     tar xzvf ./targets/bili-sync-rs-Linux-x86_64-musl.tar.gz -C ./; \
+2025-06-07T21:56:07.1954917Z   16 | >>>     else \
+2025-06-07T21:56:07.1955462Z   17 | >>>     tar xzvf ./targets/bili-sync-rs-Linux-aarch64-musl.tar.gz -C ./; \
+2025-06-07T21:56:07.1956080Z   18 | >>>     fi
+2025-06-07T21:56:07.1956408Z   19 |     
+2025-06-07T21:56:07.1956601Z --------------------
+2025-06-07T21:56:07.1958022Z ERROR: failed to solve: process "/bin/sh -c if [ \"$TARGETPLATFORM\" = \"linux/amd64\" ]; then     tar xzvf ./targets/bili-sync-rs-Linux-x86_64-musl.tar.gz -C ./;     else     tar xzvf ./targets/bili-sync-rs-Linux-aarch64-musl.tar.gz -C ./;     fi" did not complete successfully: exit code: 1
+2025-06-07T21:56:07.2046303Z ##[error]buildx failed with: ERROR: failed to solve: process "/bin/sh -c if [ \"$TARGETPLATFORM\" = \"linux/amd64\" ]; then     tar xzvf ./targets/bili-sync-rs-Linux-x86_64-musl.tar.gz -C ./;     else     tar xzvf ./targets/bili-sync-rs-Linux-aarch64-musl.tar.gz -C ./;     fi" did not complete successfully: exit code: 1
