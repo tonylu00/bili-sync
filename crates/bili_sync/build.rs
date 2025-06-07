@@ -62,47 +62,9 @@ fn get_aria2_for_ci(target: &str, out_dir: &str, binary_name: &str) -> Result<()
 }
 
 fn download_static_aria2_linux(target: &str, out_dir: &str, binary_name: &str) -> Result<(), Box<dyn std::error::Error>> {
-    let binary_path = Path::new(out_dir).join(binary_name);
-    
-    // 使用静态链接的aria2 builds from johang/aria2-static-builds
-    let url = if target.contains("x86_64") {
-        "https://github.com/johang/aria2-static-builds/releases/download/1.37.0/aria2-x86_64-linux"
-    } else if target.contains("aarch64") {
-        "https://github.com/johang/aria2-static-builds/releases/download/1.37.0/aria2-arm64-linux"
-    } else {
-        println!("cargo:warning=不支持的Linux架构: {}", target);
-        return Err("不支持的Linux架构".into());
-    };
-    
-    println!("cargo:warning=下载静态链接的aria2: {}", url);
-    
-    // 下载aria2二进制文件
-    #[cfg(target_os = "windows")]
-    {
-        download_with_powershell(url, &binary_path)?;
-    }
-    #[cfg(not(target_os = "windows"))]
-    {
-        download_with_curl_or_wget(url, &binary_path)?;
-    }
-    
-    if !binary_path.exists() {
-        return Err("下载的aria2文件不存在".into());
-    }
-    
-    // 设置可执行权限
-    set_executable_permissions(&binary_path)?;
-    
-    // 验证下载的文件
-    if let Ok(output) = Command::new(&binary_path).arg("--version").output() {
-        if output.status.success() {
-            let version_info = String::from_utf8_lossy(&output.stdout);
-            println!("cargo:warning=成功下载静态aria2: {}", version_info.lines().next().unwrap_or("unknown"));
-            return Ok(());
-        }
-    }
-    
-    println!("cargo:warning=下载的aria2验证失败，回退到系统安装");
+    println!("cargo:warning=对于Linux平台，暂时回退到系统安装方式");
+    println!("cargo:warning=原因: 静态aria2构建项目的文件名格式复杂，需要进一步调研");
+    println!("cargo:warning=项目地址: https://github.com/abcfy2/aria2-static-build");
     install_aria2_from_system(out_dir, binary_name)
 }
 
