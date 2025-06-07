@@ -401,7 +401,7 @@ fn extract_zip(archive_path: &Path, out_dir: &str, binary_name: &str) -> Result<
                         if status.success() {
                             // 重命名到我们期望的名称
                             let extracted_path = Path::new(out_dir).join(exe_name);
-                            if extracted_path.exists() && exe_name != binary_name {
+                            if extracted_path.exists() && *exe_name != binary_name {
                                 std::fs::rename(&extracted_path, &output_path)?;
                             }
                             
