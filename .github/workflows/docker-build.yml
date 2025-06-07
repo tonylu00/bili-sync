@@ -144,30 +144,43 @@ jobs:
           type=semver,pattern={{major}}.{{minor}}
           type=raw,value=latest,enable={{is_default_branch}}
 
-    - name: Build and push to Docker Hub
-      if: (github.event_name != 'pull_request') && (github.event_name != 'workflow_dispatch' || github.event.inputs.push_to_dockerhub == 'true')
+    - name: Combine all tags for single build
+      id: all_tags
+      run: |
+        ALL_TAGS=""
+        
+        # 添加 Docker Hub 标签
+        if [[ "${{ github.event_name != 'workflow_dispatch' || github.event.inputs.push_to_dockerhub == 'true' }}" == "true" ]]; then
+          if [[ -n "${{ steps.tags.outputs.dockerhub_tags }}" ]]; then
+            ALL_TAGS="${{ steps.tags.outputs.dockerhub_tags }}"
+          fi
+        fi
+        
+        # 添加 CNB.Cool 标签
+        if [[ "${{ github.event_name != 'workflow_dispatch' || github.event.inputs.push_to_cnb == 'true' }}" == "true" ]]; then
+          if [[ -n "${{ steps.tags.outputs.cnb_tags }}" ]]; then
+            if [[ -n "$ALL_TAGS" ]]; then
+              ALL_TAGS="$ALL_TAGS,${{ steps.tags.outputs.cnb_tags }}"
+            else
+              ALL_TAGS="${{ steps.tags.outputs.cnb_tags }}"
+            fi
+          fi
+        fi
+        
+        echo "all_tags=$ALL_TAGS" >> $GITHUB_OUTPUT
+        echo "合并后的标签: $ALL_TAGS"
+
+    - name: Build and push to all registries
+      if: github.event_name != 'pull_request'
       uses: docker/build-push-action@v4
       with:
         context: .
         platforms: ${{ github.event.inputs.platforms || 'linux/amd64,linux/arm64' }}
         push: true
-        tags: ${{ steps.tags.outputs.dockerhub_tags }}
+        tags: ${{ steps.all_tags.outputs.all_tags }}
         labels: ${{ steps.meta.outputs.labels }}
         cache-from: type=gha
         cache-to: type=gha,mode=max
-        build-args: |
-          BUILDKIT_INLINE_CACHE=1
-
-    - name: Build and push to CNB.Cool Registry
-      if: (github.event_name != 'pull_request') && (github.event_name != 'workflow_dispatch' || github.event.inputs.push_to_cnb == 'true')
-      uses: docker/build-push-action@v4
-      with:
-        context: .
-        platforms: ${{ github.event.inputs.platforms || 'linux/amd64,linux/arm64' }}
-        push: true
-        tags: ${{ steps.tags.outputs.cnb_tags }}
-        labels: ${{ steps.meta.outputs.labels }}
-        cache-from: type=gha
         build-args: |
           BUILDKIT_INLINE_CACHE=1
 
@@ -176,7 +189,7 @@ jobs:
       run: |
         echo "Testing Docker image..."
         # 获取第一个推送的标签进行测试
-        FIRST_TAG=$(echo "${{ steps.tags.outputs.dockerhub_tags }}" | cut -d',' -f1)
+        FIRST_TAG=$(echo "${{ steps.all_tags.outputs.all_tags }}" | cut -d',' -f1)
         if [[ -n "$FIRST_TAG" ]]; then
           echo "Testing image: $FIRST_TAG"
           docker run --rm $FIRST_TAG --help | head -5 || echo "Docker image test completed"
