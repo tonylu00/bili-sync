@@ -88,14 +88,16 @@ jobs:
         sudo apt-get update
         sudo apt-get install -y musl-tools
 
-    # 安装aria2用于构建集成 - 提高嵌入成功率
-    - name: Install aria2 (Linux)
+    # 安装aria2和unzip用于构建集成 - 提高嵌入成功率
+    - name: Install aria2 and unzip (Linux)
       if: runner.os == 'Linux'
       run: |
         sudo apt-get update
-        sudo apt-get install -y aria2
+        sudo apt-get install -y aria2 unzip
         echo "Aria2 version:"
         aria2c --version | head -1
+        echo "Unzip version:"
+        unzip -v | head -1
 
     - name: Install aria2 (macOS)
       if: runner.os == 'macOS'

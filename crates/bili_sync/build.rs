@@ -339,26 +339,82 @@ fn download_with_powershell(url: &str, output: &Path) -> Result<(), Box<dyn std:
 }
 
 fn extract_zip(archive_path: &Path, out_dir: &str, binary_name: &str) -> Result<(), Box<dyn std::error::Error>> {
-    // 在Windows上使用PowerShell解压
-    let extract_script = format!(
-        "Add-Type -AssemblyName System.IO.Compression.FileSystem; \
-         $zip = [System.IO.Compression.ZipFile]::OpenRead('{}'); \
-         $entry = $zip.Entries | Where-Object {{ $_.Name -eq '{}' }}; \
-         if ($entry) {{ \
-             [System.IO.Compression.ZipFileExtensions]::ExtractToFile($entry, '{}', $true); \
-         }}; \
-         $zip.Dispose()",
-        archive_path.display(),
-        binary_name,
-        Path::new(out_dir).join(binary_name).display()
-    );
+    #[cfg(target_os = "windows")]
+    {
+        // 在Windows上使用PowerShell解压
+        let extract_script = format!(
+            "Add-Type -AssemblyName System.IO.Compression.FileSystem; \
+             $zip = [System.IO.Compression.ZipFile]::OpenRead('{}'); \
+             $entry = $zip.Entries | Where-Object {{ $_.Name -eq '{}' }}; \
+             if ($entry) {{ \
+                 [System.IO.Compression.ZipFileExtensions]::ExtractToFile($entry, '{}', $true); \
+             }}; \
+             $zip.Dispose()",
+            archive_path.display(),
+            binary_name,
+            Path::new(out_dir).join(binary_name).display()
+        );
 
-    let status = Command::new("powershell")
-        .args(["-Command", &extract_script])
-        .status()?;
+        let status = Command::new("powershell")
+            .args(["-Command", &extract_script])
+            .status()?;
 
-    if !status.success() {
-        return Err("PowerShell解压失败".into());
+        if !status.success() {
+            return Err("PowerShell解压失败".into());
+        }
+    }
+    
+    #[cfg(not(target_os = "windows"))]
+    {
+        // 在Linux/Unix上使用unzip命令
+        let output_path = Path::new(out_dir).join(binary_name);
+        
+        // 首先尝试直接用unzip解压单个文件
+        if Command::new("unzip").arg("--version").output().is_ok() {
+            println!("cargo:warning=使用unzip解压: {}", archive_path.display());
+            
+            // 列出zip文件内容，找到可执行文件
+            let list_output = Command::new("unzip")
+                .args(["-l"])
+                .arg(archive_path)
+                .output()?;
+                
+            if list_output.status.success() {
+                let content = String::from_utf8_lossy(&list_output.stdout);
+                println!("cargo:warning=zip文件内容: {}", content);
+                
+                // 查找可能的aria2可执行文件名
+                let executable_names = ["aria2c", "aria2", "aria2.exe"];
+                for exe_name in &executable_names {
+                    if content.contains(exe_name) {
+                        println!("cargo:warning=找到可执行文件: {}", exe_name);
+                        
+                        let status = Command::new("unzip")
+                            .args(["-j", "-o"]) // -j: 不创建目录结构, -o: 覆盖文件
+                            .arg(archive_path)
+                            .arg(exe_name)
+                            .args(["-d", out_dir])
+                            .status()?;
+                            
+                        if status.success() {
+                            // 重命名到我们期望的名称
+                            let extracted_path = Path::new(out_dir).join(exe_name);
+                            if extracted_path.exists() && exe_name != binary_name {
+                                std::fs::rename(&extracted_path, &output_path)?;
+                            }
+                            
+                            if output_path.exists() {
+                                println!("cargo:warning=成功解压aria2: {}", output_path.display());
+                                return Ok(());
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        
+        // 如果unzip失败，尝试使用Rust的zip库（但我们需要确保它在build.rs中可用）
+        return Err("无法解压zip文件：未找到unzip命令或zip内容不匹配".into());
     }
 
     Ok(())
