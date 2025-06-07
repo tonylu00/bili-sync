@@ -357,6 +357,40 @@ fn download_with_powershell(url: &str, output: &Path) -> Result<(), Box<dyn std:
     Ok(())
 }
 
+fn download_with_curl_or_wget(url: &str, output: &Path) -> Result<(), Box<dyn std::error::Error>> {
+    // 首先尝试使用curl
+    if Command::new("curl").arg("--version").output().is_ok() {
+        println!("cargo:warning=使用curl下载: {}", url);
+        let status = Command::new("curl")
+            .args(["-L", "-o"])
+            .arg(output)
+            .arg(url)
+            .status()?;
+
+        if status.success() {
+            return Ok(());
+        }
+        println!("cargo:warning=curl下载失败，尝试wget");
+    }
+
+    // 如果curl失败或不存在，尝试wget
+    if Command::new("wget").arg("--version").output().is_ok() {
+        println!("cargo:warning=使用wget下载: {}", url);
+        let status = Command::new("wget")
+            .args(["-O"])
+            .arg(output)
+            .arg(url)
+            .status()?;
+
+        if status.success() {
+            return Ok(());
+        }
+        println!("cargo:warning=wget下载失败");
+    }
+
+    Err("curl和wget都不可用或下载失败".into())
+}
+
 fn extract_zip(archive_path: &Path, out_dir: &str, binary_name: &str) -> Result<(), Box<dyn std::error::Error>> {
     #[cfg(target_os = "windows")]
     {
