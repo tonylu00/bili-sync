@@ -62,10 +62,74 @@ fn get_aria2_for_ci(target: &str, out_dir: &str, binary_name: &str) -> Result<()
 }
 
 fn download_static_aria2_linux(target: &str, out_dir: &str, binary_name: &str) -> Result<(), Box<dyn std::error::Error>> {
-    println!("cargo:warning=对于Linux平台，暂时回退到系统安装方式");
-    println!("cargo:warning=原因: 静态aria2构建项目的文件名格式复杂，需要进一步调研");
-    println!("cargo:warning=项目地址: https://github.com/abcfy2/aria2-static-build");
-    install_aria2_from_system(out_dir, binary_name)
+    let binary_path = Path::new(out_dir).join(binary_name);
+    
+    // 使用静态链接的aria2 builds from abcfy2/aria2-static-build
+    let (zip_url, zip_filename) = if target.contains("x86_64") {
+        ("https://github.com/abcfy2/aria2-static-build/releases/download/1.37.0/aria2-x86_64-linux-musl_static.zip", 
+         "aria2-x86_64-linux-musl_static.zip")
+    } else if target.contains("aarch64") {
+        ("https://github.com/abcfy2/aria2-static-build/releases/download/1.37.0/aria2-aarch64-linux-musl_static.zip",
+         "aria2-aarch64-linux-musl_static.zip")
+    } else {
+        println!("cargo:warning=不支持的Linux架构: {}", target);
+        return install_aria2_from_system(out_dir, binary_name);
+    };
+    
+    println!("cargo:warning=下载静态链接的aria2: {}", zip_url);
+    
+    let zip_path = Path::new(out_dir).join(zip_filename);
+    
+    // 下载zip文件
+    let download_result = {
+        #[cfg(target_os = "windows")]
+        {
+            download_with_powershell(zip_url, &zip_path)
+        }
+        #[cfg(not(target_os = "windows"))]
+        {
+            download_with_curl_or_wget(zip_url, &zip_path)
+        }
+    };
+    
+    if download_result.is_err() || !zip_path.exists() {
+        println!("cargo:warning=下载失败，回退到系统安装方式");
+        return install_aria2_from_system(out_dir, binary_name);
+    }
+    
+    // 解压zip文件
+    if let Err(e) = extract_zip(&zip_path, out_dir, binary_name) {
+        println!("cargo:warning=解压失败: {}，回退到系统安装方式", e);
+        let _ = std::fs::remove_file(&zip_path);
+        return install_aria2_from_system(out_dir, binary_name);
+    }
+    
+    if !binary_path.exists() {
+        println!("cargo:warning=解压后的aria2文件不存在，回退到系统安装方式");
+        let _ = std::fs::remove_file(&zip_path);
+        return install_aria2_from_system(out_dir, binary_name);
+    }
+    
+    // 设置可执行权限
+    if let Err(e) = set_executable_permissions(&binary_path) {
+        println!("cargo:warning=设置可执行权限失败: {}，回退到系统安装方式", e);
+        let _ = std::fs::remove_file(&zip_path);
+        return install_aria2_from_system(out_dir, binary_name);
+    }
+    
+    // 验证下载的文件
+    if let Ok(output) = Command::new(&binary_path).arg("--version").output() {
+        let version = String::from_utf8_lossy(&output.stdout);
+        println!("cargo:warning=aria2版本: {}", version.trim());
+    } else {
+        println!("cargo:warning=无法验证aria2版本，但继续使用");
+    }
+    
+    // 清理zip文件
+    let _ = std::fs::remove_file(&zip_path);
+    
+    println!("cargo:warning=成功提取静态aria2二进制文件: {}", binary_path.display());
+    Ok(())
 }
 
 fn download_aria2_macos(out_dir: &str, binary_name: &str) -> Result<(), Box<dyn std::error::Error>> {
