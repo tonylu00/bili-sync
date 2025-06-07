@@ -134,7 +134,7 @@ impl<const N: usize> Status<N> {
         } else if self.get_status(offset) < STATUS_MAX_RETRY {
             match result {
                 ExecutionStatus::Succeeded | ExecutionStatus::Skipped => self.set_ok(offset),
-                ExecutionStatus::Failed(_) => self.plus_one(offset),
+                ExecutionStatus::Failed(_) | ExecutionStatus::ClassifiedFailed(_) => self.plus_one(offset),
                 _ => {}
             }
         }

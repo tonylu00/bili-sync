@@ -4,11 +4,11 @@ use std::sync::Arc;
 use anyhow::{anyhow, Context, Result};
 use axum::extract::{Extension, Path, Query};
 use bili_sync_entity::*;
-use bili_sync_migration::{Expr, OnConflict};
+use bili_sync_migration::Expr;
 use chrono::Utc;
 use sea_orm::{
-    ColumnTrait, DatabaseConnection, EntityTrait, IntoActiveModel, PaginatorTrait, QueryFilter, QueryOrder,
-    QuerySelect, Set, TransactionTrait, Unchanged,
+    ColumnTrait, DatabaseConnection, EntityTrait, PaginatorTrait, QueryFilter, QueryOrder, QuerySelect, Set,
+    TransactionTrait, Unchanged,
 };
 use serde::{Deserialize, Serialize};
 use std::collections::VecDeque;
@@ -19,10 +19,11 @@ use utoipa::OpenApi;
 
 use crate::api::auth::OpenAPIAuth;
 use crate::api::error::InnerApiError;
-use crate::api::request::{AddVideoSourceRequest, UpdateConfigRequest, VideosRequest};
+use crate::api::request::{AddVideoSourceRequest, UpdateConfigRequest, UpdateVideoStatusRequest, VideosRequest};
 use crate::api::response::{
-    AddVideoSourceResponse, BangumiSeasonInfo, ConfigResponse, DeleteVideoSourceResponse, PageInfo, ResetVideoResponse,
-    UpdateConfigResponse, VideoInfo, VideoResponse, VideoSource, VideoSourcesResponse, VideosResponse,
+    AddVideoSourceResponse, BangumiSeasonInfo, ConfigResponse, DeleteVideoSourceResponse, PageInfo,
+    ResetAllVideosResponse, ResetVideoResponse, UpdateConfigResponse, UpdateVideoStatusResponse, VideoInfo,
+    VideoResponse, VideoSource, VideoSourcesResponse, VideosResponse,
 };
 use crate::api::wrapper::{ApiError, ApiResponse};
 use crate::utils::nfo::NFO;
@@ -30,7 +31,7 @@ use crate::utils::status::{PageStatus, VideoStatus};
 
 #[derive(OpenApi)]
 #[openapi(
-    paths(get_video_sources, get_videos, get_video, reset_video, add_video_source, delete_video_source, reload_config, get_config, update_config, get_bangumi_seasons, search_bilibili, get_user_favorites, get_user_collections, get_user_followings, get_subscribed_collections, get_logs, get_queue_status),
+    paths(get_video_sources, get_videos, get_video, reset_video, reset_all_videos, update_video_status, add_video_source, delete_video_source, reload_config, get_config, update_config, get_bangumi_seasons, search_bilibili, get_user_favorites, get_user_collections, get_user_followings, get_subscribed_collections, get_logs, get_queue_status),
     modifiers(&OpenAPIAuth),
     security(
         ("Token" = []),
@@ -250,76 +251,363 @@ pub async fn reset_video(
         .and_then(|v| v.parse::<bool>().ok())
         .unwrap_or(false);
 
-    let txn = db.begin().await?;
-    let video_status: Option<u32> = video::Entity::find_by_id(id)
-        .select_only()
-        .column(video::Column::DownloadStatus)
-        .into_tuple()
-        .one(&txn)
-        .await?;
-    let Some(video_status) = video_status else {
-        return Err(anyhow!(InnerApiError::NotFound(id)).into());
+    // 获取视频和分页信息
+    let (video_info, pages_info) = tokio::try_join!(
+        video::Entity::find_by_id(id)
+            .select_only()
+            .columns([
+                video::Column::Id,
+                video::Column::Name,
+                video::Column::UpperName,
+                video::Column::Path,
+                video::Column::Category,
+                video::Column::DownloadStatus,
+            ])
+            .into_tuple::<(i32, String, String, String, i32, u32)>()
+            .one(db.as_ref()),
+        page::Entity::find()
+            .filter(page::Column::VideoId.eq(id))
+            .order_by_asc(page::Column::Pid)
+            .select_only()
+            .columns([
+                page::Column::Id,
+                page::Column::Pid,
+                page::Column::Name,
+                page::Column::DownloadStatus,
+            ])
+            .into_tuple::<(i32, i32, String, u32)>()
+            .all(db.as_ref())
+    )?;
+
+    let Some(video_info) = video_info else {
+        return Err(InnerApiError::NotFound(id).into());
     };
-    let resetted_pages_model: Vec<_> = page::Entity::find()
-        .filter(page::Column::VideoId.eq(id))
-        .all(&txn)
-        .await?
+
+    let mut video_info = VideoInfo::from(video_info);
+    let resetted_pages_info = pages_info
         .into_iter()
-        .filter_map(|mut model| {
-            let mut page_status = PageStatus::from(model.download_status);
+        .filter_map(|(page_id, pid, name, download_status)| {
+            let mut page_status = PageStatus::from(download_status);
             let should_reset = if force_reset {
                 page_status.reset_all()
             } else {
                 page_status.reset_failed()
             };
             if should_reset {
-                model.download_status = page_status.into();
-                Some(model)
+                Some(PageInfo::from((page_id, pid, name, page_status.into())))
             } else {
                 None
             }
         })
-        .collect();
-    let mut video_status = VideoStatus::from(video_status);
-    let mut should_update_video = if force_reset {
+        .collect::<Vec<_>>();
+
+    let mut video_status = VideoStatus::from(video_info.download_status);
+    let mut video_resetted = if force_reset {
         video_status.reset_all()
     } else {
         video_status.reset_failed()
     };
-    if !resetted_pages_model.is_empty() {
-        // 视频状态标志的第 5 位表示是否有分 P 下载失败，如果有需要重置的分页，需要同时重置视频的该状态
-        video_status.set(4, 0);
-        should_update_video = true;
+
+    if !resetted_pages_info.is_empty() {
+        video_status.set(4, 0); // 将"分P下载"重置为 0
+        video_resetted = true;
     }
-    if should_update_video {
-        video::Entity::update(video::ActiveModel {
-            id: Unchanged(id),
-            download_status: Set(video_status.into()),
-            ..Default::default()
-        })
-        .exec(&txn)
-        .await?;
+
+    if video_resetted {
+        video_info.download_status = video_status.into();
     }
-    let resetted_pages_id: Vec<_> = resetted_pages_model.iter().map(|model| model.id).collect();
-    let resetted_pages_model: Vec<page::ActiveModel> = resetted_pages_model
-        .into_iter()
-        .map(|model| model.into_active_model())
-        .collect();
-    for page_trunk in resetted_pages_model.chunks(50) {
-        page::Entity::insert_many(page_trunk.to_vec())
-            .on_conflict(
-                OnConflict::column(page::Column::Id)
-                    .update_column(page::Column::DownloadStatus)
-                    .to_owned(),
-            )
+
+    let resetted = video_resetted || !resetted_pages_info.is_empty();
+
+    if resetted {
+        let txn = db.begin().await?;
+
+        if video_resetted {
+            video::Entity::update(video::ActiveModel {
+                id: Unchanged(id),
+                download_status: Set(VideoStatus::from(video_info.download_status).into()),
+                ..Default::default()
+            })
             .exec(&txn)
             .await?;
+        }
+
+        if !resetted_pages_info.is_empty() {
+            for page in &resetted_pages_info {
+                page::Entity::update(page::ActiveModel {
+                    id: Unchanged(page.id),
+                    download_status: Set(PageStatus::from(page.download_status).into()),
+                    ..Default::default()
+                })
+                .exec(&txn)
+                .await?;
+            }
+        }
+
+        txn.commit().await?;
     }
-    txn.commit().await?;
+
+    // 获取所有分页信息（包括未重置的）
+    let all_pages_info = page::Entity::find()
+        .filter(page::Column::VideoId.eq(id))
+        .order_by_asc(page::Column::Pid)
+        .select_only()
+        .columns([
+            page::Column::Id,
+            page::Column::Pid,
+            page::Column::Name,
+            page::Column::DownloadStatus,
+        ])
+        .into_tuple::<(i32, i32, String, u32)>()
+        .all(db.as_ref())
+        .await?
+        .into_iter()
+        .map(PageInfo::from)
+        .collect();
+
     Ok(ApiResponse::ok(ResetVideoResponse {
-        resetted: should_update_video,
-        video: id,
-        pages: resetted_pages_id,
+        resetted,
+        video: video_info,
+        pages: all_pages_info,
+    }))
+}
+
+/// 重置所有视频和页面的失败状态为未下载状态，这样在下次下载任务中会触发重试
+#[utoipa::path(
+    post,
+    path = "/api/videos/reset-all",
+    responses(
+        (status = 200, body = ApiResponse<ResetAllVideosResponse>),
+    )
+)]
+pub async fn reset_all_videos(
+    Extension(db): Extension<Arc<DatabaseConnection>>,
+) -> Result<ApiResponse<ResetAllVideosResponse>, ApiError> {
+    use std::collections::HashSet;
+
+    // 先查询所有视频和页面数据
+    let (all_videos, all_pages) = tokio::try_join!(
+        video::Entity::find()
+            .select_only()
+            .columns([
+                video::Column::Id,
+                video::Column::Name,
+                video::Column::UpperName,
+                video::Column::Path,
+                video::Column::Category,
+                video::Column::DownloadStatus,
+            ])
+            .into_tuple::<(i32, String, String, String, i32, u32)>()
+            .all(db.as_ref()),
+        page::Entity::find()
+            .select_only()
+            .columns([
+                page::Column::Id,
+                page::Column::Pid,
+                page::Column::Name,
+                page::Column::DownloadStatus,
+                page::Column::VideoId,
+            ])
+            .into_tuple::<(i32, i32, String, u32, i32)>()
+            .all(db.as_ref())
+    )?;
+
+    // 处理页面重置
+    let resetted_pages_info = all_pages
+        .into_iter()
+        .filter_map(|(id, pid, name, download_status, video_id)| {
+            let mut page_status = PageStatus::from(download_status);
+            if page_status.reset_failed() {
+                let page_info = PageInfo::from((id, pid, name, page_status.into()));
+                Some((page_info, video_id))
+            } else {
+                None
+            }
+        })
+        .collect::<Vec<_>>();
+
+    let video_ids_with_resetted_pages: HashSet<i32> =
+        resetted_pages_info.iter().map(|(_, video_id)| *video_id).collect();
+
+    let resetted_pages_info: Vec<PageInfo> = resetted_pages_info
+        .into_iter()
+        .map(|(page_info, _)| page_info)
+        .collect();
+
+    let all_videos_info: Vec<VideoInfo> = all_videos.into_iter().map(VideoInfo::from).collect();
+
+    let resetted_videos_info = all_videos_info
+        .into_iter()
+        .filter_map(|mut video_info| {
+            let mut video_status = VideoStatus::from(video_info.download_status);
+            let mut video_resetted = video_status.reset_failed();
+            if video_ids_with_resetted_pages.contains(&video_info.id) {
+                video_status.set(4, 0); // 将"分P下载"重置为 0
+                video_resetted = true;
+            }
+            if video_resetted {
+                video_info.download_status = video_status.into();
+                Some(video_info)
+            } else {
+                None
+            }
+        })
+        .collect::<Vec<_>>();
+
+    let resetted = !(resetted_videos_info.is_empty() && resetted_pages_info.is_empty());
+
+    if resetted {
+        let txn = db.begin().await?;
+
+        // 批量更新视频状态
+        if !resetted_videos_info.is_empty() {
+            for video in &resetted_videos_info {
+                video::Entity::update(video::ActiveModel {
+                    id: sea_orm::ActiveValue::Unchanged(video.id),
+                    download_status: sea_orm::Set(VideoStatus::from(video.download_status).into()),
+                    ..Default::default()
+                })
+                .exec(&txn)
+                .await?;
+            }
+        }
+
+        // 批量更新页面状态
+        if !resetted_pages_info.is_empty() {
+            for page in &resetted_pages_info {
+                page::Entity::update(page::ActiveModel {
+                    id: sea_orm::ActiveValue::Unchanged(page.id),
+                    download_status: sea_orm::Set(PageStatus::from(page.download_status).into()),
+                    ..Default::default()
+                })
+                .exec(&txn)
+                .await?;
+            }
+        }
+
+        txn.commit().await?;
+    }
+
+    Ok(ApiResponse::ok(ResetAllVideosResponse {
+        resetted,
+        resetted_videos_count: resetted_videos_info.len(),
+        resetted_pages_count: resetted_pages_info.len(),
+    }))
+}
+
+/// 更新特定视频及其所含分页的状态位
+#[utoipa::path(
+    post,
+    path = "/api/videos/{id}/update-status",
+    request_body = UpdateVideoStatusRequest,
+    responses(
+        (status = 200, body = ApiResponse<UpdateVideoStatusResponse>),
+    )
+)]
+pub async fn update_video_status(
+    Path(id): Path<i32>,
+    Extension(db): Extension<Arc<DatabaseConnection>>,
+    axum::Json(request): axum::Json<UpdateVideoStatusRequest>,
+) -> Result<ApiResponse<UpdateVideoStatusResponse>, ApiError> {
+    let (video_info, pages_info) = tokio::try_join!(
+        video::Entity::find_by_id(id)
+            .select_only()
+            .columns([
+                video::Column::Id,
+                video::Column::Name,
+                video::Column::UpperName,
+                video::Column::Path,
+                video::Column::Category,
+                video::Column::DownloadStatus,
+            ])
+            .into_tuple::<(i32, String, String, String, i32, u32)>()
+            .one(db.as_ref()),
+        page::Entity::find()
+            .filter(page::Column::VideoId.eq(id))
+            .order_by_asc(page::Column::Cid)
+            .select_only()
+            .columns([
+                page::Column::Id,
+                page::Column::Pid,
+                page::Column::Name,
+                page::Column::DownloadStatus,
+            ])
+            .into_tuple::<(i32, i32, String, u32)>()
+            .all(db.as_ref())
+    )?;
+
+    let Some(video_info) = video_info else {
+        return Err(InnerApiError::NotFound(id).into());
+    };
+
+    let mut video_info = VideoInfo::from(video_info);
+    let mut video_status = VideoStatus::from(video_info.download_status);
+
+    // 应用视频状态更新
+    for update in &request.video_updates {
+        if update.status_index < 5 {
+            video_status.set(update.status_index, update.status_value);
+        }
+    }
+    video_info.download_status = video_status.into();
+
+    let mut pages_info: Vec<PageInfo> = pages_info.into_iter().map(PageInfo::from).collect();
+
+    let mut updated_pages_info = Vec::new();
+    let mut page_id_map = pages_info
+        .iter_mut()
+        .map(|page| (page.id, page))
+        .collect::<std::collections::HashMap<_, _>>();
+
+    // 应用页面状态更新
+    for page_update in &request.page_updates {
+        if let Some(page_info) = page_id_map.remove(&page_update.page_id) {
+            let mut page_status = PageStatus::from(page_info.download_status);
+            for update in &page_update.updates {
+                if update.status_index < 5 {
+                    page_status.set(update.status_index, update.status_value);
+                }
+            }
+            page_info.download_status = page_status.into();
+            updated_pages_info.push(page_info);
+        }
+    }
+
+    let has_video_updates = !request.video_updates.is_empty();
+    let has_page_updates = !updated_pages_info.is_empty();
+
+    if has_video_updates || has_page_updates {
+        let txn = db.begin().await?;
+
+        if has_video_updates {
+            video::Entity::update(video::ActiveModel {
+                id: sea_orm::ActiveValue::Unchanged(video_info.id),
+                download_status: sea_orm::Set(VideoStatus::from(video_info.download_status).into()),
+                ..Default::default()
+            })
+            .exec(&txn)
+            .await?;
+        }
+
+        if has_page_updates {
+            for page in &updated_pages_info {
+                page::Entity::update(page::ActiveModel {
+                    id: sea_orm::ActiveValue::Unchanged(page.id),
+                    download_status: sea_orm::Set(PageStatus::from(page.download_status).into()),
+                    ..Default::default()
+                })
+                .exec(&txn)
+                .await?;
+            }
+        }
+
+        txn.commit().await?;
+    }
+
+    Ok(ApiResponse::ok(UpdateVideoStatusResponse {
+        success: has_video_updates || has_page_updates,
+        video: video_info,
+        pages: pages_info,
     }))
 }
 

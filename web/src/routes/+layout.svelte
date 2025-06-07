@@ -39,7 +39,7 @@
 		const token = localStorage.getItem('auth_token');
 		if (token) {
 			isAuthenticated = true;
-			
+
 			// 初始化视频源数据，所有组件都会用到
 			if (!$videoSourceStore) {
 				try {
@@ -77,7 +77,7 @@
 				<AppSidebar />
 			</div>
 		{/if}
-		<Sidebar.Inset class="h-screen flex-1 flex flex-col overflow-hidden">
+		<Sidebar.Inset class="flex h-screen flex-1 flex-col overflow-hidden">
 			{#if isAuthenticated}
 				<div
 					class="bg-background/95 supports-[backdrop-filter]:bg-background/60 sticky top-0 z-50 flex h-[73px] w-full items-center border-b backdrop-blur"
@@ -89,9 +89,9 @@
 						</div>
 						<div class="flex items-center gap-2">
 							{#if isHomePage}
-								<Button 
-									size="sm" 
-									variant="outline" 
+								<Button
+									size="sm"
+									variant="outline"
 									onclick={() => goto('/add-source')}
 									class="flex items-center gap-2"
 								>
@@ -99,18 +99,18 @@
 									添加视频源
 								</Button>
 							{/if}
-							<Button 
-								size="sm" 
-								variant="outline" 
+							<Button
+								size="sm"
+								variant="outline"
 								onclick={() => goto('/settings')}
 								class="flex items-center gap-2"
 							>
 								<Settings class="h-4 w-4" />
 								配置
 							</Button>
-							<Button 
-								size="sm" 
-								variant="outline" 
+							<Button
+								size="sm"
+								variant="outline"
 								onclick={handleLogout}
 								class="flex items-center gap-2"
 							>

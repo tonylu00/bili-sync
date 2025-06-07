@@ -45,28 +45,38 @@
 	}
 
 	// 打开删除确认对话框
-	function handleDeleteSource(event: Event, sourceType: string, sourceId: number, sourceName: string) {
+	function handleDeleteSource(
+		event: Event,
+		sourceType: string,
+		sourceId: number,
+		sourceName: string
+	) {
 		event.stopPropagation(); // 阻止触发父级的点击事件
-		
+
 		deleteSourceInfo = {
 			type: sourceType,
 			id: sourceId,
 			name: sourceName
 		};
 		showDeleteDialog = true;
-		}
-		
+	}
+
 	// 确认删除
 	async function handleConfirmDelete(event: CustomEvent<{ deleteLocalFiles: boolean }>) {
 		const { deleteLocalFiles } = event.detail;
-		
+
 		try {
-			const result = await api.deleteVideoSource(deleteSourceInfo.type, deleteSourceInfo.id, deleteLocalFiles);
+			const result = await api.deleteVideoSource(
+				deleteSourceInfo.type,
+				deleteSourceInfo.id,
+				deleteLocalFiles
+			);
 			if (result.data.success) {
-				toast.success('删除成功', { 
-					description: result.data.message + (deleteLocalFiles ? '，本地文件已删除' : '，本地文件已保留') 
+				toast.success('删除成功', {
+					description:
+						result.data.message + (deleteLocalFiles ? '，本地文件已删除' : '，本地文件已保留')
 				});
-				
+
 				// 刷新视频源列表
 				const response = await api.getVideoSources();
 				setVideoSources(response.data);
@@ -136,7 +146,7 @@
 												{#if $videoSourceStore[item.type as keyof VideoSourcesResponse]?.length > 0}
 													{#each $videoSourceStore[item.type as keyof VideoSourcesResponse] as source (source.id)}
 														<Sidebar.MenuItem>
-															<div class="flex items-center gap-1 group/item">
+															<div class="group/item flex items-center gap-1">
 																<button
 																	class="text-foreground hover:bg-accent/50 flex-1 cursor-pointer rounded-md px-3 py-2 text-left text-sm transition-all duration-200"
 																	on:click={() => handleSourceClick(item.type, source.id)}
@@ -144,8 +154,9 @@
 																	<span class="block truncate">{source.name}</span>
 																</button>
 																<button
-																	class="text-muted-foreground hover:text-destructive hover:bg-destructive/10 opacity-0 group-hover/item:opacity-100 p-1.5 rounded transition-all duration-200"
-																	on:click={(e) => handleDeleteSource(e, item.type, source.id, source.name)}
+																	class="text-muted-foreground hover:text-destructive hover:bg-destructive/10 rounded p-1.5 opacity-0 transition-all duration-200 group-hover/item:opacity-100"
+																	on:click={(e) =>
+																		handleDeleteSource(e, item.type, source.id, source.name)}
 																	title="删除视频源"
 																>
 																	<TrashIcon class="h-3.5 w-3.5" />
@@ -224,4 +235,3 @@
 	on:confirm={handleConfirmDelete}
 	on:cancel={handleCancelDelete}
 />
- 

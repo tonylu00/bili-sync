@@ -235,7 +235,7 @@ impl<'a> Video<'a> {
     }
 
     pub async fn get_subtitles(&self, page: &PageInfo) -> Result<Vec<SubTitle>> {
-        let mut res = self
+        let res = self
             .client
             .request(Method::GET, "https://api.bilibili.com/x/player/wbi/v2")
             .await
@@ -249,8 +249,16 @@ impl<'a> Video<'a> {
             .json::<serde_json::Value>()
             .await?
             .validate()?;
+
+        // 检查字幕数据是否存在
+        let subtitle_data = &res["data"]["subtitle"];
+        if subtitle_data.is_null() {
+            debug!("视频没有字幕数据");
+            return Ok(Vec::new());
+        }
+
         // 接口返回的信息，包含了一系列的字幕，每个字幕包含了字幕的语言和 json 下载地址
-        let subtitles_info: SubTitlesInfo = serde_json::from_value(res["data"]["subtitle"].take())?;
+        let subtitles_info: SubTitlesInfo = serde_json::from_value(subtitle_data.clone())?;
         let tasks = subtitles_info
             .subtitles
             .into_iter()

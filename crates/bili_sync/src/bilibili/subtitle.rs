@@ -1,6 +1,7 @@
 use std::fmt::Display;
 
-#[derive(Debug, serde::Deserialize)]
+#[derive(Debug, Default, serde::Deserialize)]
+#[serde(default)]
 pub struct SubTitlesInfo {
     pub subtitles: Vec<SubTitleInfo>,
 }

@@ -18,60 +18,114 @@ export interface VideosRequest {
 
 // 视频来源类型
 export interface VideoSource {
-    id: number;
-    name: string;
+	id: number;
+	name: string;
 }
 
 // 视频来源响应类型
 export interface VideoSourcesResponse {
-    collection: VideoSource[];
-    favorite: VideoSource[];
-    submission: VideoSource[];
-    watch_later: VideoSource[];
-    bangumi: VideoSource[];
+	collection: VideoSource[];
+	favorite: VideoSource[];
+	submission: VideoSource[];
+	watch_later: VideoSource[];
+	bangumi: VideoSource[];
 }
 
 // 视频信息类型
 export interface VideoInfo {
-    id: number;
-    name: string;
-    upper_name: string;
-    path: string;
-    category: number;
+	id: number;
+	name: string;
+	upper_name: string;
+	path: string;
+	category: number;
 	download_status: [number, number, number, number, number];
 }
 
 // 视频列表响应类型
 export interface VideosResponse {
-    videos: VideoInfo[];
-    total_count: number;
+	videos: VideoInfo[];
+	total_count: number;
 }
 
 // 分页信息类型
 export interface PageInfo {
-    id: number;
-    pid: number;
-    name: string;
+	id: number;
+	pid: number;
+	name: string;
 	download_status: [number, number, number, number, number];
 }
 
 // 单个视频响应类型
 export interface VideoResponse {
-    video: VideoInfo;
-    pages: PageInfo[];
+	video: VideoInfo;
+	pages: PageInfo[];
 }
 
 // 重置视频响应类型
 export interface ResetVideoResponse {
-    resetted: boolean;
-    video: number;
-    pages: number[];
+	resetted: boolean;
+	video: number;
+	pages: number[];
+}
+
+// 批量重置所有视频响应类型
+export interface ResetAllVideosResponse {
+	resetted: boolean;
+	resetted_videos_count: number;
+	resetted_pages_count: number;
+}
+
+// 错误类型枚举
+export enum ErrorType {
+	Network = 'Network',
+	Permission = 'Permission',
+	Authentication = 'Authentication',
+	Authorization = 'Authorization',
+	NotFound = 'NotFound',
+	RateLimit = 'RateLimit',
+	ServerError = 'ServerError',
+	ClientError = 'ClientError',
+	Parse = 'Parse',
+	Timeout = 'Timeout',
+	FileSystem = 'FileSystem',
+	Configuration = 'Configuration',
+	RiskControl = 'RiskControl',
+	Unknown = 'Unknown'
+}
+
+// 错误类型的中文描述
+export const ErrorTypeMessages: Record<ErrorType, string> = {
+	[ErrorType.Network]: '网络连接错误',
+	[ErrorType.Permission]: '权限不足',
+	[ErrorType.Authentication]: '认证失败',
+	[ErrorType.Authorization]: '授权失败',
+	[ErrorType.NotFound]: '资源未找到',
+	[ErrorType.RateLimit]: '请求过于频繁',
+	[ErrorType.ServerError]: '服务器内部错误',
+	[ErrorType.ClientError]: '客户端错误',
+	[ErrorType.Parse]: '解析错误',
+	[ErrorType.Timeout]: '超时错误',
+	[ErrorType.FileSystem]: '文件系统错误',
+	[ErrorType.Configuration]: '配置错误',
+	[ErrorType.RiskControl]: '风控触发',
+	[ErrorType.Unknown]: '未知错误'
+};
+
+// 分类后的错误信息
+export interface ClassifiedError {
+	error_type: ErrorType;
+	message: string;
+	status_code?: number;
+	should_retry: boolean;
+	should_ignore: boolean;
+	user_friendly_message?: string;
 }
 
 // API 错误类型
-export interface ApiError {
-	message: string;
+export interface ApiError extends ClassifiedError {
 	status?: number;
+	timestamp?: string;
+	request_id?: string;
 }
 
 // 添加视频源请求类型
@@ -90,15 +144,15 @@ export interface AddVideoSourceRequest {
 
 // 添加视频源响应类型
 export interface AddVideoSourceResponse {
-    success: boolean;
-    message: string;
+	success: boolean;
+	message: string;
 	source_id?: number;
 }
 
 // 删除视频源响应类型
 export interface DeleteVideoSourceResponse {
-    success: boolean;
-    message: string;
+	success: boolean;
+	message: string;
 }
 
 // 配置响应类型
@@ -237,7 +291,7 @@ export interface UserFavoriteFolder {
 	fid?: number | string;
 	name?: string;
 	title?: string;
-    media_count: number;
+	media_count: number;
 	cover?: string;
 	created?: number;
 }
@@ -339,4 +393,26 @@ export interface QueueStatusResponse {
 	delete_queue: QueueInfo;
 	add_queue: QueueInfo;
 	config_queue: ConfigQueueInfo;
+}
+
+// 状态更新相关类型
+export interface StatusUpdate {
+	status_index: number;
+	status_value: number;
+}
+
+export interface PageStatusUpdate {
+	page_id: number;
+	updates: StatusUpdate[];
+}
+
+export interface UpdateVideoStatusRequest {
+	video_updates?: StatusUpdate[];
+	page_updates?: PageStatusUpdate[];
+}
+
+export interface UpdateVideoStatusResponse {
+	success: boolean;
+	video: VideoInfo;
+	pages: PageInfo[];
 }

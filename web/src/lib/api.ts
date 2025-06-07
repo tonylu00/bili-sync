@@ -5,6 +5,9 @@ import type {
 	VideosResponse,
 	VideoResponse,
 	ResetVideoResponse,
+	ResetAllVideosResponse,
+	UpdateVideoStatusRequest,
+	UpdateVideoStatusResponse,
 	ApiError,
 	AddVideoSourceRequest,
 	AddVideoSourceResponse,
@@ -20,6 +23,7 @@ import type {
 	UserCollectionInfo,
 	QueueStatusResponse
 } from './types';
+import { ErrorType } from './types';
 
 // API 基础配置
 const API_BASE_URL = '/api';
@@ -66,19 +70,23 @@ class ApiClient {
 		try {
 			const response = await fetch(url, config);
 
-    if (!response.ok) {
+			if (!response.ok) {
 				throw new Error(`HTTP error! status: ${response.status}`);
-    }
-        
+			}
+
 			const data: ApiResponse<T> = await response.json();
 			return data;
-    } catch (error) {
+		} catch (error) {
 			const apiError: ApiError = {
+				error_type: ErrorType.Unknown,
 				message: error instanceof Error ? error.message : 'Unknown error occurred',
-				status: error instanceof TypeError ? undefined : (error as { status?: number }).status
+				should_retry: false,
+				should_ignore: false,
+				status: error instanceof TypeError ? undefined : (error as { status?: number }).status,
+				timestamp: new Date().toISOString()
 			};
 			throw apiError;
-}
+		}
 	}
 
 	// GET 请求
@@ -89,20 +97,20 @@ class ApiClient {
 		let queryString = '';
 
 		if (params) {
-    const searchParams = new URLSearchParams();
-    Object.entries(params).forEach(([key, value]) => {
+			const searchParams = new URLSearchParams();
+			Object.entries(params).forEach(([key, value]) => {
 				if (value !== undefined && value !== null) {
 					searchParams.append(key, String(value));
-        }
-    });
+				}
+			});
 			queryString = searchParams.toString();
-}
+		}
 
 		const finalEndpoint = queryString ? `${endpoint}?${queryString}` : endpoint;
 		return this.request<T>(finalEndpoint, {
 			method: 'GET'
 		});
-}
+	}
 
 	// POST 请求
 	private async post<T>(endpoint: string, data?: unknown): Promise<ApiResponse<T>> {
@@ -117,11 +125,14 @@ class ApiClient {
 		return this.request<T>(endpoint, {
 			method: 'PUT',
 			body: data ? JSON.stringify(data) : undefined
-    });
-}
+		});
+	}
 
 	// DELETE 请求
-	private async delete<T>(endpoint: string, params?: Record<string, string>): Promise<ApiResponse<T>> {
+	private async delete<T>(
+		endpoint: string,
+		params?: Record<string, string>
+	): Promise<ApiResponse<T>> {
 		let queryString = '';
 		if (params) {
 			const searchParams = new URLSearchParams(params);
@@ -129,9 +140,9 @@ class ApiClient {
 		}
 		const finalEndpoint = queryString ? `${endpoint}?${queryString}` : endpoint;
 		return this.request<T>(finalEndpoint, {
-        method: 'DELETE'
-    });
-}
+			method: 'DELETE'
+		});
+	}
 
 	// API 方法
 
@@ -156,7 +167,7 @@ class ApiClient {
 	 */
 	async getVideo(id: number): Promise<ApiResponse<VideoResponse>> {
 		return this.get<VideoResponse>(`/videos/${id}`);
-}
+	}
 
 	/**
 	 * 重置视频下载状态
@@ -169,10 +180,19 @@ class ApiClient {
 	}
 
 	/**
+	 * 批量重置所有视频下载状态
+	 */
+	async resetAllVideos(): Promise<ApiResponse<ResetAllVideosResponse>> {
+		return this.post<ResetAllVideosResponse>('/videos/reset-all');
+	}
+
+	/**
 	 * 添加视频源
 	 * @param params 视频源参数
 	 */
-	async addVideoSource(params: AddVideoSourceRequest): Promise<ApiResponse<AddVideoSourceResponse>> {
+	async addVideoSource(
+		params: AddVideoSourceRequest
+	): Promise<ApiResponse<AddVideoSourceResponse>> {
 		return this.post<AddVideoSourceResponse>('/video-sources', params);
 	}
 
@@ -182,11 +202,15 @@ class ApiClient {
 	 * @param id 视频源ID
 	 * @param deleteLocalFiles 是否删除本地文件
 	 */
-	async deleteVideoSource(sourceType: string, id: number, deleteLocalFiles: boolean = false): Promise<ApiResponse<DeleteVideoSourceResponse>> {
-		return this.delete<DeleteVideoSourceResponse>(`/video-sources/${sourceType}/${id}`, { 
-			delete_local_files: deleteLocalFiles.toString() 
-    });
-}
+	async deleteVideoSource(
+		sourceType: string,
+		id: number,
+		deleteLocalFiles: boolean = false
+	): Promise<ApiResponse<DeleteVideoSourceResponse>> {
+		return this.delete<DeleteVideoSourceResponse>(`/video-sources/${sourceType}/${id}`, {
+			delete_local_files: deleteLocalFiles.toString()
+		});
+	}
 
 	/**
 	 * 获取配置
@@ -201,7 +225,7 @@ class ApiClient {
 	 */
 	async updateConfig(params: UpdateConfigRequest): Promise<ApiResponse<UpdateConfigResponse>> {
 		return this.put<UpdateConfigResponse>('/config', params);
-}
+	}
 
 	/**
 	 * 搜索B站内容
@@ -224,7 +248,11 @@ class ApiClient {
 	 * @param page 页码
 	 * @param pageSize 每页数量
 	 */
-	async getUserCollections(mid: string, page: number = 1, pageSize: number = 20): Promise<ApiResponse<UserCollectionsResponse>> {
+	async getUserCollections(
+		mid: string,
+		page: number = 1,
+		pageSize: number = 20
+	): Promise<ApiResponse<UserCollectionsResponse>> {
 		return this.get<UserCollectionsResponse>(`/user/collections/${mid}`, {
 			page,
 			page_size: pageSize
@@ -258,6 +286,18 @@ class ApiClient {
 	async getQueueStatus(): Promise<ApiResponse<QueueStatusResponse>> {
 		return this.get<QueueStatusResponse>('/queue-status');
 	}
+
+	/**
+	 * 更新视频状态
+	 * @param id 视频ID
+	 * @param request 状态更新请求
+	 */
+	async updateVideoStatus(
+		id: number,
+		request: UpdateVideoStatusRequest
+	): Promise<ApiResponse<UpdateVideoStatusResponse>> {
+		return this.post<UpdateVideoStatusResponse>(`/videos/${id}/update-status`, request);
+	}
 }
 
 // 创建默认的 API 客户端实例
@@ -286,6 +326,11 @@ export const api = {
 	resetVideo: (id: number, force?: boolean) => apiClient.resetVideo(id, force),
 
 	/**
+	 * 批量重置所有视频下载状态
+	 */
+	resetAllVideos: () => apiClient.resetAllVideos(),
+
+	/**
 	 * 设置认证 token
 	 */
 	setAuthToken: (token: string) => apiClient.setAuthToken(token),
@@ -298,7 +343,7 @@ export const api = {
 	/**
 	 * 删除视频源
 	 */
-	deleteVideoSource: (sourceType: string, id: number, deleteLocalFiles?: boolean) => 
+	deleteVideoSource: (sourceType: string, id: number, deleteLocalFiles?: boolean) =>
 		apiClient.deleteVideoSource(sourceType, id, deleteLocalFiles),
 
 	/**
@@ -324,7 +369,7 @@ export const api = {
 	/**
 	 * 获取UP主的合集和系列列表
 	 */
-	getUserCollections: (mid: string, page?: number, pageSize?: number) => 
+	getUserCollections: (mid: string, page?: number, pageSize?: number) =>
 		apiClient.getUserCollections(mid, page, pageSize),
 
 	/**
@@ -345,7 +390,13 @@ export const api = {
 	/**
 	 * 获取队列状态
 	 */
-	getQueueStatus: () => apiClient.getQueueStatus()
+	getQueueStatus: () => apiClient.getQueueStatus(),
+
+	/**
+	 * 更新视频状态
+	 */
+	updateVideoStatus: (id: number, request: UpdateVideoStatusRequest) =>
+		apiClient.updateVideoStatus(id, request)
 };
 
 // 默认导出

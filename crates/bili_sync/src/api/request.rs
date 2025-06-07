@@ -115,3 +115,26 @@ fn default_page() -> u32 {
 fn default_page_size() -> u32 {
     20
 }
+
+// 状态更新结构
+#[derive(Deserialize, ToSchema)]
+pub struct StatusUpdate {
+    pub status_index: usize, // 状态位索引 (0-4)
+    pub status_value: u32,   // 状态值 (0, 1, 2, 3)
+}
+
+// 分页状态更新结构
+#[derive(Deserialize, ToSchema)]
+pub struct PageStatusUpdate {
+    pub page_id: i32,
+    pub updates: Vec<StatusUpdate>,
+}
+
+// 更新视频状态请求
+#[derive(Deserialize, ToSchema)]
+pub struct UpdateVideoStatusRequest {
+    #[serde(default)]
+    pub video_updates: Vec<StatusUpdate>,
+    #[serde(default)]
+    pub page_updates: Vec<PageStatusUpdate>,
+}

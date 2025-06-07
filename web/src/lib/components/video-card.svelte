@@ -99,7 +99,7 @@
 				}
 				// 稍后刷新页面
 				setTimeout(() => {
-				window.location.reload();
+					window.location.reload();
 				}, 1000);
 			}
 		} catch (error) {
@@ -156,7 +156,7 @@
 	// 获取集数信息用于显示 - 统一处理
 	function getEpisodeInfo(video: VideoInfo): string {
 		const originalName = video.name.trim();
-		
+
 		// 如果是番剧，尝试美化集数显示
 		if (isBangumiVideo(video)) {
 			// 如果是纯数字，加上"第X集"
@@ -170,7 +170,7 @@
 			// 其他情况直接返回原名
 			return originalName;
 		}
-		
+
 		return originalName;
 	}
 
@@ -180,7 +180,7 @@
 		if (isBangumiVideo(video)) {
 			return getEpisodeInfo(video);
 		}
-		
+
 		// 非番剧直接返回原标题
 		return video.name.trim();
 	}
@@ -196,12 +196,16 @@
 				{#if getBangumiName(video)}
 					<!-- 两行显示：番剧名 + 集数信息 -->
 					<div class="space-y-1">
-						<div class="font-medium text-primary line-clamp-1 leading-tight">{getBangumiName(video)}</div>
-						<div class="text-xs text-muted-foreground line-clamp-1 leading-tight">{getEpisodeInfo(video)}</div>
+						<div class="text-primary line-clamp-1 leading-tight font-medium">
+							{getBangumiName(video)}
+						</div>
+						<div class="text-muted-foreground line-clamp-1 text-xs leading-tight">
+							{getEpisodeInfo(video)}
+						</div>
 					</div>
 				{:else}
 					<!-- 单行显示：原始标题 -->
-					<div class="font-medium text-primary line-clamp-2 leading-tight">{displayTitle}</div>
+					<div class="text-primary line-clamp-2 leading-tight font-medium">{displayTitle}</div>
 				{/if}
 			</CardTitle>
 			<Badge variant={overallStatus.color} class="shrink-0 text-xs">
@@ -259,15 +263,15 @@
 			{#if showActions && (mode === 'default' || mode === 'detail')}
 				<div class="flex min-w-0 gap-1.5">
 					{#if mode === 'default'}
-					<Button
-						size="sm"
-						variant="outline"
-						class="min-w-0 flex-1 cursor-pointer px-2 text-xs"
-						onclick={handleViewDetail}
-					>
-						<InfoIcon class="mr-1 h-3 w-3 shrink-0" />
-						<span class="truncate">详情</span>
-					</Button>
+						<Button
+							size="sm"
+							variant="outline"
+							class="min-w-0 flex-1 cursor-pointer px-2 text-xs"
+							onclick={handleViewDetail}
+						>
+							<InfoIcon class="mr-1 h-3 w-3 shrink-0" />
+							<span class="truncate">详情</span>
+						</Button>
 					{/if}
 					<Button
 						size="sm"
@@ -282,10 +286,10 @@
 			{/if}
 
 			<!-- 路径信息 -->
-			{#if video.path && (mode === 'detail')}
+			{#if video.path && mode === 'detail'}
 				<div class="mt-2 space-y-1">
 					<div class="text-muted-foreground text-xs">保存路径</div>
-					<div class="bg-muted rounded px-2 py-1 text-xs font-mono break-all" title={video.path}>
+					<div class="bg-muted rounded px-2 py-1 font-mono text-xs break-all" title={video.path}>
 						{video.path}
 					</div>
 				</div>
@@ -303,26 +307,18 @@
 				<p class="mb-2">
 					确定要重置视频 "{displayTitle}" 的下载状态吗？
 				</p>
-				<p class="text-sm text-muted-foreground">
-					• <strong>重置失败</strong>：仅重置失败的任务<br>
+				<p class="text-muted-foreground text-sm">
+					• <strong>重置失败</strong>：仅重置失败的任务<br />
 					• <strong>强制重置</strong>：重置所有任务，重新下载
 				</p>
 			</AlertDialog.Description>
 		</AlertDialog.Header>
 		<AlertDialog.Footer>
 			<AlertDialog.Cancel>取消</AlertDialog.Cancel>
-			<Button
-				variant="secondary"
-				onclick={() => handleReset(false)}
-				disabled={resetting}
-			>
+			<Button variant="secondary" onclick={() => handleReset(false)} disabled={resetting}>
 				{resetting ? '重置中...' : '重置失败'}
 			</Button>
-			<Button
-				variant="destructive"
-				onclick={() => handleReset(true)}
-				disabled={resetting}
-			>
+			<Button variant="destructive" onclick={() => handleReset(true)} disabled={resetting}>
 				{resetting ? '重置中...' : '强制重置'}
 			</Button>
 		</AlertDialog.Footer>

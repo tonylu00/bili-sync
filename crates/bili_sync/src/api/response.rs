@@ -33,8 +33,22 @@ pub struct VideoResponse {
 #[derive(Serialize, ToSchema)]
 pub struct ResetVideoResponse {
     pub resetted: bool,
-    pub video: i32,
-    pub pages: Vec<i32>,
+    pub video: VideoInfo,
+    pub pages: Vec<PageInfo>,
+}
+
+#[derive(Serialize, ToSchema)]
+pub struct UpdateVideoStatusResponse {
+    pub success: bool,
+    pub video: VideoInfo,
+    pub pages: Vec<PageInfo>,
+}
+
+#[derive(Serialize, ToSchema)]
+pub struct ResetAllVideosResponse {
+    pub resetted: bool,
+    pub resetted_videos_count: usize,
+    pub resetted_pages_count: usize,
 }
 
 #[derive(Serialize, ToSchema)]

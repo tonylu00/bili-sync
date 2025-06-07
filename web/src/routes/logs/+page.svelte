@@ -8,10 +8,10 @@
 	import { setBreadcrumb } from '$lib/stores/breadcrumb';
 	import api from '$lib/api';
 	import { RefreshCw, Download, AlertTriangle, XCircle, Info, Bug } from '@lucide/svelte';
-	
+
 	// 日志级别类型
 	type LogLevel = 'info' | 'warn' | 'error' | 'debug';
-	
+
 	// 日志条目类型
 	interface LogEntry {
 		timestamp: string;
@@ -19,17 +19,17 @@
 		message: string;
 		target?: string;
 	}
-	
+
 	// 日志响应类型
 	interface LogsResponse {
 		logs: LogEntry[];
 		total: number;
 	}
-	
+
 	// 响应式变量
 	let innerWidth = 0;
 	$: isMobile = innerWidth < 768;
-	
+
 	// 状态变量
 	let logs: LogEntry[] = [];
 	let filteredLogs: LogEntry[] = [];
@@ -41,12 +41,12 @@
 	let authError = '';
 	let logLimit = 500; // 可自定义的日志数量限制
 	let totalLogCount = 0; // 总日志数量
-	
+
 	// 分页相关变量
 	let currentPage = 1;
 	let totalPages = 0;
 	let perPage = 100;
-	
+
 	// 日志级别颜色映射
 	const levelColors: Record<LogLevel, string> = {
 		info: 'bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200',
@@ -54,7 +54,7 @@
 		error: 'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200',
 		debug: 'bg-gray-100 text-gray-800 dark:bg-gray-900 dark:text-gray-200'
 	};
-	
+
 	// 日志级别图标映射
 	const levelIcons: Record<LogLevel, any> = {
 		info: Info,
@@ -62,7 +62,7 @@
 		error: XCircle,
 		debug: Bug
 	};
-	
+
 	// 检查认证状态
 	async function checkAuth(): Promise<boolean> {
 		const token = localStorage.getItem('auth_token');
@@ -70,7 +70,7 @@
 			authError = '未找到认证token，请先登录';
 			return false;
 		}
-		
+
 		try {
 			// 尝试调用一个需要认证的API来验证Token
 			await api.getVideoSources();
@@ -81,67 +81,67 @@
 			return false;
 		}
 	}
-	
+
 	// 初始化面包屑
 	onMount(async () => {
 		setBreadcrumb([
 			{ label: '首页', href: '/' },
 			{ label: '系统日志', href: '/logs' }
 		]);
-		
+
 		// 验证认证状态
 		isAuthenticated = await checkAuth();
-		
+
 		if (isAuthenticated) {
 			// 加载统计信息
 			await loadAllLogsStats();
-			
+
 			// 加载日志
 			await loadLogs();
-			
+
 			// 设置自动刷新
 			if (autoRefresh) {
 				refreshInterval = setInterval(() => handleRefresh(), 5000); // 每5秒刷新一次
 			}
 		}
 	});
-	
+
 	onDestroy(() => {
 		if (refreshInterval) {
 			clearInterval(refreshInterval);
 		}
 	});
-	
+
 	// 加载日志
 	async function loadLogs(level?: LogLevel, page: number = currentPage) {
 		if (!isAuthenticated) {
 			return;
 		}
-		
+
 		try {
 			isLoading = true;
 			authError = '';
 			const params = new URLSearchParams();
 			params.append('limit', perPage.toString());
 			params.append('page', page.toString());
-			
+
 			if (level) {
 				params.append('level', level);
 			}
-			
+
 			const token = localStorage.getItem('auth_token');
 			if (!token) {
 				throw new Error('未找到认证token');
 			}
-			
+
 			// 使用fetch直接调用API
 			const response = await fetch(`/api/logs?${params.toString()}`, {
 				headers: {
-					'Authorization': token,
+					Authorization: token,
 					'Content-Type': 'application/json'
 				}
 			});
-			
+
 			if (!response.ok) {
 				if (response.status === 401) {
 					isAuthenticated = false;
@@ -150,14 +150,14 @@
 				}
 				throw new Error(`HTTP ${response.status}: 加载日志失败`);
 			}
-			
+
 			const result = await response.json();
 			console.log('API响应:', result);
-			
+
 			// 修复数据解析逻辑 - 处理所有可能的响应格式
 			let logsArray: LogEntry[] = [];
 			let responseData: any = {};
-			
+
 			if (result.status_code === 200 && result.data) {
 				// 新格式：{status_code: 200, data: {logs: [...], total: ...}}
 				responseData = result.data;
@@ -180,26 +180,32 @@
 			} else if (Array.isArray(result)) {
 				// 纯数组格式 [...]
 				logsArray = result;
-				responseData = { logs: result, total: result.length, page: 1, per_page: result.length, total_pages: 1 };
+				responseData = {
+					logs: result,
+					total: result.length,
+					page: 1,
+					per_page: result.length,
+					total_pages: 1
+				};
 				console.log('从数组格式获取数据，长度:', logsArray.length);
 			} else {
 				console.warn('无法识别的API响应格式:', result);
 				console.log('响应键:', Object.keys(result));
 			}
-			
+
 			// 更新分页信息
 			logs = logsArray;
 			totalLogCount = responseData.total || logsArray.length;
 			currentPage = responseData.page || page;
 			totalPages = responseData.total_pages || 1;
 			perPage = responseData.per_page || perPage;
-			
+
 			console.log('分页信息:', { currentPage, totalPages, perPage, total: totalLogCount });
 			console.log('最终设置的logs长度:', logs.length);
 			if (logs.length > 0) {
 				console.log('前几条日志:', logs.slice(0, 2));
 			}
-			
+
 			filterLogs();
 		} catch (error: any) {
 			console.error('加载日志失败:', error);
@@ -211,46 +217,46 @@
 			isLoading = false;
 		}
 	}
-	
+
 	// 根据当前选项卡过滤日志
 	function filterLogs() {
 		// 注意：现在我们使用服务器端过滤，这里主要用于显示
 		// 实际的过滤在loadLogs函数中通过API参数完成
 		filteredLogs = logs;
 	}
-	
+
 	// 分页相关函数
 	function goToPage(page: number) {
 		if (page >= 1 && page <= totalPages && page !== currentPage) {
-			const level = currentTab === 'all' ? undefined : currentTab as LogLevel;
+			const level = currentTab === 'all' ? undefined : (currentTab as LogLevel);
 			loadLogs(level, page);
 		}
 	}
-	
+
 	function goToFirstPage() {
 		goToPage(1);
 	}
-	
+
 	function goToLastPage() {
 		goToPage(totalPages);
 	}
-	
+
 	function goToPrevPage() {
 		goToPage(currentPage - 1);
 	}
-	
+
 	function goToNextPage() {
 		goToPage(currentPage + 1);
 	}
-	
+
 	// 手动刷新
 	async function handleRefresh() {
 		// 同时刷新统计信息和当前日志
 		await loadAllLogsStats();
-		const level = currentTab === 'all' ? undefined : currentTab as LogLevel;
+		const level = currentTab === 'all' ? undefined : (currentTab as LogLevel);
 		await loadLogs(level, currentPage);
 	}
-	
+
 	// 切换自动刷新
 	function toggleAutoRefresh() {
 		autoRefresh = !autoRefresh;
@@ -260,42 +266,42 @@
 			clearInterval(refreshInterval);
 		}
 	}
-	
+
 	// 导出日志
 	async function exportLogs() {
 		if (!isAuthenticated) return;
-		
+
 		try {
 			isLoading = true;
-			
+
 			// 获取当前选择级别的所有日志
 			const params = new URLSearchParams();
 			// 使用较大的limit值来获取尽可能多的日志
 			params.append('limit', '50000');
 			params.append('page', '1');
-			
+
 			if (currentTab !== 'all') {
 				params.append('level', currentTab);
 			}
-			
+
 			const token = localStorage.getItem('auth_token');
 			if (!token) {
 				throw new Error('未找到认证token');
 			}
-			
+
 			const response = await fetch(`/api/logs?${params.toString()}`, {
 				headers: {
-					'Authorization': token,
+					Authorization: token,
 					'Content-Type': 'application/json'
 				}
 			});
-			
+
 			if (!response.ok) {
 				throw new Error(`HTTP ${response.status}: 获取日志失败`);
 			}
-			
+
 			const result = await response.json();
-			
+
 			// 解析响应数据
 			let allLogs: LogEntry[] = [];
 			if (result.status_code === 200 && result.data) {
@@ -307,33 +313,33 @@
 			} else if (Array.isArray(result)) {
 				allLogs = result;
 			}
-			
+
 			if (allLogs.length === 0) {
 				toast.error('没有日志可导出');
 				return;
 			}
-			
+
 			// 生成CSV内容
 			const csvContent = [
 				'时间,级别,消息,来源',
-				...allLogs.map(log => 
-					`"${formatTimestamp(log.timestamp)}","${log.level}","${log.message.replace(/"/g, '""')}","${log.target || ''}"`
+				...allLogs.map(
+					(log) =>
+						`"${formatTimestamp(log.timestamp)}","${log.level}","${log.message.replace(/"/g, '""')}","${log.target || ''}"`
 				)
 			].join('\n');
-			
+
 			// 创建文件名
 			const levelText = currentTab === 'all' ? '全部' : currentTab;
 			const fileName = `logs-${levelText}-${new Date().toISOString().split('T')[0]}.csv`;
-			
+
 			// 下载文件
 			const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
 			const link = document.createElement('a');
 			link.href = URL.createObjectURL(blob);
 			link.download = fileName;
 			link.click();
-			
+
 			toast.success(`成功导出 ${allLogs.length} 条${levelText}日志`);
-			
 		} catch (error: any) {
 			console.error('导出日志失败:', error);
 			toast.error('导出日志失败', {
@@ -343,7 +349,7 @@
 			isLoading = false;
 		}
 	}
-	
+
 	// 格式化时间戳
 	function formatTimestamp(timestamp: string): string {
 		return new Date(timestamp).toLocaleString('zh-CN', {
@@ -355,12 +361,12 @@
 			second: '2-digit'
 		});
 	}
-	
+
 	// 重新登录
 	function goToLogin() {
 		window.location.href = '/';
 	}
-	
+
 	// 获取全部日志的统计信息
 	let allLogsStats = {
 		total: 0,
@@ -369,34 +375,34 @@
 		error: 0,
 		debug: 0
 	};
-	
+
 	// 加载所有日志统计（不分页，仅用于统计）
 	async function loadAllLogsStats() {
 		if (!isAuthenticated) return;
-		
+
 		try {
 			const token = localStorage.getItem('auth_token');
 			if (!token) return;
-			
+
 			// 获取所有级别的统计
 			const levels = ['info', 'warn', 'error', 'debug'];
-			const promises = levels.map(async level => {
+			const promises = levels.map(async (level) => {
 				const params = new URLSearchParams();
 				params.append('level', level);
 				params.append('limit', '1000'); // 获取更多数据用于统计
 				params.append('page', '1');
-				
+
 				const response = await fetch(`/api/logs?${params.toString()}`, {
 					headers: {
-						'Authorization': token,
+						Authorization: token,
 						'Content-Type': 'application/json'
 					}
 				});
-				
+
 				if (response.ok) {
 					const result = await response.json();
 					let responseData: any = {};
-					
+
 					if (result.status_code === 200 && result.data) {
 						responseData = result.data;
 					} else if (result.success && result.data) {
@@ -404,7 +410,7 @@
 					} else {
 						responseData = result;
 					}
-					
+
 					return {
 						level,
 						count: responseData.total || 0
@@ -412,15 +418,15 @@
 				}
 				return { level, count: 0 };
 			});
-			
+
 			const results = await Promise.all(promises);
-			
+
 			// 更新统计信息 - 全部日志不包含debug级别
-			const infoCount = results.find(item => item.level === 'info')?.count || 0;
-			const warnCount = results.find(item => item.level === 'warn')?.count || 0;
-			const errorCount = results.find(item => item.level === 'error')?.count || 0;
-			const debugCount = results.find(item => item.level === 'debug')?.count || 0;
-			
+			const infoCount = results.find((item) => item.level === 'info')?.count || 0;
+			const warnCount = results.find((item) => item.level === 'warn')?.count || 0;
+			const errorCount = results.find((item) => item.level === 'error')?.count || 0;
+			const debugCount = results.find((item) => item.level === 'debug')?.count || 0;
+
 			allLogsStats = {
 				total: infoCount + warnCount + errorCount, // 全部日志不包含debug
 				info: infoCount,
@@ -428,20 +434,20 @@
 				error: errorCount,
 				debug: debugCount
 			};
-			
+
 			console.log('日志统计:', allLogsStats);
 		} catch (error) {
 			console.error('加载日志统计失败:', error);
 		}
 	}
-	
+
 	// 当前显示的日志统计（基于当前加载的日志）
 	$: logStats = {
 		total: filteredLogs.length,
-		info: logs.filter(log => log.level === 'info').length,
-		warn: logs.filter(log => log.level === 'warn').length,
-		error: logs.filter(log => log.level === 'error').length,
-		debug: logs.filter(log => log.level === 'debug').length
+		info: logs.filter((log) => log.level === 'info').length,
+		warn: logs.filter((log) => log.level === 'warn').length,
+		error: logs.filter((log) => log.level === 'error').length,
+		debug: logs.filter((log) => log.level === 'debug').length
 	};
 </script>
 
@@ -451,7 +457,7 @@
 	<!-- 未认证状态 -->
 	<div class="container mx-auto py-12">
 		<div class="text-center">
-			<h1 class="text-3xl font-bold mb-4">访问被拒绝</h1>
+			<h1 class="mb-4 text-3xl font-bold">访问被拒绝</h1>
 			<p class="text-muted-foreground mb-6">{authError}</p>
 			<Button onclick={goToLogin}>返回登录</Button>
 		</div>
@@ -465,19 +471,23 @@
 				<h1 class="text-3xl font-bold tracking-tight">系统日志</h1>
 				<p class="text-muted-foreground">查看系统运行日志和错误信息</p>
 				{#if authError}
-					<p class="text-sm text-red-600 mt-1">{authError}</p>
+					<p class="mt-1 text-sm text-red-600">{authError}</p>
 				{/if}
 			</div>
-			
+
 			<div class="flex {isMobile ? 'flex-col' : ''} gap-2">
 				<!-- 日志数量选择 -->
 				<div class="flex items-center gap-2">
 					<label for="perPage" class="text-sm font-medium whitespace-nowrap">每页显示:</label>
-					<select 
-						id="perPage" 
-						bind:value={perPage} 
-						on:change={() => { currentPage = 1; const level = currentTab === 'all' ? undefined : currentTab as LogLevel; loadLogs(level, 1); }}
-						class="h-8 rounded-md border border-input bg-background px-2 py-1 text-sm"
+					<select
+						id="perPage"
+						bind:value={perPage}
+						on:change={() => {
+							currentPage = 1;
+							const level = currentTab === 'all' ? undefined : (currentTab as LogLevel);
+							loadLogs(level, 1);
+						}}
+						class="border-input bg-background h-8 rounded-md border px-2 py-1 text-sm"
 					>
 						<option value={50}>50</option>
 						<option value={100}>100</option>
@@ -487,28 +497,35 @@
 						<option value={5000}>5000</option>
 					</select>
 				</div>
-				
+
 				<Button variant="outline" size="sm" onclick={handleRefresh} disabled={isLoading}>
 					<RefreshCw class="h-4 w-4 {isLoading ? 'animate-spin' : ''}" />
 					刷新
 				</Button>
-				
-				<Button 
-					variant="outline" 
-					size="sm" 
+
+				<Button
+					variant="outline"
+					size="sm"
 					onclick={toggleAutoRefresh}
-					class={autoRefresh ? 'bg-green-50 border-green-200 text-green-700 hover:bg-green-100' : ''}
+					class={autoRefresh
+						? 'border-green-200 bg-green-50 text-green-700 hover:bg-green-100'
+						: ''}
 				>
 					{autoRefresh ? '自动刷新中' : '开启自动刷新'}
 				</Button>
-				
-				<Button variant="outline" size="sm" onclick={exportLogs} disabled={isLoading || !isAuthenticated}>
+
+				<Button
+					variant="outline"
+					size="sm"
+					onclick={exportLogs}
+					disabled={isLoading || !isAuthenticated}
+				>
 					<Download class="h-4 w-4" />
 					导出{currentTab === 'all' ? '全部' : currentTab}日志
 				</Button>
 			</div>
 		</div>
-		
+
 		<!-- 日志统计 -->
 		<div class="grid {isMobile ? 'grid-cols-2 gap-3' : 'grid-cols-5 gap-4'}">
 			<Card.Root>
@@ -522,7 +539,7 @@
 					</div>
 				</Card.Content>
 			</Card.Root>
-			
+
 			<Card.Root>
 				<Card.Content class="flex items-center p-4">
 					<div class="flex items-center space-x-2">
@@ -534,7 +551,7 @@
 					</div>
 				</Card.Content>
 			</Card.Root>
-			
+
 			<Card.Root>
 				<Card.Content class="flex items-center p-4">
 					<div class="flex items-center space-x-2">
@@ -546,7 +563,7 @@
 					</div>
 				</Card.Content>
 			</Card.Root>
-			
+
 			<Card.Root>
 				<Card.Content class="flex items-center p-4">
 					<div class="flex items-center space-x-2">
@@ -558,63 +575,113 @@
 					</div>
 				</Card.Content>
 			</Card.Root>
-			
+
 			{#if !isMobile}
-			<Card.Root>
-				<Card.Content class="flex items-center p-4">
-					<div class="flex items-center space-x-2">
-						<Bug class="h-4 w-4 text-gray-500" />
-						<div>
-							<p class="text-sm font-medium">调试</p>
-							<p class="text-2xl font-bold text-gray-600">{allLogsStats.debug}</p>
+				<Card.Root>
+					<Card.Content class="flex items-center p-4">
+						<div class="flex items-center space-x-2">
+							<Bug class="h-4 w-4 text-gray-500" />
+							<div>
+								<p class="text-sm font-medium">调试</p>
+								<p class="text-2xl font-bold text-gray-600">{allLogsStats.debug}</p>
+							</div>
 						</div>
-					</div>
-				</Card.Content>
-			</Card.Root>
+					</Card.Content>
+				</Card.Root>
 			{/if}
 		</div>
-		
+
 		<!-- 日志选项卡 -->
 		<div class="space-y-4">
 			<!-- 选项卡按钮 -->
-			<div class="flex space-x-1 rounded-lg bg-muted p-1">
+			<div class="bg-muted flex space-x-1 rounded-lg p-1">
 				<button
-					class="flex-1 rounded-md px-3 py-2 text-sm font-medium transition-colors {currentTab === 'all' ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'}"
-					on:click={() => { currentTab = 'all'; currentPage = 1; loadLogs(); }}
+					class="flex-1 rounded-md px-3 py-2 text-sm font-medium transition-colors {currentTab ===
+					'all'
+						? 'bg-background text-foreground shadow-sm'
+						: 'text-muted-foreground hover:text-foreground'}"
+					on:click={() => {
+						currentTab = 'all';
+						currentPage = 1;
+						loadLogs();
+					}}
 				>
 					全部日志
-					<span class="ml-2 inline-flex items-center rounded-full bg-secondary px-2 py-1 text-xs font-medium text-secondary-foreground">{allLogsStats.total}</span>
+					<span
+						class="bg-secondary text-secondary-foreground ml-2 inline-flex items-center rounded-full px-2 py-1 text-xs font-medium"
+						>{allLogsStats.total}</span
+					>
 				</button>
 				<button
-					class="flex-1 rounded-md px-3 py-2 text-sm font-medium transition-colors {currentTab === 'info' ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'}"
-					on:click={() => { currentTab = 'info'; currentPage = 1; loadLogs('info', 1); }}
+					class="flex-1 rounded-md px-3 py-2 text-sm font-medium transition-colors {currentTab ===
+					'info'
+						? 'bg-background text-foreground shadow-sm'
+						: 'text-muted-foreground hover:text-foreground'}"
+					on:click={() => {
+						currentTab = 'info';
+						currentPage = 1;
+						loadLogs('info', 1);
+					}}
 				>
 					信息
-					<span class="ml-2 inline-flex items-center rounded-full bg-blue-100 text-blue-800 px-2 py-1 text-xs font-medium">{allLogsStats.info}</span>
+					<span
+						class="ml-2 inline-flex items-center rounded-full bg-blue-100 px-2 py-1 text-xs font-medium text-blue-800"
+						>{allLogsStats.info}</span
+					>
 				</button>
 				<button
-					class="flex-1 rounded-md px-3 py-2 text-sm font-medium transition-colors {currentTab === 'warn' ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'}"
-					on:click={() => { currentTab = 'warn'; currentPage = 1; loadLogs('warn', 1); }}
+					class="flex-1 rounded-md px-3 py-2 text-sm font-medium transition-colors {currentTab ===
+					'warn'
+						? 'bg-background text-foreground shadow-sm'
+						: 'text-muted-foreground hover:text-foreground'}"
+					on:click={() => {
+						currentTab = 'warn';
+						currentPage = 1;
+						loadLogs('warn', 1);
+					}}
 				>
 					警告
-					<span class="ml-2 inline-flex items-center rounded-full bg-yellow-100 text-yellow-800 px-2 py-1 text-xs font-medium">{allLogsStats.warn}</span>
+					<span
+						class="ml-2 inline-flex items-center rounded-full bg-yellow-100 px-2 py-1 text-xs font-medium text-yellow-800"
+						>{allLogsStats.warn}</span
+					>
 				</button>
 				<button
-					class="flex-1 rounded-md px-3 py-2 text-sm font-medium transition-colors {currentTab === 'error' ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'}"
-					on:click={() => { currentTab = 'error'; currentPage = 1; loadLogs('error', 1); }}
+					class="flex-1 rounded-md px-3 py-2 text-sm font-medium transition-colors {currentTab ===
+					'error'
+						? 'bg-background text-foreground shadow-sm'
+						: 'text-muted-foreground hover:text-foreground'}"
+					on:click={() => {
+						currentTab = 'error';
+						currentPage = 1;
+						loadLogs('error', 1);
+					}}
 				>
 					错误
-					<span class="ml-2 inline-flex items-center rounded-full bg-red-100 text-red-800 px-2 py-1 text-xs font-medium">{allLogsStats.error}</span>
+					<span
+						class="ml-2 inline-flex items-center rounded-full bg-red-100 px-2 py-1 text-xs font-medium text-red-800"
+						>{allLogsStats.error}</span
+					>
 				</button>
 				<button
-					class="flex-1 rounded-md px-3 py-2 text-sm font-medium transition-colors {currentTab === 'debug' ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'}"
-					on:click={() => { currentTab = 'debug'; currentPage = 1; loadLogs('debug', 1); }}
+					class="flex-1 rounded-md px-3 py-2 text-sm font-medium transition-colors {currentTab ===
+					'debug'
+						? 'bg-background text-foreground shadow-sm'
+						: 'text-muted-foreground hover:text-foreground'}"
+					on:click={() => {
+						currentTab = 'debug';
+						currentPage = 1;
+						loadLogs('debug', 1);
+					}}
 				>
 					调试
-					<span class="ml-2 inline-flex items-center rounded-full bg-gray-100 text-gray-800 px-2 py-1 text-xs font-medium">{allLogsStats.debug}</span>
+					<span
+						class="ml-2 inline-flex items-center rounded-full bg-gray-100 px-2 py-1 text-xs font-medium text-gray-800"
+						>{allLogsStats.debug}</span
+					>
 				</button>
 			</div>
-			
+
 			<!-- 日志内容 -->
 			<Card.Root>
 				<Card.Header>
@@ -639,29 +706,46 @@
 				<Card.Content class="p-0">
 					<div class="h-[600px] overflow-auto">
 						{#if filteredLogs.length === 0}
-							<div class="flex items-center justify-center h-32 text-muted-foreground">
+							<div class="text-muted-foreground flex h-32 items-center justify-center">
 								{isLoading ? '加载中...' : '暂无日志'}
 							</div>
 						{:else}
 							<div class="space-y-1 p-4">
 								{#each filteredLogs as log, index (index)}
-									<div class="border-b border-gray-100 pb-3 mb-3 last:border-b-0">
+									<div class="mb-3 border-b border-gray-100 pb-3 last:border-b-0">
 										<div class="flex {isMobile ? 'flex-col gap-2' : 'items-start justify-between'}">
-											<div class="flex items-start gap-3 flex-1">
-												<svelte:component this={levelIcons[log.level]} class="h-4 w-4 mt-1 flex-shrink-0 text-{log.level === 'error' ? 'red' : log.level === 'warn' ? 'yellow' : log.level === 'info' ? 'blue' : 'gray'}-500" />
-												<div class="flex-1 min-w-0">
-													<div class="flex {isMobile ? 'flex-col gap-1' : 'items-center gap-2'} mb-1">
+											<div class="flex flex-1 items-start gap-3">
+												<svelte:component
+													this={levelIcons[log.level]}
+													class="mt-1 h-4 w-4 flex-shrink-0 text-{log.level === 'error'
+														? 'red'
+														: log.level === 'warn'
+															? 'yellow'
+															: log.level === 'info'
+																? 'blue'
+																: 'gray'}-500"
+												/>
+												<div class="min-w-0 flex-1">
+													<div
+														class="flex {isMobile ? 'flex-col gap-1' : 'items-center gap-2'} mb-1"
+													>
 														<Badge variant="outline" class={levelColors[log.level]}>
 															{log.level.toUpperCase()}
 														</Badge>
 														{#if log.target}
-															<span class="text-xs text-muted-foreground font-mono">{log.target}</span>
+															<span class="text-muted-foreground font-mono text-xs"
+																>{log.target}</span
+															>
 														{/if}
 													</div>
 													<p class="text-sm break-words">{log.message}</p>
 												</div>
 											</div>
-											<div class="text-xs text-muted-foreground font-mono {isMobile ? 'text-left' : 'text-right'} flex-shrink-0">
+											<div
+												class="text-muted-foreground font-mono text-xs {isMobile
+													? 'text-left'
+													: 'text-right'} flex-shrink-0"
+											>
 												{formatTimestamp(log.timestamp)}
 											</div>
 										</div>
@@ -670,58 +754,61 @@
 							</div>
 						{/if}
 					</div>
-					
+
 					<!-- 分页控件 -->
 					{#if totalPages > 1}
-						<div class="flex items-center justify-between px-4 py-3 border-t">
-							<div class="text-sm text-muted-foreground">
-								显示第 {(currentPage - 1) * perPage + 1} - {Math.min(currentPage * perPage, totalLogCount)} 条，共 {totalLogCount} 条
+						<div class="flex items-center justify-between border-t px-4 py-3">
+							<div class="text-muted-foreground text-sm">
+								显示第 {(currentPage - 1) * perPage + 1} - {Math.min(
+									currentPage * perPage,
+									totalLogCount
+								)} 条，共 {totalLogCount} 条
 							</div>
 							<div class="flex items-center space-x-2">
-								<Button 
-									variant="outline" 
-									size="sm" 
-									onclick={goToFirstPage} 
+								<Button
+									variant="outline"
+									size="sm"
+									onclick={goToFirstPage}
 									disabled={currentPage === 1 || isLoading}
 								>
 									首页
 								</Button>
-								<Button 
-									variant="outline" 
-									size="sm" 
-									onclick={goToPrevPage} 
+								<Button
+									variant="outline"
+									size="sm"
+									onclick={goToPrevPage}
 									disabled={currentPage === 1 || isLoading}
 								>
 									上一页
 								</Button>
-								
+
 								<!-- 页码按钮 -->
-								{#each Array.from({length: Math.min(5, totalPages)}, (_, i) => {
+								{#each Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
 									const startPage = Math.max(1, Math.min(currentPage - 2, totalPages - 4));
 									return startPage + i;
 								}) as pageNum}
-									<Button 
-										variant={pageNum === currentPage ? "default" : "outline"} 
-										size="sm" 
+									<Button
+										variant={pageNum === currentPage ? 'default' : 'outline'}
+										size="sm"
 										onclick={() => goToPage(pageNum)}
 										disabled={isLoading}
 									>
 										{pageNum}
 									</Button>
 								{/each}
-								
-								<Button 
-									variant="outline" 
-									size="sm" 
-									onclick={goToNextPage} 
+
+								<Button
+									variant="outline"
+									size="sm"
+									onclick={goToNextPage}
 									disabled={currentPage === totalPages || isLoading}
 								>
 									下一页
 								</Button>
-								<Button 
-									variant="outline" 
-									size="sm" 
-									onclick={goToLastPage} 
+								<Button
+									variant="outline"
+									size="sm"
+									onclick={goToLastPage}
 									disabled={currentPage === totalPages || isLoading}
 								>
 									末页
@@ -733,4 +820,4 @@
 			</Card.Root>
 		</div>
 	</div>
-{/if} 
+{/if}

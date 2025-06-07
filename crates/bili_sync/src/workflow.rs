@@ -4,8 +4,8 @@ use std::pin::Pin;
 
 use anyhow::{anyhow, bail, Context, Result};
 use bili_sync_entity::*;
-use futures::stream::{FuturesOrdered, FuturesUnordered};
-use futures::{Future, Stream, StreamExt, TryStreamExt};
+use futures::stream::FuturesUnordered;
+use futures::{Stream, StreamExt, TryStreamExt};
 use sea_orm::entity::prelude::*;
 use sea_orm::ActiveValue::Set;
 use sea_orm::TransactionTrait;
@@ -362,39 +362,53 @@ pub async fn fetch_video_details(
         }
     }
 
-    // 处理普通视频
-    for video_model in normal_videos {
-        let video = Video::new(bili_client, video_model.bvid.clone());
-        let info: Result<_> = async { Ok((video.get_tags().await?, video.get_view_info().await?)) }.await;
-        match info {
-            Err(e) => {
-                error!(
-                    "获取视频 {} - {} 的详细信息失败，错误为：{:#}",
-                    &video_model.bvid, &video_model.name, e
-                );
-                if let Some(BiliError::RequestFailed(-404, _)) = e.downcast_ref::<BiliError>() {
-                    let mut video_active_model: bili_sync_entity::video::ActiveModel = video_model.into();
-                    video_active_model.valid = Set(false);
-                    video_active_model.save(connection).await?;
+    // 处理普通视频 - 使用并发处理优化性能
+    if !normal_videos.is_empty() {
+        info!("开始并发处理 {} 个普通视频的详情", normal_videos.len());
+
+        let tasks = normal_videos
+            .into_iter()
+            .map(|video_model| {
+                async move {
+                    let video = Video::new(bili_client, video_model.bvid.clone());
+                    let info: Result<_> = async { Ok((video.get_tags().await?, video.get_view_info().await?)) }.await;
+                    match info {
+                        Err(e) => {
+                            error!(
+                                "获取视频 {} - {} 的详细信息失败，错误为：{:#}",
+                                &video_model.bvid, &video_model.name, e
+                            );
+                            if let Some(BiliError::RequestFailed(-404, _)) = e.downcast_ref::<BiliError>() {
+                                let mut video_active_model: bili_sync_entity::video::ActiveModel = video_model.into();
+                                video_active_model.valid = Set(false);
+                                video_active_model.save(connection).await?;
+                            }
+                        }
+                        Ok((tags, mut view_info)) => {
+                            let VideoInfo::Detail { pages, .. } = &mut view_info else {
+                                unreachable!()
+                            };
+                            let pages = std::mem::take(pages);
+                            let pages_len = pages.len();
+                            let txn = connection.begin().await?;
+                            // 将分页信息写入数据库
+                            create_pages(pages, &video_model, &txn).await?;
+                            let mut video_active_model = view_info.into_detail_model(video_model);
+                            video_source.set_relation_id(&mut video_active_model);
+                            video_active_model.single_page = Set(Some(pages_len == 1));
+                            video_active_model.tags = Set(Some(serde_json::to_value(tags)?));
+                            video_active_model.save(&txn).await?;
+                            txn.commit().await?;
+                        }
+                    };
+                    Ok::<_, anyhow::Error>(())
                 }
-            }
-            Ok((tags, mut view_info)) => {
-                let VideoInfo::Detail { pages, .. } = &mut view_info else {
-                    unreachable!()
-                };
-                let pages = std::mem::take(pages);
-                let pages_len = pages.len();
-                let txn = connection.begin().await?;
-                // 将分页信息写入数据库
-                create_pages(pages, &video_model, &txn).await?;
-                let mut video_active_model = view_info.into_detail_model(video_model);
-                video_source.set_relation_id(&mut video_active_model);
-                video_active_model.single_page = Set(Some(pages_len == 1));
-                video_active_model.tags = Set(Some(serde_json::to_value(tags)?));
-                video_active_model.save(&txn).await?;
-                txn.commit().await?;
-            }
-        };
+            })
+            .collect::<FuturesUnordered<_>>();
+
+        // 并发执行所有任务
+        tasks.try_collect::<Vec<_>>().await?;
+        info!("完成普通视频详情处理");
     }
     video_source.log_fetch_video_end();
     Ok(())
@@ -560,36 +574,37 @@ pub async fn download_video_pages(
 
     // 对于单页视频，page 的下载已经足够
     // 对于多页视频，page 下载仅包含了分集内容，需要额外补上视频的 poster 的 tvshow.nfo
-    let tasks: Vec<Pin<Box<dyn Future<Output = Result<ExecutionStatus>> + Send>>> = vec![
+    // 使用 tokio::join! 替代装箱的 Future，零分配并行执行
+    let (res_1, res_2, res_3, res_4, res_5) = tokio::join!(
         // 下载视频封面
-        Box::pin(fetch_video_poster(
+        fetch_video_poster(
             separate_status[0] && !is_single_page,
             &video_model,
             downloader,
             base_path.join(format!("{}-poster.jpg", video_base_name)),
             base_path.join(format!("{}-fanart.jpg", video_base_name)),
-        )),
+        ),
         // 生成视频信息的 nfo
-        Box::pin(generate_video_nfo(
+        generate_video_nfo(
             separate_status[1] && !is_single_page,
             &video_model,
             base_path.join(format!("{}.nfo", video_base_name)),
-        )),
+        ),
         // 下载 Up 主头像（番剧跳过，因为番剧没有UP主信息）
-        Box::pin(fetch_upper_face(
+        fetch_upper_face(
             separate_status[2] && should_download_upper && !is_bangumi,
             &video_model,
             downloader,
             base_upper_path.join("folder.jpg"),
-        )),
+        ),
         // 生成 Up 主信息的 nfo（番剧跳过，因为番剧没有UP主信息）
-        Box::pin(generate_upper_nfo(
+        generate_upper_nfo(
             separate_status[3] && should_download_upper && !is_bangumi,
             &video_model,
             base_upper_path.join("person.nfo"),
-        )),
+        ),
         // 分发并执行分 P 下载的任务
-        Box::pin(dispatch_download_page(DownloadPageArgs {
+        dispatch_download_page(DownloadPageArgs {
             should_run: separate_status[4],
             bili_client,
             video_source,
@@ -598,10 +613,12 @@ pub async fn download_video_pages(
             connection,
             downloader,
             base_path: &base_path,
-        })),
-    ];
-    let tasks: FuturesOrdered<_> = tasks.into_iter().collect();
-    let results: Vec<ExecutionStatus> = tasks.collect::<Vec<_>>().await.into_iter().map(Into::into).collect();
+        })
+    );
+    let results = [res_1, res_2, res_3, res_4, res_5]
+        .into_iter()
+        .map(Into::into)
+        .collect::<Vec<_>>();
     status.update_status(&results);
     results
         .iter()
@@ -616,8 +633,47 @@ pub async fn download_video_pages(
                     &video_model.name, task_name, e
                 )
             }
+            ExecutionStatus::ClassifiedFailed(classified_error) => {
+                // 根据错误分类进行不同级别的日志记录
+                match classified_error.error_type {
+                    crate::error::ErrorType::NotFound | crate::error::ErrorType::Permission => {
+                        debug!(
+                            "处理视频「{}」{}失败({}): {}",
+                            &video_model.name, task_name, classified_error.error_type, classified_error.message
+                        );
+                    }
+                    crate::error::ErrorType::Network
+                    | crate::error::ErrorType::Timeout
+                    | crate::error::ErrorType::RateLimit => {
+                        warn!(
+                            "处理视频「{}」{}失败({}): {}{}",
+                            &video_model.name,
+                            task_name,
+                            classified_error.error_type,
+                            classified_error.message,
+                            if classified_error.should_retry {
+                                " (可重试)"
+                            } else {
+                                ""
+                            }
+                        );
+                    }
+                    crate::error::ErrorType::RiskControl => {
+                        error!(
+                            "处理视频「{}」{}触发风控: {}",
+                            &video_model.name, task_name, classified_error.message
+                        );
+                    }
+                    _ => {
+                        error!(
+                            "处理视频「{}」{}失败({}): {}",
+                            &video_model.name, task_name, classified_error.error_type, classified_error.message
+                        );
+                    }
+                }
+            }
             ExecutionStatus::Failed(e) | ExecutionStatus::FixedFailed(_, e) => {
-                // 对于404错误，降级为debug日志
+                // 兼容旧的错误处理方式
                 if let Some(BiliError::RequestFailed(-404, _)) = e.downcast_ref::<BiliError>() {
                     debug!("处理视频「{}」{}失败(404): {:#}", &video_model.name, task_name, e);
                 } else {
@@ -807,46 +863,32 @@ pub async fn download_page(
         dimension,
         ..Default::default()
     };
-    let tasks: Vec<Pin<Box<dyn Future<Output = Result<ExecutionStatus>> + Send>>> = vec![
-        Box::pin(fetch_page_poster(
+    // 使用 tokio::join! 替代装箱的 Future，零分配并行执行
+    let (res_1, res_2, res_3, res_4, res_5) = tokio::join!(
+        fetch_page_poster(
             separate_status[0],
             video_model,
             &page_model,
             downloader,
             poster_path,
             fanart_path,
-        )),
-        Box::pin(fetch_page_video(
+        ),
+        fetch_page_video(
             separate_status[1],
             bili_client,
             video_model,
             downloader,
             &page_info,
             &video_path,
-        )),
-        Box::pin(generate_page_nfo(
-            separate_status[2],
-            video_model,
-            &page_model,
-            nfo_path,
-        )),
-        Box::pin(fetch_page_danmaku(
-            separate_status[3],
-            bili_client,
-            video_model,
-            &page_info,
-            danmaku_path,
-        )),
-        Box::pin(fetch_page_subtitle(
-            separate_status[4],
-            bili_client,
-            video_model,
-            &page_info,
-            &subtitle_path,
-        )),
-    ];
-    let tasks: FuturesOrdered<_> = tasks.into_iter().collect();
-    let results: Vec<ExecutionStatus> = tasks.collect::<Vec<_>>().await.into_iter().map(Into::into).collect();
+        ),
+        generate_page_nfo(separate_status[2], video_model, &page_model, nfo_path,),
+        fetch_page_danmaku(separate_status[3], bili_client, video_model, &page_info, danmaku_path,),
+        fetch_page_subtitle(separate_status[4], bili_client, video_model, &page_info, &subtitle_path,)
+    );
+    let results = [res_1, res_2, res_3, res_4, res_5]
+        .into_iter()
+        .map(Into::into)
+        .collect::<Vec<_>>();
     status.update_status(&results);
     results
         .iter()
@@ -866,8 +908,56 @@ pub async fn download_page(
                     &video_model.name, page_model.pid, task_name, e
                 )
             }
+            ExecutionStatus::ClassifiedFailed(classified_error) => {
+                // 根据错误分类进行不同级别的日志记录
+                match classified_error.error_type {
+                    crate::error::ErrorType::NotFound | crate::error::ErrorType::Permission => {
+                        debug!(
+                            "处理视频「{}」第 {} 页{}失败({}): {}",
+                            &video_model.name,
+                            page_model.pid,
+                            task_name,
+                            classified_error.error_type,
+                            classified_error.message
+                        );
+                    }
+                    crate::error::ErrorType::Network
+                    | crate::error::ErrorType::Timeout
+                    | crate::error::ErrorType::RateLimit => {
+                        warn!(
+                            "处理视频「{}」第 {} 页{}失败({}): {}{}",
+                            &video_model.name,
+                            page_model.pid,
+                            task_name,
+                            classified_error.error_type,
+                            classified_error.message,
+                            if classified_error.should_retry {
+                                " (可重试)"
+                            } else {
+                                ""
+                            }
+                        );
+                    }
+                    crate::error::ErrorType::RiskControl => {
+                        error!(
+                            "处理视频「{}」第 {} 页{}触发风控: {}",
+                            &video_model.name, page_model.pid, task_name, classified_error.message
+                        );
+                    }
+                    _ => {
+                        error!(
+                            "处理视频「{}」第 {} 页{}失败({}): {}",
+                            &video_model.name,
+                            page_model.pid,
+                            task_name,
+                            classified_error.error_type,
+                            classified_error.message
+                        );
+                    }
+                }
+            }
             ExecutionStatus::Failed(e) | ExecutionStatus::FixedFailed(_, e) => {
-                // 对于404错误，降级为debug日志
+                // 兼容旧的错误处理方式
                 if let Some(BiliError::RequestFailed(-404, _)) = e.downcast_ref::<BiliError>() {
                     debug!(
                         "处理视频「{}」第 {} 页{}失败(404): {:#}",
@@ -881,11 +971,19 @@ pub async fn download_page(
                 }
             }
         });
-    // 如果下载视频时触发风控，直接返回 DownloadAbortError
-    if let ExecutionStatus::Failed(e) = results.into_iter().nth(1).context("video download result not found")? {
-        if let Ok(BiliError::RiskControlOccurred) = e.downcast::<BiliError>() {
-            bail!(DownloadAbortError());
+    // 检查下载视频时是否触发风控
+    match results.into_iter().nth(1).context("video download result not found")? {
+        ExecutionStatus::Failed(e) => {
+            if let Ok(BiliError::RiskControlOccurred) = e.downcast::<BiliError>() {
+                bail!(DownloadAbortError());
+            }
         }
+        ExecutionStatus::ClassifiedFailed(ref classified_error) => {
+            if classified_error.error_type == crate::error::ErrorType::RiskControl {
+                bail!(DownloadAbortError());
+            }
+        }
+        _ => {}
     }
     let mut page_active_model: page::ActiveModel = page_model.into();
     page_active_model.download_status = Set(status.into());

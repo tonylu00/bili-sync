@@ -4,11 +4,13 @@
 	import { onMount } from 'svelte';
 	import { Button } from '$lib/components/ui/button/index.js';
 	import api from '$lib/api';
-	import type { ApiError, VideoResponse } from '$lib/types';
+	import type { ApiError, VideoResponse, UpdateVideoStatusRequest } from '$lib/types';
 	import RotateCcwIcon from '@lucide/svelte/icons/rotate-ccw';
+	import EditIcon from '@lucide/svelte/icons/edit';
 	import { setBreadcrumb } from '$lib/stores/breadcrumb';
 	import { appStateStore, ToQuery } from '$lib/stores/filter';
 	import VideoCard from '$lib/components/video-card.svelte';
+	import StatusEditor from '$lib/components/status-editor.svelte';
 	import { toast } from 'svelte-sonner';
 
 	let videoData: VideoResponse | null = null;
@@ -16,6 +18,8 @@
 	let error: string | null = null;
 	let resetDialogOpen = false;
 	let resetting = false;
+	let statusEditorOpen = false;
+	let statusEditorLoading = false;
 
 	async function loadVideoDetail() {
 		const videoId = parseInt($page.params.id);
@@ -57,6 +61,35 @@
 	$: if ($page.params.id) {
 		loadVideoDetail();
 	}
+
+	async function handleStatusEditorSubmit(request: UpdateVideoStatusRequest) {
+		if (!videoData) return;
+
+		statusEditorLoading = true;
+		try {
+			const result = await api.updateVideoStatus(videoData.video.id, request);
+			const data = result.data;
+
+			if (data.success) {
+				// 更新本地数据
+				videoData = {
+					video: data.video,
+					pages: data.pages
+				};
+				statusEditorOpen = false;
+				toast.success('状态更新成功');
+			} else {
+				toast.error('状态更新失败');
+			}
+		} catch (error) {
+			console.error('状态更新失败:', error);
+			toast.error('状态更新失败', {
+				description: (error as ApiError).message
+			});
+		} finally {
+			statusEditorLoading = false;
+		}
+	}
 </script>
 
 <svelte:head>
@@ -84,6 +117,18 @@
 	<section>
 		<div class="mb-4 flex items-center justify-between">
 			<h2 class="text-xl font-semibold">视频信息</h2>
+			<div class="flex gap-2">
+				<Button
+					size="sm"
+					variant="outline"
+					class="shrink-0 cursor-pointer"
+					onclick={() => (statusEditorOpen = true)}
+					disabled={statusEditorLoading}
+				>
+					<EditIcon class="mr-2 h-4 w-4" />
+					编辑状态
+				</Button>
+			</div>
 		</div>
 
 		<div style="margin-bottom: 1rem;">
@@ -100,18 +145,18 @@
 				showActions={true}
 				progressHeight="h-3"
 				gap="gap-2"
-				taskNames={['视频封面', '视频信息', 'UP主头像', 'UP主信息', '分P下载']}
+				taskNames={['视频封面', '视频信息', 'UP主头像', 'UP主信息', '分P下载()']}
 			/>
 		</div>
 
 		<!-- 下载路径信息 -->
 		{#if videoData.video.path}
-			<div class="mb-4 p-4 border rounded-lg bg-gray-50">
-				<h3 class="text-sm font-medium text-gray-700 mb-2">📁 下载保存路径</h3>
-				<div class="bg-white rounded px-3 py-2 text-sm font-mono border break-all">
+			<div class="mb-4 rounded-lg border bg-gray-50 p-4">
+				<h3 class="mb-2 text-sm font-medium text-gray-700">📁 下载保存路径</h3>
+				<div class="rounded border bg-white px-3 py-2 font-mono text-sm break-all">
 					{videoData.video.path}
 				</div>
-				<p class="text-xs text-gray-500 mt-1">视频文件将保存到此路径下</p>
+				<p class="mt-1 text-xs text-gray-500">视频文件将保存到此路径下</p>
 			</div>
 		{/if}
 	</section>
@@ -158,4 +203,15 @@
 			</div>
 		{/if}
 	</section>
+
+	<!-- 状态编辑器 -->
+	{#if videoData}
+		<StatusEditor
+			bind:open={statusEditorOpen}
+			video={videoData.video}
+			pages={videoData.pages}
+			loading={statusEditorLoading}
+			onsubmit={handleStatusEditorSubmit}
+		/>
+	{/if}
 {/if}

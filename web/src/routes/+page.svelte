@@ -19,6 +19,9 @@
 		ToQuery
 	} from '$lib/stores/filter';
 	import { toast } from 'svelte-sonner';
+	import { Button } from '$lib/components/ui/button/index.js';
+	import * as AlertDialog from '$lib/components/ui/alert-dialog/index.js';
+	import RotateCcwIcon from '@lucide/svelte/icons/rotate-ccw';
 
 	// 认证状态
 	let isAuthenticated = false;
@@ -29,9 +32,13 @@
 	let currentFilter: { type: string; id: string } | null = null;
 	let lastSearch: string | null = null;
 
+	// 批量重置状态
+	let resetAllDialogOpen = false;
+	let resettingAll = false;
+
 	// 处理登录成功
 	function handleLoginSuccess(event: CustomEvent) {
-			isAuthenticated = true;
+		isAuthenticated = true;
 		// 登录成功后加载数据
 		loadInitialData();
 	}
@@ -50,7 +57,7 @@
 			// 获取视频源
 			const sources = await api.getVideoSources();
 			setVideoSources(sources.data);
-			
+
 			// 加载视频列表
 			handleSearchParamsChange();
 		} catch (error) {
@@ -146,6 +153,32 @@
 		goto(`/${ToQuery($appStateStore)}`);
 	}
 
+	// 批量重置所有视频
+	async function handleResetAllVideos() {
+		resettingAll = true;
+		try {
+			const result = await api.resetAllVideos();
+			const data = result.data;
+			if (data.resetted) {
+				toast.success('重置成功', {
+					description: `已重置 ${data.resetted_videos_count} 个视频和 ${data.resetted_pages_count} 个分页`
+				});
+				// 重新加载当前页面数据
+				handleSearchParamsChange();
+			} else {
+				toast.info('没有需要重置的视频');
+			}
+		} catch (error) {
+			console.error('重置失败:', error);
+			toast.error('重置失败', {
+				description: (error as ApiError).message
+			});
+		} finally {
+			resettingAll = false;
+			resetAllDialogOpen = false;
+		}
+	}
+
 	$: if ($page.url.search !== lastSearch) {
 		lastSearch = $page.url.search;
 		handleSearchParamsChange();
@@ -160,14 +193,14 @@
 				const sources = await api.getVideoSources();
 				setVideoSources(sources.data);
 				isAuthenticated = true;
-				
+
 				setBreadcrumb([
 					{
 						label: '主页',
 						isActive: true
 					}
 				]);
-				
+
 				// 加载视频列表
 				handleSearchParamsChange();
 			} catch (error) {
@@ -192,14 +225,22 @@
 {:else}
 	<FilterBadge {filterTitle} {filterName} onRemove={handleFilterRemove} />
 
-	<!-- 统计信息 -->
+	<!-- 统计信息和操作按钮 -->
 	{#if videosData}
 		<div class="mb-6 flex items-center justify-between">
 			<div class="text-muted-foreground text-sm">
-				共 {videosData.total_count} 个视频
+				共 {videosData.total_count} 个视频，{totalPages} 页
 			</div>
-			<div class="text-muted-foreground text-sm">
-				共 {totalPages} 页
+			<div class="flex gap-2">
+				<Button
+					size="sm"
+					variant="outline"
+					onclick={() => (resetAllDialogOpen = true)}
+					disabled={resettingAll}
+				>
+					<RotateCcwIcon class="mr-2 h-4 w-4 {resettingAll ? 'animate-spin' : ''}" />
+					批量重置
+				</Button>
 			</div>
 		</div>
 	{/if}
@@ -218,16 +259,37 @@
 					<VideoCard {video} />
 				</div>
 			{/each}
-				</div>
-				
+		</div>
+
 		<!-- 翻页组件 -->
 		<Pagination {currentPage} {totalPages} onPageChange={handlePageChange} />
-				{:else}
+	{:else}
 		<div class="flex items-center justify-center py-12">
 			<div class="space-y-2 text-center">
 				<p class="text-muted-foreground">暂无视频数据</p>
 				<p class="text-muted-foreground text-sm">尝试搜索或检查视频来源配置</p>
-									</div>
-									</div>
-								{/if}
-							{/if}
+			</div>
+		</div>
+	{/if}
+
+	<!-- 批量重置确认对话框 -->
+	<AlertDialog.Root bind:open={resetAllDialogOpen}>
+		<AlertDialog.Content>
+			<AlertDialog.Header>
+				<AlertDialog.Title>确认批量重置</AlertDialog.Title>
+				<AlertDialog.Description>
+					<p class="mb-2">确定要重置所有失败的视频下载状态吗？</p>
+					<p class="text-muted-foreground text-sm">
+						此操作会将所有失败状态的任务重置为未开始，无法撤销。
+					</p>
+				</AlertDialog.Description>
+			</AlertDialog.Header>
+			<AlertDialog.Footer>
+				<AlertDialog.Cancel>取消</AlertDialog.Cancel>
+				<AlertDialog.Action onclick={handleResetAllVideos} disabled={resettingAll}>
+					{resettingAll ? '重置中...' : '确认重置'}
+				</AlertDialog.Action>
+			</AlertDialog.Footer>
+		</AlertDialog.Content>
+	</AlertDialog.Root>
+{/if}

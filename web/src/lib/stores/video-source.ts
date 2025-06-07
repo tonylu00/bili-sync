@@ -10,4 +10,4 @@ export const setVideoSources = (sources: VideoSourcesResponse) => {
 
 export const clearFilter = () => {
 	videoSourceStore.set(undefined);
-}; 
+};

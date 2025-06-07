@@ -56,7 +56,7 @@ impl Aria2Downloader {
             "aria2c"
         };
         let binary_path = CONFIG_DIR.join(binary_name);
-        
+
         // 确保配置目录存在
         if let Err(e) = tokio::fs::create_dir_all(&*CONFIG_DIR).await {
             warn!("创建配置目录失败: {}, 将使用临时目录", e);
@@ -80,7 +80,7 @@ impl Aria2Downloader {
         match tokio::fs::write(&binary_path, ARIA2_BINARY).await {
             Ok(_) => {
                 debug!("aria2二进制文件写入配置目录成功，大小: {} bytes", ARIA2_BINARY.len());
-                
+
                 // 在Unix系统上设置执行权限
                 #[cfg(unix)]
                 {
@@ -115,9 +115,9 @@ impl Aria2Downloader {
     /// 备用方案：提取到临时目录
     async fn extract_aria2_binary_to_temp(temp_dir: PathBuf, binary_name: &str) -> Result<PathBuf> {
         let binary_path = temp_dir.join(format!("bili-sync-{}", binary_name));
-        
+
         debug!("尝试提取aria2二进制文件到临时目录: {}", binary_path.display());
-        
+
         // 如果文件已存在且可执行，直接返回
         if binary_path.exists() {
             if Self::is_valid_aria2_binary(&binary_path).await {
@@ -131,7 +131,7 @@ impl Aria2Downloader {
         match tokio::fs::write(&binary_path, ARIA2_BINARY).await {
             Ok(_) => {
                 debug!("aria2二进制文件写入临时目录成功，大小: {} bytes", ARIA2_BINARY.len());
-                
+
                 // 在Unix系统上设置执行权限
                 #[cfg(unix)]
                 {
@@ -169,21 +169,22 @@ impl Aria2Downloader {
         }
 
         // 尝试执行 aria2c --version 来验证
-        match tokio::process::Command::new(path)
-            .arg("--version")
-            .output()
-            .await
-        {
+        match tokio::process::Command::new(path).arg("--version").output().await {
             Ok(output) => {
                 let stdout = String::from_utf8_lossy(&output.stdout);
                 let stderr = String::from_utf8_lossy(&output.stderr);
-                
+
                 if output.status.success() && stdout.contains("aria2") {
                     debug!("aria2二进制文件验证成功: {}", path.display());
                     true
                 } else {
-                    warn!("aria2二进制文件验证失败: {}，退出码: {:?}，stdout: {}，stderr: {}", 
-                          path.display(), output.status.code(), stdout.trim(), stderr.trim());
+                    warn!(
+                        "aria2二进制文件验证失败: {}，退出码: {:?}，stdout: {}，stderr: {}",
+                        path.display(),
+                        output.status.code(),
+                        stdout.trim(),
+                        stderr.trim()
+                    );
                     false
                 }
             }
@@ -203,15 +204,11 @@ impl Aria2Downloader {
         };
 
         // 尝试使用which命令查找
-        match tokio::process::Command::new("which")
-            .arg("aria2c")
-            .output()
-            .await
-        {
+        match tokio::process::Command::new("which").arg("aria2c").output().await {
             Ok(output) if output.status.success() => {
                 let path_str = String::from_utf8_lossy(&output.stdout).trim().to_string();
                 let system_path = PathBuf::from(path_str);
-                
+
                 if Self::is_valid_aria2_binary(&system_path).await {
                     info!("使用系统安装的aria2: {}", system_path.display());
                     return Ok(system_path);
@@ -223,15 +220,11 @@ impl Aria2Downloader {
         // 在Windows上尝试where命令
         #[cfg(target_os = "windows")]
         {
-            match tokio::process::Command::new("where")
-                .arg("aria2c")
-                .output()
-                .await
-            {
+            match tokio::process::Command::new("where").arg("aria2c").output().await {
                 Ok(output) if output.status.success() => {
                     let path_str = String::from_utf8_lossy(&output.stdout).trim().to_string();
                     let system_path = PathBuf::from(path_str);
-                    
+
                     if Self::is_valid_aria2_binary(&system_path).await {
                         info!("使用系统安装的aria2: {}", system_path.display());
                         return Ok(system_path);

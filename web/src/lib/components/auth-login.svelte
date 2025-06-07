@@ -17,24 +17,24 @@
 			authError = '请输入API Token';
 			return;
 		}
-		
+
 		isVerifying = true;
 		authError = '';
-		
+
 		try {
 			// 设置 Token
 			api.setAuthToken(authToken);
-			
+
 			// 尝试调用一个需要认证的API来验证Token
 			await api.getVideoSources();
-			
+
 			// 如果成功，说明Token正确
 			dispatch('login-success', { token: authToken });
 			toast.success('登录成功');
 		} catch (error: any) {
 			// 清除无效的 Token
 			api.setAuthToken('');
-			
+
 			if (error.status === 401) {
 				authError = 'API Token错误，请检查后重试';
 			} else {
@@ -54,16 +54,16 @@
 	}
 </script>
 
-<div class="min-h-screen bg-gray-50 flex items-center justify-center">
-	<div class="max-w-md w-full space-y-8">
+<div class="flex min-h-screen items-center justify-center bg-gray-50">
+	<div class="w-full max-w-md space-y-8">
 		<div class="text-center">
-			<h1 class="text-3xl font-bold text-gray-900 mb-2">bili-sync 管理页</h1>
+			<h1 class="mb-2 text-3xl font-bold text-gray-900">bili-sync 管理页</h1>
 			<p class="text-gray-600">请输入API Token以访问管理功能</p>
 		</div>
-		<div class="bg-white p-8 rounded-lg shadow-md">
+		<div class="rounded-lg bg-white p-8 shadow-md">
 			<div class="space-y-4">
 				<div>
-					<label for="token" class="block text-sm font-medium text-gray-700 mb-2">
+					<label for="token" class="mb-2 block text-sm font-medium text-gray-700">
 						API Token
 					</label>
 					<Input
@@ -79,11 +79,7 @@
 						<p class="mt-2 text-sm text-red-600">{authError}</p>
 					{/if}
 				</div>
-				<Button
-					onclick={verifyToken}
-					disabled={isVerifying || !authToken.trim()}
-					class="w-full"
-				>
+				<Button onclick={verifyToken} disabled={isVerifying || !authToken.trim()} class="w-full">
 					{isVerifying ? '验证中...' : '登录'}
 				</Button>
 			</div>
@@ -92,4 +88,4 @@
 			</div>
 		</div>
 	</div>
-</div> 
+</div>
