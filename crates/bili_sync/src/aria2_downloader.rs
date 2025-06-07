@@ -297,7 +297,7 @@ impl Aria2Downloader {
         // 从配置文件获取线程数
         let threads = CONFIG.concurrent_limit.parallel_download.threads;
 
-        let args = vec![
+        let mut args = vec![
             "--enable-rpc".to_string(),
             format!("--rpc-listen-port={}", self.rpc_port),
             "--rpc-allow-origin-all".to_string(),
@@ -311,6 +311,36 @@ impl Aria2Downloader {
             "--summary-interval=0".to_string(),
             "--quiet=true".to_string(),
         ];
+
+        // 添加SSL/TLS相关配置，针对Linux系统优化
+        if cfg!(target_os = "linux") {
+            // 对于Linux系统，尝试使用系统CA证书或禁用证书检查
+            let ca_paths = [
+                "/etc/ssl/certs/ca-certificates.crt",  // Debian/Ubuntu
+                "/etc/pki/tls/certs/ca-bundle.crt",    // RHEL/CentOS
+                "/etc/ssl/ca-bundle.pem",               // openSUSE
+                "/etc/ssl/cert.pem",                    // Alpine
+            ];
+            
+            let mut ca_found = false;
+            for ca_path in &ca_paths {
+                if std::path::Path::new(ca_path).exists() {
+                    args.push(format!("--ca-certificate={}", ca_path));
+                    ca_found = true;
+                    debug!("使用系统CA证书: {}", ca_path);
+                    break;
+                }
+            }
+            
+            if !ca_found {
+                // 如果找不到系统CA证书，禁用证书检查
+                args.push("--check-certificate=false".to_string());
+                warn!("未找到系统CA证书，已禁用SSL证书检查");
+            }
+        } else {
+            // 对于其他系统，禁用证书检查
+            args.push("--check-certificate=false".to_string());
+        }
 
         debug!(
             "启动aria2守护进程: {} {}",
@@ -408,7 +438,8 @@ impl Aria2Downloader {
         // 从配置文件获取线程数
         let threads = CONFIG.concurrent_limit.parallel_download.threads;
 
-        let options = serde_json::json!({
+        // 构建基础选项
+        let mut options = serde_json::json!({
             "dir": dir,
             "out": file_name,
             "continue": "true",
@@ -420,6 +451,32 @@ impl Aria2Downloader {
                 "Referer: https://www.bilibili.com"
             ]
         });
+
+        // 添加SSL/TLS相关配置
+        if cfg!(target_os = "linux") {
+            // 对于Linux系统，尝试使用系统CA证书
+            let ca_paths = [
+                "/etc/ssl/certs/ca-certificates.crt",  // Debian/Ubuntu
+                "/etc/pki/tls/certs/ca-bundle.crt",    // RHEL/CentOS
+                "/etc/ssl/ca-bundle.pem",               // openSUSE
+                "/etc/ssl/cert.pem",                    // Alpine
+            ];
+            
+            let mut ca_found = false;
+            for ca_path in &ca_paths {
+                if std::path::Path::new(ca_path).exists() {
+                    options["ca-certificate"] = serde_json::Value::String(ca_path.to_string());
+                    ca_found = true;
+                    break;
+                }
+            }
+            
+            if !ca_found {
+                options["check-certificate"] = serde_json::Value::String("false".to_string());
+            }
+        } else {
+            options["check-certificate"] = serde_json::Value::String("false".to_string());
+        }
 
         let payload = serde_json::json!({
             "jsonrpc": "2.0",
