@@ -31,7 +31,7 @@ jobs:
       - name: Install dependencies
         run: cd docs && bun install --frozen-lockfile
       - name: Build
-        run: cd docs && bun run build
+        run: cd docs && bun run docs:build
       - name: Setup Pages
         uses: actions/configure-pages@v5
       - name: Upload artifact
