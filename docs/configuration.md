@@ -99,13 +99,18 @@ UP 主头像和信息的保存位置。对于使用 Emby、Jellyfin 媒体服务
 
 推荐使用匿名窗口获取，避免潜在的冲突。
 
+> [!IMPORTANT]
+> **视频源管理已迁移至 Web UI**
+> 
+> 请注意：自 v2.6.x 版本起，所有视频源（如收藏夹、UP主投稿等）的管理都已从 `config.toml` 文件迁移至 Web UI。您 **不再需要** 在此文件中手动配置 `favorite_list`, `collection_list` 等选项。
+> 
+> 请访问 Web UI 添加和管理您的视频源。
+
 ## `filter_option`
 
 过滤选项，用于设置程序的过滤规则，程序会从过滤结果中选择最优的视频、音频流下载。
 
-这些内容的可选值可前往 [analyzer.rs](https://github.com/amtoaer/bili-sync/blob/24d0da0bf3ea65fd45d07587e4dcdbb24d11a589/crates/bili_sync/src/bilibili/analyzer.rs#L10-L55) 中查看。
-
-注意将过滤范围设置过小可能导致筛选不到符合要求的流导致下载失败，建议谨慎修改。
+这些是高级选项，如果您不完全理解每个选项的含义，建议保持默认值，以避免因过滤范围设置过窄而导致下载失败。
 
 ### `video_max_quality`
 
@@ -203,43 +208,6 @@ UP 主头像和信息的保存位置。对于使用 Emby、Jellyfin 媒体服务
 
 时间轴偏移，>0 会让弹幕延后，<0 会让弹幕提前，单位为秒。
 
-## `favorite_list`
-
-你想要下载的收藏夹与想要保存的位置。简单示例：
-```toml
-3115878158 = "/home/amtoaer/Downloads/bili-sync/测试收藏夹"
-```
-收藏夹 ID 的获取方式可以参考[这里](/favorite)。
-
-## `collection_list`
-
-你想要下载的视频合集/视频列表与想要保存的位置。注意"视频合集"与"视频列表"是两种不同的类型。在配置文件中需要做区分：
-```toml
-"series:387051756:432248" = "/home/amtoaer/Downloads/bili-sync/测试视频列表"
-"season:1728547:101343" = "/home/amtoaer/Downloads/bili-sync/测试合集"
-```
-
-具体说明可以参考[这里](/collection)。
-
-## `submission_list`
-
-你想要下载的 UP 主投稿与想要保存的位置。简单示例：
-```toml
-9183758 = "/home/amtoaer/Downloads/bili-sync/测试投稿"
-```
-UP 主 ID 的获取方式可以参考[这里](/submission)。
-
-## `watch_later`
-
-设置稍后再看的扫描开关与保存位置。
-
-如果你希望下载稍后再看列表中的视频，可以将 `enabled` 设置为 `true`，并填写 `path`。
-
-```toml
-enabled = true
-path = "/home/amtoaer/Downloads/bili-sync/稍后再看"
-```
-
 ## `concurrent_limit`
 
 对 bili-sync 的并发下载进行多方面的限制，避免 api 请求过于频繁导致的风控。其中 video 和 page 表示下载任务的并发数，rate_limit 表示 api 请求的流量限制。默认取值为：
@@ -262,33 +230,3 @@ duration = 250
 > [!TIP]
 > 1. 一般来说，`video` 和 `page` 的值不需要过大；
 > 2. `rate_limit` 的值可以根据网络环境和 api 请求频率进行调整，如果经常遇到风控可以优先调小 limit。
-
-# 番剧配置，可以添加多个[[bangumi]]块
-# season_id: 番剧的season_id，可以从B站番剧页面URL中获取
-# path: 保存番剧的本地路径，必须是绝对路径
-# download_all_seasons: 是否下载与此番剧相关的所有季度，默认为false
-# 注意: season_id和path不能为空，否则程序会报错
-[[bangumi]]
-season_id = "98757"
-path = "D:/Downloads/假面骑士利维斯_往事_假面骑士贝尔"
-download_all_seasons = true
-
-## Aria2 多线程下载配置
-
-这些选项用于控制 `aria2` 下载器的行为。
-
-### `parallel_download_enabled`
-
-是否启用 `aria2` 进行多线程下载，`true` 为启用，`false` 为禁用。启用后，所有视频和音频的下载将由 `aria2` 接管。
-
-### `parallel_download_threads`
-
-`aria2` 的下载线程数。此设置仅在 `parallel_download_enabled` 为 `true` 时生效。建议设置为 CPU 核心数的 1-2 倍，或根据网络情况调整。
-
-## `filter_option`
-
-过滤选项，用于设置程序的过滤规则，程序会从过滤结果中选择最优的视频、音频流下载。
-
-这些内容的可选值可前往 [analyzer.rs](https://github.com/amtoaer/bili-sync/blob/24d0da0bf3ea65fd45d07587e4dcdbb24d11a589/crates/bili_sync/src/bilibili/analyzer.rs#L10-L55) 中查看。
-
-注意将过滤范围设置过小可能导致筛选不到符合要求的流导致下载失败，建议谨慎修改。

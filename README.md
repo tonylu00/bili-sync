@@ -1,14 +1,14 @@
-![bili-sync](https://socialify.git.ci/amtoaer/bili-sync/image?description=1&font=KoHo&issues=1&language=1&logo=https%3A%2F%2Fs2.loli.net%2F2023%2F12%2F02%2F9EwT2yInOu1d3zm.png&name=1&owner=1&pattern=Signal&pulls=1&stargazers=1&theme=Light)
+![bili-sync](https://socialify.git.ci/qq1582185982/bili-sync-01/image?description=1&font=KoHo&issues=1&language=1&logo=https%3A%2F%2Fs2.loli.net%2F2023%2F12%2F02%2F9EwT2yInOu1d3zm.png&name=1&owner=1&pattern=Signal&pulls=1&stargazers=1&theme=Light)
 
-[![GitHub Release](https://img.shields.io/github/v/release/amtoaer/bili-sync)](https://github.com/amtoaer/bili-sync/releases/latest)
-[![Test](https://github.com/amtoaer/bili-sync/actions/workflows/test.yml/badge.svg)](https://github.com/amtoaer/bili-sync/actions/workflows/test.yml)
-[![Release](https://github.com/amtoaer/bili-sync/actions/workflows/release.yml/badge.svg)](https://github.com/amtoaer/bili-sync/actions/workflows/release.yml)
-[![Downloads](https://img.shields.io/github/downloads/amtoaer/bili-sync/total)](https://github.com/amtoaer/bili-sync/releases)
+[![GitHub Release](https://img.shields.io/github/v/release/qq1582185982/bili-sync-01)](https://github.com/qq1582185982/bili-sync-01/releases/latest)
+[![Test](https://github.com/qq1582185982/bili-sync-01/actions/workflows/test.yml/badge.svg)](https://github.com/qq1582185982/bili-sync-01/actions/workflows/test.yml)
+[![Release](https://github.com/qq1582185982/bili-sync-01/actions/workflows/release.yml/badge.svg)](https://github.com/qq1582185982/bili-sync-01/actions/workflows/release.yml)
+[![Downloads](https://img.shields.io/github/downloads/qq1582185982/bili-sync-01/total)](https://github.com/qq1582185982/bili-sync-01/releases)
 
 ## 简介
 
 > [!NOTE]
-> [点击此处](https://bili-sync.allwens.work/)查看文档
+> [点击此处](https://qq1582185982.github.io/bili-sync-01/)查看在线文档
 
 bili-sync 是一款专为 NAS 用户编写的哔哩哔哩同步工具，由 Rust & Tokio 驱动。
 
@@ -151,13 +151,13 @@ Set-ExecutionPolicy -ExecutionPolicy Bypass -Scope Process
 ## 效果演示
 
 ### 概览
-![概览](./assets/overview.webp)
+![概览](./docs/assets/overview.webp)
 ### 详情
-![详情](./assets/detail.webp)
+![详情](./docs/assets/detail.webp)
 ### 播放（使用 infuse）
-![播放](./assets/play.webp)
+![播放](./docs/assets/play.webp)
 ### 文件排布
-![文件](./assets/dir.webp)
+![文件](./docs/assets/dir.webp)
 
 ## 🖼️ 功能截图
 

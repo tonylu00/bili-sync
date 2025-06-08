@@ -38,58 +38,53 @@ export default defineConfig({
 		],
 		sidebar: [
 			{
-				text: "简介",
+				text: "入门",
 				items: [
-					{ text: "什么是 bili-sync？", link: "/introduction" },
+					{ text: "介绍", link: "/introduction" },
 					{ text: "快速开始", link: "/quick-start" },
-					{ text: "功能展示", link: "/features" },
+					{ text: "功能一览", link: "/features" },
 				],
 			},
 			{
-				text: "细节",
-				items: [
-					{ text: "配置文件", link: "/configuration" },
-					{ text: "命令行参数", link: "/args" },
-					{ text: "工作原理", link: "/design" },
-				],
-			},
-			{
-				text: "参考",
-				items: [
-					{ text: "获取收藏夹信息", link: "/favorite" },
-					{
-						text: "获取视频合集/视频列表信息",
-						link: "/collection",
-					},
-					{ text: "获取投稿信息", link: "/submission" },
-				],
-			},
-			{
-				text: "技术文档",
+				text: "使用指南",
 				collapsed: false,
 				items: [
-					{ text: "🛡️ 删除任务队列系统", link: "/README_DELETE_TASK_QUEUE" },
-					{ text: "⚙️ 系统配置智能队列", link: "/SYSTEM_CONFIG_QUEUE_SUMMARY" },
-					{ text: "📊 队列管理功能说明", link: "/QUEUE_FEATURE_SUMMARY" },
-					{ text: "🎊 删除功能实现总结", link: "/FEATURE_SUMMARY" },
-					{ text: "📝 配置迁移指南", link: "/MIGRATION_GUIDE" },
+					{ text: "程序配置", link: "/configuration" },
+					{ 
+						text: "视频源管理",
+						collapsed: true,
+						items: [
+							{ text: "UP主投稿", link: "/submission" },
+							{ text: "收藏夹", link: "/favorite" },
+							{ text: "合集与系列", link: "/collection" },
+							{ text: "番剧", link: "/bangumi" },
+							{ text: "稍后观看", link: "/watch_later" },
+						]
+					},
+					{ text: "命令行参数", link: "/args" },
 				],
+			},
+			{
+				text: "高级",
+				items: [
+					{ text: "部署指南", link: "/deploy-guide" },
+					{ text: "工作原理", link: "/design" },
+				]
 			},
 			{
 				text: "其它",
 				items: [
 					{ text: "常见问题", link: "/question" },
-					{ text: "管理页", link: "/frontend" },
-					{ text: "部署指南", link: "/deploy-guide" },
+					{ text: "管理页(旧)", link: "/frontend" },
 				],
 			},
 			{
 				text: "更新日志",
+				collapsed: true,
 				items: [
-					{ text: "🚀 综合更新 v2.7.0 (2025-06-03)", link: "/comprehensive-update-2025-06-03" },
-					{ text: "🔧 智能合并bug修复", link: "/bangumi-merge-fix" },
+					{ text: "v2.7.1 (2025-06-08)", link: "/update-log-v2.7.1" },
+					{ text: "v2.7.0 (2025-06-03)", link: "/comprehensive-update-2025-06-03" },
 					{ text: "v2.6.2 (2025年6月)", link: "/update-log-2025-06" },
-					{ text: "2024年6月更新", link: "/update-log-2024-06" },
 				],
 			},
 		],
