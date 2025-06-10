@@ -367,9 +367,10 @@ pub async fn fetch_video_details(
         info!("开始并发处理 {} 个普通视频的详情", normal_videos.len());
 
         // 使用信号量控制并发数
-        let concurrent_limit = CONFIG.concurrent_limit.video_detail.unwrap_or(5);
+        // 强制设置为1，确保低配置设备不会数据库超时
+        let concurrent_limit = 1;  // 忽略配置文件，强制为1
         let semaphore = Semaphore::new(concurrent_limit);
-        info!("视频详情获取并发限制: {}", concurrent_limit);
+        info!("视频详情获取并发限制: {} (强制设置)", concurrent_limit);
         
         let tasks = normal_videos
             .into_iter()
@@ -1006,7 +1007,7 @@ pub async fn fetch_page_poster(
     page_model: &page::Model,
     downloader: &UnifiedDownloader,
     poster_path: PathBuf,
-    fanart_path: Option<PathBuf>,
+    fanart_path: PathBuf,
 ) -> Result<ExecutionStatus> {
     if !should_run {
         return Ok(ExecutionStatus::Skipped);
