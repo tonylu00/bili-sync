@@ -1817,6 +1817,7 @@ pub async fn get_config() -> Result<ApiResponse<crate::api::response::ConfigResp
         // 并发控制设置
         concurrent_video: config.concurrent_limit.video,
         concurrent_page: config.concurrent_limit.page,
+        concurrent_video_detail: config.concurrent_limit.video_detail,  // 新增
         rate_limit: config.concurrent_limit.rate_limit.as_ref().map(|r| r.limit),
         rate_duration: config.concurrent_limit.rate_limit.as_ref().map(|r| r.duration),
         // 其他设置
@@ -1880,6 +1881,7 @@ pub async fn update_config(
             // 并发控制设置
             concurrent_video: params.concurrent_video,
             concurrent_page: params.concurrent_page,
+            concurrent_video_detail: params.concurrent_video_detail,
             rate_limit: params.rate_limit,
             rate_duration: params.rate_duration,
             // 其他设置
@@ -2185,6 +2187,13 @@ pub async fn update_config_internal(
         if concurrent_page > 0 && concurrent_page != config.concurrent_limit.page {
             config.concurrent_limit.page = concurrent_page;
             updated_fields.push("concurrent_page");
+        }
+    }
+
+    if let Some(concurrent_video_detail) = params.concurrent_video_detail {
+        if concurrent_video_detail > 0 && concurrent_video_detail != config.concurrent_limit.video_detail.unwrap_or(5) {
+            config.concurrent_limit.video_detail = Some(concurrent_video_detail);
+            updated_fields.push("concurrent_video_detail");
         }
     }
 

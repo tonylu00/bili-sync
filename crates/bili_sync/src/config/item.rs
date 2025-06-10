@@ -54,6 +54,7 @@ impl Default for ParallelDownloadConfig {
 pub struct ConcurrentLimit {
     pub video: usize,
     pub page: usize,
+    pub video_detail: Option<usize>,
     pub rate_limit: Option<RateLimit>,
     #[serde(default)]
     pub parallel_download: ParallelDownloadConfig,
@@ -70,6 +71,7 @@ impl Default for ConcurrentLimit {
         Self {
             video: 3,
             page: 2,
+            video_detail: Some(5),
             // 默认的限速配置，每 250ms 允许请求 4 次
             rate_limit: Some(RateLimit {
                 limit: 4,

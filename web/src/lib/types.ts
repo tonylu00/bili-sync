@@ -193,6 +193,7 @@ export interface ConfigResponse {
 	// 新增并发控制设置
 	concurrent_video?: number;
 	concurrent_page?: number;
+	concurrent_video_detail?: number;
 	rate_limit?: number;
 	rate_duration?: number;
 	// 新增其他设置
@@ -237,6 +238,7 @@ export interface UpdateConfigRequest {
 	// 新增并发控制设置
 	concurrent_video?: number;
 	concurrent_page?: number;
+	concurrent_video_detail?: number;
 	rate_limit?: number;
 	rate_duration?: number;
 	// 新增其他设置

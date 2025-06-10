@@ -92,6 +92,7 @@ pub struct UpdateConfigRequest {
     // 并发控制设置
     pub concurrent_video: Option<usize>,
     pub concurrent_page: Option<usize>,
+    pub concurrent_video_detail: Option<usize>,
     pub rate_limit: Option<usize>,
     pub rate_duration: Option<u64>,
     // 其他设置
