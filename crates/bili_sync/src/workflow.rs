@@ -366,10 +366,19 @@ pub async fn fetch_video_details(
     if !normal_videos.is_empty() {
         info!("开始并发处理 {} 个普通视频的详情", normal_videos.len());
 
+        // 使用信号量控制并发数
+        let concurrent_limit = CONFIG.concurrent_limit.video_detail.unwrap_or(5);
+        let semaphore = Semaphore::new(concurrent_limit);
+        info!("视频详情获取并发限制: {}", concurrent_limit);
+        
         let tasks = normal_videos
             .into_iter()
             .map(|video_model| {
+                let semaphore = &semaphore;
                 async move {
+                    // 获取许可以控制并发
+                    let _permit = semaphore.acquire().await.context("acquire semaphore failed")?;
+                    
                     let video = Video::new(bili_client, video_model.bvid.clone());
                     let info: Result<_> = async { Ok((video.get_tags().await?, video.get_view_info().await?)) }.await;
                     match info {
