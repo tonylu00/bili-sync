@@ -366,11 +366,11 @@ pub async fn fetch_video_details(
     if !normal_videos.is_empty() {
         info!("开始并发处理 {} 个普通视频的详情", normal_videos.len());
 
-        // 使用信号量控制并发数
-        // 强制设置为1，确保低配置设备不会数据库超时
-        let concurrent_limit = 1;  // 忽略配置文件，强制为1
+        // 使用信号量控制并发数 - 动态加载最新配置
+        let current_config = crate::config::reload_config();
+        let concurrent_limit = current_config.concurrent_limit.video_detail.unwrap_or(5);
         let semaphore = Semaphore::new(concurrent_limit);
-        info!("视频详情获取并发限制: {} (强制设置)", concurrent_limit);
+        info!("视频详情获取并发限制: {}", concurrent_limit);
         
         let tasks = normal_videos
             .into_iter()
