@@ -357,15 +357,12 @@ fn download_with_powershell(url: &str, output: &Path) -> Result<(), Box<dyn std:
     Ok(())
 }
 
+#[cfg(not(target_os = "windows"))]
 fn download_with_curl_or_wget(url: &str, output: &Path) -> Result<(), Box<dyn std::error::Error>> {
     // 首先尝试使用curl
     if Command::new("curl").arg("--version").output().is_ok() {
         println!("cargo:warning=使用curl下载: {}", url);
-        let status = Command::new("curl")
-            .args(["-L", "-o"])
-            .arg(output)
-            .arg(url)
-            .status()?;
+        let status = Command::new("curl").args(["-L", "-o"]).arg(output).arg(url).status()?;
 
         if status.success() {
             return Ok(());
@@ -376,11 +373,7 @@ fn download_with_curl_or_wget(url: &str, output: &Path) -> Result<(), Box<dyn st
     // 如果curl失败或不存在，尝试wget
     if Command::new("wget").arg("--version").output().is_ok() {
         println!("cargo:warning=使用wget下载: {}", url);
-        let status = Command::new("wget")
-            .args(["-O"])
-            .arg(output)
-            .arg(url)
-            .status()?;
+        let status = Command::new("wget").args(["-O"]).arg(output).arg(url).status()?;
 
         if status.success() {
             return Ok(());
