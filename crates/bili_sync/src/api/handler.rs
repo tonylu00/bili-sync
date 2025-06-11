@@ -1821,6 +1821,9 @@ pub async fn get_config() -> Result<ApiResponse<crate::api::response::ConfigResp
         rate_duration: config.concurrent_limit.rate_limit.as_ref().map(|r| r.duration),
         // 其他设置
         cdn_sorting: config.cdn_sorting,
+        // 数据库配置设置
+        sqlx_slow_threshold_seconds: config.sqlx_slow_threshold_seconds,
+        sqlx_log_level: config.sqlx_log_level.clone(),
     }))
 }
 
@@ -1884,6 +1887,9 @@ pub async fn update_config(
             rate_duration: params.rate_duration,
             // 其他设置
             cdn_sorting: params.cdn_sorting,
+            // 数据库配置设置
+            sqlx_slow_threshold_seconds: params.sqlx_slow_threshold_seconds,
+            sqlx_log_level: params.sqlx_log_level.clone(),
             task_id: task_id.clone(),
         };
 
@@ -2240,6 +2246,23 @@ pub async fn update_config_internal(
         }
     }
 
+    // 处理数据库配置设置
+    if let Some(sqlx_slow_threshold_seconds) = params.sqlx_slow_threshold_seconds {
+        if sqlx_slow_threshold_seconds > 0 && sqlx_slow_threshold_seconds != config.sqlx_slow_threshold_seconds {
+            config.sqlx_slow_threshold_seconds = sqlx_slow_threshold_seconds;
+            updated_fields.push("sqlx_slow_threshold_seconds");
+        }
+    }
+
+    if let Some(sqlx_log_level) = params.sqlx_log_level {
+        // 验证日志级别是否有效
+        let valid_levels = ["off", "error", "warn", "info", "debug", "trace"];
+        if valid_levels.contains(&sqlx_log_level.as_str()) && sqlx_log_level != config.sqlx_log_level {
+            config.sqlx_log_level = sqlx_log_level;
+            updated_fields.push("sqlx_log_level");
+        }
+    }
+
     if updated_fields.is_empty() {
         return Ok(crate::api::response::UpdateConfigResponse {
             success: false,
@@ -2253,6 +2276,39 @@ pub async fn update_config_internal(
 
     // 重新加载全局配置
     crate::config::reload_config();
+
+    // 如果更新了数据库配置，立即应用
+    if updated_fields.contains(&"sqlx_slow_threshold_seconds") || updated_fields.contains(&"sqlx_log_level") {
+        info!("检测到数据库配置更新，正在应用新的配置...");
+        
+        // 应用 sqlx 慢查询阈值
+        if updated_fields.contains(&"sqlx_slow_threshold_seconds") {
+            let threshold_ms = config.sqlx_slow_threshold_seconds * 1000;
+            std::env::set_var("SQLX_SLOW_STATEMENTS_DURATION_THRESHOLD", threshold_ms.to_string());
+            info!("已更新慢查询阈值为: {} 秒 ({} 毫秒)", config.sqlx_slow_threshold_seconds, threshold_ms);
+        }
+        
+        // 应用 sqlx 日志级别
+        if updated_fields.contains(&"sqlx_log_level") {
+            let current_rust_log = std::env::var("RUST_LOG").unwrap_or_default();
+            
+            // 移除现有的 sqlx 配置
+            let rust_log_parts: Vec<&str> = current_rust_log
+                .split(',')
+                .filter(|part| !part.starts_with("sqlx="))
+                .collect();
+            
+            // 添加新的 sqlx 配置
+            let new_rust_log = if rust_log_parts.is_empty() {
+                format!("sqlx={}", config.sqlx_log_level)
+            } else {
+                format!("{},sqlx={}", rust_log_parts.join(","), config.sqlx_log_level)
+            };
+            
+            std::env::set_var("RUST_LOG", new_rust_log);
+            info!("已更新 sqlx 日志级别为: {}", config.sqlx_log_level);
+        }
+    }
 
     // 如果更新了命名相关的配置，重命名已下载的文件
     let mut updated_files = 0u32;

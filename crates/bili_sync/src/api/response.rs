@@ -159,6 +159,9 @@ pub struct ConfigResponse {
     pub rate_duration: Option<u64>,
     // 其他设置
     pub cdn_sorting: bool,
+    // 数据库配置设置
+    pub sqlx_slow_threshold_seconds: u64,
+    pub sqlx_log_level: String,
 }
 
 // 更新配置的响应结构体

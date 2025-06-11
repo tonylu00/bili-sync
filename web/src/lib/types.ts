@@ -197,6 +197,9 @@ export interface ConfigResponse {
 	rate_duration?: number;
 	// 新增其他设置
 	cdn_sorting?: boolean;
+	// 新增数据库配置设置
+	sqlx_slow_threshold_seconds?: number;
+	sqlx_log_level?: string;
 }
 
 // 更新配置请求类型
@@ -241,6 +244,9 @@ export interface UpdateConfigRequest {
 	rate_duration?: number;
 	// 新增其他设置
 	cdn_sorting?: boolean;
+	// 新增数据库配置设置
+	sqlx_slow_threshold_seconds?: number;
+	sqlx_log_level?: string;
 }
 
 // 更新配置响应类型

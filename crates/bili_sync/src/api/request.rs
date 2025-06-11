@@ -96,6 +96,9 @@ pub struct UpdateConfigRequest {
     pub rate_duration: Option<u64>,
     // 其他设置
     pub cdn_sorting: Option<bool>,
+    // 数据库配置设置
+    pub sqlx_slow_threshold_seconds: Option<u64>,
+    pub sqlx_log_level: Option<String>,
 }
 
 #[derive(Debug, Deserialize, ToSchema)]
