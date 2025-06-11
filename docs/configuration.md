@@ -240,16 +240,49 @@ WARN sqlx:query
 slow statement: execution time exceeded alert threshold
 ```
 
-可以通过 `RUST_LOG` 环境变量来控制日志级别：
+可以通过以下方式进行配置：
 
-### 配置方法
+### 数据库性能优化
 
-**推荐配置（关闭 sqlx 日志）：**
+项目已内置以下数据库性能优化：
+
+#### ✅ **自动优化功能**
+- **WAL 模式**: 提升并发读写性能
+- **查询优化器**: 自动优化 SQL 执行计划
+- **内存缓存**: 256MB mmap + 1000 页缓存
+- **锁定防护**: 30秒 busy_timeout 防止数据库锁定错误
+
+#### 🎛️ **动态配置慢查询阈值**
+
+**SQLX_SLOW_THRESHOLD_SECONDS**: 设置慢查询时间阈值（秒）
+```bash
+# 设置10秒以上的查询才报警（默认约1秒）
+SQLX_SLOW_THRESHOLD_SECONDS=10
+
+# 设置30秒以上的查询才报警
+SQLX_SLOW_THRESHOLD_SECONDS=30
+```
+
+#### 📊 **可配置的日志控制**
+
+**方法1: RUST_LOG 配置（推荐）**
 ```bash
 RUST_LOG=None,bili_sync=info,sqlx=off
 ```
 
-**其他选项：**
+**方法2: SQLX_LOG_LEVEL 环境变量**
+```bash
+SQLX_LOG_LEVEL=off  # 动态设置 sqlx 日志级别
+```
+
+### 配置选项
+
+**阈值配置（控制何时报警）：**
+- `SQLX_SLOW_THRESHOLD_SECONDS=5`: 5秒以上查询报警
+- `SQLX_SLOW_THRESHOLD_SECONDS=10`: 10秒以上查询报警（推荐）
+- `SQLX_SLOW_THRESHOLD_SECONDS=30`: 30秒以上查询报警
+
+**日志级别配置：**
 - `sqlx=off`: 完全关闭 sqlx 日志（推荐）
 - `sqlx=error`: 仅显示 sqlx 错误日志  
 - `sqlx=warn`: 显示 sqlx 警告和错误（默认）
@@ -260,20 +293,31 @@ RUST_LOG=None,bili_sync=info,sqlx=off
 **Docker Compose 配置：**
 ```yaml
 environment:
-  # 关闭 sqlx 慢查询警告（推荐）
+  # 方案1: 调整慢查询阈值到10秒
+  - SQLX_SLOW_THRESHOLD_SECONDS=10
+  
+  # 方案2: 完全关闭 sqlx 日志
   - RUST_LOG=None,bili_sync=info,sqlx=off
+  
+  # 方案3: 使用专用环境变量
+  - SQLX_LOG_LEVEL=off
 ```
 
 **直接运行：**
 ```bash
-# 关闭 sqlx 日志
+# 方法1: 调整慢查询阈值
+SQLX_SLOW_THRESHOLD_SECONDS=10 ./bili-sync-rs
+
+# 方法2: 关闭 sqlx 日志
 RUST_LOG=None,bili_sync=info,sqlx=off ./bili-sync-rs
 
-# 或者仅显示 sqlx 错误
-RUST_LOG=None,bili_sync=info,sqlx=error ./bili-sync-rs
+# 方法3: 组合使用（调整阈值+降低日志级别）
+SQLX_SLOW_THRESHOLD_SECONDS=10 SQLX_LOG_LEVEL=error ./bili-sync-rs
 ```
 
 ### 推荐配置
 
-- **生产环境**: 建议使用 `sqlx=off` 关闭慢查询警告
-- **开发调试**: 可以使用 `sqlx=error` 仅显示错误信息
+- **生产环境**: 建议设置 `SQLX_SLOW_THRESHOLD_SECONDS=10` 调整阈值到合理范围
+- **开发调试**: 可以使用 `SQLX_LOG_LEVEL=error` 仅显示错误信息
+- **极简配置**: 直接使用 `RUST_LOG=None,bili_sync=info,sqlx=off` 关闭所有 sqlx 日志
+- **性能调优**: 所有数据库优化已自动启用，无需手动配置

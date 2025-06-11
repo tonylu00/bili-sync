@@ -1,7 +1,7 @@
 use anyhow::Result;
 use bili_sync_migration::{Migrator, MigratorTrait};
 use sea_orm::{ConnectOptions, Database, DatabaseConnection};
-use tracing::info;
+use tracing::{info, warn};
 
 use crate::config::CONFIG_DIR;
 
@@ -14,6 +14,9 @@ fn database_url() -> String {
 }
 
 async fn database_connection() -> Result<DatabaseConnection> {
+    // 动态配置 sqlx 慢查询阈值和日志级别
+    configure_sqlx_settings();
+    
     let mut option = ConnectOptions::new(database_url());
     
     option
@@ -41,6 +44,42 @@ async fn database_connection() -> Result<DatabaseConnection> {
     info!("SQLite WAL 模式已启用，性能优化参数已应用");
 
     Ok(connection)
+}
+
+/// 根据环境变量动态配置 sqlx 慢查询阈值和日志级别
+fn configure_sqlx_settings() {
+    // 1. 配置慢查询阈值
+    if let Ok(threshold_str) = std::env::var("SQLX_SLOW_THRESHOLD_SECONDS") {
+        if let Ok(threshold_secs) = threshold_str.parse::<u64>() {
+            // sqlx 内部使用 SQLX_SLOW_STATEMENTS_DURATION_THRESHOLD 环境变量（以毫秒为单位）
+            let threshold_ms = threshold_secs * 1000;
+            std::env::set_var("SQLX_SLOW_STATEMENTS_DURATION_THRESHOLD", threshold_ms.to_string());
+            info!("设置慢查询阈值为: {} 秒 ({} 毫秒)", threshold_secs, threshold_ms);
+        } else {
+            warn!("SQLX_SLOW_THRESHOLD_SECONDS 值无效: {}, 使用默认阈值", threshold_str);
+        }
+    }
+    
+    // 2. 配置 sqlx 日志级别
+    if let Ok(sqlx_level) = std::env::var("SQLX_LOG_LEVEL") {
+        let current_rust_log = std::env::var("RUST_LOG").unwrap_or_default();
+        
+        // 移除现有的 sqlx 配置
+        let rust_log_parts: Vec<&str> = current_rust_log
+            .split(',')
+            .filter(|part| !part.starts_with("sqlx="))
+            .collect();
+        
+        // 添加新的 sqlx 配置
+        let new_rust_log = if rust_log_parts.is_empty() {
+            format!("sqlx={}", sqlx_level)
+        } else {
+            format!("{},sqlx={}", rust_log_parts.join(","), sqlx_level)
+        };
+        
+        std::env::set_var("RUST_LOG", new_rust_log);
+        info!("动态设置 sqlx 日志级别为: {}", sqlx_level);
+    }
 }
 
 async fn migrate_database() -> Result<()> {
