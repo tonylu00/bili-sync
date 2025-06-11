@@ -4,6 +4,7 @@ use std::sync::Arc;
 use anyhow::Result;
 use sea_orm::{ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter};
 use tracing::{debug, error, info, warn};
+use tokio_util::sync::CancellationToken;
 
 use crate::adapter::Args;
 use crate::bilibili::{self, BiliClient, CollectionItem, CollectionType};
@@ -207,7 +208,16 @@ pub async fn video_downloader(connection: Arc<DatabaseConnection>) {
                     break;
                 }
 
-                match process_video_source(*args, &bili_client, path, &connection, &downloader).await {
+                match process_video_source(
+                    *args,
+                    &bili_client,
+                    path,
+                    &connection,
+                    &downloader,
+                    CancellationToken::new(),
+                )
+                .await
+                {
                     Ok(new_video_count) => {
                         processed_sources += 1;
                         if new_video_count > 0 {

@@ -11,11 +11,12 @@ use sea_orm::ActiveValue::Set;
 use sea_orm::TransactionTrait;
 use tokio::fs;
 use tokio::sync::Semaphore;
+use tokio_util::sync::CancellationToken;
 use tracing::{debug, error, info, warn};
 
 use crate::adapter::{video_source_from, Args, VideoSource, VideoSourceEnum};
 use crate::bilibili::{BestStream, BiliClient, BiliError, Dimension, PageInfo, Video, VideoInfo};
-use crate::config::{PathSafeTemplate, ARGS, TEMPLATE};
+use crate::config::{PathSafeTemplate, ARGS, CONFIG, TEMPLATE};
 use crate::error::{DownloadAbortError, ExecutionStatus, ProcessPageError};
 use crate::unified_downloader::UnifiedDownloader;
 use crate::utils::format_arg::{page_format_args, video_format_args};
@@ -75,6 +76,7 @@ pub async fn process_video_source(
     path: &Path,
     connection: &DatabaseConnection,
     downloader: &UnifiedDownloader,
+    token: CancellationToken,
 ) -> Result<usize> {
     // 记录当前处理的参数和路径
     if let Args::Bangumi {
@@ -86,8 +88,7 @@ pub async fn process_video_source(
         // 尝试从API获取真实的番剧标题
         let title = if let Some(season_id) = season_id {
             // 如果有season_id，尝试获取番剧标题
-            get_season_title_from_api(bili_client, season_id)
-                .await
+            get_season_title_from_api(bili_client, season_id, token.clone()).await
                 .unwrap_or_else(|| {
                     // API获取失败，回退到路径名
                     path.file_name()
@@ -119,28 +120,30 @@ pub async fn process_video_source(
     };
 
     // 从参数中获取视频列表的 Model 与视频流
-    let (video_source, video_streams) = match video_source_from(args, path, bili_client, connection).await {
-        Ok(result) => result,
-        Err(e) => {
-            let error_msg = format!("{:#}", e);
-            if retry_with_refresh(error_msg).await.is_ok() {
-                // 刷新成功，重试
-                video_source_from(args, path, bili_client, connection).await?
-            } else {
-                return Err(e);
+    let (video_source, video_streams) =
+        match video_source_from(args, path, bili_client, connection).await {
+            Ok(result) => result,
+            Err(e) => {
+                let error_msg = format!("{:#}", e);
+                if retry_with_refresh(error_msg).await.is_ok() {
+                    // 刷新成功，重试
+                    video_source_from(args, path, bili_client, connection).await?
+                } else {
+                    return Err(e);
+                }
             }
-        }
-    };
+        };
 
     // 从视频流中获取新视频的简要信息，写入数据库，并获取新增视频数量
-    let new_video_count = match refresh_video_source(&video_source, video_streams, connection).await {
+    let new_video_count = match refresh_video_source(&video_source, video_streams, connection, token.clone()).await {
         Ok(count) => count,
         Err(e) => {
             let error_msg = format!("{:#}", e);
             if retry_with_refresh(error_msg).await.is_ok() {
                 // 刷新成功，重新获取视频流并重试
-                let (_, video_streams) = video_source_from(args, path, bili_client, connection).await?;
-                refresh_video_source(&video_source, video_streams, connection).await?
+                let (_, video_streams) =
+                    video_source_from(args, path, bili_client, connection).await?;
+                refresh_video_source(&video_source, video_streams, connection, token.clone()).await?
             } else {
                 return Err(e);
             }
@@ -148,11 +151,19 @@ pub async fn process_video_source(
     };
 
     // 单独请求视频详情接口，获取视频的详情信息与所有的分页，写入数据库
-    if let Err(e) = fetch_video_details(bili_client, &video_source, connection).await {
+    if let Err(e) = fetch_video_details(bili_client, &video_source, connection, token.clone()).await {
+        // 新增：检查是否为风控导致的下载中止
+        if e.downcast_ref::<DownloadAbortError>().is_some() {
+            error!("获取视频详情时触发风控，已终止当前视频源的处理，等待下一轮执行");
+            // 中止当前源的处理，但不返回错误，以便任务调度器可以继续处理下一个视频源。
+            // 返回 Ok 意味着这个源的处理（虽然被中止了）从调度器的角度看是"完成"的。
+            return Ok(new_video_count);
+        }
+
         let error_msg = format!("{:#}", e);
         if retry_with_refresh(error_msg).await.is_ok() {
             // 刷新成功，重试
-            fetch_video_details(bili_client, &video_source, connection).await?;
+            fetch_video_details(bili_client, &video_source, connection, token.clone()).await?;
         } else {
             return Err(e);
         }
@@ -162,11 +173,12 @@ pub async fn process_video_source(
         warn!("已开启仅扫描模式，跳过视频下载..");
     } else {
         // 从数据库中查找所有未下载的视频与分页，下载并处理
-        if let Err(e) = download_unprocessed_videos(bili_client, &video_source, connection, downloader).await {
+        if let Err(e) = download_unprocessed_videos(bili_client, &video_source, connection, downloader, token).await {
             let error_msg = format!("{:#}", e);
             if retry_with_refresh(error_msg).await.is_ok() {
                 // 刷新成功，重试
-                download_unprocessed_videos(bili_client, &video_source, connection, downloader).await?;
+                let token = CancellationToken::new(); // a new token for retry
+                download_unprocessed_videos(bili_client, &video_source, connection, downloader, token).await?;
             } else {
                 return Err(e);
             }
@@ -180,6 +192,7 @@ pub async fn refresh_video_source<'a>(
     video_source: &VideoSourceEnum,
     video_streams: Pin<Box<dyn Stream<Item = Result<VideoInfo>> + 'a + Send>>,
     connection: &DatabaseConnection,
+    token: CancellationToken,
 ) -> Result<usize> {
     video_source.log_refresh_video_start();
     let latest_row_at = video_source.get_latest_row_at().and_utc();
@@ -187,6 +200,9 @@ pub async fn refresh_video_source<'a>(
     let mut error = Ok(());
     let mut video_streams = video_streams
         .take_while(|res| {
+            if token.is_cancelled() {
+                return futures::future::ready(false);
+            }
             match res {
                 Err(e) => {
                     error = Err(anyhow!(e.to_string()));
@@ -234,6 +250,7 @@ pub async fn fetch_video_details(
     bili_client: &BiliClient,
     video_source: &VideoSourceEnum,
     connection: &DatabaseConnection,
+    token: CancellationToken,
 ) -> Result<()> {
     video_source.log_fetch_video_start();
     let videos_model = filter_unfilled_videos(video_source.filter_expr(), connection).await?;
@@ -261,7 +278,7 @@ pub async fn fetch_video_details(
         // 处理每个季
         for (season_id, videos) in videos_by_season {
             // 首先尝试获取番剧季标题用于日志显示
-            let season_title = get_season_title_from_api(bili_client, &season_id).await;
+            let season_title = get_season_title_from_api(bili_client, &season_id, token.clone()).await;
             let display_name = season_title.as_deref().unwrap_or(&season_id);
 
             info!(
@@ -272,7 +289,8 @@ pub async fn fetch_video_details(
             );
 
             // 1. 首先从现有数据库中查找该季已有的分集信息
-            let mut existing_episodes = get_existing_episodes_for_season(connection, &season_id, bili_client).await?;
+            let mut existing_episodes =
+                get_existing_episodes_for_season(connection, &season_id, bili_client, token.clone()).await?;
 
             // 2. 检查哪些ep_id还没有信息
             let missing_ep_ids: Vec<String> = videos
@@ -291,7 +309,7 @@ pub async fn fetch_video_details(
                     missing_ep_ids.len()
                 );
 
-                match get_season_info_from_api(bili_client, &season_id).await {
+                match get_season_info_from_api(bili_client, &season_id, token.clone()).await {
                     Ok(season_info) => {
                         // 将新获取的信息添加到映射中
                         for episode in season_info.episodes {
@@ -313,7 +331,10 @@ pub async fn fetch_video_details(
 
             // 4. 使用合并后的信息处理所有视频
             for video_model in videos {
-                if let Err(e) = process_bangumi_video(video_model, &existing_episodes, connection, video_source).await {
+                if let Err(e) =
+                    process_bangumi_video(video_model, &existing_episodes, connection, video_source)
+                        .await
+                {
                     error!("处理番剧视频失败: {}", e);
                 }
             }
@@ -329,7 +350,7 @@ pub async fn fetch_video_details(
                 let txn = connection.begin().await?;
 
                 let (actual_cid, duration) = if let Some(ep_id) = &video_model.ep_id {
-                    match get_bangumi_info_from_api(bili_client, ep_id).await {
+                    match get_bangumi_info_from_api(bili_client, ep_id, token.clone()).await {
                         Some(info) => info,
                         None => {
                             error!("番剧 {} (EP{}) 信息获取失败，将跳过弹幕下载", &video_model.name, ep_id);
@@ -366,24 +387,41 @@ pub async fn fetch_video_details(
     if !normal_videos.is_empty() {
         info!("开始并发处理 {} 个普通视频的详情", normal_videos.len());
 
-        // 使用信号量控制并发数 - 动态加载最新配置
-        let current_config = crate::config::reload_config();
-        let concurrent_limit = current_config.concurrent_limit.video_detail.unwrap_or(5);
-        let semaphore = Semaphore::new(concurrent_limit);
-        info!("视频详情获取并发限制: {}", concurrent_limit);
+        // 使用信号量控制并发数
+        let semaphore = Semaphore::new(CONFIG.concurrent_limit.video);
         
         let tasks = normal_videos
             .into_iter()
             .map(|video_model| {
                 let semaphore = &semaphore;
+                let token = token.clone();
                 async move {
                     // 获取许可以控制并发
-                    let _permit = semaphore.acquire().await.context("acquire semaphore failed")?;
-                    
+                    let _permit = tokio::select! {
+                        biased;
+                        _ = token.cancelled() => return Err(anyhow!("Download cancelled")),
+                        permit = semaphore.acquire() => permit.context("acquire semaphore failed")?,
+                    };
+
                     let video = Video::new(bili_client, video_model.bvid.clone());
-                    let info: Result<_> = async { Ok((video.get_tags().await?, video.get_view_info().await?)) }.await;
+                    let info: Result<_> = tokio::select! {
+                        biased;
+                        _ = token.cancelled() => return Err(anyhow!("Download cancelled")),
+                        res = async { Ok((video.get_tags().await?, video.get_view_info().await?)) } => res,
+                    };
                     match info {
                         Err(e) => {
+                            // 新增：检查是否为风控错误
+                            let classified_error = crate::error::ErrorClassifier::classify_error(&e);
+                            if classified_error.error_type == crate::error::ErrorType::RiskControl {
+                                error!(
+                                    "获取视频 {} - {} 的详细信息时触发风控: {}",
+                                    &video_model.bvid, &video_model.name, classified_error.message
+                                );
+                                // 返回一个特定的错误来中止整个批处理
+                                return Err(anyhow!(DownloadAbortError()));
+                            }
+
                             error!(
                                 "获取视频 {} - {} 的详细信息失败，错误为：{:#}",
                                 &video_model.bvid, &video_model.name, e
@@ -417,7 +455,19 @@ pub async fn fetch_video_details(
             .collect::<FuturesUnordered<_>>();
 
         // 并发执行所有任务
-        tasks.try_collect::<Vec<_>>().await?;
+        let mut stream = tasks;
+        while let Some(res) = stream.next().await {
+            if let Err(e) = res {
+                if e.downcast_ref::<DownloadAbortError>().is_some() || e.to_string().contains("Download cancelled") {
+                    token.cancel();
+                    // drain the rest of the tasks
+                    while stream.next().await.is_some() {}
+                    return Err(e);
+                }
+                // for other errors, just log and continue
+                error!("获取视频详情时发生错误: {:#}", e);
+            }
+        }
         info!("完成普通视频详情处理");
     }
     video_source.log_fetch_video_end();
@@ -430,10 +480,10 @@ pub async fn download_unprocessed_videos(
     video_source: &VideoSourceEnum,
     connection: &DatabaseConnection,
     downloader: &UnifiedDownloader,
+    token: CancellationToken,
 ) -> Result<()> {
     video_source.log_download_video_start();
-    let current_config = crate::config::reload_config();
-    let semaphore = Semaphore::new(current_config.concurrent_limit.video);
+    let semaphore = Semaphore::new(CONFIG.concurrent_limit.video);
     let unhandled_videos_pages = filter_unhandled_video_pages(video_source.filter_expr(), connection).await?;
 
     // 只有当有未处理视频时才显示日志
@@ -457,28 +507,39 @@ pub async fn download_unprocessed_videos(
                 &semaphore,
                 downloader,
                 should_download_upper,
+                token.clone(),
             )
         })
         .collect::<FuturesUnordered<_>>();
     let mut download_aborted = false;
-    let mut stream = tasks
-        // 触发风控时设置 download_aborted 标记并终止流
-        .take_while(|res| {
-            if res
-                .as_ref()
-                .is_err_and(|e| e.downcast_ref::<DownloadAbortError>().is_some())
-            {
-                download_aborted = true;
+    let mut stream = tasks;
+    // 使用循环和select来处理任务，以便在检测到取消信号时立即停止
+    while let Some(res) = stream.next().await {
+        match res {
+            Ok(model) => {
+                if download_aborted {
+                    continue;
+                }
+                // 任务成功完成，更新数据库
+                if let Err(db_err) = update_videos_model(vec![model], connection).await {
+                    error!("更新数据库失败: {:#}", db_err);
+                }
             }
-            futures::future::ready(!download_aborted)
-        })
-        // 过滤掉没有触发风控的普通 Err，只保留正确返回的 Model
-        .filter_map(|res| futures::future::ready(res.ok()))
-        // 将成功返回的 Model 按十个一组合并
-        .chunks(10);
-    while let Some(models) = stream.next().await {
-        update_videos_model(models, connection).await?;
+            Err(e) => {
+                if e.downcast_ref::<DownloadAbortError>().is_some() || e.to_string().contains("Download cancelled") {
+                    if !download_aborted {
+                        debug!("检测到风控或取消信号，开始中止所有下载任务");
+                        token.cancel(); // 立即取消所有其他正在运行的任务
+                        download_aborted = true;
+                    }
+                } else {
+                    // 任务返回了非中止的错误
+                    error!("下载任务失败: {:#}", e);
+                }
+            }
+        }
     }
+
     if download_aborted {
         error!("下载触发风控，已终止所有任务，等待下一轮执行");
     }
@@ -496,6 +557,7 @@ pub struct DownloadPageArgs<'a> {
     pub connection: &'a DatabaseConnection,
     pub downloader: &'a UnifiedDownloader,
     pub base_path: &'a Path,
+    pub token: CancellationToken,
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -508,8 +570,13 @@ pub async fn download_video_pages(
     semaphore: &Semaphore,
     downloader: &UnifiedDownloader,
     should_download_upper: bool,
+    token: CancellationToken,
 ) -> Result<video::ActiveModel> {
-    let _permit = semaphore.acquire().await.context("acquire semaphore failed")?;
+    let _permit = tokio::select! {
+        biased;
+        _ = token.cancelled() => return Err(anyhow!("Download cancelled")),
+        permit = semaphore.acquire() => permit.context("acquire semaphore failed")?,
+    };
     let mut status = VideoStatus::from(video_model.download_status);
     let separate_status = status.should_run();
 
@@ -541,7 +608,7 @@ pub async fn download_video_pages(
                 .context("season_id should not be None when downloading multiple seasons")?;
 
             // 从API获取季度标题
-            let season_title = match get_season_title_from_api(bili_client, season_id).await {
+            let season_title = match get_season_title_from_api(bili_client, season_id, token.clone()).await {
                 Some(title) => title,
                 None => format!("第{}季", season_id), // 如果找不到季度名称，使用默认格式
             };
@@ -569,8 +636,7 @@ pub async fn download_video_pages(
     }
 
     let upper_id = video_model.upper_id.to_string();
-    let current_config = crate::config::reload_config();
-    let base_upper_path = &current_config
+    let base_upper_path = &CONFIG
         .upper_path
         .join(upper_id.chars().next().context("upper_id is empty")?.to_string())
         .join(upper_id);
@@ -587,6 +653,12 @@ pub async fn download_video_pages(
     // 对于单页视频，page 的下载已经足够
     // 对于多页视频，page 下载仅包含了分集内容，需要额外补上视频的 poster 的 tvshow.nfo
     // 使用 tokio::join! 替代装箱的 Future，零分配并行执行
+    
+    // 首先检查是否取消
+    if token.is_cancelled() {
+        return Err(anyhow!("Download cancelled"));
+    }
+    
     let (res_1, res_2, res_3, res_4, res_5) = tokio::join!(
         // 下载视频封面
         fetch_video_poster(
@@ -595,6 +667,7 @@ pub async fn download_video_pages(
             downloader,
             base_path.join(format!("{}-poster.jpg", video_base_name)),
             base_path.join(format!("{}-fanart.jpg", video_base_name)),
+            token.clone(),
         ),
         // 生成视频信息的 nfo
         generate_video_nfo(
@@ -608,6 +681,7 @@ pub async fn download_video_pages(
             &video_model,
             downloader,
             base_upper_path.join("folder.jpg"),
+            token.clone(),
         ),
         // 生成 Up 主信息的 nfo（番剧跳过，因为番剧没有UP主信息）
         generate_upper_nfo(
@@ -625,8 +699,10 @@ pub async fn download_video_pages(
             connection,
             downloader,
             base_path: &base_path,
-        })
+            token: token.clone(),
+        }, token.clone())
     );
+    
     let results = [res_1, res_2, res_3, res_4, res_5]
         .into_iter()
         .map(Into::into)
@@ -705,13 +781,15 @@ pub async fn download_video_pages(
 }
 
 /// 分发并执行分页下载任务，当且仅当所有分页成功下载或达到最大重试次数时返回 Ok，否则根据失败原因返回对应的错误
-pub async fn dispatch_download_page(args: DownloadPageArgs<'_>) -> Result<ExecutionStatus> {
+pub async fn dispatch_download_page(
+    args: DownloadPageArgs<'_>,
+    token: CancellationToken,
+) -> Result<ExecutionStatus> {
     if !args.should_run {
         return Ok(ExecutionStatus::Skipped);
     }
 
-    let current_config = crate::config::reload_config();
-    let child_semaphore = Semaphore::new(current_config.concurrent_limit.page);
+    let child_semaphore = Semaphore::new(CONFIG.concurrent_limit.page);
     let tasks = args
         .pages
         .into_iter()
@@ -725,38 +803,44 @@ pub async fn dispatch_download_page(args: DownloadPageArgs<'_>) -> Result<Execut
                 &child_semaphore,
                 args.downloader,
                 args.base_path,
+                token.clone(),
             )
         })
         .collect::<FuturesUnordered<_>>();
     let (mut download_aborted, mut target_status) = (false, STATUS_OK);
-    let mut stream = tasks
-        .take_while(|res| {
-            match res {
-                Ok(model) => {
-                    // 该视频的所有分页的下载状态都会在此返回，需要根据这些状态确认视频层"分 P 下载"子任务的状态
-                    // 在过去的实现中，此处仅仅根据 page_download_status 的最高标志位来判断，如果最高标志位是 true 则认为完成
-                    // 这样会导致即使分页中有失败到 MAX_RETRY 的情况，视频层的分 P 下载状态也会被认为是 Succeeded，不够准确
-                    // 新版本实现会将此处取值为所有子任务状态的最小值，这样只有所有分页的子任务全部成功时才会认为视频层的分 P 下载状态是 Succeeded
-                    let page_download_status = model.download_status.try_as_ref().expect("download_status must be set");
-                    let separate_status: [u32; 5] = PageStatus::from(*page_download_status).into();
-                    for status in separate_status {
-                        target_status = target_status.min(status);
-                    }
+    let mut stream = tasks;
+    while let Some(res) = stream.next().await {
+        match res {
+            Ok(model) => {
+                if download_aborted {
+                    continue;
                 }
-                Err(e) => {
-                    if e.downcast_ref::<DownloadAbortError>().is_some() {
+                // 该视频的所有分页的下载状态都会在此返回，需要根据这些状态确认视频层"分 P 下载"子任务的状态
+                // 在过去的实现中，此处仅仅根据 page_download_status 的最高标志位来判断，如果最高标志位是 true 则认为完成
+                // 这样会导致即使分页中有失败到 MAX_RETRY 的情况，视频层的分 P 下载状态也会被认为是 Succeeded，不够准确
+                // 新版本实现会将此处取值为所有子任务状态的最小值，这样只有所有分页的子任务全部成功时才会认为视频层的分 P 下载状态是 Succeeded
+                let page_download_status =
+                    model.download_status.try_as_ref().expect("download_status must be set");
+                let separate_status: [u32; 5] = PageStatus::from(*page_download_status).into();
+                for status in separate_status {
+                    target_status = target_status.min(status);
+                }
+                update_pages_model(vec![model], args.connection).await?;
+            }
+            Err(e) => {
+                if e.downcast_ref::<DownloadAbortError>().is_some() || e.to_string().contains("Download cancelled")
+                {
+                    if !download_aborted {
+                        token.cancel();
                         download_aborted = true;
                     }
+                } else {
+                    error!("下载分页子任务失败: {:#}", e);
                 }
             }
-            // 仅在发生风控时终止流，其它情况继续执行
-            futures::future::ready(!download_aborted)
-        })
-        .filter_map(|res| futures::future::ready(res.ok()))
-        .chunks(10);
-    while let Some(models) = stream.next().await {
-        update_pages_model(models, args.connection).await?;
+        }
     }
+
     if download_aborted {
         error!(
             "下载视频「{}」的分页时触发风控，将异常向上传递..",
@@ -781,8 +865,13 @@ pub async fn download_page(
     semaphore: &Semaphore,
     downloader: &UnifiedDownloader,
     base_path: &Path,
+    token: CancellationToken,
 ) -> Result<page::ActiveModel> {
-    let _permit = semaphore.acquire().await.context("acquire semaphore failed")?;
+    let _permit = tokio::select! {
+        biased;
+        _ = token.cancelled() => return Err(anyhow!("Download cancelled")),
+        permit = semaphore.acquire() => permit.context("acquire semaphore failed")?,
+    };
     let mut status = PageStatus::from(page_model.download_status);
     let separate_status = status.should_run();
     let is_single_page = video_model.single_page.context("single_page is null")?;
@@ -885,6 +974,7 @@ pub async fn download_page(
             downloader,
             poster_path,
             fanart_path,
+            token.clone(),
         ),
         fetch_page_video(
             separate_status[1],
@@ -893,11 +983,27 @@ pub async fn download_page(
             downloader,
             &page_info,
             &video_path,
+            token.clone(),
         ),
         generate_page_nfo(separate_status[2], video_model, &page_model, nfo_path,),
-        fetch_page_danmaku(separate_status[3], bili_client, video_model, &page_info, danmaku_path,),
-        fetch_page_subtitle(separate_status[4], bili_client, video_model, &page_info, &subtitle_path,)
+        fetch_page_danmaku(
+            separate_status[3],
+            bili_client,
+            video_model,
+            &page_info,
+            danmaku_path,
+            token.clone(),
+        ),
+        fetch_page_subtitle(
+            separate_status[4],
+            bili_client,
+            video_model,
+            &page_info,
+            &subtitle_path,
+            token.clone(),
+        )
     );
+    
     let results = [res_1, res_2, res_3, res_4, res_5]
         .into_iter()
         .map(Into::into)
@@ -1011,6 +1117,7 @@ pub async fn fetch_page_poster(
     downloader: &UnifiedDownloader,
     poster_path: PathBuf,
     fanart_path: Option<PathBuf>,
+    token: CancellationToken,
 ) -> Result<ExecutionStatus> {
     if !should_run {
         return Ok(ExecutionStatus::Skipped);
@@ -1026,7 +1133,12 @@ pub async fn fetch_page_poster(
             None => video_model.cover.as_str(),
         }
     };
-    downloader.fetch_with_fallback(&[url], &poster_path).await?;
+    let urls = vec![url];
+    tokio::select! {
+        biased;
+        _ = token.cancelled() => return Ok(ExecutionStatus::Skipped),
+        res = downloader.fetch_with_fallback(&urls, &poster_path) => res,
+    }?;
     if let Some(fanart_path) = fanart_path {
         fs::copy(&poster_path, &fanart_path).await?;
     }
@@ -1066,6 +1178,7 @@ pub async fn fetch_page_video(
     downloader: &UnifiedDownloader,
     page_info: &PageInfo,
     page_path: &Path,
+    token: CancellationToken,
 ) -> Result<ExecutionStatus> {
     if !should_run {
         return Ok(ExecutionStatus::Skipped);
@@ -1074,32 +1187,11 @@ pub async fn fetch_page_video(
     let bili_video = Video::new(bili_client, video_model.bvid.clone());
 
     // 获取视频流信息
-    let current_config = crate::config::reload_config();
-    let streams = match bili_video.get_page_analyzer(page_info).await {
-        Ok(mut analyzer) => {
-            match analyzer.best_stream(&current_config.filter_option) {
-                Ok(stream) => stream,
-                Err(e) => {
-                    // 对于404错误，降级为debug日志，不需要打扰用户
-                    if let Some(BiliError::RequestFailed(-404, _)) = e.downcast_ref::<BiliError>() {
-                        debug!("选择最佳流失败(404): {:#}", e);
-                    } else {
-                        error!("选择最佳流失败: {:#}", e);
-                    }
-                    return Err(e);
-                }
-            }
-        }
-        Err(e) => {
-            // 对于404错误，降级为debug日志，不需要打扰用户
-            if let Some(BiliError::RequestFailed(-404, _)) = e.downcast_ref::<BiliError>() {
-                debug!("获取视频分析器失败(404): {:#}", e);
-            } else {
-                error!("获取视频分析器失败: {:#}", e);
-            }
-            return Err(e);
-        }
-    };
+    let mut streams = tokio::select! {
+        biased;
+        _ = token.cancelled() => return Err(anyhow!("Download cancelled")),
+        res = bili_video.get_page_analyzer(page_info) => res
+    }?;
 
     // 创建保存目录
     if let Some(parent) = page_path.parent() {
@@ -1114,7 +1206,7 @@ pub async fn fetch_page_video(
     let start_time = std::time::Instant::now();
 
     // 根据流类型进行不同处理
-    let total_bytes = match streams {
+    let total_bytes = match streams.best_stream(&Default::default())? {
         BestStream::Mixed(mix_stream) => {
             let urls = mix_stream.urls();
             download_stream(downloader, &urls, page_path).await?
@@ -1205,6 +1297,7 @@ pub async fn fetch_page_danmaku(
     video_model: &video::Model,
     page_info: &PageInfo,
     danmaku_path: PathBuf,
+    token: CancellationToken,
 ) -> Result<ExecutionStatus> {
     if !should_run {
         return Ok(ExecutionStatus::Skipped);
@@ -1223,7 +1316,11 @@ pub async fn fetch_page_danmaku(
     let bili_video = if video_model.source_type == Some(1) {
         // 番剧：需要从API获取aid
         if let Some(ep_id) = &video_model.ep_id {
-            match get_bangumi_aid_from_api(bili_client, ep_id).await {
+            match tokio::select! {
+                biased;
+                _ = token.cancelled() => None,
+                res = get_bangumi_aid_from_api(bili_client, ep_id, token.clone()) => res,
+            } {
                 Some(aid) => {
                     debug!("使用番剧API获取到的aid: {}", aid);
                     Video::new_with_aid(bili_client, video_model.bvid.clone(), aid)
@@ -1242,11 +1339,13 @@ pub async fn fetch_page_danmaku(
         Video::new(bili_client, video_model.bvid.clone())
     };
 
-    bili_video
-        .get_danmaku_writer(page_info)
-        .await?
-        .write(danmaku_path)
-        .await?;
+    let danmaku_writer = tokio::select! {
+        biased;
+        _ = token.cancelled() => return Err(anyhow!("Download cancelled")),
+        res = bili_video.get_danmaku_writer(page_info, token.clone()) => res?,
+    };
+
+    danmaku_writer.write(danmaku_path).await?;
     Ok(ExecutionStatus::Succeeded)
 }
 
@@ -1256,12 +1355,17 @@ pub async fn fetch_page_subtitle(
     video_model: &video::Model,
     page_info: &PageInfo,
     subtitle_path: &Path,
+    token: CancellationToken,
 ) -> Result<ExecutionStatus> {
     if !should_run {
         return Ok(ExecutionStatus::Skipped);
     }
     let bili_video = Video::new(bili_client, video_model.bvid.clone());
-    let subtitles = bili_video.get_subtitles(page_info).await?;
+    let subtitles = tokio::select! {
+        biased;
+        _ = token.cancelled() => return Err(anyhow!("Download cancelled")),
+        res = bili_video.get_subtitles(page_info) => res?,
+    };
     let tasks = subtitles
         .into_iter()
         .map(|subtitle| async move {
@@ -1302,13 +1406,18 @@ pub async fn fetch_video_poster(
     downloader: &UnifiedDownloader,
     poster_path: PathBuf,
     fanart_path: PathBuf,
+    token: CancellationToken,
 ) -> Result<ExecutionStatus> {
     if !should_run {
         return Ok(ExecutionStatus::Skipped);
     }
-    downloader
-        .fetch_with_fallback(&[&video_model.cover], &poster_path)
-        .await?;
+    let cover_url = video_model.cover.as_str();
+    let urls = vec![cover_url];
+    tokio::select! {
+        biased;
+        _ = token.cancelled() => return Ok(ExecutionStatus::Skipped),
+        res = downloader.fetch_with_fallback(&urls, &poster_path) => res,
+    }?;
     fs::copy(&poster_path, &fanart_path).await?;
     Ok(ExecutionStatus::Succeeded)
 }
@@ -1318,6 +1427,7 @@ pub async fn fetch_upper_face(
     video_model: &video::Model,
     downloader: &UnifiedDownloader,
     upper_face_path: PathBuf,
+    token: CancellationToken,
 ) -> Result<ExecutionStatus> {
     if !should_run {
         return Ok(ExecutionStatus::Skipped);
@@ -1330,9 +1440,12 @@ pub async fn fetch_upper_face(
         return Ok(ExecutionStatus::Ignored(anyhow::anyhow!("无效的作者头像URL")));
     }
 
-    downloader
-        .fetch_with_fallback(&[upper_face_url], &upper_face_path)
-        .await?;
+    let urls = vec![upper_face_url.as_str()];
+    tokio::select! {
+        biased;
+        _ = token.cancelled() => return Ok(ExecutionStatus::Skipped),
+        res = downloader.fetch_with_fallback(&urls, &upper_face_path) => res,
+    }?;
     Ok(ExecutionStatus::Succeeded)
 }
 
@@ -1368,10 +1481,18 @@ async fn generate_nfo(nfo: NFO<'_>, nfo_path: PathBuf) -> Result<()> {
     Ok(())
 }
 
-async fn get_season_title_from_api(bili_client: &BiliClient, season_id: &str) -> Option<String> {
+async fn get_season_title_from_api(
+    bili_client: &BiliClient,
+    season_id: &str,
+    token: CancellationToken,
+) -> Option<String> {
     let url = format!("https://api.bilibili.com/pgc/view/web/season?season_id={}", season_id);
 
-    match bili_client.get(&url).await {
+    match tokio::select! {
+        biased;
+        _ = token.cancelled() => return None,
+        res = bili_client.get(&url, token.clone()) => res,
+    } {
         Ok(res) => {
             if res.status().is_success() {
                 match res.json::<serde_json::Value>().await {
@@ -1403,10 +1524,14 @@ async fn get_season_title_from_api(bili_client: &BiliClient, season_id: &str) ->
 }
 
 /// 从番剧API获取指定EP的AID
-async fn get_bangumi_aid_from_api(bili_client: &BiliClient, ep_id: &str) -> Option<String> {
+async fn get_bangumi_aid_from_api(bili_client: &BiliClient, ep_id: &str, token: CancellationToken) -> Option<String> {
     let url = format!("https://api.bilibili.com/pgc/view/web/season?ep_id={}", ep_id);
 
-    match bili_client.get(&url).await {
+    match tokio::select! {
+        biased;
+        _ = token.cancelled() => return None,
+        res = bili_client.get(&url, token.clone()) => res,
+    } {
         Ok(res) => {
             if res.status().is_success() {
                 match res.json::<serde_json::Value>().await {
@@ -1440,10 +1565,14 @@ async fn get_bangumi_aid_from_api(bili_client: &BiliClient, ep_id: &str) -> Opti
 }
 
 /// 从番剧API获取指定EP的CID和duration
-async fn get_bangumi_info_from_api(bili_client: &BiliClient, ep_id: &str) -> Option<(i64, u32)> {
+async fn get_bangumi_info_from_api(bili_client: &BiliClient, ep_id: &str, token: CancellationToken) -> Option<(i64, u32)> {
     let url = format!("https://api.bilibili.com/pgc/view/web/season?ep_id={}", ep_id);
 
-    match bili_client.get(&url).await {
+    match tokio::select! {
+        biased;
+        _ = token.cancelled() => return None,
+        res = bili_client.get(&url, token.clone()) => res,
+    } {
         Ok(res) => {
             if res.status().is_success() {
                 match res.json::<serde_json::Value>().await {
@@ -1486,6 +1615,7 @@ async fn get_existing_episodes_for_season(
     connection: &DatabaseConnection,
     season_id: &str,
     bili_client: &BiliClient,
+    token: CancellationToken,
 ) -> Result<HashMap<String, (i64, u32)>> {
     use sea_orm::*;
 
@@ -1511,7 +1641,7 @@ async fn get_existing_episodes_for_season(
 
     if !episodes_map.is_empty() {
         // 尝试获取番剧标题用于显示
-        let season_title = get_season_title_from_api(bili_client, season_id).await;
+        let season_title = get_season_title_from_api(bili_client, season_id, token.clone()).await;
         let display_name = season_title.as_deref().unwrap_or(season_id);
 
         info!(
@@ -1526,13 +1656,14 @@ async fn get_existing_episodes_for_season(
 }
 
 /// 从API获取整个番剧季的信息（单次请求）
-async fn get_season_info_from_api(bili_client: &BiliClient, season_id: &str) -> Result<SeasonInfo> {
+async fn get_season_info_from_api(bili_client: &BiliClient, season_id: &str, token: CancellationToken) -> Result<SeasonInfo> {
     let url = format!("https://api.bilibili.com/pgc/view/web/season?season_id={}", season_id);
 
-    let res = bili_client
-        .get(&url)
-        .await
-        .with_context(|| format!("请求番剧季 {} 信息失败", season_id))?;
+    let res = tokio::select! {
+        biased;
+        _ = token.cancelled() => return Err(anyhow!("Request cancelled")),
+        res = bili_client.get(&url, token.clone()) => res,
+    }?;
 
     if !res.status().is_success() {
         bail!("获取番剧季信息失败，HTTP状态码: {}", res.status());

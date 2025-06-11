@@ -155,7 +155,6 @@ pub struct ConfigResponse {
     // 并发控制设置
     pub concurrent_video: usize,
     pub concurrent_page: usize,
-    pub concurrent_video_detail: Option<usize>,
     pub rate_limit: Option<usize>,
     pub rate_duration: Option<u64>,
     // 其他设置

@@ -52,7 +52,6 @@
 	// 并发控制设置
 	let concurrentVideo = 3;
 	let concurrentPage = 2;
-	let concurrentVideoDetail = 5;
 	let rateLimit = 4;
 	let rateDuration = 250;
 
@@ -230,7 +229,6 @@
 			// 并发控制设置
 			concurrentVideo = config.concurrent_video || 3;
 			concurrentPage = config.concurrent_page || 2;
-			concurrentVideoDetail = config.concurrent_video_detail !== undefined ? config.concurrent_video_detail : 5;
 			rateLimit = config.rate_limit || 4;
 			rateDuration = config.rate_duration || 250;
 
@@ -284,7 +282,6 @@
 				// 并发控制设置
 				concurrent_video: concurrentVideo,
 				concurrent_page: concurrentPage,
-				concurrent_video_detail: concurrentVideoDetail,
 				rate_limit: rateLimit,
 				rate_duration: rateDuration,
 				// 其他设置
@@ -836,19 +833,6 @@
 											max="10"
 											placeholder="2"
 										/>
-									</div>
-
-									<div class="space-y-2">
-										<Label for="concurrent-video-detail">视频详情获取并发数</Label>
-										<Input
-											id="concurrent-video-detail"
-											type="number"
-											bind:value={concurrentVideoDetail}
-											min="1"
-											max="20"
-											placeholder="5"
-										/>
-										<p class="text-muted-foreground text-sm">获取视频详情时的并发数（API请求）</p>
 									</div>
 
 									<div class="space-y-2">

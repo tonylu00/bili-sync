@@ -1,11 +1,12 @@
 use std::sync::Arc;
 use std::time::Duration;
 
-use anyhow::{Context, Result};
+use anyhow::{anyhow, Context, Result};
 use leaky_bucket::RateLimiter;
 use reqwest::{header, Method};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use tokio_util::sync::CancellationToken;
 
 use crate::bilibili::credential::WbiImg;
 use crate::bilibili::{Credential, Validate};
@@ -184,8 +185,8 @@ impl BiliClient {
             Some(cred) => cred
                 .dedeuserid
                 .parse::<i64>()
-                .map_err(|_| anyhow::anyhow!("无效的用户ID")),
-            None => Err(anyhow::anyhow!("未设置登录凭据")),
+                .map_err(|_| anyhow!("无效的用户ID")),
+            None => Err(anyhow!("未设置登录凭据")),
         }
     }
 
@@ -199,16 +200,26 @@ impl BiliClient {
     }
 
     /// 发送 GET 请求
-    pub async fn get(&self, url: &str) -> Result<reqwest::Response> {
+    pub async fn get(&self, url: &str, token: CancellationToken) -> Result<reqwest::Response> {
         if let Some(limiter) = &self.limiter {
-            limiter.acquire_one().await;
+            tokio::select! {
+                biased;
+                _ = token.cancelled() => return Err(anyhow!("Request cancelled in limiter")),
+                _ = limiter.acquire_one() => {},
+            }
         }
         let credential = CONFIG.credential.load();
-        Ok(self
+        let request_builder = self
             .client
-            .request(Method::GET, url, credential.as_deref())
-            .send()
-            .await?)
+            .request(Method::GET, url, credential.as_deref());
+
+        let response = tokio::select! {
+            biased;
+            _ = token.cancelled() => return Err(anyhow!("Request cancelled before send")),
+            res = request_builder.send() => res,
+        };
+
+        Ok(response?)
     }
 
     pub async fn check_refresh(&self) -> Result<()> {
@@ -260,13 +271,13 @@ impl BiliClient {
         let response = self.request(Method::GET, url).await.query(&params).send().await?;
 
         if !response.status().is_success() {
-            return Err(anyhow::anyhow!("搜索请求失败: {}", response.status()));
+            return Err(anyhow!("搜索请求失败: {}", response.status()));
         }
 
         let search_response: SearchResponse = response.json().await?;
 
         if search_response.code != 0 {
-            return Err(anyhow::anyhow!("搜索API返回错误: {}", search_response.message));
+            return Err(anyhow!("搜索API返回错误: {}", search_response.message));
         }
 
         let data = search_response.data.unwrap_or(SearchData {
@@ -396,7 +407,7 @@ impl BiliClient {
                     danmaku: None,
                 })
             }
-            _ => Err(anyhow::anyhow!("不支持的搜索类型: {}", search_type)),
+            _ => Err(anyhow!("不支持的搜索类型: {}", search_type)),
         }
     }
 
@@ -559,7 +570,7 @@ impl BiliClient {
 
             let list = response["data"]["list"]
                 .as_array()
-                .ok_or_else(|| anyhow::anyhow!("响应格式错误：缺少list字段"))?;
+                .ok_or_else(|| anyhow!("响应格式错误：缺少list字段"))?;
 
             // 如果当前页没有数据，说明已经获取完毕
             if list.is_empty() {

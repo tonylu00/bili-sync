@@ -6,6 +6,7 @@ use chrono::{DateTime, Utc};
 use futures::Stream;
 use serde::Deserialize;
 use tracing;
+use tokio_util::sync::CancellationToken;
 
 use super::{BiliClient, Validate, VideoInfo};
 
@@ -60,7 +61,7 @@ impl Bangumi {
     pub async fn get_media_info(&self) -> Result<serde_json::Value> {
         if let Some(media_id) = &self.media_id {
             let url = format!("https://api.bilibili.com/pgc/review/user?media_id={}", media_id);
-            let resp = self.client.get(&url).await?;
+            let resp = self.client.get(&url, CancellationToken::new()).await?;
             let json: serde_json::Value = resp.json().await?;
             json.validate().map(|v| v["result"]["media"].clone())
         } else {
@@ -75,7 +76,7 @@ impl Bangumi {
         } else if let Some(ep_id) = &self.ep_id {
             // 通过 ep_id 获取 season_id
             let url = format!("https://api.bilibili.com/pgc/view/web/season?ep_id={}", ep_id);
-            let resp = self.client.get(&url).await?;
+            let resp = self.client.get(&url, CancellationToken::new()).await?;
             let json: serde_json::Value = resp.json().await?;
             json.validate()?["result"]["season_id"]
                 .as_str()
@@ -86,7 +87,7 @@ impl Bangumi {
         };
 
         let url = format!("https://api.bilibili.com/pgc/view/web/season?season_id={}", season_id);
-        let resp = self.client.get(&url).await?;
+        let resp = self.client.get(&url, CancellationToken::new()).await?;
         let json: serde_json::Value = resp.json().await?;
         json.validate().map(|v| v["result"].clone())
     }
@@ -374,6 +375,41 @@ impl Bangumi {
                     }
                 }
             }
+        })
+    }
+
+    pub async fn get_video_info(&self, ep_id: &str) -> Result<VideoInfo> {
+        let url = format!("https://api.bilibili.com/pgc/view/web/season?ep_id={}", ep_id);
+        let resp = self.client.get(&url, CancellationToken::new()).await?;
+        let json: serde_json::Value = resp.json().await?;
+        let validated = json.validate()?;
+
+        let result = &validated["result"];
+        let title = result["title"].as_str().unwrap_or_default().to_string();
+        let season_id = result["season_id"].as_str().unwrap_or_default().to_string();
+        let ep_id = result["ep_id"].as_str().unwrap_or_default().to_string();
+        let bvid = result["bvid"].as_str().unwrap_or_default().to_string();
+        let cid = result["cid"].as_i64().unwrap_or_default().to_string();
+        let aid = result["aid"].as_i64().unwrap_or_default().to_string();
+        let cover = result["cover"].as_str().unwrap_or_default().to_string();
+        let intro = result["evaluate"].as_str().unwrap_or_default().to_string();
+        let pub_time = result["pub_time"].as_i64().unwrap_or_default();
+        let show_title = result["show_title"].as_str().map(|s| s.to_string());
+        let _duration = result["duration"].as_i64().unwrap_or_default();
+
+        Ok(VideoInfo::Bangumi {
+            title,
+            season_id,
+            ep_id,
+            bvid,
+            cid,
+            aid,
+            cover,
+            intro,
+            pubtime: DateTime::<Utc>::from_timestamp(pub_time, 0).unwrap_or_else(Utc::now),
+            show_title,
+            season_number: None,
+            episode_number: None,
         })
     }
 }

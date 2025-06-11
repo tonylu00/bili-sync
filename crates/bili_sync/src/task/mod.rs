@@ -75,7 +75,6 @@ pub struct UpdateConfigTask {
     // 并发控制设置
     pub concurrent_video: Option<usize>,
     pub concurrent_page: Option<usize>,
-    pub concurrent_video_detail: Option<usize>,
     pub rate_limit: Option<usize>,
     pub rate_duration: Option<u64>,
     // 其他设置
@@ -451,7 +450,6 @@ impl ConfigTaskQueue {
                 // 并发控制设置
                 concurrent_video: task.concurrent_video,
                 concurrent_page: task.concurrent_page,
-                concurrent_video_detail: task.concurrent_video_detail,
                 rate_limit: task.rate_limit,
                 rate_duration: task.rate_duration,
                 // 其他设置

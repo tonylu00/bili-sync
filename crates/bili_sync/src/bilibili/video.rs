@@ -1,9 +1,9 @@
-use anyhow::bail;
-use anyhow::{ensure, Result};
+use anyhow::{anyhow, bail, ensure, Result};
 use futures::stream::FuturesUnordered;
 use futures::TryStreamExt;
 use prost::Message;
 use reqwest::Method;
+use tokio_util::sync::CancellationToken;
 use tracing::{debug, warn};
 
 use crate::bilibili::analyzer::PageAnalyzer;
@@ -117,7 +117,7 @@ impl<'a> Video<'a> {
         Ok(serde_json::from_value(res["data"].take())?)
     }
 
-    pub async fn get_danmaku_writer(&self, page: &'a PageInfo) -> Result<DanmakuWriter> {
+    pub async fn get_danmaku_writer(&self, page: &'a PageInfo, token: CancellationToken) -> Result<DanmakuWriter> {
         let segment_count = page.duration.div_ceil(360);
         debug!("开始获取弹幕，共{}个分段", segment_count);
 
@@ -125,7 +125,13 @@ impl<'a> Video<'a> {
         let mut all_danmaku: Vec<DanmakuElem> = Vec::new();
 
         for i in 1..=segment_count {
-            match self.get_danmaku_segment_with_retry(page, i as i64, 3).await {
+            if token.is_cancelled() {
+                bail!("Danmaku download cancelled");
+            }
+            match self
+                .get_danmaku_segment_with_retry(page, i as i64, 3, token.clone())
+                .await
+            {
                 Ok(mut segment_danmaku) => {
                     debug!("成功获取弹幕分段 {}/{}", i, segment_count);
                     all_danmaku.append(&mut segment_danmaku);
@@ -153,11 +159,15 @@ impl<'a> Video<'a> {
         page: &PageInfo,
         segment_idx: i64,
         max_retries: usize,
+        token: CancellationToken,
     ) -> Result<Vec<DanmakuElem>> {
         let mut last_error = None;
 
         for attempt in 1..=max_retries {
-            match self.get_danmaku_segment(page, segment_idx).await {
+            if token.is_cancelled() {
+                bail!("Danmaku download cancelled");
+            }
+            match self.get_danmaku_segment(page, segment_idx, token.clone()).await {
                 Ok(result) => return Ok(result),
                 Err(e) => {
                     last_error = Some(e);
@@ -180,25 +190,33 @@ impl<'a> Video<'a> {
         Err(last_error.unwrap())
     }
 
-    async fn get_danmaku_segment(&self, page: &PageInfo, segment_idx: i64) -> Result<Vec<DanmakuElem>> {
+    async fn get_danmaku_segment(
+        &self,
+        page: &PageInfo,
+        segment_idx: i64,
+        token: CancellationToken,
+    ) -> Result<Vec<DanmakuElem>> {
         debug!(
             "请求弹幕片段: type=1, oid={}, pid={}, segment_index={}",
             page.cid, self.aid, segment_idx
         );
 
-        // ✅ 使用 BiliClient 的 get 方法，包含速率限制
         let url = format!(
             "http://api.bilibili.com/x/v2/dm/web/seg.so?type=1&oid={}&pid={}&segment_index={}",
             page.cid, self.aid, segment_idx
         );
 
-        let mut res = self.client.get(&url).await?;
+        let res = tokio::select! {
+            biased;
+            _ = token.cancelled() => return Err(anyhow!("Download cancelled")),
+            res = self.client.get(&url, token.clone()) => res,
+        }?;
 
         if !res.status().is_success() {
             bail!("弹幕API请求失败，状态码: {}", res.status());
         }
 
-        let headers = std::mem::take(res.headers_mut());
+        let headers = res.headers().clone();
         let content_type = headers.get("content-type");
         ensure!(
             content_type.is_some_and(|v| v == "application/octet-stream"),

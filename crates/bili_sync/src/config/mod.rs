@@ -231,7 +231,7 @@ impl Config {
             if let Some(table) = concurrent_item.as_table_mut() {
                 table
                     .decor_mut()
-                    .set_prefix("\n# 并发下载配置\n# video: 同时下载的视频数量\n# page: 每个视频同时下载的分页数量\n# video_detail: 获取视频详情时的并发数（API请求）\n");
+                    .set_prefix("\n# 并发下载配置\n# video: 同时下载的视频数量\n# page: 每个视频同时下载的分页数量\n");
 
                 // 为并行下载子部分添加注释
                 if let Some(parallel_item) = table.get_mut("parallel_download") {
