@@ -557,6 +557,7 @@ pub struct DownloadPageArgs<'a> {
     pub connection: &'a DatabaseConnection,
     pub downloader: &'a UnifiedDownloader,
     pub base_path: &'a Path,
+    #[allow(dead_code)]
     pub token: CancellationToken,
 }
 
