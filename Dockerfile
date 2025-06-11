@@ -33,7 +33,8 @@ ENV LANG=zh_CN.UTF-8 \
     TZ=Asia/Shanghai \
     HOME=/app \
     RUST_BACKTRACE=1 \
-    RUST_LOG=None,bili_sync=info
+    RUST_LOG=None,bili_sync=info \
+    SQLX_LOG_LEVEL=off
 
 COPY --from=base / /
 

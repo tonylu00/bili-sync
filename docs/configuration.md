@@ -230,3 +230,50 @@ duration = 250
 > [!TIP]
 > 1. 一般来说，`video` 和 `page` 的值不需要过大；
 > 2. `rate_limit` 的值可以根据网络环境和 api 请求频率进行调整，如果经常遇到风控可以优先调小 limit。
+
+## 数据库日志配置
+
+如果您在日志中看到频繁的 `sqlx:query` 慢查询警告：
+
+```
+WARN sqlx:query
+slow statement: execution time exceeded alert threshold
+```
+
+可以通过以下环境变量进行配置：
+
+### 环境变量
+
+- `SQLX_LOG_LEVEL`: 设置 sqlx 日志级别
+  - `off`: 关闭所有 sqlx 日志（推荐）
+  - `error`: 仅显示错误
+  - `warn`: 显示警告和错误（默认）
+  - `info`: 显示信息、警告和错误
+  - `debug`: 显示调试信息
+  - `trace`: 显示所有日志
+
+- `SQLX_SLOW_THRESHOLD_SECONDS`: 设置慢查询阈值（秒）
+  - 默认值：5秒
+  - 建议值：10-30秒
+
+### 配置示例
+
+**Docker Compose 配置：**
+```yaml
+environment:
+  - SQLX_LOG_LEVEL=off  # 关闭慢查询警告
+  # 或者
+  - SQLX_SLOW_THRESHOLD_SECONDS=10  # 调整阈值到10秒
+```
+
+**直接运行：**
+```bash
+SQLX_LOG_LEVEL=off ./bili-sync-rs
+# 或者
+SQLX_SLOW_THRESHOLD_SECONDS=10 ./bili-sync-rs
+```
+
+### 推荐配置
+
+- **生产环境**: 建议设置 `SQLX_LOG_LEVEL=off` 关闭慢查询警告
+- **开发调试**: 可以设置 `SQLX_SLOW_THRESHOLD_SECONDS=10` 调整阈值
