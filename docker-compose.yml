@@ -25,14 +25,10 @@ services:
       driver: "local"
     environment:
       - TZ=Asia/Shanghai
-      - RUST_LOG=None,bili_sync=info
+      # 设置日志级别，关闭 sqlx 慢查询警告
+      - RUST_LOG=None,bili_sync=info,sqlx=off
       # 可选：设置执行周期，默认为每天凌晨3点执行
       # - BILI_SYNC_SCHEDULE=0 3 * * *
-      # 可选：设置数据库慢查询日志配置
-      # 关闭 sqlx 慢查询警告 (推荐设置)
-      - SQLX_LOG_LEVEL=off
-      # 或者调整慢查询阈值到10秒
-      # - SQLX_SLOW_THRESHOLD_SECONDS=10
     # 资源限制（可选）
     # deploy:
     #   resources:

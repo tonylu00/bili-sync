@@ -240,40 +240,40 @@ WARN sqlx:query
 slow statement: execution time exceeded alert threshold
 ```
 
-可以通过以下环境变量进行配置：
+可以通过 `RUST_LOG` 环境变量来控制日志级别：
 
-### 环境变量
+### 配置方法
 
-- `SQLX_LOG_LEVEL`: 设置 sqlx 日志级别
-  - `off`: 关闭所有 sqlx 日志（推荐）
-  - `error`: 仅显示错误
-  - `warn`: 显示警告和错误（默认）
-  - `info`: 显示信息、警告和错误
-  - `debug`: 显示调试信息
-  - `trace`: 显示所有日志
+**推荐配置（关闭 sqlx 日志）：**
+```bash
+RUST_LOG=None,bili_sync=info,sqlx=off
+```
 
-- `SQLX_SLOW_THRESHOLD_SECONDS`: 设置慢查询阈值（秒）
-  - 默认值：5秒
-  - 建议值：10-30秒
+**其他选项：**
+- `sqlx=off`: 完全关闭 sqlx 日志（推荐）
+- `sqlx=error`: 仅显示 sqlx 错误日志  
+- `sqlx=warn`: 显示 sqlx 警告和错误（默认）
+- `sqlx=info`: 显示 sqlx 信息、警告和错误
 
 ### 配置示例
 
 **Docker Compose 配置：**
 ```yaml
 environment:
-  - SQLX_LOG_LEVEL=off  # 关闭慢查询警告
-  # 或者
-  - SQLX_SLOW_THRESHOLD_SECONDS=10  # 调整阈值到10秒
+  # 关闭 sqlx 慢查询警告（推荐）
+  - RUST_LOG=None,bili_sync=info,sqlx=off
 ```
 
 **直接运行：**
 ```bash
-SQLX_LOG_LEVEL=off ./bili-sync-rs
-# 或者
-SQLX_SLOW_THRESHOLD_SECONDS=10 ./bili-sync-rs
+# 关闭 sqlx 日志
+RUST_LOG=None,bili_sync=info,sqlx=off ./bili-sync-rs
+
+# 或者仅显示 sqlx 错误
+RUST_LOG=None,bili_sync=info,sqlx=error ./bili-sync-rs
 ```
 
 ### 推荐配置
 
-- **生产环境**: 建议设置 `SQLX_LOG_LEVEL=off` 关闭慢查询警告
-- **开发调试**: 可以设置 `SQLX_SLOW_THRESHOLD_SECONDS=10` 调整阈值
+- **生产环境**: 建议使用 `sqlx=off` 关闭慢查询警告
+- **开发调试**: 可以使用 `sqlx=error` 仅显示错误信息

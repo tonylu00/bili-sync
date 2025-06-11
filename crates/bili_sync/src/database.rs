@@ -2,7 +2,6 @@ use anyhow::Result;
 use bili_sync_migration::{Migrator, MigratorTrait};
 use sea_orm::{ConnectOptions, Database, DatabaseConnection};
 use tracing::info;
-use log;
 
 use crate::config::CONFIG_DIR;
 
@@ -17,31 +16,10 @@ fn database_url() -> String {
 async fn database_connection() -> Result<DatabaseConnection> {
     let mut option = ConnectOptions::new(database_url());
     
-    // 根据环境变量设置慢查询阈值，默认为5秒
-    let slow_threshold = std::env::var("SQLX_SLOW_THRESHOLD_SECONDS")
-        .ok()
-        .and_then(|s| s.parse::<u64>().ok())
-        .unwrap_or(5);
-    
-    // 根据环境变量设置日志级别，默认为Warn
-    let log_level = match std::env::var("SQLX_LOG_LEVEL").as_deref() {
-        Ok("off") => log::LevelFilter::Off,
-        Ok("error") => log::LevelFilter::Error,
-        Ok("warn") => log::LevelFilter::Warn,
-        Ok("info") => log::LevelFilter::Info,
-        Ok("debug") => log::LevelFilter::Debug,
-        Ok("trace") => log::LevelFilter::Trace,
-        _ => log::LevelFilter::Warn, // 默认
-    };
-    
     option
         .max_connections(100)
         .min_connections(5)
-        .acquire_timeout(std::time::Duration::from_secs(90))
-        // 设置慢查询日志级别，减少不必要的警告
-        // 将慢查询阈值设置为 5 秒，避免正常查询触发警告
-        .sqlx_logging_level(log_level)
-        .sqlx_slow_statements_duration_threshold(std::time::Duration::from_secs(slow_threshold));
+        .acquire_timeout(std::time::Duration::from_secs(90));
 
     let connection = Database::connect(option).await?;
 
