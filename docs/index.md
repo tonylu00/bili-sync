@@ -24,9 +24,15 @@ hero:
     alt: bili-sync
 
 features:
+  - icon: 🎛️
+    title: 智能视频源管理
+    details: 全新的启用/禁用功能，精确控制每个视频源的扫描状态
   - icon: 🔄
     title: 持续进化
     details: 在原项目基础上大量重构和优化，并由新团队积极维护
+  - icon: 🗂️
+    title: 智能任务队列
+    details: 避免冲突的删除机制，确保数据一致性和系统稳定性
   - icon: 🤖
     title: 无需干预
     details: 自动选择最优的视频和音频配置

@@ -23,7 +23,7 @@ export default defineConfig({
 		nav: [
 			{ text: "主页", link: "/" },
 			{
-				        text: "v2.7.1",
+				        text: "v2.7.2+",
 				items: [
 					{
 						text: "程序更新",
@@ -54,6 +54,7 @@ export default defineConfig({
 						text: "视频源管理",
 						collapsed: true,
 						items: [
+							{ text: "管理指南", link: "/video-source-management" },
 							{ text: "UP主投稿", link: "/submission" },
 							{ text: "收藏夹", link: "/favorite" },
 							{ text: "合集与系列", link: "/collection" },
@@ -67,6 +68,7 @@ export default defineConfig({
 			{
 				text: "高级",
 				items: [
+					{ text: "任务队列管理", link: "/queue-management" },
 					{ text: "部署指南", link: "/deploy-guide" },
 					{ text: "工作原理", link: "/design" },
 				]
@@ -82,6 +84,7 @@ export default defineConfig({
 				text: "更新日志",
 				collapsed: true,
 				items: [
+					{ text: "v2.7.2+ (2025-06-14)", link: "/update-log-2025-06-14" },
 					{ text: "v2.7.1 (2025-06-08)", link: "/update-log-v2.7.1" },
 					{ text: "v2.7.0 (2025-06-03)", link: "/comprehensive-update-2025-06-03" },
 					{ text: "v2.6.2 (2025年6月)", link: "/update-log-2025-06" },
