@@ -351,7 +351,8 @@ fn download_with_powershell(url: &str, output: &Path) -> Result<(), Box<dyn std:
         .status()?;
 
     if !status.success() {
-        return Err("PowerShell下载失败".into());
+        println!("cargo:warning=PowerShell下载失败，尝试使用curl或wget");
+        return download_with_curl_or_wget(url, output);
     }
 
     Ok(())
