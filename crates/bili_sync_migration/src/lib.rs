@@ -13,6 +13,7 @@ mod m20250525_000003_add_selected_seasons;
 mod m20250531_000001_fix_fid_type;
 mod m20250601_000001_fix_compatibility;
 mod m20250613_000001_add_performance_indexes;
+mod m20250613_000002_add_enabled_field;
 
 pub struct Migrator;
 
@@ -33,6 +34,7 @@ impl MigratorTrait for Migrator {
             Box::new(m20250531_000001_fix_fid_type::Migration),
             Box::new(m20250601_000001_fix_compatibility::Migration),
             Box::new(m20250613_000001_add_performance_indexes::Migration),
+            Box::new(m20250613_000002_add_enabled_field::Migration),
         ]
     }
 }

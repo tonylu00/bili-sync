@@ -112,6 +112,7 @@ pub async fn init_submission_sources(
                         path: Set(path.to_string_lossy().to_string()),
                         created_at: Set(chrono::Utc::now().to_string()),
                         latest_row_at: Set(chrono::Utc::now().naive_utc()),
+                        enabled: Set(true),
                     };
 
                     // 插入数据库
@@ -132,6 +133,7 @@ pub async fn init_submission_sources(
                         path: Set(path.to_string_lossy().to_string()),
                         created_at: Set(chrono::Utc::now().to_string()),
                         latest_row_at: Set(chrono::Utc::now().naive_utc()),
+                        enabled: Set(true),
                     };
 
                     let result = submission::Entity::insert(model)
@@ -180,6 +182,7 @@ pub(super) async fn submission_from<'a>(
         upper_id: Set(upper.mid.parse()?),
         upper_name: Set(upper.name),
         path: Set(path.to_string_lossy().to_string()),
+        enabled: Set(true),
         ..Default::default()
     })
     .on_conflict(

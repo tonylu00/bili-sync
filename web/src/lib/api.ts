@@ -21,7 +21,8 @@ import type {
 	UserCollectionsResponse,
 	UserFollowing,
 	UserCollectionInfo,
-	QueueStatusResponse
+	QueueStatusResponse,
+	UpdateVideoSourceEnabledResponse
 } from './types';
 import { ErrorType } from './types';
 
@@ -213,6 +214,23 @@ class ApiClient {
 	}
 
 	/**
+	 * 更新视频源启用状态
+	 * @param sourceType 视频源类型
+	 * @param id 视频源ID
+	 * @param enabled 是否启用
+	 */
+	async updateVideoSourceEnabled(
+		sourceType: string,
+		id: number,
+		enabled: boolean
+	): Promise<ApiResponse<UpdateVideoSourceEnabledResponse>> {
+		return this.put<UpdateVideoSourceEnabledResponse>(
+			`/video-sources/${sourceType}/${id}/enabled`,
+			{ enabled }
+		);
+	}
+
+	/**
 	 * 获取配置
 	 */
 	async getConfig(): Promise<ApiResponse<ConfigResponse>> {
@@ -396,7 +414,13 @@ export const api = {
 	 * 更新视频状态
 	 */
 	updateVideoStatus: (id: number, request: UpdateVideoStatusRequest) =>
-		apiClient.updateVideoStatus(id, request)
+		apiClient.updateVideoStatus(id, request),
+
+	/**
+	 * 更新视频源启用状态
+	 */
+	updateVideoSourceEnabled: (sourceType: string, id: number, enabled: boolean) =>
+		apiClient.updateVideoSourceEnabled(sourceType, id, enabled)
 };
 
 // 默认导出

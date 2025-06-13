@@ -2,7 +2,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use anyhow::Result;
-use sea_orm::{ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter};
+use sea_orm::{ColumnTrait, DatabaseConnection, EntityTrait, PaginatorTrait, QueryFilter};
 use tracing::{debug, error, info, warn};
 use tokio_util::sync::CancellationToken;
 
@@ -21,8 +21,10 @@ async fn load_video_sources_from_db(
 ) -> Result<Vec<(Args<'static>, PathBuf)>, Box<dyn std::error::Error + Send + Sync>> {
     let mut video_sources = Vec::new();
 
-    // 加载合集源
-    let collections = entities::collection::Entity::find().all(connection).await?;
+    // 加载合集源（只加载启用的）
+    let collections = entities::collection::Entity::find()
+        .filter(entities::collection::Column::Enabled.eq(true))
+        .all(connection).await?;
 
     for collection in collections {
         // 创建拥有的CollectionItem来匹配现有的Args结构
@@ -41,32 +43,39 @@ async fn load_video_sources_from_db(
         video_sources.push((Args::Collection { collection_item }, PathBuf::from(collection.path)));
     }
 
-    // 加载收藏夹源
-    let favorites = entities::favorite::Entity::find().all(connection).await?;
+    // 加载收藏夹源（只加载启用的）
+    let favorites = entities::favorite::Entity::find()
+        .filter(entities::favorite::Column::Enabled.eq(true))
+        .all(connection).await?;
 
     for favorite in favorites {
         let fid = Box::leak(favorite.f_id.to_string().into_boxed_str());
         video_sources.push((Args::Favorite { fid }, PathBuf::from(favorite.path)));
     }
 
-    // 加载UP主投稿源
-    let submissions = entities::submission::Entity::find().all(connection).await?;
+    // 加载UP主投稿源（只加载启用的）
+    let submissions = entities::submission::Entity::find()
+        .filter(entities::submission::Column::Enabled.eq(true))
+        .all(connection).await?;
 
     for submission in submissions {
         let upper_id = Box::leak(submission.upper_id.to_string().into_boxed_str());
         video_sources.push((Args::Submission { upper_id }, PathBuf::from(submission.path)));
     }
 
-    // 加载稍后观看源
-    let watch_later_sources = entities::watch_later::Entity::find().all(connection).await?;
+    // 加载稍后观看源（只加载启用的）
+    let watch_later_sources = entities::watch_later::Entity::find()
+        .filter(entities::watch_later::Column::Enabled.eq(true))
+        .all(connection).await?;
 
     for watch_later in watch_later_sources {
         video_sources.push((Args::WatchLater, PathBuf::from(watch_later.path)));
     }
 
-    // 加载番剧源
+    // 加载番剧源（只加载启用的）
     let bangumi_sources = entities::video_source::Entity::find()
         .filter(entities::video_source::Column::Type.eq(1))
+        .filter(entities::video_source::Column::Enabled.eq(true))
         .all(connection)
         .await?;
 
@@ -86,6 +95,38 @@ async fn load_video_sources_from_db(
     }
 
     Ok(video_sources)
+}
+
+/// 统计所有视频源的数量（包括禁用的）
+async fn count_all_video_sources(
+    connection: &DatabaseConnection,
+) -> Result<usize, Box<dyn std::error::Error + Send + Sync>> {
+    let mut total_count = 0;
+
+    // 统计合集源
+    let collections_count = entities::collection::Entity::find().count(connection).await?;
+    total_count += collections_count as usize;
+
+    // 统计收藏夹源
+    let favorites_count = entities::favorite::Entity::find().count(connection).await?;
+    total_count += favorites_count as usize;
+
+    // 统计UP主投稿源
+    let submissions_count = entities::submission::Entity::find().count(connection).await?;
+    total_count += submissions_count as usize;
+
+    // 统计稍后观看源
+    let watch_later_count = entities::watch_later::Entity::find().count(connection).await?;
+    total_count += watch_later_count as usize;
+
+    // 统计番剧源
+    let bangumi_count = entities::video_source::Entity::find()
+        .filter(entities::video_source::Column::Type.eq(1))
+        .count(connection)
+        .await?;
+    total_count += bangumi_count as usize;
+
+    Ok(total_count)
 }
 
 /// 初始化所有视频源的辅助函数
@@ -147,7 +188,26 @@ pub async fn video_downloader(connection: Arc<DatabaseConnection>) {
             }
         };
 
-        info!("开始执行本轮视频下载任务..");
+        // 统计总的视频源数量（包括禁用的）
+        let total_sources_count = match count_all_video_sources(&connection).await {
+            Ok(count) => count,
+            Err(e) => {
+                warn!("统计视频源总数失败: {}", e);
+                0
+            }
+        };
+
+        let enabled_sources_count = video_sources.len();
+        let disabled_sources_count = total_sources_count.saturating_sub(enabled_sources_count);
+
+        if disabled_sources_count > 0 {
+            info!(
+                "开始执行本轮视频下载任务，共 {} 个视频源（启用: {}，禁用: {}）",
+                total_sources_count, enabled_sources_count, disabled_sources_count
+            );
+        } else {
+            info!("开始执行本轮视频下载任务，共 {} 个启用的视频源", enabled_sources_count);
+        }
 
         'inner: {
             // 在开始扫描前再次检查是否暂停

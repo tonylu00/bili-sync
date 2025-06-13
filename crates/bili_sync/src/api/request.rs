@@ -44,6 +44,12 @@ pub struct DeleteVideoSourceRequest {
     pub delete_local_files: bool,
 }
 
+// 更新视频源启用状态的请求结构体
+#[derive(Debug, Deserialize, ToSchema)]
+pub struct UpdateVideoSourceEnabledRequest {
+    pub enabled: bool,
+}
+
 // 更新配置的请求结构体
 #[derive(Deserialize, IntoParams, ToSchema)]
 pub struct UpdateConfigRequest {

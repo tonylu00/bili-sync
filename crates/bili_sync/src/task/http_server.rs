@@ -17,7 +17,7 @@ use crate::api::handler::{
     add_video_source, delete_video_source, get_bangumi_seasons, get_config, get_logs, get_queue_status,
     get_subscribed_collections, get_user_collections, get_user_favorites, get_user_followings, get_video,
     get_video_sources, get_videos, reload_config, reset_all_videos, reset_video, search_bilibili, update_config,
-    update_video_status, ApiDoc,
+    update_video_source_enabled, update_video_status, ApiDoc,
 };
 use crate::config::CONFIG;
 
@@ -29,6 +29,7 @@ pub async fn http_server(database_connection: Arc<DatabaseConnection>) -> Result
     let app = Router::new()
         .route("/api/video-sources", get(get_video_sources))
         .route("/api/video-sources", post(add_video_source))
+        .route("/api/video-sources/{source_type}/{id}/enabled", put(update_video_source_enabled))
         .route("/api/video-sources/{source_type}/{id}", delete(delete_video_source))
         .route("/api/videos", get(get_videos))
         .route("/api/videos/{id}", get(get_video))

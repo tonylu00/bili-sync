@@ -20,6 +20,7 @@ export interface VideosRequest {
 export interface VideoSource {
 	id: number;
 	name: string;
+	enabled: boolean;
 }
 
 // 视频来源响应类型
@@ -415,4 +416,18 @@ export interface UpdateVideoStatusResponse {
 	success: boolean;
 	video: VideoInfo;
 	pages: PageInfo[];
+}
+
+// 更新视频源启用状态请求类型
+export interface UpdateVideoSourceEnabledRequest {
+	enabled: boolean;
+}
+
+// 更新视频源启用状态响应类型
+export interface UpdateVideoSourceEnabledResponse {
+	success: boolean;
+	source_id: number;
+	source_type: string;
+	enabled: boolean;
+	message: string;
 }

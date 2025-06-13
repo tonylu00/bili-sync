@@ -86,6 +86,7 @@ pub(super) async fn watch_later_from<'a>(
     watch_later::Entity::insert(watch_later::ActiveModel {
         id: Set(1),
         path: Set(path.to_string_lossy().to_string()),
+        enabled: Set(true),
         ..Default::default()
     })
     .on_conflict(

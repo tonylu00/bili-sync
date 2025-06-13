@@ -67,10 +67,20 @@ pub struct DeleteVideoSourceResponse {
     pub message: String,
 }
 
+#[derive(Serialize, ToSchema)]
+pub struct UpdateVideoSourceEnabledResponse {
+    pub success: bool,
+    pub source_id: i32,
+    pub source_type: String,
+    pub enabled: bool,
+    pub message: String,
+}
+
 #[derive(FromQueryResult, Serialize, ToSchema, Debug)]
 pub struct VideoSource {
     pub id: i32,
     pub name: String,
+    pub enabled: bool,
 }
 
 #[derive(Serialize, ToSchema)]

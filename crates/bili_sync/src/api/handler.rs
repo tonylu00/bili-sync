@@ -31,7 +31,7 @@ use crate::utils::status::{PageStatus, VideoStatus};
 
 #[derive(OpenApi)]
 #[openapi(
-    paths(get_video_sources, get_videos, get_video, reset_video, reset_all_videos, update_video_status, add_video_source, delete_video_source, reload_config, get_config, update_config, get_bangumi_seasons, search_bilibili, get_user_favorites, get_user_collections, get_user_followings, get_subscribed_collections, get_logs, get_queue_status),
+    paths(get_video_sources, get_videos, get_video, reset_video, reset_all_videos, update_video_status, add_video_source, update_video_source_enabled, delete_video_source, reload_config, get_config, update_config, get_bangumi_seasons, search_bilibili, get_user_favorites, get_user_collections, get_user_followings, get_subscribed_collections, get_logs, get_queue_status),
     modifiers(&OpenAPIAuth),
     security(
         ("Token" = []),
@@ -61,21 +61,21 @@ pub async fn get_video_sources(
     // 获取各类视频源
     let collection_sources = collection::Entity::find()
         .select_only()
-        .columns([collection::Column::Id, collection::Column::Name])
+        .columns([collection::Column::Id, collection::Column::Name, collection::Column::Enabled])
         .into_model::<VideoSource>()
         .all(db.as_ref())
         .await?;
 
     let favorite_sources = favorite::Entity::find()
         .select_only()
-        .columns([favorite::Column::Id, favorite::Column::Name])
+        .columns([favorite::Column::Id, favorite::Column::Name, favorite::Column::Enabled])
         .into_model::<VideoSource>()
         .all(db.as_ref())
         .await?;
 
     let submission_sources = submission::Entity::find()
         .select_only()
-        .column(submission::Column::Id)
+        .columns([submission::Column::Id, submission::Column::Enabled])
         .column_as(submission::Column::UpperName, "name")
         .into_model::<VideoSource>()
         .all(db.as_ref())
@@ -83,7 +83,7 @@ pub async fn get_video_sources(
 
     let watch_later_sources = watch_later::Entity::find()
         .select_only()
-        .column(watch_later::Column::Id)
+        .columns([watch_later::Column::Id, watch_later::Column::Enabled])
         .column_as(Expr::value("稍后再看"), "name")
         .into_model::<VideoSource>()
         .all(db.as_ref())
@@ -93,7 +93,7 @@ pub async fn get_video_sources(
     let bangumi_sources = video_source::Entity::find()
         .filter(video_source::Column::Type.eq(1))
         .select_only()
-        .columns([video_source::Column::Id, video_source::Column::Name])
+        .columns([video_source::Column::Id, video_source::Column::Name, video_source::Column::Enabled])
         .into_model::<VideoSource>()
         .all(db.as_ref())
         .await?;
@@ -717,6 +717,7 @@ pub async fn add_video_source_internal(
                 path: sea_orm::Set(params.path.clone()),
                 created_at: sea_orm::Set(chrono::Utc::now().to_string()),
                 latest_row_at: sea_orm::Set(chrono::Utc::now().naive_utc()),
+                enabled: sea_orm::Set(true),
             };
 
             let insert_result = collection::Entity::insert(collection).exec(&txn).await?;
@@ -754,6 +755,7 @@ pub async fn add_video_source_internal(
                 path: sea_orm::Set(params.path.clone()),
                 created_at: sea_orm::Set(chrono::Utc::now().to_string()),
                 latest_row_at: sea_orm::Set(chrono::Utc::now().naive_utc()),
+                enabled: sea_orm::Set(true),
             };
 
             let insert_result = favorite::Entity::insert(favorite).exec(&txn).await?;
@@ -791,6 +793,7 @@ pub async fn add_video_source_internal(
                 path: sea_orm::Set(params.path.clone()),
                 created_at: sea_orm::Set(chrono::Utc::now().to_string()),
                 latest_row_at: sea_orm::Set(chrono::Utc::now().naive_utc()),
+                enabled: sea_orm::Set(true),
             };
 
             let insert_result = submission::Entity::insert(submission).exec(&txn).await?;
@@ -1114,6 +1117,7 @@ pub async fn add_video_source_internal(
                 id: sea_orm::ActiveValue::NotSet,
                 path: sea_orm::Set(params.path.clone()),
                 latest_row_at: sea_orm::Set(chrono::Utc::now().naive_utc()),
+                enabled: sea_orm::Set(true),
                 ..Default::default()
             };
 
@@ -1178,6 +1182,156 @@ pub async fn reload_config_internal() -> Result<bool, ApiError> {
 
     // 返回成功响应
     Ok(true)
+}
+
+/// 更新视频源启用状态
+#[utoipa::path(
+    put,
+    path = "/api/video-sources/{source_type}/{id}/enabled",
+    params(
+        ("source_type" = String, Path, description = "视频源类型"),
+        ("id" = i32, Path, description = "视频源ID"),
+    ),
+    request_body = crate::api::request::UpdateVideoSourceEnabledRequest,
+    responses(
+        (status = 200, body = ApiResponse<crate::api::response::UpdateVideoSourceEnabledResponse>),
+    )
+)]
+pub async fn update_video_source_enabled(
+    Extension(db): Extension<Arc<DatabaseConnection>>,
+    Path((source_type, id)): Path<(String, i32)>,
+    axum::Json(params): axum::Json<crate::api::request::UpdateVideoSourceEnabledRequest>,
+) -> Result<ApiResponse<crate::api::response::UpdateVideoSourceEnabledResponse>, ApiError> {
+    update_video_source_enabled_internal(db, source_type, id, params.enabled).await.map(ApiResponse::ok)
+}
+
+/// 内部更新视频源启用状态函数
+pub async fn update_video_source_enabled_internal(
+    db: Arc<DatabaseConnection>,
+    source_type: String,
+    id: i32,
+    enabled: bool,
+) -> Result<crate::api::response::UpdateVideoSourceEnabledResponse, ApiError> {
+    let txn = db.begin().await?;
+
+    let result = match source_type.as_str() {
+        "collection" => {
+            let collection = collection::Entity::find_by_id(id)
+                .one(&txn)
+                .await?
+                .ok_or_else(|| anyhow!("未找到指定的合集"))?;
+
+            collection::Entity::update(collection::ActiveModel {
+                id: sea_orm::ActiveValue::Unchanged(id),
+                enabled: sea_orm::Set(enabled),
+                ..Default::default()
+            })
+            .exec(&txn)
+            .await?;
+
+            crate::api::response::UpdateVideoSourceEnabledResponse {
+                success: true,
+                source_id: id,
+                source_type: "collection".to_string(),
+                enabled,
+                message: format!("合集 {} 已{}", collection.name, if enabled { "启用" } else { "禁用" }),
+            }
+        }
+        "favorite" => {
+            let favorite = favorite::Entity::find_by_id(id)
+                .one(&txn)
+                .await?
+                .ok_or_else(|| anyhow!("未找到指定的收藏夹"))?;
+
+            favorite::Entity::update(favorite::ActiveModel {
+                id: sea_orm::ActiveValue::Unchanged(id),
+                enabled: sea_orm::Set(enabled),
+                ..Default::default()
+            })
+            .exec(&txn)
+            .await?;
+
+            crate::api::response::UpdateVideoSourceEnabledResponse {
+                success: true,
+                source_id: id,
+                source_type: "favorite".to_string(),
+                enabled,
+                message: format!("收藏夹 {} 已{}", favorite.name, if enabled { "启用" } else { "禁用" }),
+            }
+        }
+        "submission" => {
+            let submission = submission::Entity::find_by_id(id)
+                .one(&txn)
+                .await?
+                .ok_or_else(|| anyhow!("未找到指定的UP主投稿"))?;
+
+            submission::Entity::update(submission::ActiveModel {
+                id: sea_orm::ActiveValue::Unchanged(id),
+                enabled: sea_orm::Set(enabled),
+                ..Default::default()
+            })
+            .exec(&txn)
+            .await?;
+
+            crate::api::response::UpdateVideoSourceEnabledResponse {
+                success: true,
+                source_id: id,
+                source_type: "submission".to_string(),
+                enabled,
+                message: format!("UP主投稿 {} 已{}", submission.upper_name, if enabled { "启用" } else { "禁用" }),
+            }
+        }
+        "watch_later" => {
+            let _watch_later = watch_later::Entity::find_by_id(id)
+                .one(&txn)
+                .await?
+                .ok_or_else(|| anyhow!("未找到指定的稍后观看"))?;
+
+            watch_later::Entity::update(watch_later::ActiveModel {
+                id: sea_orm::ActiveValue::Unchanged(id),
+                enabled: sea_orm::Set(enabled),
+                ..Default::default()
+            })
+            .exec(&txn)
+            .await?;
+
+            crate::api::response::UpdateVideoSourceEnabledResponse {
+                success: true,
+                source_id: id,
+                source_type: "watch_later".to_string(),
+                enabled,
+                message: format!("稍后观看已{}", if enabled { "启用" } else { "禁用" }),
+            }
+        }
+        "bangumi" => {
+            let bangumi = video_source::Entity::find_by_id(id)
+                .one(&txn)
+                .await?
+                .ok_or_else(|| anyhow!("未找到指定的番剧"))?;
+
+            video_source::Entity::update(video_source::ActiveModel {
+                id: sea_orm::ActiveValue::Unchanged(id),
+                enabled: sea_orm::Set(enabled),
+                ..Default::default()
+            })
+            .exec(&txn)
+            .await?;
+
+            crate::api::response::UpdateVideoSourceEnabledResponse {
+                success: true,
+                source_id: id,
+                source_type: "bangumi".to_string(),
+                enabled,
+                message: format!("番剧 {} 已{}", bangumi.name, if enabled { "启用" } else { "禁用" }),
+            }
+        }
+        _ => {
+            return Err(anyhow!("不支持的视频源类型: {}", source_type).into());
+        }
+    };
+
+    txn.commit().await?;
+    Ok(result)
 }
 
 /// 删除视频源

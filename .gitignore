@@ -50,6 +50,7 @@ Thumbs.db
 # 临时文件
 *.tmp
 *.temp
+bili-sync-main
 
 # 压缩包和打包文件
 *.zip

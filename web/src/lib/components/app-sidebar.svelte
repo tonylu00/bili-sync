@@ -2,6 +2,7 @@
 	import ChevronRightIcon from '@lucide/svelte/icons/chevron-right';
 	import SettingsIcon from '@lucide/svelte/icons/settings';
 	import TrashIcon from '@lucide/svelte/icons/trash-2';
+	import PowerIcon from '@lucide/svelte/icons/power';
 	import { FileText, ListTodo } from '@lucide/svelte';
 	import * as Sidebar from '$lib/components/ui/sidebar/index.js';
 	import { useSidebar } from '$lib/components/ui/sidebar/context.svelte.js';
@@ -59,6 +60,33 @@
 			name: sourceName
 		};
 		showDeleteDialog = true;
+	}
+
+	// 切换视频源启用状态
+	async function handleToggleEnabled(
+		event: Event,
+		sourceType: string,
+		sourceId: number,
+		currentEnabled: boolean,
+		sourceName: string
+	) {
+		event.stopPropagation(); // 阻止触发父级的点击事件
+
+		try {
+			const result = await api.updateVideoSourceEnabled(sourceType, sourceId, !currentEnabled);
+			if (result.data.success) {
+				toast.success(result.data.message);
+
+				// 刷新视频源列表
+				const response = await api.getVideoSources();
+				setVideoSources(response.data);
+			} else {
+				toast.error('操作失败', { description: result.data.message });
+			}
+		} catch (error: any) {
+			console.error('切换视频源状态失败:', error);
+			toast.error('操作失败', { description: error.message });
+		}
 	}
 
 	// 确认删除
@@ -146,21 +174,36 @@
 												{#if $videoSourceStore[item.type as keyof VideoSourcesResponse]?.length > 0}
 													{#each $videoSourceStore[item.type as keyof VideoSourcesResponse] as source (source.id)}
 														<Sidebar.MenuItem>
-															<div class="group/item flex items-center gap-1">
+															<div class="group/item flex items-start gap-1">
 																<button
-																	class="text-foreground hover:bg-accent/50 flex-1 cursor-pointer rounded-md px-3 py-2 text-left text-sm transition-all duration-200"
+																	class="text-foreground hover:bg-accent/50 flex-1 cursor-pointer rounded-md px-3 py-2 text-left text-sm transition-all duration-200 {!source.enabled ? 'opacity-50' : ''}"
 																	on:click={() => handleSourceClick(item.type, source.id)}
 																>
-																	<span class="block truncate">{source.name}</span>
+																	<div class="flex flex-col gap-1">
+																		<span class="block break-words leading-tight">{source.name}</span>
+																		{#if !source.enabled}
+																			<span class="text-muted-foreground text-xs">(已禁用)</span>
+																		{/if}
+																	</div>
 																</button>
-																<button
-																	class="text-muted-foreground hover:text-destructive hover:bg-destructive/10 rounded p-1.5 opacity-0 transition-all duration-200 group-hover/item:opacity-100"
-																	on:click={(e) =>
-																		handleDeleteSource(e, item.type, source.id, source.name)}
-																	title="删除视频源"
-																>
-																	<TrashIcon class="h-3.5 w-3.5" />
-																</button>
+																<div class="flex flex-col gap-1 pt-2">
+																	<button
+																		class="text-muted-foreground hover:text-blue-600 hover:bg-blue-50 rounded p-1.5 opacity-0 transition-all duration-200 group-hover/item:opacity-100 {source.enabled ? 'text-green-600' : 'text-gray-400'}"
+																		on:click={(e) =>
+																			handleToggleEnabled(e, item.type, source.id, source.enabled, source.name)}
+																		title={source.enabled ? '禁用视频源' : '启用视频源'}
+																	>
+																		<PowerIcon class="h-3.5 w-3.5" />
+																	</button>
+																	<button
+																		class="text-muted-foreground hover:text-destructive hover:bg-destructive/10 rounded p-1.5 opacity-0 transition-all duration-200 group-hover/item:opacity-100"
+																		on:click={(e) =>
+																			handleDeleteSource(e, item.type, source.id, source.name)}
+																		title="删除视频源"
+																	>
+																		<TrashIcon class="h-3.5 w-3.5" />
+																	</button>
+																</div>
 															</div>
 														</Sidebar.MenuItem>
 													{/each}

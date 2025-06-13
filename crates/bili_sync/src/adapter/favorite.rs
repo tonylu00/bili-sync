@@ -104,6 +104,7 @@ pub async fn init_favorite_sources(
                         path: Set(path.to_string_lossy().to_string()),
                         created_at: Set(chrono::Utc::now().to_string()),
                         latest_row_at: Set(chrono::Utc::now().naive_utc()),
+                        enabled: Set(true),
                     };
 
                     let result = favorite::Entity::insert(model)
@@ -126,6 +127,7 @@ pub async fn init_favorite_sources(
                         path: Set(path.to_string_lossy().to_string()),
                         created_at: Set(chrono::Utc::now().to_string()),
                         latest_row_at: Set(chrono::Utc::now().naive_utc()),
+                        enabled: Set(true),
                     };
 
                     let result = favorite::Entity::insert(model)
@@ -172,6 +174,7 @@ pub(super) async fn favorite_from<'a>(
         f_id: Set(favorite_info.id),
         name: Set(favorite_info.title.clone()),
         path: Set(path.to_string_lossy().to_string()),
+        enabled: Set(true),
         ..Default::default()
     })
     .on_conflict(

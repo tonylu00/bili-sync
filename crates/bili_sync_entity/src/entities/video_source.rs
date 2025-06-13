@@ -28,6 +28,7 @@ pub struct Model {
     pub video_name_template: Option<String>,
     pub page_name_template: Option<String>,
     pub selected_seasons: Option<String>,
+    pub enabled: bool,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
