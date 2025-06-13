@@ -58,10 +58,6 @@
 	// 其他设置
 	let cdnSorting = false;
 
-	// 数据库配置设置
-	let sqlxSlowThresholdSeconds = 5;
-	let sqlxLogLevel = 'warn';
-
 	// 显示帮助信息的状态
 	let showHelp = false;
 
@@ -128,16 +124,6 @@
 		{ value: 'AVC', label: 'AVC/H.264' },
 		{ value: 'HEV', label: 'HEVC/H.265' },
 		{ value: 'AV1', label: 'AV1' }
-	];
-
-	// 数据库日志级别选项
-	const sqlxLogLevelOptions = [
-		{ value: 'off', label: '关闭日志' },
-		{ value: 'error', label: '仅错误' },
-		{ value: 'warn', label: '警告和错误' },
-		{ value: 'info', label: '信息、警告和错误' },
-		{ value: 'debug', label: '调试信息' },
-		{ value: 'trace', label: '详细跟踪' }
 	];
 
 	// 响应式相关
@@ -248,10 +234,6 @@
 
 			// 其他设置
 			cdnSorting = config.cdn_sorting || false;
-			
-			// 数据库配置设置
-			sqlxSlowThresholdSeconds = config.sqlx_slow_threshold_seconds || 5;
-			sqlxLogLevel = config.sqlx_log_level || 'warn';
 		} catch (error: any) {
 			console.error('加载配置失败:', error);
 			toast.error('加载配置失败', { description: error.message });
@@ -303,10 +285,7 @@
 				rate_limit: rateLimit,
 				rate_duration: rateDuration,
 				// 其他设置
-				cdn_sorting: cdnSorting,
-				// 数据库配置设置
-				sqlx_slow_threshold_seconds: sqlxSlowThresholdSeconds,
-				sqlx_log_level: sqlxLogLevel
+				cdn_sorting: cdnSorting
 			};
 
 			const response = await api.updateConfig(params);
@@ -884,59 +863,6 @@
 								</div>
 							</div>
 
-							<!-- 数据库配置设置 -->
-							<div class="space-y-6">
-								<h2 class="text-lg font-semibold">数据库配置设置</h2>
-
-								<div class="grid grid-cols-1 gap-4 md:grid-cols-2">
-									<div class="space-y-2">
-										<Label for="sqlx-slow-threshold">慢查询阈值（秒）</Label>
-										<Input
-											id="sqlx-slow-threshold"
-											type="number"
-											bind:value={sqlxSlowThresholdSeconds}
-											min="1"
-											max="300"
-											placeholder="5"
-										/>
-										<p class="text-muted-foreground text-sm">
-											超过此时间的SQL查询将产生警告（默认5秒）
-										</p>
-									</div>
-
-									<div class="space-y-2">
-										<Label for="sqlx-log-level">数据库日志级别</Label>
-										<select
-											id="sqlx-log-level"
-											bind:value={sqlxLogLevel}
-											class="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
-										>
-											{#each sqlxLogLevelOptions as option}
-												<option value={option.value}>{option.label}</option>
-											{/each}
-										</select>
-										<p class="text-muted-foreground text-sm">
-											控制数据库操作的日志输出级别
-										</p>
-									</div>
-								</div>
-
-								<div class="rounded-lg border border-blue-200 bg-blue-50 p-3">
-									<h4 class="mb-2 text-sm font-medium text-blue-800">💡 配置说明</h4>
-									<div class="space-y-2 text-xs text-blue-700">
-										<p>
-											<strong>慢查询阈值：</strong>
-											设置为较大值（如10-30秒）可以减少正常查询的警告，设置为较小值（如1-5秒）便于性能调试
-										</p>
-										<p>
-											<strong>日志级别建议：</strong>
-											• 生产环境：选择"关闭日志"或"仅错误"
-											• 开发调试：选择"警告和错误"或"信息、警告和错误"
-										</p>
-									</div>
-								</div>
-							</div>
-
 							<!-- 其他设置 -->
 							<div class="space-y-6">
 								<h2 class="text-lg font-semibold">其他设置</h2>
@@ -1065,20 +991,6 @@
 															>启用后优先使用质量更高的CDN，可能提升下载速度
 														</p>
 														<p><strong>多线程下载：</strong>启用aria2多线程下载功能</p>
-													</div>
-												</div>
-
-												<div class="rounded-lg border border-teal-200 bg-teal-50 p-3">
-													<h5 class="mb-2 font-medium text-teal-800">数据库配置</h5>
-													<div class="space-y-1 text-teal-700">
-														<p><strong>慢查询阈值：</strong>设置SQL查询超时警告的时间阈值</p>
-														<p class="ml-3">• 1-5秒: 适用于性能调试，能发现大部分慢查询</p>
-														<p class="ml-3">• 10-30秒: 适用于生产环境，只关注严重的性能问题</p>
-														<p><strong>数据库日志级别：</strong>控制sqlx数据库操作的日志输出</p>
-														<p class="ml-3">• 关闭日志: 完全不输出sqlx日志（推荐生产环境）</p>
-														<p class="ml-3">• 仅错误: 只显示数据库错误（推荐生产环境）</p>
-														<p class="ml-3">• 警告和错误: 显示慢查询警告和错误（默认）</p>
-														<p class="ml-3">• 调试信息: 显示详细的SQL执行信息（仅调试用）</p>
 													</div>
 												</div>
 											</div>

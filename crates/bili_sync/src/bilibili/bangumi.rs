@@ -378,7 +378,6 @@ impl Bangumi {
         })
     }
 
-    #[allow(dead_code)]
     pub async fn get_video_info(&self, ep_id: &str) -> Result<VideoInfo> {
         let url = format!("https://api.bilibili.com/pgc/view/web/season?ep_id={}", ep_id);
         let resp = self.client.get(&url, CancellationToken::new()).await?;

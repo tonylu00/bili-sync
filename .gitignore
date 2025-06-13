@@ -27,7 +27,7 @@ docs/.vitepress/dist
 .env
 .env.local
 .env.*.local
-
+CLAUDE.MD
 # IDE 配置文件
 .vscode/
 .idea/

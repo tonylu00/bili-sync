@@ -1,7 +1,7 @@
 use anyhow::Result;
 use bili_sync_migration::{Migrator, MigratorTrait};
 use sea_orm::{ConnectOptions, Database, DatabaseConnection};
-use tracing::{info, warn};
+use tracing::info;
 
 use crate::config::CONFIG_DIR;
 
@@ -14,15 +14,15 @@ fn database_url() -> String {
 }
 
 async fn database_connection() -> Result<DatabaseConnection> {
-    // 动态配置 sqlx 慢查询阈值和日志级别
-    configure_sqlx_settings();
-    
     let mut option = ConnectOptions::new(database_url());
-    
     option
-        .max_connections(100)
-        .min_connections(5)
-        .acquire_timeout(std::time::Duration::from_secs(90));
+        .max_connections(20)  // 降低最大连接数，避免过多连接
+        .min_connections(2)   // 最小连接数
+        .acquire_timeout(std::time::Duration::from_secs(30))  // 缩短超时时间
+        .idle_timeout(std::time::Duration::from_secs(300))    // 空闲连接超时5分钟
+        .max_lifetime(std::time::Duration::from_secs(3600))   // 连接最大生命周期1小时
+        .sqlx_logging(false)  // 生产环境关闭sqlx日志
+        .sqlx_logging_level(tracing::log::LevelFilter::Warn);  // 只记录警告级别以上的sqlx日志
 
     let connection = Database::connect(option).await?;
 
@@ -30,56 +30,16 @@ async fn database_connection() -> Result<DatabaseConnection> {
     use sea_orm::ConnectionTrait;
     connection.execute_unprepared("PRAGMA journal_mode = WAL;").await?;
     connection.execute_unprepared("PRAGMA synchronous = NORMAL;").await?;
-    connection.execute_unprepared("PRAGMA cache_size = 1000;").await?;
+    connection.execute_unprepared("PRAGMA cache_size = 10000;").await?; // 增加缓存大小
     connection.execute_unprepared("PRAGMA temp_store = memory;").await?;
     connection.execute_unprepared("PRAGMA mmap_size = 268435456;").await?; // 256MB
-    connection
-        .execute_unprepared("PRAGMA wal_autocheckpoint = 1000;")
-        .await?;
-    // 新增性能优化参数
-    connection.execute_unprepared("PRAGMA busy_timeout = 30000;").await?; // 30秒超时
+    connection.execute_unprepared("PRAGMA wal_autocheckpoint = 1000;").await?;
+    connection.execute_unprepared("PRAGMA busy_timeout = 30000;").await?; // 30秒忙等超时
     connection.execute_unprepared("PRAGMA optimize;").await?; // 启用查询优化器
-    connection.execute_unprepared("PRAGMA analysis_limit = 1000;").await?; // 分析限制
 
     info!("SQLite WAL 模式已启用，性能优化参数已应用");
 
     Ok(connection)
-}
-
-/// 根据环境变量动态配置 sqlx 慢查询阈值和日志级别
-fn configure_sqlx_settings() {
-    // 1. 配置慢查询阈值
-    if let Ok(threshold_str) = std::env::var("SQLX_SLOW_THRESHOLD_SECONDS") {
-        if let Ok(threshold_secs) = threshold_str.parse::<u64>() {
-            // sqlx 内部使用 SQLX_SLOW_STATEMENTS_DURATION_THRESHOLD 环境变量（以毫秒为单位）
-            let threshold_ms = threshold_secs * 1000;
-            std::env::set_var("SQLX_SLOW_STATEMENTS_DURATION_THRESHOLD", threshold_ms.to_string());
-            info!("设置慢查询阈值为: {} 秒 ({} 毫秒)", threshold_secs, threshold_ms);
-        } else {
-            warn!("SQLX_SLOW_THRESHOLD_SECONDS 值无效: {}, 使用默认阈值", threshold_str);
-        }
-    }
-    
-    // 2. 配置 sqlx 日志级别
-    if let Ok(sqlx_level) = std::env::var("SQLX_LOG_LEVEL") {
-        let current_rust_log = std::env::var("RUST_LOG").unwrap_or_default();
-        
-        // 移除现有的 sqlx 配置
-        let rust_log_parts: Vec<&str> = current_rust_log
-            .split(',')
-            .filter(|part| !part.starts_with("sqlx="))
-            .collect();
-        
-        // 添加新的 sqlx 配置
-        let new_rust_log = if rust_log_parts.is_empty() {
-            format!("sqlx={}", sqlx_level)
-        } else {
-            format!("{},sqlx={}", rust_log_parts.join(","), sqlx_level)
-        };
-        
-        std::env::set_var("RUST_LOG", new_rust_log);
-        info!("动态设置 sqlx 日志级别为: {}", sqlx_level);
-    }
 }
 
 async fn migrate_database() -> Result<()> {

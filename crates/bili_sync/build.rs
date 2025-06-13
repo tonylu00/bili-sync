@@ -357,7 +357,6 @@ fn download_with_powershell(url: &str, output: &Path) -> Result<(), Box<dyn std:
     Ok(())
 }
 
-#[allow(dead_code)]
 fn download_with_curl_or_wget(url: &str, output: &Path) -> Result<(), Box<dyn std::error::Error>> {
     // 首先尝试使用curl
     if Command::new("curl").arg("--version").output().is_ok() {

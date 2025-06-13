@@ -2,7 +2,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use anyhow::Result;
-use sea_orm::{ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter};
+use sea_orm::{ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter, QuerySelect};
 use tracing::{debug, error, info, warn};
 use tokio_util::sync::CancellationToken;
 
@@ -21,8 +21,17 @@ async fn load_video_sources_from_db(
 ) -> Result<Vec<(Args<'static>, PathBuf)>, Box<dyn std::error::Error + Send + Sync>> {
     let mut video_sources = Vec::new();
 
-    // 加载合集源
-    let collections = entities::collection::Entity::find().all(connection).await?;
+    // 加载合集源 - 只加载需要的字段
+    let collections = entities::collection::Entity::find()
+        .select_only()
+        .columns([
+            entities::collection::Column::MId,
+            entities::collection::Column::SId,
+            entities::collection::Column::Type,
+            entities::collection::Column::Path,
+        ])
+        .all(connection)
+        .await?;
 
     for collection in collections {
         // 创建拥有的CollectionItem来匹配现有的Args结构
@@ -41,24 +50,42 @@ async fn load_video_sources_from_db(
         video_sources.push((Args::Collection { collection_item }, PathBuf::from(collection.path)));
     }
 
-    // 加载收藏夹源
-    let favorites = entities::favorite::Entity::find().all(connection).await?;
+    // 加载收藏夹源 - 只加载需要的字段
+    let favorites = entities::favorite::Entity::find()
+        .select_only()
+        .columns([
+            entities::favorite::Column::FId,
+            entities::favorite::Column::Path,
+        ])
+        .all(connection)
+        .await?;
 
     for favorite in favorites {
         let fid = Box::leak(favorite.f_id.to_string().into_boxed_str());
         video_sources.push((Args::Favorite { fid }, PathBuf::from(favorite.path)));
     }
 
-    // 加载UP主投稿源
-    let submissions = entities::submission::Entity::find().all(connection).await?;
+    // 加载UP主投稿源 - 只加载需要的字段
+    let submissions = entities::submission::Entity::find()
+        .select_only()
+        .columns([
+            entities::submission::Column::UpperId,
+            entities::submission::Column::Path,
+        ])
+        .all(connection)
+        .await?;
 
     for submission in submissions {
         let upper_id = Box::leak(submission.upper_id.to_string().into_boxed_str());
         video_sources.push((Args::Submission { upper_id }, PathBuf::from(submission.path)));
     }
 
-    // 加载稍后观看源
-    let watch_later_sources = entities::watch_later::Entity::find().all(connection).await?;
+    // 加载稍后观看源 - 只加载需要的字段
+    let watch_later_sources = entities::watch_later::Entity::find()
+        .select_only()
+        .column(entities::watch_later::Column::Path)
+        .all(connection)
+        .await?;
 
     for watch_later in watch_later_sources {
         video_sources.push((Args::WatchLater, PathBuf::from(watch_later.path)));

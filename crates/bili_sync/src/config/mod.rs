@@ -78,14 +78,6 @@ fn default_time_format() -> String {
     "%Y-%m-%d".to_string()
 }
 
-fn default_sqlx_slow_threshold_seconds() -> u64 {
-    10
-}
-
-fn default_sqlx_log_level() -> String {
-    "error".to_string()
-}
-
 /// 默认的 auth_token 实现，生成随机 16 位字符串
 fn default_auth_token() -> Option<String> {
     let byte_choices = b"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!@#$%^&*()_+-=";
@@ -150,11 +142,6 @@ pub struct Config {
     pub time_format: String,
     #[serde(default)]
     pub cdn_sorting: bool,
-    // 数据库配置设置
-    #[serde(default = "default_sqlx_slow_threshold_seconds")]
-    pub sqlx_slow_threshold_seconds: u64,
-    #[serde(default = "default_sqlx_log_level")]
-    pub sqlx_log_level: String,
 }
 
 impl Default for Config {
@@ -176,8 +163,6 @@ impl Default for Config {
             concurrent_limit: ConcurrentLimit::default(),
             time_format: default_time_format(),
             cdn_sorting: true,
-            sqlx_slow_threshold_seconds: 10,
-            sqlx_log_level: "error".to_string(),
         }
     }
 }
