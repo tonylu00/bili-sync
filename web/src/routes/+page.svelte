@@ -28,9 +28,34 @@
 	let videosData: VideosResponse | null = null;
 	let loading = false;
 	let currentPage = 0;
-	const pageSize = 20;
+	let pageSize = 20; // 改为可变的
 	let currentFilter: { type: string; id: string } | null = null;
 	let lastSearch: string | null = null;
+
+	// 响应式变量
+	let innerWidth = 0;
+	let innerHeight = 0;
+
+	// 动态计算每页数量
+	function calculateOptimalPageSize(): number {
+		if (innerWidth === 0 || innerHeight === 0) return 20;
+		
+		// 卡片最小宽度260px，间距16px
+		const cardMinWidth = 260 + 16;
+		const availableWidth = innerWidth - 300; // 减去侧边栏宽度
+		const cardsPerRow = Math.floor(availableWidth / cardMinWidth);
+		
+		// 卡片高度约200px，间距16px
+		const cardHeight = 200 + 16;
+		const availableHeight = innerHeight - 200; // 减去头部和分页区域
+		const rowsPerPage = Math.floor(availableHeight / cardHeight);
+		
+		const optimalSize = Math.max(cardsPerRow * rowsPerPage, 12); // 最少12个
+		return Math.min(optimalSize, 100); // 最多100个
+	}
+
+	// 自动调整页面大小
+	let autoPageSize = true;
 
 	// 批量重置状态
 	let resetAllDialogOpen = false;
@@ -214,11 +239,25 @@
 	$: totalPages = videosData ? Math.ceil(videosData.total_count / pageSize) : 0;
 	$: filterTitle = currentFilter ? getFilterTitle(currentFilter.type) : '';
 	$: filterName = currentFilter ? getFilterName(currentFilter.type, currentFilter.id) : '';
+
+	// 响应式调整页面大小
+	$: if (autoPageSize && innerWidth > 0 && innerHeight > 0) {
+		const newPageSize = calculateOptimalPageSize();
+		if (newPageSize !== pageSize) {
+			pageSize = newPageSize;
+			// 重新加载当前页面
+			if (isAuthenticated && videosData) {
+				handleSearchParamsChange();
+			}
+		}
+	}
 </script>
 
 <svelte:head>
 	<title>主页 - Bili Sync</title>
 </svelte:head>
+
+<svelte:window bind:innerWidth bind:innerHeight />
 
 {#if !isAuthenticated}
 	<AuthLogin on:login-success={handleLoginSuccess} />
@@ -228,10 +267,50 @@
 	<!-- 统计信息和操作按钮 -->
 	{#if videosData}
 		<div class="mb-6 flex items-center justify-between">
-			<div class="text-muted-foreground text-sm">
-				共 {videosData.total_count} 个视频，{totalPages} 页
+			<div class="flex items-center gap-4">
+				<div class="text-muted-foreground text-sm">
+					共 {videosData.total_count} 个视频，{totalPages} 页
+				</div>
+				<div class="text-muted-foreground text-xs">
+					每页 {pageSize} 个
+				</div>
 			</div>
-			<div class="flex gap-2">
+			<div class="flex items-center gap-2">
+				<!-- 页面大小控制 -->
+				<div class="flex items-center gap-2">
+					<label for="page-size-select" class="text-muted-foreground text-sm">每页:</label>
+					<select
+						id="page-size-select"
+						bind:value={pageSize}
+						on:change={() => {
+							autoPageSize = false;
+							currentPage = 0;
+							handleSearchParamsChange();
+						}}
+						class="border-input bg-background h-8 rounded-md border px-2 py-1 text-sm"
+					>
+						<option value={12}>12</option>
+						<option value={20}>20</option>
+						<option value={30}>30</option>
+						<option value={50}>50</option>
+						<option value={100}>100</option>
+					</select>
+					<Button
+						size="sm"
+						variant={autoPageSize ? 'default' : 'outline'}
+						onclick={() => {
+							autoPageSize = !autoPageSize;
+							if (autoPageSize) {
+								pageSize = calculateOptimalPageSize();
+								currentPage = 0;
+								handleSearchParamsChange();
+							}
+						}}
+						title={autoPageSize ? '已启用自动调整' : '点击启用自动调整'}
+					>
+						自动
+					</Button>
+				</div>
 				<Button
 					size="sm"
 					variant="outline"
