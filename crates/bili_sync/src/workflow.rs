@@ -1853,13 +1853,13 @@ mod tests {
 }
 
 /// 自动重置风控导致的失败任务
-/// 当检测到风控时，将所有失败状态(值为3)和正在进行状态(值为2)的任务重置为未开始状态(值为0)
+/// 当检测到风控时，将所有失败状态(值为3)、正在进行状态(值为2)以及未完成的任务重置为未开始状态(值为0)
 pub async fn auto_reset_risk_control_failures(connection: &DatabaseConnection) -> Result<()> {
     use bili_sync_entity::{video, page};
     use sea_orm::*;
     use crate::utils::status::{VideoStatus, PageStatus};
 
-    info!("检测到风控，开始自动重置失败和进行中的下载任务...");
+    info!("检测到风控，开始自动重置失败、进行中和未完成的下载任务...");
 
     // 查询所有视频和页面数据
     let (all_videos, all_pages) = tokio::try_join!(
@@ -1888,17 +1888,22 @@ pub async fn auto_reset_risk_control_failures(connection: &DatabaseConnection) -
 
     let txn = connection.begin().await?;
 
-    // 重置视频失败和进行中状态
+    // 重置视频失败、进行中和未完成状态
     for (id, name, download_status) in all_videos {
         let mut video_status = VideoStatus::from(download_status);
         let mut video_resetted = false;
         
-        // 检查所有任务索引，将失败状态(3)和正在进行状态(2)重置为未开始(0)
-        for task_index in 0..5 {
-            let status_value = video_status.get(task_index);
-            if status_value == 3 || status_value == 2 { // 3表示失败状态，2表示正在进行状态
-                video_status.set(task_index, 0); // 重置为未开始
-                video_resetted = true;
+        // 检查是否为完全成功的状态（所有任务都是1）
+        let is_fully_completed = (0..5).all(|task_index| video_status.get(task_index) == 1);
+        
+        if !is_fully_completed {
+            // 如果不是完全成功，检查所有任务索引，将失败状态(3)、正在进行状态(2)和未开始状态(0)重置为未开始(0)
+            for task_index in 0..5 {
+                let status_value = video_status.get(task_index);
+                if status_value == 3 || status_value == 2 || status_value == 0 { 
+                    video_status.set(task_index, 0); // 重置为未开始
+                    video_resetted = true;
+                }
             }
         }
         
@@ -1912,21 +1917,26 @@ pub async fn auto_reset_risk_control_failures(connection: &DatabaseConnection) -
             .await?;
             
             resetted_videos += 1;
-            debug!("重置视频「{}」的失败和进行中任务状态", name);
+            debug!("重置视频「{}」的未完成任务状态", name);
         }
     }
 
-    // 重置页面失败和进行中状态
+    // 重置页面失败、进行中和未完成状态
     for (id, name, download_status) in all_pages {
         let mut page_status = PageStatus::from(download_status);
         let mut page_resetted = false;
         
-        // 检查所有任务索引，将失败状态(3)和正在进行状态(2)重置为未开始(0)
-        for task_index in 0..5 {
-            let status_value = page_status.get(task_index);
-            if status_value == 3 || status_value == 2 { // 3表示失败状态，2表示正在进行状态
-                page_status.set(task_index, 0); // 重置为未开始
-                page_resetted = true;
+        // 检查是否为完全成功的状态（所有任务都是1）
+        let is_fully_completed = (0..5).all(|task_index| page_status.get(task_index) == 1);
+        
+        if !is_fully_completed {
+            // 如果不是完全成功，检查所有任务索引，将失败状态(3)、正在进行状态(2)和未开始状态(0)重置为未开始(0)
+            for task_index in 0..5 {
+                let status_value = page_status.get(task_index);
+                if status_value == 3 || status_value == 2 || status_value == 0 { 
+                    page_status.set(task_index, 0); // 重置为未开始
+                    page_resetted = true;
+                }
             }
         }
         
@@ -1940,7 +1950,7 @@ pub async fn auto_reset_risk_control_failures(connection: &DatabaseConnection) -
             .await?;
             
             resetted_pages += 1;
-            debug!("重置页面「{}」的失败和进行中任务状态", name);
+            debug!("重置页面「{}」的未完成任务状态", name);
         }
     }
 
@@ -1948,11 +1958,11 @@ pub async fn auto_reset_risk_control_failures(connection: &DatabaseConnection) -
 
     if resetted_videos > 0 || resetted_pages > 0 {
         info!(
-            "风控自动重置完成：重置了 {} 个视频和 {} 个页面的失败和进行中任务状态",
+            "风控自动重置完成：重置了 {} 个视频和 {} 个页面的未完成任务状态",
             resetted_videos, resetted_pages
         );
     } else {
-        info!("风控自动重置完成：没有发现需要重置的失败或进行中任务");
+        info!("风控自动重置完成：所有任务都已完成，无需重置");
     }
 
     Ok(())
