@@ -31,7 +31,7 @@ use crate::utils::status::{PageStatus, VideoStatus};
 
 #[derive(OpenApi)]
 #[openapi(
-    paths(get_video_sources, get_videos, get_video, reset_video, reset_all_videos, update_video_status, add_video_source, update_video_source_enabled, delete_video_source, reload_config, get_config, update_config, get_bangumi_seasons, search_bilibili, get_user_favorites, get_user_collections, get_user_followings, get_subscribed_collections, get_logs, get_queue_status),
+    paths(get_video_sources, get_videos, get_video, reset_video, reset_all_videos, update_video_status, add_video_source, update_video_source_enabled, delete_video_source, reload_config, get_config, update_config, get_bangumi_seasons, search_bilibili, get_user_favorites, get_user_collections, get_user_followings, get_subscribed_collections, get_logs, get_queue_status, proxy_image),
     modifiers(&OpenAPIAuth),
     security(
         ("Token" = []),
@@ -4029,4 +4029,68 @@ pub async fn get_queue_status() -> Result<ApiResponse<QueueStatusResponse>, ApiE
     };
 
     Ok(ApiResponse::ok(response))
+}
+
+/// 代理B站图片请求，解决防盗链问题
+#[utoipa::path(
+    get,
+    path = "/api/proxy/image",
+    params(
+        ("url" = String, Query, description = "图片URL"),
+    ),
+    responses(
+        (status = 200, description = "图片数据", content_type = "image/*"),
+        (status = 400, description = "无效的URL"),
+        (status = 404, description = "图片不存在"),
+    )
+)]
+pub async fn proxy_image(
+    Query(params): Query<std::collections::HashMap<String, String>>,
+) -> Result<axum::response::Response, ApiError> {
+    let url = params
+        .get("url")
+        .ok_or_else(|| anyhow!("缺少url参数"))?;
+
+    // 验证URL是否来自B站
+    if !url.contains("hdslb.com") && !url.contains("bilibili.com") {
+        return Err(anyhow!("只支持B站图片URL").into());
+    }
+
+    // 创建HTTP客户端
+    let client = reqwest::Client::new();
+    
+    // 请求图片，添加必要的请求头
+    let response = client
+        .get(url)
+        .header("Referer", "https://www.bilibili.com/")
+        .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36")
+        .send()
+        .await
+        .map_err(|e| anyhow!("请求图片失败: {}", e))?;
+
+    if !response.status().is_success() {
+        return Err(anyhow!("图片请求失败: {}", response.status()).into());
+    }
+
+    // 获取内容类型
+    let content_type = response
+        .headers()
+        .get("content-type")
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("image/jpeg")
+        .to_string();
+
+    // 获取图片数据
+    let image_data = response
+        .bytes()
+        .await
+        .map_err(|e| anyhow!("读取图片数据失败: {}", e))?;
+
+    // 返回图片响应
+    Ok(axum::response::Response::builder()
+        .status(200)
+        .header("Content-Type", content_type.as_str())
+        .header("Cache-Control", "public, max-age=3600") // 缓存1小时
+        .body(axum::body::Body::from(image_data))
+        .unwrap())
 }

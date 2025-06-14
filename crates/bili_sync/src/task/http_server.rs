@@ -16,7 +16,7 @@ use crate::api::auth;
 use crate::api::handler::{
     add_video_source, delete_video_source, get_bangumi_seasons, get_config, get_logs, get_queue_status,
     get_subscribed_collections, get_user_collections, get_user_favorites, get_user_followings, get_video,
-    get_video_sources, get_videos, reload_config, reset_all_videos, reset_video, search_bilibili, update_config,
+    get_video_sources, get_videos, proxy_image, reload_config, reset_all_videos, reset_video, search_bilibili, update_config,
     update_video_source_enabled, update_video_status, ApiDoc,
 };
 use crate::config::CONFIG;
@@ -47,6 +47,7 @@ pub async fn http_server(database_connection: Arc<DatabaseConnection>) -> Result
         .route("/api/user/subscribed-collections", get(get_subscribed_collections))
         .route("/api/logs", get(get_logs))
         .route("/api/queue-status", get(get_queue_status))
+        .route("/api/proxy/image", get(proxy_image))
         .merge(
             SwaggerUi::new("/swagger-ui/")
                 .url("/api-docs/openapi.json", ApiDoc::openapi())

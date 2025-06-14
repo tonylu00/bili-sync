@@ -184,6 +184,13 @@
 		// 非番剧直接返回原标题
 		return video.name.trim();
 	}
+
+	// 获取代理后的图片URL
+	function getProxiedImageUrl(originalUrl: string): string {
+		if (!originalUrl) return '';
+		// 使用后端代理端点
+		return `/api/proxy/image?url=${encodeURIComponent(originalUrl)}`;
+	}
 </script>
 
 <Card class={cardClasses}>
@@ -191,14 +198,17 @@
 	{#if video.cover && mode === 'default'}
 		<div class="relative overflow-hidden rounded-t-lg">
 			<img
-				src={video.cover}
+				src={getProxiedImageUrl(video.cover)}
 				alt={displayTitle}
 				class="aspect-video w-full object-cover transition-transform duration-200 group-hover:scale-105"
 				loading="lazy"
 				on:error={(e) => {
-					// 封面加载失败时隐藏图片
+					// 封面加载失败时隐藏整个封面容器
 					const target = e.currentTarget as HTMLImageElement;
-					target.style.display = 'none';
+					const container = target.closest('.relative') as HTMLElement;
+					if (container) {
+						container.style.display = 'none';
+					}
 				}}
 			/>
 			<!-- 状态徽章覆盖在封面上 -->
