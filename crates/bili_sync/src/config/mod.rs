@@ -15,7 +15,7 @@ use crate::bilibili::{Credential, DanmakuOption, FilterOption};
 pub use crate::config::clap::version;
 pub use crate::config::global::{reload_config, ARGS, CONFIG, CONFIG_DIR, TEMPLATE};
 use crate::config::item::ConcurrentLimit;
-pub use crate::config::item::{NFOTimeType, PathSafeTemplate, RateLimit};
+pub use crate::config::item::{NFOTimeType, PathSafeTemplate, RateLimit, SubmissionRiskControlConfig};
 
 // 移除不再需要的配置结构体，因为视频源现在存储在数据库中
 // #[derive(Serialize, Deserialize, Default, Debug, Clone)]
@@ -142,6 +142,8 @@ pub struct Config {
     pub time_format: String,
     #[serde(default)]
     pub cdn_sorting: bool,
+    #[serde(default)]
+    pub submission_risk_control: crate::config::item::SubmissionRiskControlConfig,
 }
 
 impl Default for Config {
@@ -163,6 +165,7 @@ impl Default for Config {
             concurrent_limit: ConcurrentLimit::default(),
             time_format: default_time_format(),
             cdn_sorting: true,
+            submission_risk_control: crate::config::item::SubmissionRiskControlConfig::default(),
         }
     }
 }
@@ -268,6 +271,15 @@ impl Config {
                 table
                     .decor_mut()
                     .set_prefix("\n# 弹幕样式配置\n# 用于设置下载弹幕的显示样式\n");
+            }
+        }
+
+        // 为UP主投稿风控配置添加注释
+        if let Some(submission_risk_item) = doc.get_mut("submission_risk_control") {
+            if let Some(table) = submission_risk_item.as_table_mut() {
+                table
+                    .decor_mut()
+                    .set_prefix("\n# UP主投稿风控配置\n# 用于优化大量视频UP主的获取策略，避免触发风控\n# large_submission_threshold: 大量视频UP主阈值（默认300个视频）\n# base_request_delay: 基础请求间隔（毫秒，默认200ms）\n# large_submission_delay_multiplier: 大量视频UP主延迟倍数（默认2倍）\n# enable_progressive_delay: 启用渐进式延迟（默认true）\n# max_delay_multiplier: 最大延迟倍数（默认4倍）\n# enable_incremental_fetch: 启用增量获取（默认true）\n# incremental_fallback_to_full: 增量获取失败时回退到全量获取（默认true）\n# enable_batch_processing: 启用分批处理（默认false）\n# batch_size: 分批大小（页数，默认5页）\n# batch_delay_seconds: 批次间延迟（秒，默认2秒）\n# enable_auto_backoff: 启用自动退避（默认true）\n# auto_backoff_base_seconds: 自动退避基础时间（秒，默认10秒）\n# auto_backoff_max_multiplier: 自动退避最大倍数（默认5倍）\n");
             }
         }
     }

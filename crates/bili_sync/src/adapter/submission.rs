@@ -9,6 +9,7 @@ use sea_orm::entity::prelude::*;
 use sea_orm::sea_query::{OnConflict, SimpleExpr};
 use sea_orm::ActiveValue::Set;
 use sea_orm::{DatabaseConnection, Unchanged};
+use tracing::{debug, info, warn};
 
 use crate::adapter::{VideoSource, VideoSourceEnum, _ActiveModel};
 use crate::bilibili::{BiliClient, Submission, VideoInfo};
@@ -38,13 +39,49 @@ impl VideoSource for submission::Model {
         })
     }
 
-    fn should_take(&self, _release_datetime: &chrono::DateTime<Utc>, _latest_row_at: &chrono::DateTime<Utc>) -> bool {
-        // 修改UP主投稿源，每次都全量拉取所有视频，不管时间戳
-        true
+    fn should_take(&self, release_datetime: &chrono::DateTime<Utc>, latest_row_at: &chrono::DateTime<Utc>) -> bool {
+        use crate::config::CONFIG;
+        
+        // 检查是否启用增量获取
+        if CONFIG.submission_risk_control.enable_incremental_fetch {
+            // 增量模式：只获取比上次扫描时间更新的视频
+            let should_take = release_datetime > latest_row_at;
+            
+            if should_take {
+                debug!(
+                    "UP主「{}」增量获取：视频发布时间 {} > 上次扫描时间 {}",
+                    self.upper_name,
+                    release_datetime.format("%Y-%m-%d %H:%M:%S"),
+                    latest_row_at.format("%Y-%m-%d %H:%M:%S")
+                );
+            } else {
+                debug!(
+                    "UP主「{}」增量跳过：视频发布时间 {} <= 上次扫描时间 {}",
+                    self.upper_name,
+                    release_datetime.format("%Y-%m-%d %H:%M:%S"),
+                    latest_row_at.format("%Y-%m-%d %H:%M:%S")
+                );
+            }
+            
+            should_take
+        } else {
+            // 全量模式：每次都获取所有视频（原有行为）
+            debug!(
+                "UP主「{}」全量获取：增量获取已禁用，获取所有视频",
+                self.upper_name
+            );
+            true
+        }
     }
 
     fn log_refresh_video_start(&self) {
-        info!("开始扫描「{}」投稿..", self.upper_name);
+        use crate::config::CONFIG;
+        
+        if CONFIG.submission_risk_control.enable_incremental_fetch {
+            info!("开始增量扫描「{}」投稿（仅获取新视频）..", self.upper_name);
+        } else {
+            info!("开始全量扫描「{}」投稿（获取所有视频）..", self.upper_name);
+        }
     }
 
     fn log_refresh_video_end(&self, count: usize) {

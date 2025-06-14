@@ -80,6 +80,122 @@ impl Default for ConcurrentLimit {
     }
 }
 
+/// UP主投稿风控配置
+#[derive(Serialize, Deserialize)]
+pub struct SubmissionRiskControlConfig {
+    /// 大量视频UP主的阈值（超过此数量视为大量视频UP主）
+    #[serde(default = "default_large_submission_threshold")]
+    pub large_submission_threshold: usize,
+    /// 基础请求间隔（毫秒）
+    #[serde(default = "default_base_request_delay")]
+    pub base_request_delay: u64,
+    /// 大量视频UP主的额外延迟倍数
+    #[serde(default = "default_large_submission_delay_multiplier")]
+    pub large_submission_delay_multiplier: u64,
+    /// 是否启用渐进式延迟（请求次数越多，延迟越长）
+    #[serde(default = "default_enable_progressive_delay")]
+    pub enable_progressive_delay: bool,
+    /// 渐进式延迟的最大倍数
+    #[serde(default = "default_max_delay_multiplier")]
+    pub max_delay_multiplier: u64,
+    /// 是否启用增量获取（只获取比上次扫描更新的视频）
+    #[serde(default = "default_enable_incremental_fetch")]
+    pub enable_incremental_fetch: bool,
+    /// 增量获取失败时是否回退到全量获取
+    #[serde(default = "default_incremental_fallback_to_full")]
+    pub incremental_fallback_to_full: bool,
+    /// 是否启用分批处理（大量视频的UP主分批请求）
+    #[serde(default = "default_enable_batch_processing")]
+    pub enable_batch_processing: bool,
+    /// 分批处理的批次大小（每批处理的页数）
+    #[serde(default = "default_batch_size")]
+    pub batch_size: usize,
+    /// 批次间延迟（秒）
+    #[serde(default = "default_batch_delay_seconds")]
+    pub batch_delay_seconds: u64,
+    /// 是否启用自动退避机制（检测到风控时自动增加延迟）
+    #[serde(default = "default_enable_auto_backoff")]
+    pub enable_auto_backoff: bool,
+    /// 自动退避的基础时间（秒）
+    #[serde(default = "default_auto_backoff_base_seconds")]
+    pub auto_backoff_base_seconds: u64,
+    /// 自动退避的最大倍数
+    #[serde(default = "default_auto_backoff_max_multiplier")]
+    pub auto_backoff_max_multiplier: u64,
+}
+
+fn default_large_submission_threshold() -> usize {
+    300
+}
+
+fn default_base_request_delay() -> u64 {
+    200
+}
+
+fn default_large_submission_delay_multiplier() -> u64 {
+    2
+}
+
+fn default_enable_progressive_delay() -> bool {
+    true
+}
+
+fn default_max_delay_multiplier() -> u64 {
+    4
+}
+
+fn default_enable_incremental_fetch() -> bool {
+    true
+}
+
+fn default_incremental_fallback_to_full() -> bool {
+    true
+}
+
+fn default_enable_batch_processing() -> bool {
+    false // 默认不启用，需要手动开启
+}
+
+fn default_batch_size() -> usize {
+    5 // 每批5页，约150个视频
+}
+
+fn default_batch_delay_seconds() -> u64 {
+    2 // 批次间延迟2秒
+}
+
+fn default_enable_auto_backoff() -> bool {
+    true // 默认启用自动退避
+}
+
+fn default_auto_backoff_base_seconds() -> u64 {
+    10 // 自动退避基础时间10秒
+}
+
+fn default_auto_backoff_max_multiplier() -> u64 {
+    5 // 最大退避到50秒
+}
+
+impl Default for SubmissionRiskControlConfig {
+    fn default() -> Self {
+        Self {
+            large_submission_threshold: default_large_submission_threshold(),
+            base_request_delay: default_base_request_delay(),
+            large_submission_delay_multiplier: default_large_submission_delay_multiplier(),
+            enable_progressive_delay: default_enable_progressive_delay(),
+            max_delay_multiplier: default_max_delay_multiplier(),
+            enable_incremental_fetch: default_enable_incremental_fetch(),
+            incremental_fallback_to_full: default_incremental_fallback_to_full(),
+            enable_batch_processing: default_enable_batch_processing(),
+            batch_size: default_batch_size(),
+            batch_delay_seconds: default_batch_delay_seconds(),
+            enable_auto_backoff: default_enable_auto_backoff(),
+            auto_backoff_base_seconds: default_auto_backoff_base_seconds(),
+            auto_backoff_max_multiplier: default_auto_backoff_max_multiplier(),
+        }
+    }
+}
+
 pub trait PathSafeTemplate {
     fn path_safe_register(&mut self, name: &'static str, template: &'static str) -> Result<()>;
     fn path_safe_render(&self, name: &'static str, data: &serde_json::Value) -> Result<String>;

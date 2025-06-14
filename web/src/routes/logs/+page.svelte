@@ -93,9 +93,6 @@
 		isAuthenticated = await checkAuth();
 
 		if (isAuthenticated) {
-			// 加载统计信息
-			await loadAllLogsStats();
-
 			// 加载日志
 			await loadLogs();
 
@@ -251,8 +248,6 @@
 
 	// 手动刷新
 	async function handleRefresh() {
-		// 同时刷新统计信息和当前日志
-		await loadAllLogsStats();
 		const level = currentTab === 'all' ? undefined : (currentTab as LogLevel);
 		await loadLogs(level, currentPage);
 	}
@@ -366,89 +361,6 @@
 	function goToLogin() {
 		window.location.href = '/';
 	}
-
-	// 获取全部日志的统计信息
-	let allLogsStats = {
-		total: 0,
-		info: 0,
-		warn: 0,
-		error: 0,
-		debug: 0
-	};
-
-	// 加载所有日志统计（不分页，仅用于统计）
-	async function loadAllLogsStats() {
-		if (!isAuthenticated) return;
-
-		try {
-			const token = localStorage.getItem('auth_token');
-			if (!token) return;
-
-			// 获取所有级别的统计
-			const levels = ['info', 'warn', 'error', 'debug'];
-			const promises = levels.map(async (level) => {
-				const params = new URLSearchParams();
-				params.append('level', level);
-				params.append('limit', '1000'); // 获取更多数据用于统计
-				params.append('page', '1');
-
-				const response = await fetch(`/api/logs?${params.toString()}`, {
-					headers: {
-						Authorization: token,
-						'Content-Type': 'application/json'
-					}
-				});
-
-				if (response.ok) {
-					const result = await response.json();
-					let responseData: any = {};
-
-					if (result.status_code === 200 && result.data) {
-						responseData = result.data;
-					} else if (result.success && result.data) {
-						responseData = result.data;
-					} else {
-						responseData = result;
-					}
-
-					return {
-						level,
-						count: responseData.total || 0
-					};
-				}
-				return { level, count: 0 };
-			});
-
-			const results = await Promise.all(promises);
-
-			// 更新统计信息 - 全部日志不包含debug级别
-			const infoCount = results.find((item) => item.level === 'info')?.count || 0;
-			const warnCount = results.find((item) => item.level === 'warn')?.count || 0;
-			const errorCount = results.find((item) => item.level === 'error')?.count || 0;
-			const debugCount = results.find((item) => item.level === 'debug')?.count || 0;
-
-			allLogsStats = {
-				total: infoCount + warnCount + errorCount, // 全部日志不包含debug
-				info: infoCount,
-				warn: warnCount,
-				error: errorCount,
-				debug: debugCount
-			};
-
-			console.log('日志统计:', allLogsStats);
-		} catch (error) {
-			console.error('加载日志统计失败:', error);
-		}
-	}
-
-	// 当前显示的日志统计（基于当前加载的日志）
-	$: logStats = {
-		total: filteredLogs.length,
-		info: logs.filter((log) => log.level === 'info').length,
-		warn: logs.filter((log) => log.level === 'warn').length,
-		error: logs.filter((log) => log.level === 'error').length,
-		debug: logs.filter((log) => log.level === 'debug').length
-	};
 </script>
 
 <svelte:window bind:innerWidth />
@@ -526,70 +438,7 @@
 			</div>
 		</div>
 
-		<!-- 日志统计 -->
-		<div class="grid {isMobile ? 'grid-cols-2 gap-3' : 'grid-cols-5 gap-4'}">
-			<Card.Root>
-				<Card.Content class="flex items-center p-4">
-					<div class="flex items-center space-x-2">
-						<div class="h-2 w-2 rounded-full bg-gray-500"></div>
-						<div>
-							<p class="text-sm font-medium">总数</p>
-							<p class="text-2xl font-bold">{allLogsStats.total}</p>
-						</div>
-					</div>
-				</Card.Content>
-			</Card.Root>
 
-			<Card.Root>
-				<Card.Content class="flex items-center p-4">
-					<div class="flex items-center space-x-2">
-						<Info class="h-4 w-4 text-blue-500" />
-						<div>
-							<p class="text-sm font-medium">信息</p>
-							<p class="text-2xl font-bold text-blue-600">{allLogsStats.info}</p>
-						</div>
-					</div>
-				</Card.Content>
-			</Card.Root>
-
-			<Card.Root>
-				<Card.Content class="flex items-center p-4">
-					<div class="flex items-center space-x-2">
-						<AlertTriangle class="h-4 w-4 text-yellow-500" />
-						<div>
-							<p class="text-sm font-medium">警告</p>
-							<p class="text-2xl font-bold text-yellow-600">{allLogsStats.warn}</p>
-						</div>
-					</div>
-				</Card.Content>
-			</Card.Root>
-
-			<Card.Root>
-				<Card.Content class="flex items-center p-4">
-					<div class="flex items-center space-x-2">
-						<XCircle class="h-4 w-4 text-red-500" />
-						<div>
-							<p class="text-sm font-medium">错误</p>
-							<p class="text-2xl font-bold text-red-600">{allLogsStats.error}</p>
-						</div>
-					</div>
-				</Card.Content>
-			</Card.Root>
-
-			{#if !isMobile}
-				<Card.Root>
-					<Card.Content class="flex items-center p-4">
-						<div class="flex items-center space-x-2">
-							<Bug class="h-4 w-4 text-gray-500" />
-							<div>
-								<p class="text-sm font-medium">调试</p>
-								<p class="text-2xl font-bold text-gray-600">{allLogsStats.debug}</p>
-							</div>
-						</div>
-					</Card.Content>
-				</Card.Root>
-			{/if}
-		</div>
 
 		<!-- 日志选项卡 -->
 		<div class="space-y-4">
@@ -607,10 +456,6 @@
 					}}
 				>
 					全部日志
-					<span
-						class="bg-secondary text-secondary-foreground ml-2 inline-flex items-center rounded-full px-2 py-1 text-xs font-medium"
-						>{allLogsStats.total}</span
-					>
 				</button>
 				<button
 					class="flex-1 rounded-md px-3 py-2 text-sm font-medium transition-colors {currentTab ===
@@ -624,10 +469,6 @@
 					}}
 				>
 					信息
-					<span
-						class="ml-2 inline-flex items-center rounded-full bg-blue-100 px-2 py-1 text-xs font-medium text-blue-800"
-						>{allLogsStats.info}</span
-					>
 				</button>
 				<button
 					class="flex-1 rounded-md px-3 py-2 text-sm font-medium transition-colors {currentTab ===
@@ -641,10 +482,6 @@
 					}}
 				>
 					警告
-					<span
-						class="ml-2 inline-flex items-center rounded-full bg-yellow-100 px-2 py-1 text-xs font-medium text-yellow-800"
-						>{allLogsStats.warn}</span
-					>
 				</button>
 				<button
 					class="flex-1 rounded-md px-3 py-2 text-sm font-medium transition-colors {currentTab ===
@@ -658,10 +495,6 @@
 					}}
 				>
 					错误
-					<span
-						class="ml-2 inline-flex items-center rounded-full bg-red-100 px-2 py-1 text-xs font-medium text-red-800"
-						>{allLogsStats.error}</span
-					>
 				</button>
 				<button
 					class="flex-1 rounded-md px-3 py-2 text-sm font-medium transition-colors {currentTab ===
@@ -675,10 +508,6 @@
 					}}
 				>
 					调试
-					<span
-						class="ml-2 inline-flex items-center rounded-full bg-gray-100 px-2 py-1 text-xs font-medium text-gray-800"
-						>{allLogsStats.debug}</span
-					>
 				</button>
 			</div>
 
