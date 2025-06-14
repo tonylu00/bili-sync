@@ -193,14 +193,23 @@
 	}
 </script>
 
-<Card class={cardClasses}>
+<Card class="{cardClasses} relative overflow-hidden">
+	<!-- 整个卡片的背景模糊图片 -->
+	{#if video.cover && mode === 'default'}
+		<div 
+			class="absolute inset-0 bg-cover bg-center blur-[2px] scale-110 opacity-20"
+			style="background-image: url('{getProxiedImageUrl(video.cover)}')"
+		></div>
+	{/if}
+	
 	<!-- 封面图片 -->
 	{#if video.cover && mode === 'default'}
-		<div class="relative overflow-hidden rounded-t-lg">
+		<div class="relative z-10 overflow-hidden rounded-t-lg">
+			<!-- 前景清晰图片 -->
 			<img
 				src={getProxiedImageUrl(video.cover)}
 				alt={displayTitle}
-				class="aspect-video w-full object-cover transition-transform duration-200 group-hover:scale-105"
+				class="aspect-square w-full object-contain transition-transform duration-200 group-hover:scale-105"
 				loading="lazy"
 				on:error={(e) => {
 					// 封面加载失败时隐藏整个封面容器
@@ -212,7 +221,7 @@
 				}}
 			/>
 			<!-- 状态徽章覆盖在封面上 -->
-			<div class="absolute right-2 top-2">
+			<div class="absolute right-2 top-2 z-20">
 				<Badge variant={overallStatus.color} class="shrink-0 text-xs shadow-md">
 					{overallStatus.text}
 				</Badge>
@@ -220,7 +229,7 @@
 		</div>
 	{/if}
 
-	<CardHeader class={mode === 'default' ? 'flex-shrink-0 pb-3' : 'pb-3'}>
+	<CardHeader class="{mode === 'default' ? 'flex-shrink-0 pb-3' : 'pb-3'} relative z-10">
 		<div class="flex min-w-0 items-start justify-between gap-2">
 			<CardTitle
 				class="line-clamp-2 min-w-0 flex-1 cursor-default text-sm leading-tight"
@@ -259,7 +268,7 @@
 		{/if}
 	</CardHeader>
 	<CardContent
-		class={mode === 'default' ? 'flex min-w-0 flex-1 flex-col justify-end pt-0' : 'pt-0'}
+		class="{mode === 'default' ? 'flex min-w-0 flex-1 flex-col justify-end pt-0' : 'pt-0'} relative z-10"
 	>
 		<div class="space-y-3">
 			<!-- 进度条区域 -->

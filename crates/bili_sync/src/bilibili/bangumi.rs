@@ -30,6 +30,7 @@ pub struct BangumiEpisode {
     #[allow(dead_code)]
     pub duration: i64, // 视频时长（毫秒）
     pub show_title: String, // 显示标题
+    pub cover: String, // 单集封面
 }
 
 #[derive(Debug, Deserialize, Clone)]
@@ -114,8 +115,9 @@ impl Bangumi {
                 pub_time: episode["pub_time"].as_i64().unwrap_or_default(),
                 duration: episode["duration"].as_i64().unwrap_or_default(),
                 show_title: episode["show_title"].as_str().unwrap_or_default().to_string(),
+                cover: episode["cover"].as_str().unwrap_or_default().to_string(),
             };
-            tracing::debug!("解析剧集：{} (EP{}) BV号: {}", ep.title, ep.id, ep.bvid);
+            tracing::debug!("解析剧集：{} (EP{}) BV号: {} 封面: {}", ep.title, ep.id, ep.bvid, ep.cover);
             result.push(ep);
         }
 
@@ -206,7 +208,14 @@ impl Bangumi {
                 // 直接从API的title字段获取集数
                 let episode_number = episode.title.parse::<i32>().ok();
 
-                tracing::debug!("生成番剧视频信息: {}, BV: {}, 集数: {:?}", episode_title, episode.bvid, episode_number);
+                // 使用单集封面，如果没有则回退到季度封面
+                let episode_cover = if !episode.cover.is_empty() {
+                    episode.cover.clone()
+                } else {
+                    cover.clone()
+                };
+
+                tracing::debug!("生成番剧视频信息: {}, BV: {}, 集数: {:?}, 封面: {}", episode_title, episode.bvid, episode_number, episode_cover);
 
                 yield VideoInfo::Bangumi {
                     title: episode_title,
@@ -215,7 +224,7 @@ impl Bangumi {
                     bvid: episode.bvid.clone(),
                     cid: episode.cid.to_string(),
                     aid: episode.aid.to_string(),
-                    cover: cover.clone(),
+                    cover: episode_cover,
                     intro: intro.clone(),
                     pubtime: pub_time,
                     show_title: Some(episode.show_title.clone()),
@@ -273,7 +282,14 @@ impl Bangumi {
                     // 直接从API的title字段获取集数
                     let episode_number = episode.title.parse::<i32>().ok();
 
-                    tracing::debug!("生成番剧视频信息: {}, BV: {}, 集数: {:?}", episode_title, episode.bvid, episode_number);
+                    // 使用单集封面，如果没有则回退到季度封面
+                    let episode_cover = if !episode.cover.is_empty() {
+                        episode.cover.clone()
+                    } else {
+                        cover.clone()
+                    };
+
+                    tracing::debug!("生成番剧视频信息: {}, BV: {}, 集数: {:?}, 封面: {}", episode_title, episode.bvid, episode_number, episode_cover);
 
                     yield VideoInfo::Bangumi {
                         title: episode_title,
@@ -282,7 +298,7 @@ impl Bangumi {
                         bvid: episode.bvid.clone(),
                         cid: episode.cid.to_string(),
                         aid: episode.aid.to_string(),
-                        cover: cover.clone(),
+                        cover: episode_cover,
                         intro: intro.clone(),
                         pubtime: pub_time,
                         show_title: Some(episode.show_title.clone()),
@@ -357,7 +373,14 @@ impl Bangumi {
                     // 直接从API的title字段获取集数
                     let episode_number = episode.title.parse::<i32>().ok();
 
-                    tracing::debug!("生成番剧视频信息: {}, BV: {}, 集数: {:?}", episode_title, episode.bvid, episode_number);
+                    // 使用单集封面，如果没有则回退到季度封面
+                    let episode_cover = if !episode.cover.is_empty() {
+                        episode.cover.clone()
+                    } else {
+                        cover.clone()
+                    };
+
+                    tracing::debug!("生成番剧视频信息: {}, BV: {}, 集数: {:?}, 封面: {}", episode_title, episode.bvid, episode_number, episode_cover);
 
                     yield VideoInfo::Bangumi {
                         title: episode_title,
@@ -366,7 +389,7 @@ impl Bangumi {
                         bvid: episode.bvid.clone(),
                         cid: episode.cid.to_string(),
                         aid: episode.aid.to_string(),
-                        cover: cover.clone(),
+                        cover: episode_cover,
                         intro: intro.clone(),
                         pubtime: pub_time,
                         show_title: Some(episode.show_title.clone()),
