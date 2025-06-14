@@ -165,8 +165,9 @@ pub async fn get_videos(
                 video::Column::Path,
                 video::Column::Category,
                 video::Column::DownloadStatus,
+                video::Column::Cover,
             ])
-            .into_tuple::<(i32, String, String, String, i32, u32)>()
+            .into_tuple::<(i32, String, String, String, i32, u32, String)>()
             .paginate(db.as_ref(), page_size)
             .fetch_page(page)
             .await?
@@ -198,8 +199,9 @@ pub async fn get_video(
             video::Column::Path,
             video::Column::Category,
             video::Column::DownloadStatus,
+            video::Column::Cover,
         ])
-        .into_tuple::<(i32, String, String, String, i32, u32)>()
+        .into_tuple::<(i32, String, String, String, i32, u32, String)>()
         .one(db.as_ref())
         .await?
         .map(VideoInfo::from);
@@ -262,8 +264,9 @@ pub async fn reset_video(
                 video::Column::Path,
                 video::Column::Category,
                 video::Column::DownloadStatus,
+                video::Column::Cover,
             ])
-            .into_tuple::<(i32, String, String, String, i32, u32)>()
+            .into_tuple::<(i32, String, String, String, i32, u32, String)>()
             .one(db.as_ref()),
         page::Entity::find()
             .filter(page::Column::VideoId.eq(id))
@@ -396,8 +399,9 @@ pub async fn reset_all_videos(
                 video::Column::Path,
                 video::Column::Category,
                 video::Column::DownloadStatus,
+                video::Column::Cover,
             ])
-            .into_tuple::<(i32, String, String, String, i32, u32)>()
+            .into_tuple::<(i32, String, String, String, i32, u32, String)>()
             .all(db.as_ref()),
         page::Entity::find()
             .select_only()
@@ -519,8 +523,9 @@ pub async fn update_video_status(
                 video::Column::Path,
                 video::Column::Category,
                 video::Column::DownloadStatus,
+                video::Column::Cover,
             ])
-            .into_tuple::<(i32, String, String, String, i32, u32)>()
+            .into_tuple::<(i32, String, String, String, i32, u32, String)>()
             .one(db.as_ref()),
         page::Entity::find()
             .filter(page::Column::VideoId.eq(id))

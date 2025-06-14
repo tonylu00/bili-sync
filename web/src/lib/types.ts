@@ -40,6 +40,7 @@ export interface VideoInfo {
 	path: string;
 	category: number;
 	download_status: [number, number, number, number, number];
+	cover: string;
 }
 
 // 视频列表响应类型

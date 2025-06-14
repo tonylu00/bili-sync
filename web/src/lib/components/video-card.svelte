@@ -187,6 +187,29 @@
 </script>
 
 <Card class={cardClasses}>
+	<!-- 封面图片 -->
+	{#if video.cover && mode === 'default'}
+		<div class="relative overflow-hidden rounded-t-lg">
+			<img
+				src={video.cover}
+				alt={displayTitle}
+				class="aspect-video w-full object-cover transition-transform duration-200 group-hover:scale-105"
+				loading="lazy"
+				on:error={(e) => {
+					// 封面加载失败时隐藏图片
+					const target = e.currentTarget as HTMLImageElement;
+					target.style.display = 'none';
+				}}
+			/>
+			<!-- 状态徽章覆盖在封面上 -->
+			<div class="absolute right-2 top-2">
+				<Badge variant={overallStatus.color} class="shrink-0 text-xs shadow-md">
+					{overallStatus.text}
+				</Badge>
+			</div>
+		</div>
+	{/if}
+
 	<CardHeader class={mode === 'default' ? 'flex-shrink-0 pb-3' : 'pb-3'}>
 		<div class="flex min-w-0 items-start justify-between gap-2">
 			<CardTitle
@@ -208,9 +231,11 @@
 					<div class="text-primary line-clamp-2 leading-tight font-medium">{displayTitle}</div>
 				{/if}
 			</CardTitle>
-			<Badge variant={overallStatus.color} class="shrink-0 text-xs">
-				{overallStatus.text}
-			</Badge>
+			{#if !video.cover || mode !== 'default'}
+				<Badge variant={overallStatus.color} class="shrink-0 text-xs">
+					{overallStatus.text}
+				</Badge>
+			{/if}
 		</div>
 		{#if displaySubtitle}
 			<div class="text-muted-foreground flex min-w-0 items-center gap-1 text-sm">
