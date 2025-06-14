@@ -16,7 +16,7 @@ use crate::api::auth;
 use crate::api::handler::{
     add_video_source, delete_video_source, get_bangumi_seasons, get_config, get_logs, get_queue_status,
     get_subscribed_collections, get_user_collections, get_user_favorites, get_user_followings, get_video,
-    get_video_sources, get_videos, proxy_image, reload_config, reset_all_videos, reset_video, search_bilibili, update_config,
+    get_video_sources, get_videos, proxy_image, reload_config, reset_all_videos, reset_specific_tasks, reset_video, search_bilibili, update_config,
     update_video_source_enabled, update_video_status, ApiDoc,
 };
 use crate::config::CONFIG;
@@ -36,6 +36,7 @@ pub async fn http_server(database_connection: Arc<DatabaseConnection>) -> Result
         .route("/api/videos/{id}/reset", post(reset_video))
         .route("/api/videos/{id}/update-status", post(update_video_status))
         .route("/api/videos/reset-all", post(reset_all_videos))
+        .route("/api/videos/reset-specific-tasks", post(reset_specific_tasks))
         .route("/api/reload-config", post(reload_config))
         .route("/api/config", get(get_config))
         .route("/api/config", put(update_config))

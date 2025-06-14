@@ -21,6 +21,7 @@
 	import { toast } from 'svelte-sonner';
 	import { Button } from '$lib/components/ui/button/index.js';
 	import * as AlertDialog from '$lib/components/ui/alert-dialog/index.js';
+	import { Label } from '$lib/components/ui/label/index.js';
 	import RotateCcwIcon from '@lucide/svelte/icons/rotate-ccw';
 
 	// 认证状态
@@ -60,6 +61,16 @@
 	// 批量重置状态
 	let resetAllDialogOpen = false;
 	let resettingAll = false;
+	
+	// 批量重置选项
+	let resetOptions = {
+		all: true,           // 重置所有失败任务
+		videoCover: false,   // 重置视频封面
+		videoContent: false, // 重置视频内容
+		videoInfo: false,    // 重置视频信息
+		videoDanmaku: false, // 重置视频弹幕
+		videoSubtitle: false // 重置视频字幕
+	};
 
 	// 处理登录成功
 	function handleLoginSuccess(event: CustomEvent) {
@@ -182,7 +193,31 @@
 	async function handleResetAllVideos() {
 		resettingAll = true;
 		try {
-			const result = await api.resetAllVideos();
+			let result;
+			
+			if (resetOptions.all) {
+				// 重置所有失败任务
+				result = await api.resetAllVideos();
+			} else {
+				// 选择性重置特定任务
+				const taskIndexes = [];
+				
+				// 根据选择的选项确定要重置的任务索引
+				if (resetOptions.videoCover) taskIndexes.push(0);    // 视频封面
+				if (resetOptions.videoContent) taskIndexes.push(1);  // 视频内容  
+				if (resetOptions.videoInfo) taskIndexes.push(2);     // 视频信息
+				if (resetOptions.videoDanmaku) taskIndexes.push(3);  // 视频弹幕
+				if (resetOptions.videoSubtitle) taskIndexes.push(4); // 视频字幕
+				
+				if (taskIndexes.length === 0) {
+					toast.error('请至少选择一个要重置的任务');
+					return;
+				}
+				
+				// 调用选择性重置API
+				result = await api.resetSpecificTasks(taskIndexes);
+			}
+			
 			const data = result.data;
 			if (data.resetted) {
 				toast.success('重置成功', {
@@ -201,6 +236,29 @@
 		} finally {
 			resettingAll = false;
 			resetAllDialogOpen = false;
+		}
+	}
+	
+	// 处理重置选项变化
+	function handleResetOptionChange(option: string, checked: boolean) {
+		if (option === 'all') {
+			resetOptions.all = checked;
+			if (checked) {
+				// 选择"重置所有"时，取消其他选项
+				resetOptions.videoCover = false;
+				resetOptions.videoContent = false;
+				resetOptions.videoInfo = false;
+				resetOptions.videoDanmaku = false;
+				resetOptions.videoSubtitle = false;
+			}
+		} else {
+			// 选择具体任务时，取消"重置所有"
+			resetOptions.all = false;
+			if (option === 'videoCover') resetOptions.videoCover = checked;
+			else if (option === 'videoContent') resetOptions.videoContent = checked;
+			else if (option === 'videoInfo') resetOptions.videoInfo = checked;
+			else if (option === 'videoDanmaku') resetOptions.videoDanmaku = checked;
+			else if (option === 'videoSubtitle') resetOptions.videoSubtitle = checked;
 		}
 	}
 
@@ -281,35 +339,28 @@
 					<label for="page-size-select" class="text-muted-foreground text-sm">每页:</label>
 					<select
 						id="page-size-select"
-						bind:value={pageSize}
-						on:change={() => {
-							autoPageSize = false;
+						value={autoPageSize ? 'auto' : pageSize}
+						on:change={(e) => {
+							const value = e.currentTarget.value;
+							if (value === 'auto') {
+								autoPageSize = true;
+								pageSize = calculateOptimalPageSize();
+							} else {
+								autoPageSize = false;
+								pageSize = parseInt(value);
+							}
 							currentPage = 0;
 							handleSearchParamsChange();
 						}}
 						class="border-input bg-background h-8 rounded-md border px-2 py-1 text-sm"
 					>
+						<option value="auto">自动</option>
 						<option value={12}>12</option>
 						<option value={20}>20</option>
 						<option value={30}>30</option>
 						<option value={50}>50</option>
 						<option value={100}>100</option>
 					</select>
-					<Button
-						size="sm"
-						variant={autoPageSize ? 'default' : 'outline'}
-						onclick={() => {
-							autoPageSize = !autoPageSize;
-							if (autoPageSize) {
-								pageSize = calculateOptimalPageSize();
-								currentPage = 0;
-								handleSearchParamsChange();
-							}
-						}}
-						title={autoPageSize ? '已启用自动调整' : '点击启用自动调整'}
-					>
-						自动
-					</Button>
 				</div>
 				<Button
 					size="sm"
@@ -318,7 +369,7 @@
 					disabled={resettingAll}
 				>
 					<RotateCcwIcon class="mr-2 h-4 w-4 {resettingAll ? 'animate-spin' : ''}" />
-					批量重置
+					强制重置
 				</Button>
 			</div>
 		</div>
@@ -353,16 +404,110 @@
 
 	<!-- 批量重置确认对话框 -->
 	<AlertDialog.Root bind:open={resetAllDialogOpen}>
-		<AlertDialog.Content>
+		<AlertDialog.Content class="max-w-md">
 			<AlertDialog.Header>
-				<AlertDialog.Title>确认批量重置</AlertDialog.Title>
+				<AlertDialog.Title>强制批量重置</AlertDialog.Title>
 				<AlertDialog.Description>
-					<p class="mb-2">确定要重置所有失败的视频下载状态吗？</p>
-					<p class="text-muted-foreground text-sm">
-						此操作会将所有失败状态的任务重置为未开始，无法撤销。
-					</p>
+					<p class="mb-4">选择要强制重置的任务类型（不管当前状态）：</p>
 				</AlertDialog.Description>
 			</AlertDialog.Header>
+			
+			<div class="space-y-4">
+				<!-- 重置所有失败任务 -->
+				<div class="flex items-center space-x-2">
+					<input
+						type="checkbox"
+						id="reset-all"
+						bind:checked={resetOptions.all}
+						on:change={(e) => handleResetOptionChange('all', e.currentTarget.checked)}
+						class="h-4 w-4 rounded border-gray-300"
+					/>
+					<Label for="reset-all" class="text-sm font-medium">
+						强制重置所有任务
+					</Label>
+				</div>
+				
+				<div class="border-t pt-3">
+					<p class="text-sm text-muted-foreground mb-3">或选择特定任务：</p>
+					
+					<!-- 视频封面 -->
+					<div class="flex items-center space-x-2 mb-2">
+						<input
+							type="checkbox"
+							id="reset-cover"
+							bind:checked={resetOptions.videoCover}
+							on:change={(e) => handleResetOptionChange('videoCover', e.currentTarget.checked)}
+							class="h-4 w-4 rounded border-gray-300"
+						/>
+						<Label for="reset-cover" class="text-sm">
+							强制重置视频封面
+						</Label>
+					</div>
+					
+					<!-- 视频内容 -->
+					<div class="flex items-center space-x-2 mb-2">
+						<input
+							type="checkbox"
+							id="reset-content"
+							bind:checked={resetOptions.videoContent}
+							on:change={(e) => handleResetOptionChange('videoContent', e.currentTarget.checked)}
+							class="h-4 w-4 rounded border-gray-300"
+						/>
+						<Label for="reset-content" class="text-sm">
+							强制重置视频内容
+						</Label>
+					</div>
+					
+					<!-- 视频信息 -->
+					<div class="flex items-center space-x-2 mb-2">
+						<input
+							type="checkbox"
+							id="reset-info"
+							bind:checked={resetOptions.videoInfo}
+							on:change={(e) => handleResetOptionChange('videoInfo', e.currentTarget.checked)}
+							class="h-4 w-4 rounded border-gray-300"
+						/>
+						<Label for="reset-info" class="text-sm">
+							强制重置视频信息
+						</Label>
+					</div>
+					
+					<!-- 视频弹幕 -->
+					<div class="flex items-center space-x-2 mb-2">
+						<input
+							type="checkbox"
+							id="reset-danmaku"
+							bind:checked={resetOptions.videoDanmaku}
+							on:change={(e) => handleResetOptionChange('videoDanmaku', e.currentTarget.checked)}
+							class="h-4 w-4 rounded border-gray-300"
+						/>
+						<Label for="reset-danmaku" class="text-sm">
+							强制重置视频弹幕
+						</Label>
+					</div>
+					
+					<!-- 视频字幕 -->
+					<div class="flex items-center space-x-2 mb-2">
+						<input
+							type="checkbox"
+							id="reset-subtitle"
+							bind:checked={resetOptions.videoSubtitle}
+							on:change={(e) => handleResetOptionChange('videoSubtitle', e.currentTarget.checked)}
+							class="h-4 w-4 rounded border-gray-300"
+						/>
+						<Label for="reset-subtitle" class="text-sm">
+							强制重置视频字幕
+						</Label>
+					</div>
+				</div>
+				
+				<div class="bg-yellow-50 border border-yellow-200 rounded-lg p-3">
+					<p class="text-sm text-yellow-800">
+						<strong>注意：</strong>强制重置会将选中的任务状态重置为"未开始"，不管当前是否已完成。选择特定任务重置时，会同时重置对应的分P下载状态。
+					</p>
+				</div>
+			</div>
+			
 			<AlertDialog.Footer>
 				<AlertDialog.Cancel>取消</AlertDialog.Cancel>
 				<AlertDialog.Action onclick={handleResetAllVideos} disabled={resettingAll}>

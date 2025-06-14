@@ -188,6 +188,14 @@ class ApiClient {
 	}
 
 	/**
+	 * 选择性重置特定任务
+	 * @param taskIndexes 要重置的任务索引列表
+	 */
+	async resetSpecificTasks(taskIndexes: number[]): Promise<ApiResponse<ResetAllVideosResponse>> {
+		return this.post<ResetAllVideosResponse>('/videos/reset-specific-tasks', { task_indexes: taskIndexes });
+	}
+
+	/**
 	 * 添加视频源
 	 * @param params 视频源参数
 	 */
@@ -347,6 +355,11 @@ export const api = {
 	 * 批量重置所有视频下载状态
 	 */
 	resetAllVideos: () => apiClient.resetAllVideos(),
+
+	/**
+	 * 选择性重置特定任务
+	 */
+	resetSpecificTasks: (taskIndexes: number[]) => apiClient.resetSpecificTasks(taskIndexes),
 
 	/**
 	 * 设置认证 token

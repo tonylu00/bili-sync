@@ -144,3 +144,9 @@ pub struct UpdateVideoStatusRequest {
     #[serde(default)]
     pub page_updates: Vec<PageStatusUpdate>,
 }
+
+// 选择性重置任务请求
+#[derive(Deserialize, ToSchema)]
+pub struct ResetSpecificTasksRequest {
+    pub task_indexes: Vec<usize>, // 要重置的任务索引列表 (0-4)
+}

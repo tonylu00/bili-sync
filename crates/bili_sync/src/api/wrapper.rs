@@ -26,6 +26,10 @@ impl<T: Serialize> ApiResponse<T> {
         Self { status_code: 404, data }
     }
 
+    pub fn bad_request(data: T) -> Self {
+        Self { status_code: 400, data }
+    }
+
     pub fn internal_server_error(data: T) -> Self {
         Self { status_code: 500, data }
     }
@@ -58,6 +62,7 @@ impl IntoResponse for ApiError {
         if let Some(inner_error) = self.0.downcast_ref::<InnerApiError>() {
             match inner_error {
                 InnerApiError::NotFound(_) => return ApiResponse::not_found(self.0.to_string()).into_response(),
+                InnerApiError::BadRequest(_) => return ApiResponse::bad_request(self.0.to_string()).into_response(),
             }
         }
         ApiResponse::internal_server_error(self.0.to_string()).into_response()

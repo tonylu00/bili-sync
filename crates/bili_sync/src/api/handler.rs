@@ -19,7 +19,7 @@ use utoipa::OpenApi;
 
 use crate::api::auth::OpenAPIAuth;
 use crate::api::error::InnerApiError;
-use crate::api::request::{AddVideoSourceRequest, UpdateConfigRequest, UpdateVideoStatusRequest, VideosRequest};
+use crate::api::request::{AddVideoSourceRequest, ResetSpecificTasksRequest, UpdateConfigRequest, UpdateVideoStatusRequest, VideosRequest};
 use crate::api::response::{
     AddVideoSourceResponse, BangumiSeasonInfo, ConfigResponse, DeleteVideoSourceResponse, PageInfo,
     ResetAllVideosResponse, ResetVideoResponse, UpdateConfigResponse, UpdateVideoStatusResponse, VideoInfo,
@@ -31,7 +31,7 @@ use crate::utils::status::{PageStatus, VideoStatus};
 
 #[derive(OpenApi)]
 #[openapi(
-    paths(get_video_sources, get_videos, get_video, reset_video, reset_all_videos, update_video_status, add_video_source, update_video_source_enabled, delete_video_source, reload_config, get_config, update_config, get_bangumi_seasons, search_bilibili, get_user_favorites, get_user_collections, get_user_followings, get_subscribed_collections, get_logs, get_queue_status, proxy_image),
+    paths(get_video_sources, get_videos, get_video, reset_video, reset_all_videos, reset_specific_tasks, update_video_status, add_video_source, update_video_source_enabled, delete_video_source, reload_config, get_config, update_config, get_bangumi_seasons, search_bilibili, get_user_favorites, get_user_collections, get_user_followings, get_subscribed_collections, get_logs, get_queue_status, proxy_image),
     modifiers(&OpenAPIAuth),
     security(
         ("Token" = []),
@@ -449,6 +449,171 @@ pub async fn reset_all_videos(
                 video_status.set(4, 0); // 将"分P下载"重置为 0
                 video_resetted = true;
             }
+            if video_resetted {
+                video_info.download_status = video_status.into();
+                Some(video_info)
+            } else {
+                None
+            }
+        })
+        .collect::<Vec<_>>();
+
+    let resetted = !(resetted_videos_info.is_empty() && resetted_pages_info.is_empty());
+
+    if resetted {
+        let txn = db.begin().await?;
+
+        // 批量更新视频状态
+        if !resetted_videos_info.is_empty() {
+            for video in &resetted_videos_info {
+                video::Entity::update(video::ActiveModel {
+                    id: sea_orm::ActiveValue::Unchanged(video.id),
+                    download_status: sea_orm::Set(VideoStatus::from(video.download_status).into()),
+                    ..Default::default()
+                })
+                .exec(&txn)
+                .await?;
+            }
+        }
+
+        // 批量更新页面状态
+        if !resetted_pages_info.is_empty() {
+            for page in &resetted_pages_info {
+                page::Entity::update(page::ActiveModel {
+                    id: sea_orm::ActiveValue::Unchanged(page.id),
+                    download_status: sea_orm::Set(PageStatus::from(page.download_status).into()),
+                    ..Default::default()
+                })
+                .exec(&txn)
+                .await?;
+            }
+        }
+
+        txn.commit().await?;
+    }
+
+    Ok(ApiResponse::ok(ResetAllVideosResponse {
+        resetted,
+        resetted_videos_count: resetted_videos_info.len(),
+        resetted_pages_count: resetted_pages_info.len(),
+    }))
+}
+
+/// 强制重置特定任务状态（不管当前状态）
+#[utoipa::path(
+    post,
+    path = "/api/videos/reset-specific-tasks",
+    request_body = ResetSpecificTasksRequest,
+    responses(
+        (status = 200, body = ApiResponse<ResetAllVideosResponse>),
+    )
+)]
+pub async fn reset_specific_tasks(
+    Extension(db): Extension<Arc<DatabaseConnection>>,
+    axum::Json(request): axum::Json<crate::api::request::ResetSpecificTasksRequest>,
+) -> Result<ApiResponse<ResetAllVideosResponse>, ApiError> {
+    use std::collections::HashSet;
+
+    let task_indexes = &request.task_indexes;
+    if task_indexes.is_empty() {
+        return Err(crate::api::error::InnerApiError::BadRequest("至少需要选择一个任务".to_string()).into());
+    }
+
+    // 验证任务索引范围
+    for &index in task_indexes {
+        if index > 4 {
+            return Err(crate::api::error::InnerApiError::BadRequest(format!("无效的任务索引: {}", index)).into());
+        }
+    }
+
+    // 先查询所有视频和页面数据
+    let (all_videos, all_pages) = tokio::try_join!(
+        video::Entity::find()
+            .select_only()
+            .columns([
+                video::Column::Id,
+                video::Column::Name,
+                video::Column::UpperName,
+                video::Column::Path,
+                video::Column::Category,
+                video::Column::DownloadStatus,
+                video::Column::Cover,
+            ])
+            .into_tuple::<(i32, String, String, String, i32, u32, String)>()
+            .all(db.as_ref()),
+        page::Entity::find()
+            .select_only()
+            .columns([
+                page::Column::Id,
+                page::Column::Pid,
+                page::Column::Name,
+                page::Column::DownloadStatus,
+                page::Column::VideoId,
+            ])
+            .into_tuple::<(i32, i32, String, u32, i32)>()
+            .all(db.as_ref())
+    )?;
+
+    // 处理页面重置 - 强制重置指定任务（不管当前状态）
+    let resetted_pages_info = all_pages
+        .into_iter()
+        .filter_map(|(id, pid, name, download_status, video_id)| {
+            let mut page_status = PageStatus::from(download_status);
+            let mut page_resetted = false;
+            
+            // 强制重置指定的任务索引（不管当前状态）
+            for &task_index in task_indexes {
+                if task_index < 5 {
+                    let current_status = page_status.get(task_index);
+                    if current_status != 0 { // 只要不是未开始状态就重置
+                        page_status.set(task_index, 0); // 重置为未开始
+                        page_resetted = true;
+                    }
+                }
+            }
+            
+            if page_resetted {
+                let page_info = PageInfo::from((id, pid, name, page_status.into()));
+                Some((page_info, video_id))
+            } else {
+                None
+            }
+        })
+        .collect::<Vec<_>>();
+
+    let video_ids_with_resetted_pages: HashSet<i32> =
+        resetted_pages_info.iter().map(|(_, video_id)| *video_id).collect();
+
+    let resetted_pages_info: Vec<PageInfo> = resetted_pages_info
+        .into_iter()
+        .map(|(page_info, _)| page_info)
+        .collect();
+
+    let all_videos_info: Vec<VideoInfo> = all_videos.into_iter().map(VideoInfo::from).collect();
+
+    let resetted_videos_info = all_videos_info
+        .into_iter()
+        .filter_map(|mut video_info| {
+            let mut video_status = VideoStatus::from(video_info.download_status);
+            let mut video_resetted = false;
+            
+            // 强制重置指定任务（不管当前状态）
+            for &task_index in task_indexes {
+                if task_index < 5 {
+                    let current_status = video_status.get(task_index);
+                    if current_status != 0 { // 只要不是未开始状态就重置
+                        video_status.set(task_index, 0); // 重置为未开始
+                        video_resetted = true;
+                    }
+                }
+            }
+            
+            // 如果有分页被重置，同时重置分P下载状态
+            if video_ids_with_resetted_pages.contains(&video_info.id) {
+                video_status.set(4, 0); // 将"分P下载"重置为 0
+                video_resetted = true;
+            }
+            
             if video_resetted {
                 video_info.download_status = video_status.into();
                 Some(video_info)

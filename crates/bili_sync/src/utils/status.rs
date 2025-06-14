@@ -101,8 +101,13 @@ impl<const N: usize> Status<N> {
     }
 
     /// 获取某个子任务的状态
-    fn get_status(&self, offset: usize) -> u32 {
+    pub fn get(&self, offset: usize) -> u32 {
         (self.0 >> (offset * 3)) & 0b111
+    }
+
+    /// 获取某个子任务的状态（私有方法）
+    fn get_status(&self, offset: usize) -> u32 {
+        self.get(offset)
     }
 
     /// 设置某个子任务的状态
