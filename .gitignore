@@ -86,7 +86,7 @@ targets/
 # Log files
 日志
 *.log
-
+log*
 # Dockerfile copies
 Dockerfile*副本
 Dockerfile - 副本
@@ -112,7 +112,3 @@ aria2c
 
 # GitHub Actions 构建日志
 logs_*/
-
-# Claude AI 相关文件
-.claude/
-.claude/settings.local.json
