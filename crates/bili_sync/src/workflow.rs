@@ -156,11 +156,6 @@ pub async fn process_video_source(
         if e.downcast_ref::<DownloadAbortError>().is_some() {
             error!("获取视频详情时触发风控，已终止当前视频源的处理，等待下一轮执行");
             
-            // 自动重置风控导致的失败任务
-            if let Err(reset_err) = auto_reset_risk_control_failures(connection).await {
-                error!("自动重置风控失败任务时出错: {:#}", reset_err);
-            }
-            
             // 中止当前源的处理，但不返回错误，以便任务调度器可以继续处理下一个视频源。
             // 返回 Ok 意味着这个源的处理（虽然被中止了）从调度器的角度看是"完成"的。
             return Ok(new_video_count);
@@ -721,18 +716,7 @@ pub async fn download_video_pages(
         .collect::<Vec<_>>();
     status.update_status(&results);
     
-    // 检查是否有风控错误，如果有则先进行自动重置
-    let has_risk_control_error = results.iter().take(4).any(|res| {
-        matches!(res, ExecutionStatus::ClassifiedFailed(classified_error) 
-            if classified_error.error_type == crate::error::ErrorType::RiskControl)
-    });
-    
-    if has_risk_control_error {
-        // 自动重置风控导致的失败任务
-        if let Err(reset_err) = auto_reset_risk_control_failures(connection).await {
-            error!("自动重置风控失败任务时出错: {:#}", reset_err);
-        }
-    }
+
     
     results
         .iter()
@@ -1036,18 +1020,7 @@ pub async fn download_page(
         .collect::<Vec<_>>();
     status.update_status(&results);
     
-    // 检查是否有风控错误，如果有则先进行自动重置
-    let has_risk_control_error = results.iter().any(|res| {
-        matches!(res, ExecutionStatus::ClassifiedFailed(classified_error) 
-            if classified_error.error_type == crate::error::ErrorType::RiskControl)
-    });
-    
-    if has_risk_control_error {
-        // 自动重置风控导致的失败任务
-        if let Err(reset_err) = auto_reset_risk_control_failures(connection).await {
-            error!("自动重置风控失败任务时出错: {:#}", reset_err);
-        }
-    }
+
     
     results
         .iter()
@@ -1134,19 +1107,11 @@ pub async fn download_page(
     match results.into_iter().nth(1).context("video download result not found")? {
         ExecutionStatus::Failed(e) => {
             if let Ok(BiliError::RiskControlOccurred) = e.downcast::<BiliError>() {
-                // 自动重置风控导致的失败任务
-                if let Err(reset_err) = auto_reset_risk_control_failures(connection).await {
-                    error!("自动重置风控失败任务时出错: {:#}", reset_err);
-                }
                 bail!(DownloadAbortError());
             }
         }
         ExecutionStatus::ClassifiedFailed(ref classified_error) => {
             if classified_error.error_type == crate::error::ErrorType::RiskControl {
-                // 自动重置风控导致的失败任务
-                if let Err(reset_err) = auto_reset_risk_control_failures(connection).await {
-                    error!("自动重置风控失败任务时出错: {:#}", reset_err);
-                }
                 bail!(DownloadAbortError());
             }
         }
@@ -1888,13 +1853,13 @@ mod tests {
 }
 
 /// 自动重置风控导致的失败任务
-/// 当检测到风控时，将所有失败状态(值为3)的任务重置为未开始状态(值为0)
+/// 当检测到风控时，将所有失败状态(值为3)和正在进行状态(值为2)的任务重置为未开始状态(值为0)
 pub async fn auto_reset_risk_control_failures(connection: &DatabaseConnection) -> Result<()> {
     use bili_sync_entity::{video, page};
     use sea_orm::*;
     use crate::utils::status::{VideoStatus, PageStatus};
 
-    info!("检测到风控，开始自动重置失败的下载任务...");
+    info!("检测到风控，开始自动重置失败和进行中的下载任务...");
 
     // 查询所有视频和页面数据
     let (all_videos, all_pages) = tokio::try_join!(
@@ -1923,14 +1888,15 @@ pub async fn auto_reset_risk_control_failures(connection: &DatabaseConnection) -
 
     let txn = connection.begin().await?;
 
-    // 重置视频失败状态
+    // 重置视频失败和进行中状态
     for (id, name, download_status) in all_videos {
         let mut video_status = VideoStatus::from(download_status);
         let mut video_resetted = false;
         
-        // 检查所有任务索引，将失败状态(3)重置为未开始(0)
+        // 检查所有任务索引，将失败状态(3)和正在进行状态(2)重置为未开始(0)
         for task_index in 0..5 {
-            if video_status.get(task_index) == 3 { // 3表示失败状态
+            let status_value = video_status.get(task_index);
+            if status_value == 3 || status_value == 2 { // 3表示失败状态，2表示正在进行状态
                 video_status.set(task_index, 0); // 重置为未开始
                 video_resetted = true;
             }
@@ -1946,18 +1912,19 @@ pub async fn auto_reset_risk_control_failures(connection: &DatabaseConnection) -
             .await?;
             
             resetted_videos += 1;
-            debug!("重置视频「{}」的失败任务状态", name);
+            debug!("重置视频「{}」的失败和进行中任务状态", name);
         }
     }
 
-    // 重置页面失败状态
+    // 重置页面失败和进行中状态
     for (id, name, download_status) in all_pages {
         let mut page_status = PageStatus::from(download_status);
         let mut page_resetted = false;
         
-        // 检查所有任务索引，将失败状态(3)重置为未开始(0)
+        // 检查所有任务索引，将失败状态(3)和正在进行状态(2)重置为未开始(0)
         for task_index in 0..5 {
-            if page_status.get(task_index) == 3 { // 3表示失败状态
+            let status_value = page_status.get(task_index);
+            if status_value == 3 || status_value == 2 { // 3表示失败状态，2表示正在进行状态
                 page_status.set(task_index, 0); // 重置为未开始
                 page_resetted = true;
             }
@@ -1973,7 +1940,7 @@ pub async fn auto_reset_risk_control_failures(connection: &DatabaseConnection) -
             .await?;
             
             resetted_pages += 1;
-            debug!("重置页面「{}」的失败任务状态", name);
+            debug!("重置页面「{}」的失败和进行中任务状态", name);
         }
     }
 
@@ -1981,11 +1948,11 @@ pub async fn auto_reset_risk_control_failures(connection: &DatabaseConnection) -
 
     if resetted_videos > 0 || resetted_pages > 0 {
         info!(
-            "风控自动重置完成：重置了 {} 个视频和 {} 个页面的失败任务状态",
+            "风控自动重置完成：重置了 {} 个视频和 {} 个页面的失败和进行中任务状态",
             resetted_videos, resetted_pages
         );
     } else {
-        info!("风控自动重置完成：没有发现需要重置的失败任务");
+        info!("风控自动重置完成：没有发现需要重置的失败或进行中任务");
     }
 
     Ok(())
