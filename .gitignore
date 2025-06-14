@@ -51,7 +51,6 @@ Thumbs.db
 *.tmp
 *.temp
 bili-sync-main
-
 # 压缩包和打包文件
 *.zip
 *.tar.gz
@@ -113,3 +112,7 @@ aria2c
 
 # GitHub Actions 构建日志
 logs_*/
+
+# Claude AI 相关文件
+.claude/
+.claude/settings.local.json
