@@ -16,13 +16,13 @@ fn database_url() -> String {
 async fn database_connection() -> Result<DatabaseConnection> {
     let mut option = ConnectOptions::new(database_url());
     option
-        .max_connections(20)  // 降低最大连接数，避免过多连接
-        .min_connections(2)   // 最小连接数
-        .acquire_timeout(std::time::Duration::from_secs(30))  // 缩短超时时间
-        .idle_timeout(std::time::Duration::from_secs(300))    // 空闲连接超时5分钟
-        .max_lifetime(std::time::Duration::from_secs(3600))   // 连接最大生命周期1小时
-        .sqlx_logging(false)  // 生产环境关闭sqlx日志
-        .sqlx_logging_level(tracing::log::LevelFilter::Warn);  // 只记录警告级别以上的sqlx日志
+        .max_connections(20) // 降低最大连接数，避免过多连接
+        .min_connections(2) // 最小连接数
+        .acquire_timeout(std::time::Duration::from_secs(30)) // 缩短超时时间
+        .idle_timeout(std::time::Duration::from_secs(300)) // 空闲连接超时5分钟
+        .max_lifetime(std::time::Duration::from_secs(3600)) // 连接最大生命周期1小时
+        .sqlx_logging(false) // 生产环境关闭sqlx日志
+        .sqlx_logging_level(tracing::log::LevelFilter::Warn); // 只记录警告级别以上的sqlx日志
 
     let connection = Database::connect(option).await?;
 
@@ -33,7 +33,9 @@ async fn database_connection() -> Result<DatabaseConnection> {
     connection.execute_unprepared("PRAGMA cache_size = 10000;").await?; // 增加缓存大小
     connection.execute_unprepared("PRAGMA temp_store = memory;").await?;
     connection.execute_unprepared("PRAGMA mmap_size = 268435456;").await?; // 256MB
-    connection.execute_unprepared("PRAGMA wal_autocheckpoint = 1000;").await?;
+    connection
+        .execute_unprepared("PRAGMA wal_autocheckpoint = 1000;")
+        .await?;
     connection.execute_unprepared("PRAGMA busy_timeout = 30000;").await?; // 30秒忙等超时
     connection.execute_unprepared("PRAGMA optimize;").await?; // 启用查询优化器
 

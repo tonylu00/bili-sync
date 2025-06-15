@@ -182,10 +182,7 @@ impl BiliClient {
     fn get_current_user_id(&self) -> Result<i64, anyhow::Error> {
         let credential = crate::config::CONFIG.credential.load();
         match credential.as_ref() {
-            Some(cred) => cred
-                .dedeuserid
-                .parse::<i64>()
-                .map_err(|_| anyhow!("无效的用户ID")),
+            Some(cred) => cred.dedeuserid.parse::<i64>().map_err(|_| anyhow!("无效的用户ID")),
             None => Err(anyhow!("未设置登录凭据")),
         }
     }
@@ -209,9 +206,7 @@ impl BiliClient {
             }
         }
         let credential = CONFIG.credential.load();
-        let request_builder = self
-            .client
-            .request(Method::GET, url, credential.as_deref());
+        let request_builder = self.client.request(Method::GET, url, credential.as_deref());
 
         let response = tokio::select! {
             biased;

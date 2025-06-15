@@ -66,9 +66,9 @@ impl<'a> Submission<'a> {
             let mut request_count = 0;
             let mut total_video_count: Option<i64> = None;
             let mut is_large_submission = false;
-            
+
             let config = &CONFIG.submission_risk_control;
-            
+
             loop {
                 // 在第一次请求后实施延迟策略
                 if request_count > 0 {
@@ -77,7 +77,7 @@ impl<'a> Submission<'a> {
                         is_large_submission,
                         config,
                     );
-                    
+
                     if delay.as_millis() > 0 {
                         debug!(
                             "UP主 {} 第 {} 次请求前延迟 {}ms（大量视频UP主: {}）",
@@ -88,23 +88,21 @@ impl<'a> Submission<'a> {
                         );
                         tokio::time::sleep(delay).await;
                     }
-                    
+
                     // 分批处理：每处理batch_size页后额外延迟
-                    if is_large_submission && config.enable_batch_processing {
-                        if page > 1 && (page - 1) % config.batch_size == 0 {
-                            let batch_delay = Duration::from_secs(config.batch_delay_seconds);
-                            info!(
-                                "UP主 {} 分批处理：完成第 {} 批（{}页），延迟 {}秒",
-                                self.upper_id,
-                                (page - 1) / config.batch_size,
-                                config.batch_size,
-                                config.batch_delay_seconds
-                            );
-                            tokio::time::sleep(batch_delay).await;
-                        }
+                    if is_large_submission && config.enable_batch_processing && page > 1 && (page - 1) % config.batch_size == 0 {
+                        let batch_delay = Duration::from_secs(config.batch_delay_seconds);
+                        info!(
+                            "UP主 {} 分批处理：完成第 {} 批（{}页），延迟 {}秒",
+                            self.upper_id,
+                            (page - 1) / config.batch_size,
+                            config.batch_size,
+                            config.batch_delay_seconds
+                        );
+                        tokio::time::sleep(batch_delay).await;
                     }
                 }
-                
+
                 let mut videos = self
                     .get_videos(page as i32)
                     .await
@@ -118,19 +116,19 @@ impl<'a> Submission<'a> {
                             );
                             return crate::error::DownloadAbortError().into();
                         }
-                        
+
                         // 其他错误继续抛出
                         e.context(format!("failed to get videos of upper {} page {}", self.upper_id, page))
                     })?;
-                
+
                 request_count += 1;
-                
+
                 // 在第一次请求时检测是否为大量视频UP主并确定处理策略
                 if page == 1 {
                     if let Some(count) = videos["data"]["page"]["count"].as_i64() {
                         total_video_count = Some(count);
                         is_large_submission = count > config.large_submission_threshold as i64;
-                        
+
                         if is_large_submission {
                             if config.enable_batch_processing {
                                 info!(
@@ -151,7 +149,7 @@ impl<'a> Submission<'a> {
                         }
                     }
                 }
-                
+
                 let vlist = &mut videos["data"]["list"]["vlist"];
                 if vlist.as_array().is_none_or(|v| v.is_empty()) {
                     if page == 1 {
@@ -161,14 +159,14 @@ impl<'a> Submission<'a> {
                         break;
                     }
                 }
-                
+
                 let videos_info: Vec<VideoInfo> = serde_json::from_value(vlist.take())
                     .with_context(|| format!("failed to parse videos of upper {} page {}", self.upper_id, page))?;
-                
+
                 for video_info in videos_info {
                     yield video_info;
                 }
-                
+
                 let count = &videos["data"]["page"]["count"];
                 if let Some(v) = count.as_i64() {
                     if v > (page * 30) as i64 {
@@ -180,7 +178,7 @@ impl<'a> Submission<'a> {
                 }
                 break;
             }
-            
+
             // 扫描完成后记录统计信息
             if let Some(total_count) = total_video_count {
                 if is_large_submission && config.enable_batch_processing {
@@ -198,7 +196,7 @@ impl<'a> Submission<'a> {
             }
         }
     }
-    
+
     /// 计算自适应延迟时间
     fn calculate_adaptive_delay(
         request_count: usize,
@@ -206,22 +204,21 @@ impl<'a> Submission<'a> {
         config: &SubmissionRiskControlConfig,
     ) -> Duration {
         let base_delay = Duration::from_millis(config.base_request_delay);
-        
+
         // 大量视频UP主使用额外倍数
         let large_submission_multiplier = if is_large_submission {
             config.large_submission_delay_multiplier
         } else {
             1
         };
-        
+
         // 渐进式延迟：请求次数越多，延迟越长
         let progressive_multiplier = if config.enable_progressive_delay {
-            let progressive = (request_count as u64 / 5).min(config.max_delay_multiplier - 1) + 1;
-            progressive
+            (request_count as u64 / 5).min(config.max_delay_multiplier - 1) + 1
         } else {
             1
         };
-        
+
         let total_multiplier = large_submission_multiplier * progressive_multiplier;
         base_delay * total_multiplier as u32
     }
