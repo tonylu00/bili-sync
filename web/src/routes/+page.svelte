@@ -324,8 +324,9 @@
 
 	<!-- 统计信息和操作按钮 -->
 	{#if videosData}
-		<div class="mb-6 flex items-center justify-between">
-			<div class="flex items-center gap-4">
+		<div class="mb-6 space-y-4 sm:space-y-0 sm:flex sm:items-center sm:justify-between">
+			<!-- 统计信息 -->
+			<div class="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-4">
 				<div class="text-muted-foreground text-sm">
 					共 {videosData.total_count} 个视频，{totalPages} 页
 				</div>
@@ -333,10 +334,12 @@
 					每页 {pageSize} 个
 				</div>
 			</div>
-			<div class="flex items-center gap-2">
+			
+			<!-- 操作按钮区域 -->
+			<div class="flex flex-col sm:flex-row items-start sm:items-center gap-3 sm:gap-2">
 				<!-- 页面大小控制 -->
 				<div class="flex items-center gap-2">
-					<label for="page-size-select" class="text-muted-foreground text-sm">每页:</label>
+					<label for="page-size-select" class="text-muted-foreground text-sm whitespace-nowrap">每页:</label>
 					<select
 						id="page-size-select"
 						value={autoPageSize ? 'auto' : pageSize}
@@ -352,7 +355,7 @@
 							currentPage = 0;
 							handleSearchParamsChange();
 						}}
-						class="border-input bg-background h-8 rounded-md border px-2 py-1 text-sm"
+						class="border-input bg-background h-8 rounded-md border px-2 py-1 text-sm min-w-[80px]"
 					>
 						<option value="auto">自动</option>
 						<option value={12}>12</option>
@@ -362,11 +365,14 @@
 						<option value={100}>100</option>
 					</select>
 				</div>
+				
+				<!-- 强制重置按钮 -->
 				<Button
 					size="sm"
 					variant="outline"
 					onclick={() => (resetAllDialogOpen = true)}
 					disabled={resettingAll}
+					class="w-full sm:w-auto"
 				>
 					<RotateCcwIcon class="mr-2 h-4 w-4 {resettingAll ? 'animate-spin' : ''}" />
 					强制重置

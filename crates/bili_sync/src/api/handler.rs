@@ -885,8 +885,8 @@ pub async fn add_video_source_internal(
                 name: sea_orm::Set(params.name),
                 r#type: sea_orm::Set(collection_type),
                 path: sea_orm::Set(params.path.clone()),
-                created_at: sea_orm::Set(chrono::Utc::now().to_string()),
-                latest_row_at: sea_orm::Set(chrono::Utc::now().naive_utc()),
+                created_at: sea_orm::Set(chrono::Local::now().to_string()),
+                latest_row_at: sea_orm::Set(chrono::NaiveDateTime::default()),
                 enabled: sea_orm::Set(true),
             };
 
@@ -923,8 +923,8 @@ pub async fn add_video_source_internal(
                 f_id: sea_orm::Set(f_id),
                 name: sea_orm::Set(params.name),
                 path: sea_orm::Set(params.path.clone()),
-                created_at: sea_orm::Set(chrono::Utc::now().to_string()),
-                latest_row_at: sea_orm::Set(chrono::Utc::now().naive_utc()),
+                created_at: sea_orm::Set(chrono::Local::now().to_string()),
+                latest_row_at: sea_orm::Set(chrono::NaiveDateTime::default()),
                 enabled: sea_orm::Set(true),
             };
 
@@ -961,8 +961,8 @@ pub async fn add_video_source_internal(
                 upper_id: sea_orm::Set(upper_id),
                 upper_name: sea_orm::Set(params.name),
                 path: sea_orm::Set(params.path.clone()),
-                created_at: sea_orm::Set(chrono::Utc::now().to_string()),
-                latest_row_at: sea_orm::Set(chrono::Utc::now().naive_utc()),
+                created_at: sea_orm::Set(chrono::Local::now().to_string()),
+                latest_row_at: sea_orm::Set(chrono::NaiveDateTime::default()),
                 enabled: sea_orm::Set(true),
             };
 
@@ -2110,6 +2110,7 @@ pub async fn get_config() -> Result<ApiResponse<crate::api::response::ConfigResp
         multi_page_name: config.multi_page_name.to_string(),
         bangumi_name: config.bangumi_name.to_string(),
         folder_structure: config.folder_structure.to_string(),
+        collection_folder_mode: config.collection_folder_mode.to_string(),
         time_format: config.time_format.clone(),
         interval: config.interval,
         nfo_time_type: nfo_time_type.to_string(),
@@ -2145,6 +2146,22 @@ pub async fn get_config() -> Result<ApiResponse<crate::api::response::ConfigResp
         rate_duration: config.concurrent_limit.rate_limit.as_ref().map(|r| r.duration),
         // 其他设置
         cdn_sorting: config.cdn_sorting,
+        // 时区设置
+        timezone: config.timezone.clone(),
+        // UP主投稿风控配置
+        large_submission_threshold: config.submission_risk_control.large_submission_threshold,
+        base_request_delay: config.submission_risk_control.base_request_delay,
+        large_submission_delay_multiplier: config.submission_risk_control.large_submission_delay_multiplier,
+        enable_progressive_delay: config.submission_risk_control.enable_progressive_delay,
+        max_delay_multiplier: config.submission_risk_control.max_delay_multiplier,
+        enable_incremental_fetch: config.submission_risk_control.enable_incremental_fetch,
+        incremental_fallback_to_full: config.submission_risk_control.incremental_fallback_to_full,
+        enable_batch_processing: config.submission_risk_control.enable_batch_processing,
+        batch_size: config.submission_risk_control.batch_size,
+        batch_delay_seconds: config.submission_risk_control.batch_delay_seconds,
+        enable_auto_backoff: config.submission_risk_control.enable_auto_backoff,
+        auto_backoff_base_seconds: config.submission_risk_control.auto_backoff_base_seconds,
+        auto_backoff_max_multiplier: config.submission_risk_control.auto_backoff_max_multiplier,
     }))
 }
 
@@ -2173,6 +2190,7 @@ pub async fn update_config(
             multi_page_name: params.multi_page_name.clone(),
             bangumi_name: params.bangumi_name.clone(),
             folder_structure: params.folder_structure.clone(),
+            collection_folder_mode: params.collection_folder_mode.clone(),
             time_format: params.time_format.clone(),
             interval: params.interval,
             nfo_time_type: params.nfo_time_type.clone(),
@@ -2208,6 +2226,22 @@ pub async fn update_config(
             rate_duration: params.rate_duration,
             // 其他设置
             cdn_sorting: params.cdn_sorting,
+            // 时区设置
+            timezone: params.timezone.clone(),
+            // UP主投稿风控配置
+            large_submission_threshold: params.large_submission_threshold,
+            base_request_delay: params.base_request_delay,
+            large_submission_delay_multiplier: params.large_submission_delay_multiplier,
+            enable_progressive_delay: params.enable_progressive_delay,
+            max_delay_multiplier: params.max_delay_multiplier,
+            enable_incremental_fetch: params.enable_incremental_fetch,
+            incremental_fallback_to_full: params.incremental_fallback_to_full,
+            enable_batch_processing: params.enable_batch_processing,
+            batch_size: params.batch_size,
+            batch_delay_seconds: params.batch_delay_seconds,
+            enable_auto_backoff: params.enable_auto_backoff,
+            auto_backoff_base_seconds: params.auto_backoff_base_seconds,
+            auto_backoff_max_multiplier: params.auto_backoff_max_multiplier,
             task_id: task_id.clone(),
         };
 
@@ -2249,6 +2283,7 @@ pub async fn update_config_internal(
     let original_multi_page_name = config.multi_page_name.clone();
     let original_bangumi_name = config.bangumi_name.clone();
     let original_folder_structure = config.folder_structure.clone();
+    let original_collection_folder_mode = config.collection_folder_mode.clone();
 
     // 更新配置字段
     if let Some(video_name) = params.video_name {
@@ -2276,6 +2311,19 @@ pub async fn update_config_internal(
         if !folder_structure.trim().is_empty() && folder_structure != original_folder_structure.as_ref() {
             config.folder_structure = Cow::Owned(folder_structure);
             updated_fields.push("folder_structure");
+        }
+    }
+
+    if let Some(collection_folder_mode) = params.collection_folder_mode {
+        if !collection_folder_mode.trim().is_empty() && collection_folder_mode != original_collection_folder_mode.as_ref() {
+            // 验证合集文件夹模式的有效性
+            match collection_folder_mode.as_str() {
+                "separate" | "unified" => {
+                    config.collection_folder_mode = Cow::Owned(collection_folder_mode);
+                    updated_fields.push("collection_folder_mode");
+                }
+                _ => return Err(anyhow!("无效的合集文件夹模式，只支持 'separate'（分离模式）或 'unified'（统一模式）").into()),
+            }
         }
     }
 
@@ -2561,6 +2609,119 @@ pub async fn update_config_internal(
         if cdn_sorting != config.cdn_sorting {
             config.cdn_sorting = cdn_sorting;
             updated_fields.push("cdn_sorting");
+        }
+    }
+
+    // 处理时区设置
+    if let Some(timezone) = params.timezone {
+        if !timezone.trim().is_empty() && timezone != config.timezone {
+            let old_timezone = config.timezone.clone();
+            config.timezone = timezone.clone();
+            updated_fields.push("timezone");
+            
+            // 同步数据库中的时间戳到新时区
+            info!("时区配置已更新，开始同步数据库时间戳从 {} 到 {}", old_timezone, timezone);
+            match sync_database_timestamps(db.clone(), &old_timezone, &timezone).await {
+                Ok(count) => {
+                    info!("数据库时间戳同步完成，共更新了 {} 条记录", count);
+                }
+                Err(e) => {
+                    error!("数据库时间戳同步失败: {}", e);
+                    // 即使同步失败，配置更新仍然成功
+                }
+            }
+        }
+    }
+
+    // 处理UP主投稿风控配置
+    if let Some(threshold) = params.large_submission_threshold {
+        if threshold != config.submission_risk_control.large_submission_threshold {
+            config.submission_risk_control.large_submission_threshold = threshold;
+            updated_fields.push("large_submission_threshold");
+        }
+    }
+
+    if let Some(delay) = params.base_request_delay {
+        if delay != config.submission_risk_control.base_request_delay {
+            config.submission_risk_control.base_request_delay = delay;
+            updated_fields.push("base_request_delay");
+        }
+    }
+
+    if let Some(multiplier) = params.large_submission_delay_multiplier {
+        if multiplier != config.submission_risk_control.large_submission_delay_multiplier {
+            config.submission_risk_control.large_submission_delay_multiplier = multiplier;
+            updated_fields.push("large_submission_delay_multiplier");
+        }
+    }
+
+    if let Some(enabled) = params.enable_progressive_delay {
+        if enabled != config.submission_risk_control.enable_progressive_delay {
+            config.submission_risk_control.enable_progressive_delay = enabled;
+            updated_fields.push("enable_progressive_delay");
+        }
+    }
+
+    if let Some(multiplier) = params.max_delay_multiplier {
+        if multiplier != config.submission_risk_control.max_delay_multiplier {
+            config.submission_risk_control.max_delay_multiplier = multiplier;
+            updated_fields.push("max_delay_multiplier");
+        }
+    }
+
+    if let Some(enabled) = params.enable_incremental_fetch {
+        if enabled != config.submission_risk_control.enable_incremental_fetch {
+            config.submission_risk_control.enable_incremental_fetch = enabled;
+            updated_fields.push("enable_incremental_fetch");
+        }
+    }
+
+    if let Some(enabled) = params.incremental_fallback_to_full {
+        if enabled != config.submission_risk_control.incremental_fallback_to_full {
+            config.submission_risk_control.incremental_fallback_to_full = enabled;
+            updated_fields.push("incremental_fallback_to_full");
+        }
+    }
+
+    if let Some(enabled) = params.enable_batch_processing {
+        if enabled != config.submission_risk_control.enable_batch_processing {
+            config.submission_risk_control.enable_batch_processing = enabled;
+            updated_fields.push("enable_batch_processing");
+        }
+    }
+
+    if let Some(size) = params.batch_size {
+        if size != config.submission_risk_control.batch_size {
+            config.submission_risk_control.batch_size = size;
+            updated_fields.push("batch_size");
+        }
+    }
+
+    if let Some(delay) = params.batch_delay_seconds {
+        if delay != config.submission_risk_control.batch_delay_seconds {
+            config.submission_risk_control.batch_delay_seconds = delay;
+            updated_fields.push("batch_delay_seconds");
+        }
+    }
+
+    if let Some(enabled) = params.enable_auto_backoff {
+        if enabled != config.submission_risk_control.enable_auto_backoff {
+            config.submission_risk_control.enable_auto_backoff = enabled;
+            updated_fields.push("enable_auto_backoff");
+        }
+    }
+
+    if let Some(seconds) = params.auto_backoff_base_seconds {
+        if seconds != config.submission_risk_control.auto_backoff_base_seconds {
+            config.submission_risk_control.auto_backoff_base_seconds = seconds;
+            updated_fields.push("auto_backoff_base_seconds");
+        }
+    }
+
+    if let Some(multiplier) = params.auto_backoff_max_multiplier {
+        if multiplier != config.submission_risk_control.auto_backoff_max_multiplier {
+            config.submission_risk_control.auto_backoff_max_multiplier = multiplier;
+            updated_fields.push("auto_backoff_max_multiplier");
         }
     }
 
@@ -4258,4 +4419,239 @@ pub async fn proxy_image(
         .header("Cache-Control", "public, max-age=3600") // 缓存1小时
         .body(axum::body::Body::from(image_data))
         .unwrap())
+}
+
+/// 同步数据库中的时间戳到新时区
+/// 
+/// 该函数会将数据库中所有的时间戳字段从旧时区转换为新时区
+/// 包括：视频源表的created_at、视频表的时间戳字段、页面表的created_at等
+async fn sync_database_timestamps(
+    db: Arc<DatabaseConnection>,
+    old_timezone: &str,
+    new_timezone: &str,
+) -> Result<u32> {
+    use sea_orm::ConnectionTrait;
+    
+    let mut updated_count = 0u32;
+    
+    // 解析时区
+    let old_tz = match old_timezone {
+        "Asia/Shanghai" => 8,
+        "UTC" => 0,
+        "America/New_York" => -5,
+        "America/Los_Angeles" => -8,
+        "Europe/London" => 0,
+        "Europe/Paris" => 1,
+        "Asia/Tokyo" => 9,
+        "Asia/Seoul" => 9,
+        "Australia/Sydney" => 10,
+        "Asia/Dubai" => 4,
+        "Asia/Singapore" => 8,
+        "Asia/Hong_Kong" => 8,
+        "Asia/Taipei" => 8,
+        _ => 8, // 默认北京时间
+    };
+    
+    let new_tz = match new_timezone {
+        "Asia/Shanghai" => 8,
+        "UTC" => 0,
+        "America/New_York" => -5,
+        "America/Los_Angeles" => -8,
+        "Europe/London" => 0,
+        "Europe/Paris" => 1,
+        "Asia/Tokyo" => 9,
+        "Asia/Seoul" => 9,
+        "Australia/Sydney" => 10,
+        "Asia/Dubai" => 4,
+        "Asia/Singapore" => 8,
+        "Asia/Hong_Kong" => 8,
+        "Asia/Taipei" => 8,
+        _ => 8, // 默认北京时间
+    };
+    
+    let offset_hours = new_tz - old_tz;
+    
+    if offset_hours == 0 {
+        info!("时区偏移为0，无需同步数据库时间戳");
+        return Ok(0);
+    }
+    
+    info!("开始同步数据库时间戳，时区偏移: {} 小时", offset_hours);
+    
+    // 构建时间偏移的SQL表达式
+    let offset_sql = if offset_hours > 0 {
+        format!("datetime({{field}}, '+{} hours')", offset_hours)
+    } else {
+        format!("datetime({{field}}, '{} hours')", offset_hours)
+    };
+    
+    // 更新视频源表的 created_at 字段
+    let tables_with_created_at = vec![
+        "favorite",
+        "collection", 
+        "watch_later",
+        "submission"
+    ];
+    
+    for table in tables_with_created_at {
+        // 先处理标准格式的时间戳
+        let sql = format!(
+            "UPDATE {} SET created_at = {} WHERE created_at IS NOT NULL AND created_at != '' AND datetime(created_at) IS NOT NULL",
+            table,
+            offset_sql.replace("{field}", "created_at")
+        );
+        
+        match db.execute_unprepared(&sql).await {
+            Ok(result) => {
+                let rows_affected = result.rows_affected();
+                updated_count += rows_affected as u32;
+                debug!("更新表 {} 的 created_at 字段（标准格式），影响 {} 行", table, rows_affected);
+            }
+            Err(e) => {
+                error!("更新表 {} 的 created_at 字段（标准格式）失败: {}", table, e);
+            }
+        }
+        
+        // 处理带UTC后缀的时间戳
+        let utc_sql = format!(
+            "UPDATE {} SET created_at = {} WHERE created_at IS NOT NULL AND created_at LIKE '% UTC' AND datetime(REPLACE(created_at, ' UTC', '')) IS NOT NULL",
+            table,
+            offset_sql.replace("{field}", "REPLACE(created_at, ' UTC', '')")
+        );
+        
+        match db.execute_unprepared(&utc_sql).await {
+            Ok(result) => {
+                let rows_affected = result.rows_affected();
+                updated_count += rows_affected as u32;
+                debug!("更新表 {} 的 created_at 字段（UTC格式），影响 {} 行", table, rows_affected);
+            }
+            Err(e) => {
+                error!("更新表 {} 的 created_at 字段（UTC格式）失败: {}", table, e);
+            }
+        }
+    }
+    
+    // 更新视频表的时间戳字段
+    let video_timestamp_fields = vec!["ctime", "pubtime", "favtime", "created_at"];
+    
+    for field in video_timestamp_fields {
+        // 先处理标准格式的时间戳
+        let sql = if field == "created_at" {
+            format!(
+                "UPDATE video SET {} = {} WHERE {} IS NOT NULL AND {} != '' AND datetime({}) IS NOT NULL",
+                field,
+                offset_sql.replace("{field}", field),
+                field,
+                field,
+                field
+            )
+        } else {
+            format!(
+                "UPDATE video SET {} = {} WHERE {} IS NOT NULL AND datetime({}) IS NOT NULL",
+                field,
+                offset_sql.replace("{field}", field),
+                field,
+                field
+            )
+        };
+        
+        match db.execute_unprepared(&sql).await {
+            Ok(result) => {
+                let rows_affected = result.rows_affected();
+                updated_count += rows_affected as u32;
+                debug!("更新视频表的 {} 字段（标准格式），影响 {} 行", field, rows_affected);
+            }
+            Err(e) => {
+                error!("更新视频表的 {} 字段（标准格式）失败: {}", field, e);
+            }
+        }
+        
+        // 处理带UTC后缀的时间戳（主要针对created_at字段）
+        if field == "created_at" {
+            let utc_sql = format!(
+                "UPDATE video SET {} = {} WHERE {} IS NOT NULL AND {} LIKE '% UTC' AND datetime(REPLACE({}, ' UTC', '')) IS NOT NULL",
+                field,
+                offset_sql.replace("{field}", &format!("REPLACE({}, ' UTC', '')", field)),
+                field,
+                field,
+                field
+            );
+            
+            match db.execute_unprepared(&utc_sql).await {
+                Ok(result) => {
+                    let rows_affected = result.rows_affected();
+                    updated_count += rows_affected as u32;
+                    debug!("更新视频表的 {} 字段（UTC格式），影响 {} 行", field, rows_affected);
+                }
+                Err(e) => {
+                    error!("更新视频表的 {} 字段（UTC格式）失败: {}", field, e);
+                }
+            }
+        }
+    }
+    
+    // 更新页面表的 created_at 字段
+    // 先处理标准格式的时间戳
+    let sql = format!(
+        "UPDATE page SET created_at = {} WHERE created_at IS NOT NULL AND created_at != '' AND datetime(created_at) IS NOT NULL",
+        offset_sql.replace("{field}", "created_at")
+    );
+    
+    match db.execute_unprepared(&sql).await {
+        Ok(result) => {
+            let rows_affected = result.rows_affected();
+            updated_count += rows_affected as u32;
+            debug!("更新页面表的 created_at 字段（标准格式），影响 {} 行", rows_affected);
+        }
+        Err(e) => {
+            error!("更新页面表的 created_at 字段（标准格式）失败: {}", e);
+        }
+    }
+    
+    // 处理带UTC后缀的时间戳
+    let utc_sql = format!(
+        "UPDATE page SET created_at = {} WHERE created_at IS NOT NULL AND created_at LIKE '% UTC' AND datetime(REPLACE(created_at, ' UTC', '')) IS NOT NULL",
+        offset_sql.replace("{field}", "REPLACE(created_at, ' UTC', '')")
+    );
+    
+    match db.execute_unprepared(&utc_sql).await {
+        Ok(result) => {
+            let rows_affected = result.rows_affected();
+            updated_count += rows_affected as u32;
+            debug!("更新页面表的 created_at 字段（UTC格式），影响 {} 行", rows_affected);
+        }
+        Err(e) => {
+            error!("更新页面表的 created_at 字段（UTC格式）失败: {}", e);
+        }
+    }
+    
+    // 更新视频源表的 latest_row_at 字段
+    let tables_with_latest_row_at = vec![
+        "favorite",
+        "collection",
+        "watch_later", 
+        "submission"
+    ];
+    
+    for table in tables_with_latest_row_at {
+        let sql = format!(
+            "UPDATE {} SET latest_row_at = {} WHERE latest_row_at IS NOT NULL AND latest_row_at != '1970-01-01 00:00:00' AND datetime(latest_row_at) IS NOT NULL",
+            table,
+            offset_sql.replace("{field}", "latest_row_at")
+        );
+        
+        match db.execute_unprepared(&sql).await {
+            Ok(result) => {
+                let rows_affected = result.rows_affected();
+                updated_count += rows_affected as u32;
+                debug!("更新表 {} 的 latest_row_at 字段，影响 {} 行", table, rows_affected);
+            }
+            Err(e) => {
+                error!("更新表 {} 的 latest_row_at 字段失败: {}", table, e);
+            }
+        }
+    }
+    
+    info!("数据库时间戳同步完成，总共更新了 {} 条记录", updated_count);
+    Ok(updated_count)
 }

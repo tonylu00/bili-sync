@@ -78,6 +78,10 @@ fn default_time_format() -> String {
     "%Y-%m-%d".to_string()
 }
 
+fn default_timezone() -> String {
+    "Asia/Shanghai".to_string()
+}
+
 /// 默认的 auth_token 实现，生成随机 16 位字符串
 fn default_auth_token() -> Option<String> {
     let byte_choices = b"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!@#$%^&*()_+-=";
@@ -114,6 +118,10 @@ fn default_folder_structure() -> Cow<'static, str> {
     Cow::Borrowed("Season 1")
 }
 
+fn default_collection_folder_mode() -> Cow<'static, str> {
+    Cow::Borrowed("separate") // 默认为分离模式（向后兼容）
+}
+
 #[derive(Serialize, Deserialize)]
 pub struct Config {
     #[serde(default = "default_auth_token")]
@@ -132,6 +140,8 @@ pub struct Config {
     pub bangumi_name: Cow<'static, str>,
     #[serde(default = "default_folder_structure")]
     pub folder_structure: Cow<'static, str>,
+    #[serde(default = "default_collection_folder_mode")]
+    pub collection_folder_mode: Cow<'static, str>,
     pub interval: u64,
     pub upper_path: PathBuf,
     #[serde(default)]
@@ -142,6 +152,8 @@ pub struct Config {
     pub time_format: String,
     #[serde(default)]
     pub cdn_sorting: bool,
+    #[serde(default = "default_timezone")]
+    pub timezone: String,
     #[serde(default)]
     pub submission_risk_control: crate::config::item::SubmissionRiskControlConfig,
 }
@@ -159,12 +171,14 @@ impl Default for Config {
             multi_page_name: Cow::Borrowed("{{title}}-P{{pid_pad}}"),
             bangumi_name: Cow::Borrowed("S{{season_pad}}E{{pid_pad}}-{{pid_pad}}"),
             folder_structure: Cow::Borrowed("Season 1"),
+            collection_folder_mode: Cow::Borrowed("separate"),
             interval: 1200,
             upper_path: CONFIG_DIR.join("upper_face"),
             nfo_time_type: NFOTimeType::FavTime,
             concurrent_limit: ConcurrentLimit::default(),
             time_format: default_time_format(),
             cdn_sorting: true,
+            timezone: default_timezone(),
             submission_risk_control: crate::config::item::SubmissionRiskControlConfig::default(),
         }
     }

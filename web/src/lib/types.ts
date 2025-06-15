@@ -164,6 +164,7 @@ export interface ConfigResponse {
 	multi_page_name?: string;
 	bangumi_name?: string;
 	folder_structure: string;
+	collection_folder_mode?: string;
 	time_format: string;
 	interval: number;
 	nfo_time_type: string;
@@ -199,6 +200,22 @@ export interface ConfigResponse {
 	rate_duration?: number;
 	// 新增其他设置
 	cdn_sorting?: boolean;
+	// 时区设置
+	timezone?: string;
+	// UP主投稿风控配置
+	large_submission_threshold?: number;
+	base_request_delay?: number;
+	large_submission_delay_multiplier?: number;
+	enable_progressive_delay?: boolean;
+	max_delay_multiplier?: number;
+	enable_incremental_fetch?: boolean;
+	incremental_fallback_to_full?: boolean;
+	enable_batch_processing?: boolean;
+	batch_size?: number;
+	batch_delay_seconds?: number;
+	enable_auto_backoff?: boolean;
+	auto_backoff_base_seconds?: number;
+	auto_backoff_max_multiplier?: number;
 }
 
 // 更新配置请求类型
@@ -208,6 +225,7 @@ export interface UpdateConfigRequest {
 	multi_page_name?: string;
 	bangumi_name?: string;
 	folder_structure?: string;
+	collection_folder_mode?: string;
 	time_format?: string;
 	interval?: number;
 	nfo_time_type?: string;
@@ -243,6 +261,22 @@ export interface UpdateConfigRequest {
 	rate_duration?: number;
 	// 新增其他设置
 	cdn_sorting?: boolean;
+	// 时区设置
+	timezone?: string;
+	// UP主投稿风控配置
+	large_submission_threshold?: number;
+	base_request_delay?: number;
+	large_submission_delay_multiplier?: number;
+	enable_progressive_delay?: boolean;
+	max_delay_multiplier?: number;
+	enable_incremental_fetch?: boolean;
+	incremental_fallback_to_full?: boolean;
+	enable_batch_processing?: boolean;
+	batch_size?: number;
+	batch_delay_seconds?: number;
+	enable_auto_backoff?: boolean;
+	auto_backoff_base_seconds?: number;
+	auto_backoff_max_multiplier?: number;
 }
 
 // 更新配置响应类型

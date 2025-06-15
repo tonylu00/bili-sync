@@ -626,10 +626,28 @@ pub async fn download_video_pages(
             (base_path.to_path_buf(), None)
         }
     } else {
-        // 非番剧使用原来的逻辑
-        let path = video_source
-            .path()
-            .join(TEMPLATE.path_safe_render("video", &video_format_args(&video_model))?);
+        // 非番剧使用原来的逻辑，但对合集进行特殊处理
+        let path = if let VideoSourceEnum::Collection(collection_source) = video_source {
+            // 合集的特殊处理
+            let config = crate::config::reload_config();
+            match config.collection_folder_mode.as_ref() {
+                "unified" => {
+                    // 统一模式：所有视频放在以合集名称命名的同一个文件夹下
+                    video_source.path().join(&collection_source.name)
+                }
+                _ => {
+                    // 分离模式（默认）：每个视频有自己的文件夹
+                    video_source
+                        .path()
+                        .join(TEMPLATE.path_safe_render("video", &video_format_args(&video_model))?)
+                }
+            }
+        } else {
+            // 其他类型的视频源使用原来的逻辑
+            video_source
+                .path()
+                .join(TEMPLATE.path_safe_render("video", &video_format_args(&video_model))?)
+        };
         (path, None)
     };
 
@@ -893,7 +911,29 @@ pub async fn download_page(
     };
 
     // 根据视频源类型选择不同的模板渲染方式
-    let base_name = if is_bangumi {
+    let base_name = if let VideoSourceEnum::Collection(collection_source) = video_source {
+        // 合集视频的特殊处理
+        let config = crate::config::reload_config();
+        if config.collection_folder_mode.as_ref() == "unified" {
+            // 统一模式：使用S01E01格式命名
+            match get_collection_video_episode_number(connection, collection_source.id, &video_model.bvid).await {
+                Ok(episode_number) => {
+                    format!("S01E{:02} - {}", episode_number, video_model.name)
+                }
+                Err(_) => {
+                    // 如果获取序号失败，使用默认命名
+                    let handlebars = create_handlebars_with_helpers();
+                    let rendered = handlebars.render_template(&config.page_name, &page_format_args(video_model, &page_model))?;
+                    crate::utils::filenamify::filenamify(&rendered)
+                }
+            }
+        } else {
+            // 分离模式：使用原有逻辑
+            let handlebars = create_handlebars_with_helpers();
+            let rendered = handlebars.render_template(&config.page_name, &page_format_args(video_model, &page_model))?;
+            crate::utils::filenamify::filenamify(&rendered)
+        }
+    } else if is_bangumi {
         // 番剧使用专用的模板方法
         if let VideoSourceEnum::BangumiSource(bangumi_source) = video_source {
             bangumi_source
@@ -1966,4 +2006,35 @@ pub async fn auto_reset_risk_control_failures(connection: &DatabaseConnection) -
     }
 
     Ok(())
+}
+
+/// 获取合集中视频的集数序号
+/// 根据视频在合集中的发布时间顺序确定集数
+async fn get_collection_video_episode_number(
+    connection: &DatabaseConnection,
+    collection_id: i32,
+    bvid: &str,
+) -> Result<i32> {
+    use bili_sync_entity::video;
+    use sea_orm::*;
+
+    // 获取该合集中所有视频，按发布时间排序
+    let videos = video::Entity::find()
+        .filter(video::Column::CollectionId.eq(collection_id))
+        .order_by_asc(video::Column::Pubtime)
+        .select_only()
+        .columns([video::Column::Bvid, video::Column::Pubtime])
+        .into_tuple::<(String, chrono::NaiveDateTime)>()
+        .all(connection)
+        .await?;
+
+    // 找到当前视频的位置，返回序号（从1开始）
+    for (index, (video_bvid, _)) in videos.iter().enumerate() {
+        if video_bvid == bvid {
+            return Ok((index + 1) as i32);
+        }
+    }
+
+    // 如果没找到，返回错误
+    Err(anyhow!("视频 {} 在合集 {} 中未找到", bvid, collection_id))
 }

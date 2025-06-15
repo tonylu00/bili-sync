@@ -7,6 +7,7 @@
 	import api from '$lib/api';
 	import { onMount } from 'svelte';
 	import type { ConfigResponse } from '$lib/types';
+	import { TIMEZONE_OPTIONS, DEFAULT_TIMEZONE, getCurrentTimezone, setTimezone } from '$lib/utils/timezone';
 
 	let config: ConfigResponse | null = null;
 	let loading = false;
@@ -18,6 +19,7 @@
 	let multiPageName = '';
 	let bangumiName = '';
 	let folderStructure = '';
+	let collectionFolderMode = 'separate';
 	let timeFormat = '';
 	let interval = 1200;
 	let nfoTimeType = 'favtime';
@@ -57,6 +59,22 @@
 
 	// 其他设置
 	let cdnSorting = false;
+	let timezone = DEFAULT_TIMEZONE;
+
+	// UP主投稿风控配置
+	let largeSubmissionThreshold = 100;
+	let baseRequestDelay = 200;
+	let largeSubmissionDelayMultiplier = 2;
+	let enableProgressiveDelay = true;
+	let maxDelayMultiplier = 4;
+	let enableIncrementalFetch = true;
+	let incrementalFallbackToFull = true;
+	let enableBatchProcessing = false;
+	let batchSize = 5;
+	let batchDelaySeconds = 2;
+	let enableAutoBackoff = true;
+	let autoBackoffBaseSeconds = 10;
+	let autoBackoffMaxMultiplier = 5;
 
 	// 显示帮助信息的状态
 	let showHelp = false;
@@ -194,8 +212,9 @@
 			pageName = config.page_name || '';
 			multiPageName = config.multi_page_name || '';
 			bangumiName = config.bangumi_name || '';
-			folderStructure = config.folder_structure || '';
-			timeFormat = config.time_format || '';
+					folderStructure = config.folder_structure || '';
+		collectionFolderMode = config.collection_folder_mode || 'separate';
+		timeFormat = config.time_format || '';
 			interval = config.interval || 1200;
 			nfoTimeType = config.nfo_time_type || 'favtime';
 			parallelDownloadEnabled = config.parallel_download_enabled || false;
@@ -234,6 +253,22 @@
 
 			// 其他设置
 			cdnSorting = config.cdn_sorting || false;
+			timezone = config.timezone || getCurrentTimezone();
+
+			// UP主投稿风控配置
+			largeSubmissionThreshold = config.large_submission_threshold || 100;
+			baseRequestDelay = config.base_request_delay || 200;
+			largeSubmissionDelayMultiplier = config.large_submission_delay_multiplier || 2;
+			enableProgressiveDelay = config.enable_progressive_delay || true;
+			maxDelayMultiplier = config.max_delay_multiplier || 4;
+			enableIncrementalFetch = config.enable_incremental_fetch || true;
+			incrementalFallbackToFull = config.incremental_fallback_to_full || true;
+			enableBatchProcessing = config.enable_batch_processing || false;
+			batchSize = config.batch_size || 5;
+			batchDelaySeconds = config.batch_delay_seconds || 2;
+			enableAutoBackoff = config.enable_auto_backoff || true;
+			autoBackoffBaseSeconds = config.auto_backoff_base_seconds || 10;
+			autoBackoffMaxMultiplier = config.auto_backoff_max_multiplier || 5;
 		} catch (error: any) {
 			console.error('加载配置失败:', error);
 			toast.error('加载配置失败', { description: error.message });
@@ -250,8 +285,9 @@
 				page_name: pageName,
 				multi_page_name: multiPageName,
 				bangumi_name: bangumiName,
-				folder_structure: folderStructure,
-				time_format: timeFormat,
+							folder_structure: folderStructure,
+			collection_folder_mode: collectionFolderMode,
+			time_format: timeFormat,
 				interval: interval,
 				nfo_time_type: nfoTimeType,
 				parallel_download_enabled: parallelDownloadEnabled,
@@ -285,7 +321,22 @@
 				rate_limit: rateLimit,
 				rate_duration: rateDuration,
 				// 其他设置
-				cdn_sorting: cdnSorting
+				cdn_sorting: cdnSorting,
+				timezone: timezone,
+				// UP主投稿风控配置
+				large_submission_threshold: largeSubmissionThreshold,
+				base_request_delay: baseRequestDelay,
+				large_submission_delay_multiplier: largeSubmissionDelayMultiplier,
+				enable_progressive_delay: enableProgressiveDelay,
+				max_delay_multiplier: maxDelayMultiplier,
+				enable_incremental_fetch: enableIncrementalFetch,
+				incremental_fallback_to_full: incrementalFallbackToFull,
+				enable_batch_processing: enableBatchProcessing,
+				batch_size: batchSize,
+				batch_delay_seconds: batchDelaySeconds,
+				enable_auto_backoff: enableAutoBackoff,
+				auto_backoff_base_seconds: autoBackoffBaseSeconds,
+				auto_backoff_max_multiplier: autoBackoffMaxMultiplier
 			};
 
 			const response = await api.updateConfig(params);
@@ -390,6 +441,22 @@
 										bind:value={folderStructure}
 										placeholder="Season 1"
 									/>
+								</div>
+
+								<div class="space-y-2">
+									<Label for="collection-folder-mode">合集文件夹模式</Label>
+									<select
+										id="collection-folder-mode"
+										bind:value={collectionFolderMode}
+										class="border-input bg-background ring-offset-background focus-visible:ring-ring flex h-10 w-full rounded-md border px-3 py-2 text-sm focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:outline-none"
+									>
+										<option value="separate">分离模式（每个视频独立文件夹）</option>
+										<option value="unified">统一模式（所有视频在合集文件夹下）</option>
+									</select>
+									<p class="text-muted-foreground text-sm">
+										分离模式：每个视频有独立的文件夹（默认）<br/>
+										统一模式：所有视频放在以合集名称命名的同一个文件夹下
+									</p>
 								</div>
 							</div>
 
@@ -863,19 +930,249 @@
 								</div>
 							</div>
 
+							<!-- UP主投稿风控配置 -->
+							<div class="space-y-6">
+								<h2 class="text-lg font-semibold">UP主投稿风控配置</h2>
+								<p class="text-muted-foreground text-sm">用于优化大量视频UP主的获取策略，避免触发风控</p>
+
+								<!-- 基础优化配置 -->
+								<div class="rounded-lg border border-blue-200 bg-blue-50 p-4">
+									<h3 class="mb-3 text-sm font-medium text-blue-800">🎯 基础优化配置</h3>
+									<div class="grid grid-cols-1 gap-4 md:grid-cols-2">
+										<div class="space-y-2">
+											<Label for="large-submission-threshold">大量视频UP主阈值</Label>
+											<Input
+												id="large-submission-threshold"
+												type="number"
+												bind:value={largeSubmissionThreshold}
+												min="10"
+												max="1000"
+												placeholder="100"
+											/>
+											<p class="text-muted-foreground text-xs">超过此视频数量的UP主将启用风控策略</p>
+										</div>
+
+										<div class="space-y-2">
+											<Label for="base-request-delay">基础请求间隔（毫秒）</Label>
+											<Input
+												id="base-request-delay"
+												type="number"
+												bind:value={baseRequestDelay}
+												min="50"
+												max="2000"
+												placeholder="200"
+											/>
+											<p class="text-muted-foreground text-xs">每个请求之间的基础延迟时间</p>
+										</div>
+
+										<div class="space-y-2">
+											<Label for="large-submission-delay-multiplier">大量视频延迟倍数</Label>
+											<Input
+												id="large-submission-delay-multiplier"
+												type="number"
+												bind:value={largeSubmissionDelayMultiplier}
+												min="1"
+												max="10"
+												step="0.5"
+												placeholder="2"
+											/>
+											<p class="text-muted-foreground text-xs">大量视频UP主的延迟倍数</p>
+										</div>
+
+										<div class="space-y-2">
+											<Label for="max-delay-multiplier">最大延迟倍数</Label>
+											<Input
+												id="max-delay-multiplier"
+												type="number"
+												bind:value={maxDelayMultiplier}
+												min="1"
+												max="20"
+												step="0.5"
+												placeholder="4"
+											/>
+											<p class="text-muted-foreground text-xs">渐进式延迟的最大倍数限制</p>
+										</div>
+									</div>
+
+									<div class="mt-4 flex items-center space-x-2">
+										<input
+											type="checkbox"
+											id="enable-progressive-delay"
+											bind:checked={enableProgressiveDelay}
+											class="text-primary focus:ring-primary h-4 w-4 rounded border-gray-300"
+										/>
+										<Label for="enable-progressive-delay" class="text-sm">启用渐进式延迟</Label>
+										<p class="text-muted-foreground ml-2 text-xs">随着请求次数增加逐步延长延迟时间</p>
+									</div>
+								</div>
+
+								<!-- 增量获取配置 -->
+								<div class="rounded-lg border border-green-200 bg-green-50 p-4">
+									<h3 class="mb-3 text-sm font-medium text-green-800">📈 增量获取配置</h3>
+									<div class="space-y-4">
+										<div class="flex items-center space-x-2">
+											<input
+												type="checkbox"
+												id="enable-incremental-fetch"
+												bind:checked={enableIncrementalFetch}
+												class="text-primary focus:ring-primary h-4 w-4 rounded border-gray-300"
+											/>
+											<Label for="enable-incremental-fetch" class="text-sm">启用增量获取</Label>
+											<p class="text-muted-foreground ml-2 text-xs">优先获取最新视频，减少不必要的请求</p>
+										</div>
+
+										<div class="flex items-center space-x-2">
+											<input
+												type="checkbox"
+												id="incremental-fallback-to-full"
+												bind:checked={incrementalFallbackToFull}
+												class="text-primary focus:ring-primary h-4 w-4 rounded border-gray-300"
+											/>
+											<Label for="incremental-fallback-to-full" class="text-sm">增量获取失败时回退到全量获取</Label>
+											<p class="text-muted-foreground ml-2 text-xs">确保数据完整性</p>
+										</div>
+									</div>
+								</div>
+
+								<!-- 分批处理配置 -->
+								<div class="rounded-lg border border-purple-200 bg-purple-50 p-4">
+									<h3 class="mb-3 text-sm font-medium text-purple-800">📦 分批处理配置</h3>
+									<div class="space-y-4">
+										<div class="flex items-center space-x-2">
+											<input
+												type="checkbox"
+												id="enable-batch-processing"
+												bind:checked={enableBatchProcessing}
+												class="text-primary focus:ring-primary h-4 w-4 rounded border-gray-300"
+											/>
+											<Label for="enable-batch-processing" class="text-sm">启用分批处理</Label>
+											<p class="text-muted-foreground ml-2 text-xs">将大量请求分批处理，降低服务器压力</p>
+										</div>
+
+										{#if enableBatchProcessing}
+											<div class="grid grid-cols-1 gap-4 md:grid-cols-2">
+												<div class="space-y-2">
+													<Label for="batch-size">分批大小（页数）</Label>
+													<Input
+														id="batch-size"
+														type="number"
+														bind:value={batchSize}
+														min="1"
+														max="20"
+														placeholder="5"
+													/>
+													<p class="text-muted-foreground text-xs">每批处理的页数</p>
+												</div>
+
+												<div class="space-y-2">
+													<Label for="batch-delay-seconds">批次间延迟（秒）</Label>
+													<Input
+														id="batch-delay-seconds"
+														type="number"
+														bind:value={batchDelaySeconds}
+														min="1"
+														max="60"
+														placeholder="2"
+													/>
+													<p class="text-muted-foreground text-xs">每批之间的等待时间</p>
+												</div>
+											</div>
+										{/if}
+									</div>
+								</div>
+
+								<!-- 自动退避配置 -->
+								<div class="rounded-lg border border-orange-200 bg-orange-50 p-4">
+									<h3 class="mb-3 text-sm font-medium text-orange-800">🔄 自动退避配置</h3>
+									<div class="space-y-4">
+										<div class="flex items-center space-x-2">
+											<input
+												type="checkbox"
+												id="enable-auto-backoff"
+												bind:checked={enableAutoBackoff}
+												class="text-primary focus:ring-primary h-4 w-4 rounded border-gray-300"
+											/>
+											<Label for="enable-auto-backoff" class="text-sm">启用自动退避</Label>
+											<p class="text-muted-foreground ml-2 text-xs">遇到错误时自动增加延迟时间</p>
+										</div>
+
+										{#if enableAutoBackoff}
+											<div class="grid grid-cols-1 gap-4 md:grid-cols-2">
+												<div class="space-y-2">
+													<Label for="auto-backoff-base-seconds">自动退避基础时间（秒）</Label>
+													<Input
+														id="auto-backoff-base-seconds"
+														type="number"
+														bind:value={autoBackoffBaseSeconds}
+														min="1"
+														max="300"
+														placeholder="10"
+													/>
+													<p class="text-muted-foreground text-xs">遇到错误时的基础等待时间</p>
+												</div>
+
+												<div class="space-y-2">
+													<Label for="auto-backoff-max-multiplier">自动退避最大倍数</Label>
+													<Input
+														id="auto-backoff-max-multiplier"
+														type="number"
+														bind:value={autoBackoffMaxMultiplier}
+														min="1"
+														max="20"
+														placeholder="5"
+													/>
+													<p class="text-muted-foreground text-xs">退避时间的最大倍数限制</p>
+												</div>
+											</div>
+										{/if}
+									</div>
+								</div>
+
+								<!-- 使用建议 -->
+								<div class="rounded-lg border border-gray-200 bg-gray-50 p-4">
+									<h3 class="mb-3 text-sm font-medium text-gray-800">💡 使用建议</h3>
+									<div class="space-y-2 text-xs text-gray-600">
+										<p><strong>小型UP主（&lt;100视频）：</strong> 使用默认设置即可</p>
+										<p><strong>中型UP主（100-500视频）：</strong> 启用渐进式延迟和增量获取</p>
+										<p><strong>大型UP主（500-1000视频）：</strong> 启用分批处理，设置较大的延迟倍数</p>
+										<p><strong>超大型UP主（&gt;1000视频）：</strong> 启用所有风控策略，适当增加各项延迟参数</p>
+										<p><strong>频繁遇到412错误：</strong> 增加基础请求间隔和延迟倍数</p>
+									</div>
+								</div>
+							</div>
+
 							<!-- 其他设置 -->
 							<div class="space-y-6">
 								<h2 class="text-lg font-semibold">其他设置</h2>
 
-								<div class="flex items-center space-x-2">
-									<input
-										type="checkbox"
-										id="cdn-sorting"
-										bind:checked={cdnSorting}
-										class="text-primary focus:ring-primary h-4 w-4 rounded border-gray-300"
-									/>
-									<Label for="cdn-sorting" class="text-sm">启用CDN排序</Label>
-									<p class="text-muted-foreground ml-2 text-sm">优化下载节点选择</p>
+								<div class="space-y-4">
+									<div class="space-y-2">
+										<Label for="timezone">时区设置</Label>
+										<select
+											id="timezone"
+											bind:value={timezone}
+											onchange={() => setTimezone(timezone)}
+											class="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+										>
+											{#each TIMEZONE_OPTIONS as option}
+												<option value={option.value}>{option.label}</option>
+											{/each}
+										</select>
+										<p class="text-muted-foreground text-sm">
+											选择时区后，所有时间戳将转换为对应时区显示
+										</p>
+									</div>
+
+									<div class="flex items-center space-x-2">
+										<input
+											type="checkbox"
+											id="cdn-sorting"
+											bind:checked={cdnSorting}
+											class="text-primary focus:ring-primary h-4 w-4 rounded border-gray-300"
+										/>
+										<Label for="cdn-sorting" class="text-sm">启用CDN排序</Label>
+										<p class="text-muted-foreground ml-2 text-sm">优化下载节点选择</p>
+									</div>
 								</div>
 							</div>
 

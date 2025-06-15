@@ -63,6 +63,8 @@ pub struct UpdateConfigRequest {
     pub bangumi_name: Option<String>,
     // 文件夹结构模板
     pub folder_structure: Option<String>,
+    // 合集文件夹模式
+    pub collection_folder_mode: Option<String>,
     // 时间格式
     pub time_format: Option<String>,
     // 扫描间隔（秒）
@@ -102,6 +104,22 @@ pub struct UpdateConfigRequest {
     pub rate_duration: Option<u64>,
     // 其他设置
     pub cdn_sorting: Option<bool>,
+    // 时区设置
+    pub timezone: Option<String>,
+    // UP主投稿风控配置
+    pub large_submission_threshold: Option<usize>,
+    pub base_request_delay: Option<u64>,
+    pub large_submission_delay_multiplier: Option<u64>,
+    pub enable_progressive_delay: Option<bool>,
+    pub max_delay_multiplier: Option<u64>,
+    pub enable_incremental_fetch: Option<bool>,
+    pub incremental_fallback_to_full: Option<bool>,
+    pub enable_batch_processing: Option<bool>,
+    pub batch_size: Option<usize>,
+    pub batch_delay_seconds: Option<u64>,
+    pub enable_auto_backoff: Option<bool>,
+    pub auto_backoff_base_seconds: Option<u64>,
+    pub auto_backoff_max_multiplier: Option<u64>,
 }
 
 #[derive(Debug, Deserialize, ToSchema)]

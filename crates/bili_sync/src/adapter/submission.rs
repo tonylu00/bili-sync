@@ -147,8 +147,8 @@ pub async fn init_submission_sources(
                         upper_id: Set(upper.mid.parse()?),
                         upper_name: Set(upper.name),
                         path: Set(path.to_string_lossy().to_string()),
-                        created_at: Set(chrono::Utc::now().to_string()),
-                        latest_row_at: Set(chrono::Utc::now().naive_utc()),
+                        created_at: Set(chrono::Local::now().to_string()),
+                        latest_row_at: Set(chrono::NaiveDateTime::default()),
                         enabled: Set(true),
                     };
 
@@ -168,8 +168,8 @@ pub async fn init_submission_sources(
                         upper_id: Set(upper_id_i64),
                         upper_name: Set(format!("UP主 {}", upper_id)),
                         path: Set(path.to_string_lossy().to_string()),
-                        created_at: Set(chrono::Utc::now().to_string()),
-                        latest_row_at: Set(chrono::Utc::now().naive_utc()),
+                        created_at: Set(chrono::Local::now().to_string()),
+                        latest_row_at: Set(chrono::NaiveDateTime::default()),
                         enabled: Set(true),
                     };
 

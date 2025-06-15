@@ -44,6 +44,7 @@ pub struct UpdateConfigTask {
     pub multi_page_name: Option<String>,
     pub bangumi_name: Option<String>,
     pub folder_structure: Option<String>,
+    pub collection_folder_mode: Option<String>,
     pub time_format: Option<String>,
     pub interval: Option<u64>,
     pub nfo_time_type: Option<String>,
@@ -79,6 +80,22 @@ pub struct UpdateConfigTask {
     pub rate_duration: Option<u64>,
     // 其他设置
     pub cdn_sorting: Option<bool>,
+    // 时区设置
+    pub timezone: Option<String>,
+    // UP主投稿风控配置
+    pub large_submission_threshold: Option<usize>,
+    pub base_request_delay: Option<u64>,
+    pub large_submission_delay_multiplier: Option<u64>,
+    pub enable_progressive_delay: Option<bool>,
+    pub max_delay_multiplier: Option<u64>,
+    pub enable_incremental_fetch: Option<bool>,
+    pub incremental_fallback_to_full: Option<bool>,
+    pub enable_batch_processing: Option<bool>,
+    pub batch_size: Option<usize>,
+    pub batch_delay_seconds: Option<u64>,
+    pub enable_auto_backoff: Option<bool>,
+    pub auto_backoff_base_seconds: Option<u64>,
+    pub auto_backoff_max_multiplier: Option<u64>,
     pub task_id: String, // 唯一任务ID，用于追踪
 }
 
@@ -419,6 +436,7 @@ impl ConfigTaskQueue {
                 multi_page_name: task.multi_page_name.clone(),
                 bangumi_name: task.bangumi_name.clone(),
                 folder_structure: task.folder_structure.clone(),
+                collection_folder_mode: task.collection_folder_mode.clone(),
                 time_format: task.time_format.clone(),
                 interval: task.interval,
                 nfo_time_type: task.nfo_time_type.clone(),
@@ -454,6 +472,22 @@ impl ConfigTaskQueue {
                 rate_duration: task.rate_duration,
                 // 其他设置
                 cdn_sorting: task.cdn_sorting,
+                // 时区设置
+                timezone: task.timezone.clone(),
+                // UP主投稿风控配置
+                large_submission_threshold: task.large_submission_threshold,
+                base_request_delay: task.base_request_delay,
+                large_submission_delay_multiplier: task.large_submission_delay_multiplier,
+                enable_progressive_delay: task.enable_progressive_delay,
+                max_delay_multiplier: task.max_delay_multiplier,
+                enable_incremental_fetch: task.enable_incremental_fetch,
+                incremental_fallback_to_full: task.incremental_fallback_to_full,
+                enable_batch_processing: task.enable_batch_processing,
+                batch_size: task.batch_size,
+                batch_delay_seconds: task.batch_delay_seconds,
+                enable_auto_backoff: task.enable_auto_backoff,
+                auto_backoff_base_seconds: task.auto_backoff_base_seconds,
+                auto_backoff_max_multiplier: task.auto_backoff_max_multiplier,
             };
 
             match update_config_internal(db.clone(), request).await {

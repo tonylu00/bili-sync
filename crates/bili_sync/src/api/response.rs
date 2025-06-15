@@ -135,6 +135,7 @@ pub struct ConfigResponse {
     pub multi_page_name: String,
     pub bangumi_name: String,
     pub folder_structure: String,
+    pub collection_folder_mode: String,
     pub time_format: String,
     pub interval: u64,
     pub nfo_time_type: String,
@@ -171,6 +172,22 @@ pub struct ConfigResponse {
     pub rate_duration: Option<u64>,
     // 其他设置
     pub cdn_sorting: bool,
+    // 时区设置
+    pub timezone: String,
+    // UP主投稿风控配置
+    pub large_submission_threshold: usize,
+    pub base_request_delay: u64,
+    pub large_submission_delay_multiplier: u64,
+    pub enable_progressive_delay: bool,
+    pub max_delay_multiplier: u64,
+    pub enable_incremental_fetch: bool,
+    pub incremental_fallback_to_full: bool,
+    pub enable_batch_processing: bool,
+    pub batch_size: usize,
+    pub batch_delay_seconds: u64,
+    pub enable_auto_backoff: bool,
+    pub auto_backoff_base_seconds: u64,
+    pub auto_backoff_max_multiplier: u64,
 }
 
 // 更新配置的响应结构体

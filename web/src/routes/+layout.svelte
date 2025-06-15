@@ -80,42 +80,72 @@
 		<Sidebar.Inset class="flex h-screen flex-1 flex-col overflow-hidden">
 			{#if isAuthenticated}
 				<div
-					class="bg-background/95 supports-[backdrop-filter]:bg-background/60 sticky top-0 z-50 flex h-[73px] w-full items-center border-b backdrop-blur"
+					class="bg-background/95 supports-[backdrop-filter]:bg-background/60 sticky top-0 z-50 flex min-h-[73px] w-full items-center border-b backdrop-blur"
 				>
-					<div class="flex w-full items-center gap-4 px-6">
+					<div class="flex w-full items-center gap-2 sm:gap-4 px-4 sm:px-6 py-2">
 						<Sidebar.Trigger class="shrink-0" data-sidebar="trigger" />
-						<div class="flex-1">
+						<div class="flex-1 min-w-0">
 							<SearchBar onSearch={handleSearch} value={searchValue} />
 						</div>
-						<div class="flex items-center gap-2">
+						<div class="flex items-center gap-1 sm:gap-2">
 							{#if isHomePage}
 								<Button
 									size="sm"
 									variant="outline"
 									onclick={() => goto('/add-source')}
-									class="flex items-center gap-2"
+									class="hidden sm:flex items-center gap-2"
 								>
 									<Plus class="h-4 w-4" />
 									添加视频源
+								</Button>
+								<!-- 移动端只显示图标 -->
+								<Button
+									size="sm"
+									variant="outline"
+									onclick={() => goto('/add-source')}
+									class="sm:hidden flex items-center justify-center"
+									title="添加视频源"
+								>
+									<Plus class="h-4 w-4" />
 								</Button>
 							{/if}
 							<Button
 								size="sm"
 								variant="outline"
 								onclick={() => goto('/settings')}
-								class="flex items-center gap-2"
+								class="hidden sm:flex items-center gap-2"
 							>
 								<Settings class="h-4 w-4" />
 								配置
+							</Button>
+							<!-- 移动端只显示图标 -->
+							<Button
+								size="sm"
+								variant="outline"
+								onclick={() => goto('/settings')}
+								class="sm:hidden flex items-center justify-center"
+								title="配置"
+							>
+								<Settings class="h-4 w-4" />
 							</Button>
 							<Button
 								size="sm"
 								variant="outline"
 								onclick={handleLogout}
-								class="flex items-center gap-2"
+								class="hidden sm:flex items-center gap-2"
 							>
 								<LogOut class="h-4 w-4" />
 								退出
+							</Button>
+							<!-- 移动端只显示图标 -->
+							<Button
+								size="sm"
+								variant="outline"
+								onclick={handleLogout}
+								class="sm:hidden flex items-center justify-center"
+								title="退出"
+							>
+								<LogOut class="h-4 w-4" />
 							</Button>
 						</div>
 					</div>
