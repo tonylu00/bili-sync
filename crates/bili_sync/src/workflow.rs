@@ -71,7 +71,7 @@ fn create_handlebars_with_helpers() -> handlebars::Handlebars<'static> {
 
 /// 完整地处理某个视频来源，返回新增的视频数量
 pub async fn process_video_source(
-    args: Args<'_>,
+    args: &Args,
     bili_client: &BiliClient,
     path: &Path,
     connection: &DatabaseConnection,
@@ -83,7 +83,7 @@ pub async fn process_video_source(
         season_id,
         media_id: _,
         ep_id: _,
-    } = args
+    } = &args
     {
         // 尝试从API获取真实的番剧标题
         let title = if let Some(season_id) = season_id {

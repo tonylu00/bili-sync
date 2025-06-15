@@ -87,27 +87,27 @@ pub trait VideoSource {
     fn log_download_video_end(&self);
 }
 
-#[derive(Clone, Copy, Debug)]
-pub enum Args<'a> {
+#[derive(Clone, Debug)]
+pub enum Args {
     Favorite {
-        fid: &'a str,
+        fid: String,
     },
     Collection {
-        collection_item: &'a CollectionItem,
+        collection_item: CollectionItem,
     },
     WatchLater,
     Submission {
-        upper_id: &'a str,
+        upper_id: String,
     },
     Bangumi {
-        season_id: &'a Option<String>,
-        media_id: &'a Option<String>,
-        ep_id: &'a Option<String>,
+        season_id: Option<String>,
+        media_id: Option<String>,
+        ep_id: Option<String>,
     },
 }
 
 pub async fn video_source_from<'a>(
-    args: Args<'a>,
+    args: &'a Args,
     path: &'a Path,
     bili_client: &'a BiliClient,
     connection: &DatabaseConnection,
@@ -160,9 +160,9 @@ impl _ActiveModel {
 }
 
 pub async fn bangumi_from<'a>(
-    season_id: &'a Option<String>,
-    media_id: &'a Option<String>,
-    ep_id: &'a Option<String>,
+    season_id: &Option<String>,
+    media_id: &Option<String>,
+    ep_id: &Option<String>,
     path: &'a Path,
     bili_client: &'a BiliClient,
     connection: &DatabaseConnection,

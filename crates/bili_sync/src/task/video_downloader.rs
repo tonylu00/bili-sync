@@ -18,7 +18,7 @@ use bili_sync_entity::entities;
 /// 从数据库加载所有视频源的函数
 async fn load_video_sources_from_db(
     connection: &DatabaseConnection,
-) -> Result<Vec<(Args<'static>, PathBuf)>, Box<dyn std::error::Error + Send + Sync>> {
+) -> Result<Vec<(Args, PathBuf)>, Box<dyn std::error::Error + Send + Sync>> {
     let mut video_sources = Vec::new();
 
     // 加载合集源（只加载启用的）
@@ -34,11 +34,11 @@ async fn load_video_sources_from_db(
             CollectionType::Season
         };
 
-        let collection_item = Box::leak(Box::new(CollectionItem {
+        let collection_item = CollectionItem {
             mid: collection.m_id.to_string(),
             sid: collection.s_id.to_string(),
             collection_type,
-        }));
+        };
 
         video_sources.push((Args::Collection { collection_item }, PathBuf::from(collection.path)));
     }
@@ -49,7 +49,7 @@ async fn load_video_sources_from_db(
         .all(connection).await?;
 
     for favorite in favorites {
-        let fid = Box::leak(favorite.f_id.to_string().into_boxed_str());
+        let fid = favorite.f_id.to_string();
         video_sources.push((Args::Favorite { fid }, PathBuf::from(favorite.path)));
     }
 
@@ -59,7 +59,7 @@ async fn load_video_sources_from_db(
         .all(connection).await?;
 
     for submission in submissions {
-        let upper_id = Box::leak(submission.upper_id.to_string().into_boxed_str());
+        let upper_id = submission.upper_id.to_string();
         video_sources.push((Args::Submission { upper_id }, PathBuf::from(submission.path)));
     }
 
@@ -80,15 +80,11 @@ async fn load_video_sources_from_db(
         .await?;
 
     for bangumi in bangumi_sources {
-        let season_id = Box::leak(Box::new(bangumi.season_id));
-        let media_id = Box::leak(Box::new(bangumi.media_id));
-        let ep_id = Box::leak(Box::new(bangumi.ep_id));
-
         video_sources.push((
             Args::Bangumi {
-                season_id,
-                media_id,
-                ep_id,
+                season_id: bangumi.season_id,
+                media_id: bangumi.media_id,
+                ep_id: bangumi.ep_id,
             },
             PathBuf::from(bangumi.path),
         ));
@@ -269,7 +265,7 @@ pub async fn video_downloader(connection: Arc<DatabaseConnection>) {
                 }
 
                 match process_video_source(
-                    *args,
+                    args,
                     &bili_client,
                     path,
                     &connection,

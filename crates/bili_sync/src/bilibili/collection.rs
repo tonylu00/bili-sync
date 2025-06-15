@@ -45,7 +45,7 @@ impl Display for CollectionType {
     }
 }
 
-#[derive(PartialEq, Eq, Hash, Debug)]
+#[derive(Clone, PartialEq, Eq, Hash, Debug)]
 pub struct CollectionItem {
     pub mid: String,
     pub sid: String,
