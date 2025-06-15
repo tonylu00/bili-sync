@@ -68,6 +68,7 @@ export default defineConfig({
 			{
 				text: "高级",
 				items: [
+					{ text: "v2.7.2 Final 高级功能", link: "/bili-sync-v2.7.2-advanced-features" },
 					{ text: "任务队列管理", link: "/queue-management" },
 					{ text: "智能风控处理", link: "/risk-control-guide" },
 					{ text: "双重重置系统", link: "/reset-functionality-guide" },

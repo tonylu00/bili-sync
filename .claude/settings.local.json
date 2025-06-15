@@ -11,7 +11,8 @@
       "Bash(npm run docs:build:*)",
       "Bash(pkill:*)",
       "Bash(true)",
-      "Bash(rg:*)"
+      "Bash(rg:*)",
+      "Bash(sed:*)"
     ],
     "deny": []
   }
