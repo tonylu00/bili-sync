@@ -435,13 +435,13 @@ impl Config {
                 {
                     ok = false;
                     critical_error = true;
-                    error!("请到配置文件添加哔哩哔哩账号的身份凭据 稍后重新运行");
+                    warn!("未设置完整的B站登录凭证，程序将以受限模式运行");
                 }
             }
             None => {
                 ok = false;
                 critical_error = true;
-                error!("请到配置文件添加哔哩哔哩账号的身份凭据 稍后重新运行");
+                warn!("未设置B站登录凭证，程序将以受限模式运行");
             }
         }
         if !(self.concurrent_limit.video > 0 && self.concurrent_limit.page > 0) {
@@ -450,10 +450,12 @@ impl Config {
         }
 
         if critical_error {
-            panic!(
-                "位于 {} 的配置文件存在严重错误，请参考提示信息修复后继续运行",
+            warn!(
+                "配置文件中检测到凭证未设置，程序将继续运行但功能受限。配置文件位置: {}",
                 CONFIG_DIR.join("config.toml").display()
             );
+            warn!("请通过Web管理界面或配置文件添加B站登录凭证以启用完整功能");
+            // 不再使用 panic!，而是允许程序继续运行
         }
 
         ok
