@@ -118,7 +118,9 @@
 				isAuthenticated = true;
 				loadInitialData();
 			} catch (error) {
-				// Token无效，需要重新登录
+				// Token无效，清除无效token并需要重新登录
+				localStorage.removeItem('auth_token');
+				api.setAuthToken('');
 				isAuthenticated = false;
 			}
 		} catch (error) {

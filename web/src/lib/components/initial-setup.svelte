@@ -30,6 +30,17 @@
 	// 显示帮助对话框
 	let showHelpDialog = false;
 
+	// 组件初始化时清除可能的错误状态
+	import { onMount } from 'svelte';
+	
+	onMount(() => {
+		// 清除可能存在的无效token
+		api.setAuthToken('');
+		// 重置错误状态
+		authError = '';
+		credentialError = '';
+	});
+
 	// 验证并设置 API Token
 	async function setupAuthToken() {
 		if (!authToken.trim()) {
