@@ -8,7 +8,7 @@ use tokio::time::sleep;
 use tracing::{debug, info, warn};
 
 use crate::bilibili::Client;
-use crate::config::{CONFIG, CONFIG_DIR};
+use crate::config::CONFIG_DIR;
 
 /// 嵌入的aria2二进制文件 (编译时自动下载对应平台版本)
 #[cfg(target_os = "windows")]
@@ -294,8 +294,9 @@ impl Aria2Downloader {
             return Ok(());
         }
 
-        // 从配置文件获取线程数
-        let threads = CONFIG.concurrent_limit.parallel_download.threads;
+        // 从最新配置获取线程数
+        let current_config = crate::config::reload_config();
+        let threads = current_config.concurrent_limit.parallel_download.threads;
 
         let mut args = vec![
             "--enable-rpc".to_string(),
@@ -435,8 +436,9 @@ impl Aria2Downloader {
     async fn add_download_task(&self, urls: &[&str], dir: &str, file_name: &str) -> Result<String> {
         let url = format!("http://127.0.0.1:{}/jsonrpc", self.rpc_port);
 
-        // 从配置文件获取线程数
-        let threads = CONFIG.concurrent_limit.parallel_download.threads;
+        // 从最新配置获取线程数
+        let current_config = crate::config::reload_config();
+        let threads = current_config.concurrent_limit.parallel_download.threads;
 
         // 构建基础选项
         let mut options = serde_json::json!({
