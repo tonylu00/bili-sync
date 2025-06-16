@@ -8,7 +8,9 @@ pub struct PageAnalyzer {
     info: serde_json::Value,
 }
 
-#[derive(Debug, strum::FromRepr, strum::EnumString, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+#[derive(
+    Debug, strum::FromRepr, strum::EnumString, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize, Clone, Copy,
+)]
 pub enum VideoQuality {
     Quality360p = 16,
     Quality480p = 32,
@@ -54,7 +56,18 @@ impl AudioQuality {
 }
 
 #[allow(clippy::upper_case_acronyms)]
-#[derive(Debug, strum::EnumString, strum::Display, strum::AsRefStr, PartialEq, PartialOrd, Serialize, Deserialize)]
+#[derive(
+    Debug,
+    strum::EnumString,
+    strum::Display,
+    strum::AsRefStr,
+    PartialEq,
+    PartialOrd,
+    Serialize,
+    Deserialize,
+    Clone,
+    Copy,
+)]
 pub enum VideoCodecs {
     #[strum(serialize = "HEV")]
     HEV,

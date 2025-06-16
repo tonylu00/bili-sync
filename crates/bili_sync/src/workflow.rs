@@ -88,7 +88,8 @@ pub async fn process_video_source(
         // 尝试从API获取真实的番剧标题
         let title = if let Some(season_id) = season_id {
             // 如果有season_id，尝试获取番剧标题
-            get_season_title_from_api(bili_client, season_id, token.clone()).await
+            get_season_title_from_api(bili_client, season_id, token.clone())
+                .await
                 .unwrap_or_else(|| {
                     // API获取失败，回退到路径名
                     path.file_name()
@@ -120,19 +121,18 @@ pub async fn process_video_source(
     };
 
     // 从参数中获取视频列表的 Model 与视频流
-    let (video_source, video_streams) =
-        match video_source_from(args, path, bili_client, connection).await {
-            Ok(result) => result,
-            Err(e) => {
-                let error_msg = format!("{:#}", e);
-                if retry_with_refresh(error_msg).await.is_ok() {
-                    // 刷新成功，重试
-                    video_source_from(args, path, bili_client, connection).await?
-                } else {
-                    return Err(e);
-                }
+    let (video_source, video_streams) = match video_source_from(args, path, bili_client, connection).await {
+        Ok(result) => result,
+        Err(e) => {
+            let error_msg = format!("{:#}", e);
+            if retry_with_refresh(error_msg).await.is_ok() {
+                // 刷新成功，重试
+                video_source_from(args, path, bili_client, connection).await?
+            } else {
+                return Err(e);
             }
-        };
+        }
+    };
 
     // 从视频流中获取新视频的简要信息，写入数据库，并获取新增视频数量
     let new_video_count = match refresh_video_source(&video_source, video_streams, connection, token.clone()).await {
@@ -141,8 +141,7 @@ pub async fn process_video_source(
             let error_msg = format!("{:#}", e);
             if retry_with_refresh(error_msg).await.is_ok() {
                 // 刷新成功，重新获取视频流并重试
-                let (_, video_streams) =
-                    video_source_from(args, path, bili_client, connection).await?;
+                let (_, video_streams) = video_source_from(args, path, bili_client, connection).await?;
                 refresh_video_source(&video_source, video_streams, connection, token.clone()).await?
             } else {
                 return Err(e);
@@ -155,7 +154,7 @@ pub async fn process_video_source(
         // 新增：检查是否为风控导致的下载中止
         if e.downcast_ref::<DownloadAbortError>().is_some() {
             error!("获取视频详情时触发风控，已终止当前视频源的处理，等待下一轮执行");
-            
+
             // 中止当前源的处理，但不返回错误，以便任务调度器可以继续处理下一个视频源。
             // 返回 Ok 意味着这个源的处理（虽然被中止了）从调度器的角度看是"完成"的。
             return Ok(new_video_count);
@@ -332,10 +331,7 @@ pub async fn fetch_video_details(
 
             // 4. 使用合并后的信息处理所有视频
             for video_model in videos {
-                if let Err(e) =
-                    process_bangumi_video(video_model, &existing_episodes, connection, video_source)
-                        .await
-                {
+                if let Err(e) = process_bangumi_video(video_model, &existing_episodes, connection, video_source).await {
                     error!("处理番剧视频失败: {}", e);
                 }
             }
@@ -390,7 +386,7 @@ pub async fn fetch_video_details(
 
         // 使用信号量控制并发数
         let semaphore = Semaphore::new(CONFIG.concurrent_limit.video);
-        
+
         let tasks = normal_videos
             .into_iter()
             .map(|video_model| {
@@ -543,7 +539,7 @@ pub async fn download_unprocessed_videos(
 
     if download_aborted {
         error!("下载触发风控，已终止所有任务，等待下一轮执行");
-        
+
         // 自动重置风控导致的失败任务
         if let Err(reset_err) = auto_reset_risk_control_failures(connection).await {
             error!("自动重置风控失败任务时出错: {:#}", reset_err);
@@ -678,12 +674,12 @@ pub async fn download_video_pages(
     // 对于单页视频，page 的下载已经足够
     // 对于多页视频，page 下载仅包含了分集内容，需要额外补上视频的 poster 的 tvshow.nfo
     // 使用 tokio::join! 替代装箱的 Future，零分配并行执行
-    
+
     // 首先检查是否取消
     if token.is_cancelled() {
         return Err(anyhow!("Download cancelled"));
     }
-    
+
     let (res_1, res_2, res_3, res_4, res_5) = tokio::join!(
         // 下载视频封面
         fetch_video_poster(
@@ -715,27 +711,28 @@ pub async fn download_video_pages(
             base_upper_path.join("person.nfo"),
         ),
         // 分发并执行分 P 下载的任务
-        dispatch_download_page(DownloadPageArgs {
-            should_run: separate_status[4],
-            bili_client,
-            video_source,
-            video_model: &video_model,
-            pages,
-            connection,
-            downloader,
-            base_path: &base_path,
-            token: token.clone(),
-        }, token.clone())
+        dispatch_download_page(
+            DownloadPageArgs {
+                should_run: separate_status[4],
+                bili_client,
+                video_source,
+                video_model: &video_model,
+                pages,
+                connection,
+                downloader,
+                base_path: &base_path,
+                token: token.clone(),
+            },
+            token.clone()
+        )
     );
-    
+
     let results = [res_1, res_2, res_3, res_4, res_5]
         .into_iter()
         .map(Into::into)
         .collect::<Vec<_>>();
     status.update_status(&results);
-    
 
-    
     results
         .iter()
         .take(4)
@@ -809,10 +806,7 @@ pub async fn download_video_pages(
 }
 
 /// 分发并执行分页下载任务，当且仅当所有分页成功下载或达到最大重试次数时返回 Ok，否则根据失败原因返回对应的错误
-pub async fn dispatch_download_page(
-    args: DownloadPageArgs<'_>,
-    token: CancellationToken,
-) -> Result<ExecutionStatus> {
+pub async fn dispatch_download_page(args: DownloadPageArgs<'_>, token: CancellationToken) -> Result<ExecutionStatus> {
     if !args.should_run {
         return Ok(ExecutionStatus::Skipped);
     }
@@ -847,8 +841,7 @@ pub async fn dispatch_download_page(
                 // 在过去的实现中，此处仅仅根据 page_download_status 的最高标志位来判断，如果最高标志位是 true 则认为完成
                 // 这样会导致即使分页中有失败到 MAX_RETRY 的情况，视频层的分 P 下载状态也会被认为是 Succeeded，不够准确
                 // 新版本实现会将此处取值为所有子任务状态的最小值，这样只有所有分页的子任务全部成功时才会认为视频层的分 P 下载状态是 Succeeded
-                let page_download_status =
-                    model.download_status.try_as_ref().expect("download_status must be set");
+                let page_download_status = model.download_status.try_as_ref().expect("download_status must be set");
                 let separate_status: [u32; 5] = PageStatus::from(*page_download_status).into();
                 for status in separate_status {
                     target_status = target_status.min(status);
@@ -856,8 +849,7 @@ pub async fn dispatch_download_page(
                 update_pages_model(vec![model], args.connection).await?;
             }
             Err(e) => {
-                if e.downcast_ref::<DownloadAbortError>().is_some() || e.to_string().contains("Download cancelled")
-                {
+                if e.downcast_ref::<DownloadAbortError>().is_some() || e.to_string().contains("Download cancelled") {
                     if !download_aborted {
                         token.cancel();
                         download_aborted = true;
@@ -923,14 +915,16 @@ pub async fn download_page(
                 Err(_) => {
                     // 如果获取序号失败，使用默认命名
                     let handlebars = create_handlebars_with_helpers();
-                    let rendered = handlebars.render_template(&config.page_name, &page_format_args(video_model, &page_model))?;
+                    let rendered =
+                        handlebars.render_template(&config.page_name, &page_format_args(video_model, &page_model))?;
                     crate::utils::filenamify::filenamify(&rendered)
                 }
             }
         } else {
             // 分离模式：使用原有逻辑
             let handlebars = create_handlebars_with_helpers();
-            let rendered = handlebars.render_template(&config.page_name, &page_format_args(video_model, &page_model))?;
+            let rendered =
+                handlebars.render_template(&config.page_name, &page_format_args(video_model, &page_model))?;
             crate::utils::filenamify::filenamify(&rendered)
         }
     } else if is_bangumi {
@@ -1053,15 +1047,13 @@ pub async fn download_page(
             token.clone(),
         )
     );
-    
+
     let results = [res_1, res_2, res_3, res_4, res_5]
         .into_iter()
         .map(Into::into)
         .collect::<Vec<_>>();
     status.update_status(&results);
-    
 
-    
     results
         .iter()
         .zip(["封面", "视频", "详情", "弹幕", "字幕"])
@@ -1618,7 +1610,11 @@ async fn get_bangumi_aid_from_api(bili_client: &BiliClient, ep_id: &str, token: 
 }
 
 /// 从番剧API获取指定EP的CID和duration
-async fn get_bangumi_info_from_api(bili_client: &BiliClient, ep_id: &str, token: CancellationToken) -> Option<(i64, u32)> {
+async fn get_bangumi_info_from_api(
+    bili_client: &BiliClient,
+    ep_id: &str,
+    token: CancellationToken,
+) -> Option<(i64, u32)> {
     let url = format!("https://api.bilibili.com/pgc/view/web/season?ep_id={}", ep_id);
 
     match tokio::select! {
@@ -1709,7 +1705,11 @@ async fn get_existing_episodes_for_season(
 }
 
 /// 从API获取整个番剧季的信息（单次请求）
-async fn get_season_info_from_api(bili_client: &BiliClient, season_id: &str, token: CancellationToken) -> Result<SeasonInfo> {
+async fn get_season_info_from_api(
+    bili_client: &BiliClient,
+    season_id: &str,
+    token: CancellationToken,
+) -> Result<SeasonInfo> {
     let url = format!("https://api.bilibili.com/pgc/view/web/season?season_id={}", season_id);
 
     let res = tokio::select! {
@@ -1819,6 +1819,145 @@ async fn get_video_count_for_source(video_source: &VideoSourceEnum, connection: 
     Ok(count as usize)
 }
 
+/// 自动重置风控导致的失败任务
+/// 当检测到风控时，将所有失败状态(值为3)、正在进行状态(值为2)以及未完成的任务重置为未开始状态(值为0)
+pub async fn auto_reset_risk_control_failures(connection: &DatabaseConnection) -> Result<()> {
+    use crate::utils::status::{PageStatus, VideoStatus};
+    use bili_sync_entity::{page, video};
+    use sea_orm::*;
+
+    info!("检测到风控，开始自动重置失败、进行中和未完成的下载任务...");
+
+    // 查询所有视频和页面数据
+    let (all_videos, all_pages) = tokio::try_join!(
+        video::Entity::find()
+            .select_only()
+            .columns([video::Column::Id, video::Column::Name, video::Column::DownloadStatus,])
+            .into_tuple::<(i32, String, u32)>()
+            .all(connection),
+        page::Entity::find()
+            .select_only()
+            .columns([page::Column::Id, page::Column::Name, page::Column::DownloadStatus,])
+            .into_tuple::<(i32, String, u32)>()
+            .all(connection)
+    )?;
+
+    let mut resetted_videos = 0;
+    let mut resetted_pages = 0;
+
+    let txn = connection.begin().await?;
+
+    // 重置视频失败、进行中和未完成状态
+    for (id, name, download_status) in all_videos {
+        let mut video_status = VideoStatus::from(download_status);
+        let mut video_resetted = false;
+
+        // 检查是否为完全成功的状态（所有任务都是1）
+        let is_fully_completed = (0..5).all(|task_index| video_status.get(task_index) == 1);
+
+        if !is_fully_completed {
+            // 如果不是完全成功，检查所有任务索引，将失败状态(3)、正在进行状态(2)和未开始状态(0)重置为未开始(0)
+            for task_index in 0..5 {
+                let status_value = video_status.get(task_index);
+                if status_value == 3 || status_value == 2 || status_value == 0 {
+                    video_status.set(task_index, 0); // 重置为未开始
+                    video_resetted = true;
+                }
+            }
+        }
+
+        if video_resetted {
+            video::Entity::update(video::ActiveModel {
+                id: sea_orm::ActiveValue::Unchanged(id),
+                download_status: sea_orm::Set(video_status.into()),
+                ..Default::default()
+            })
+            .exec(&txn)
+            .await?;
+
+            resetted_videos += 1;
+            debug!("重置视频「{}」的未完成任务状态", name);
+        }
+    }
+
+    // 重置页面失败、进行中和未完成状态
+    for (id, name, download_status) in all_pages {
+        let mut page_status = PageStatus::from(download_status);
+        let mut page_resetted = false;
+
+        // 检查是否为完全成功的状态（所有任务都是1）
+        let is_fully_completed = (0..5).all(|task_index| page_status.get(task_index) == 1);
+
+        if !is_fully_completed {
+            // 如果不是完全成功，检查所有任务索引，将失败状态(3)、正在进行状态(2)和未开始状态(0)重置为未开始(0)
+            for task_index in 0..5 {
+                let status_value = page_status.get(task_index);
+                if status_value == 3 || status_value == 2 || status_value == 0 {
+                    page_status.set(task_index, 0); // 重置为未开始
+                    page_resetted = true;
+                }
+            }
+        }
+
+        if page_resetted {
+            page::Entity::update(page::ActiveModel {
+                id: sea_orm::ActiveValue::Unchanged(id),
+                download_status: sea_orm::Set(page_status.into()),
+                ..Default::default()
+            })
+            .exec(&txn)
+            .await?;
+
+            resetted_pages += 1;
+            debug!("重置页面「{}」的未完成任务状态", name);
+        }
+    }
+
+    txn.commit().await?;
+
+    if resetted_videos > 0 || resetted_pages > 0 {
+        info!(
+            "风控自动重置完成：重置了 {} 个视频和 {} 个页面的未完成任务状态",
+            resetted_videos, resetted_pages
+        );
+    } else {
+        info!("风控自动重置完成：所有任务都已完成，无需重置");
+    }
+
+    Ok(())
+}
+
+/// 获取合集中视频的集数序号
+/// 根据视频在合集中的发布时间顺序确定集数
+async fn get_collection_video_episode_number(
+    connection: &DatabaseConnection,
+    collection_id: i32,
+    bvid: &str,
+) -> Result<i32> {
+    use bili_sync_entity::video;
+    use sea_orm::*;
+
+    // 获取该合集中所有视频，按发布时间排序
+    let videos = video::Entity::find()
+        .filter(video::Column::CollectionId.eq(collection_id))
+        .order_by_asc(video::Column::Pubtime)
+        .select_only()
+        .columns([video::Column::Bvid, video::Column::Pubtime])
+        .into_tuple::<(String, chrono::NaiveDateTime)>()
+        .all(connection)
+        .await?;
+
+    // 找到当前视频的位置，返回序号（从1开始）
+    for (index, (video_bvid, _)) in videos.iter().enumerate() {
+        if video_bvid == bvid {
+            return Ok((index + 1) as i32);
+        }
+    }
+
+    // 如果没找到，返回错误
+    Err(anyhow!("视频 {} 在合集 {} 中未找到", bvid, collection_id))
+}
+
 #[cfg(test)]
 mod tests {
     use handlebars::handlebars_helper;
@@ -1890,151 +2029,4 @@ mod tests {
             "哈哈，你说得对，但是 Rust 是由 Mozilla 自主研发的一"
         );
     }
-}
-
-/// 自动重置风控导致的失败任务
-/// 当检测到风控时，将所有失败状态(值为3)、正在进行状态(值为2)以及未完成的任务重置为未开始状态(值为0)
-pub async fn auto_reset_risk_control_failures(connection: &DatabaseConnection) -> Result<()> {
-    use bili_sync_entity::{video, page};
-    use sea_orm::*;
-    use crate::utils::status::{VideoStatus, PageStatus};
-
-    info!("检测到风控，开始自动重置失败、进行中和未完成的下载任务...");
-
-    // 查询所有视频和页面数据
-    let (all_videos, all_pages) = tokio::try_join!(
-        video::Entity::find()
-            .select_only()
-            .columns([
-                video::Column::Id,
-                video::Column::Name,
-                video::Column::DownloadStatus,
-            ])
-            .into_tuple::<(i32, String, u32)>()
-            .all(connection),
-        page::Entity::find()
-            .select_only()
-            .columns([
-                page::Column::Id,
-                page::Column::Name,
-                page::Column::DownloadStatus,
-            ])
-            .into_tuple::<(i32, String, u32)>()
-            .all(connection)
-    )?;
-
-    let mut resetted_videos = 0;
-    let mut resetted_pages = 0;
-
-    let txn = connection.begin().await?;
-
-    // 重置视频失败、进行中和未完成状态
-    for (id, name, download_status) in all_videos {
-        let mut video_status = VideoStatus::from(download_status);
-        let mut video_resetted = false;
-        
-        // 检查是否为完全成功的状态（所有任务都是1）
-        let is_fully_completed = (0..5).all(|task_index| video_status.get(task_index) == 1);
-        
-        if !is_fully_completed {
-            // 如果不是完全成功，检查所有任务索引，将失败状态(3)、正在进行状态(2)和未开始状态(0)重置为未开始(0)
-            for task_index in 0..5 {
-                let status_value = video_status.get(task_index);
-                if status_value == 3 || status_value == 2 || status_value == 0 { 
-                    video_status.set(task_index, 0); // 重置为未开始
-                    video_resetted = true;
-                }
-            }
-        }
-        
-        if video_resetted {
-            video::Entity::update(video::ActiveModel {
-                id: sea_orm::ActiveValue::Unchanged(id),
-                download_status: sea_orm::Set(video_status.into()),
-                ..Default::default()
-            })
-            .exec(&txn)
-            .await?;
-            
-            resetted_videos += 1;
-            debug!("重置视频「{}」的未完成任务状态", name);
-        }
-    }
-
-    // 重置页面失败、进行中和未完成状态
-    for (id, name, download_status) in all_pages {
-        let mut page_status = PageStatus::from(download_status);
-        let mut page_resetted = false;
-        
-        // 检查是否为完全成功的状态（所有任务都是1）
-        let is_fully_completed = (0..5).all(|task_index| page_status.get(task_index) == 1);
-        
-        if !is_fully_completed {
-            // 如果不是完全成功，检查所有任务索引，将失败状态(3)、正在进行状态(2)和未开始状态(0)重置为未开始(0)
-            for task_index in 0..5 {
-                let status_value = page_status.get(task_index);
-                if status_value == 3 || status_value == 2 || status_value == 0 { 
-                    page_status.set(task_index, 0); // 重置为未开始
-                    page_resetted = true;
-                }
-            }
-        }
-        
-        if page_resetted {
-            page::Entity::update(page::ActiveModel {
-                id: sea_orm::ActiveValue::Unchanged(id),
-                download_status: sea_orm::Set(page_status.into()),
-                ..Default::default()
-            })
-            .exec(&txn)
-            .await?;
-            
-            resetted_pages += 1;
-            debug!("重置页面「{}」的未完成任务状态", name);
-        }
-    }
-
-    txn.commit().await?;
-
-    if resetted_videos > 0 || resetted_pages > 0 {
-        info!(
-            "风控自动重置完成：重置了 {} 个视频和 {} 个页面的未完成任务状态",
-            resetted_videos, resetted_pages
-        );
-    } else {
-        info!("风控自动重置完成：所有任务都已完成，无需重置");
-    }
-
-    Ok(())
-}
-
-/// 获取合集中视频的集数序号
-/// 根据视频在合集中的发布时间顺序确定集数
-async fn get_collection_video_episode_number(
-    connection: &DatabaseConnection,
-    collection_id: i32,
-    bvid: &str,
-) -> Result<i32> {
-    use bili_sync_entity::video;
-    use sea_orm::*;
-
-    // 获取该合集中所有视频，按发布时间排序
-    let videos = video::Entity::find()
-        .filter(video::Column::CollectionId.eq(collection_id))
-        .order_by_asc(video::Column::Pubtime)
-        .select_only()
-        .columns([video::Column::Bvid, video::Column::Pubtime])
-        .into_tuple::<(String, chrono::NaiveDateTime)>()
-        .all(connection)
-        .await?;
-
-    // 找到当前视频的位置，返回序号（从1开始）
-    for (index, (video_bvid, _)) in videos.iter().enumerate() {
-        if video_bvid == bvid {
-            return Ok((index + 1) as i32);
-        }
-    }
-
-    // 如果没找到，返回错误
-    Err(anyhow!("视频 {} 在合集 {} 中未找到", bvid, collection_id))
 }

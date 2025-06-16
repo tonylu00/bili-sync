@@ -13,7 +13,7 @@ pub async fn auth(headers: HeaderMap, request: Request, next: Next) -> Result<Re
     // 排除不需要认证的路径
     let path = request.uri().path();
     let excluded_paths = [
-        "/api/search", // 搜索API不需要认证
+        "/api/search",      // 搜索API不需要认证
         "/api/proxy/image", // 图片代理不需要认证
     ];
 

@@ -114,7 +114,9 @@ pub struct VideoInfo {
 }
 
 impl From<(i32, String, String, String, i32, u32, String)> for VideoInfo {
-    fn from((id, name, upper_name, path, category, download_status, cover): (i32, String, String, String, i32, u32, String)) -> Self {
+    fn from(
+        (id, name, upper_name, path, category, download_status, cover): (i32, String, String, String, i32, u32, String),
+    ) -> Self {
         Self {
             id,
             name,
@@ -196,6 +198,56 @@ pub struct UpdateConfigResponse {
     pub success: bool,
     pub message: String,
     pub updated_files: Option<u32>, // 重命名的文件数量
+}
+
+// 配置管理相关响应结构体
+
+// 配置项响应
+#[derive(Debug, Clone, Serialize, ToSchema)]
+pub struct ConfigItemResponse {
+    pub key: String,
+    pub value: serde_json::Value,
+    pub updated_at: String,
+}
+
+// 配置重载响应
+#[derive(Debug, Clone, Serialize, ToSchema)]
+pub struct ConfigReloadResponse {
+    pub success: bool,
+    pub message: String,
+    pub reloaded_at: String,
+}
+
+// 配置变更历史响应
+#[derive(Serialize, ToSchema)]
+pub struct ConfigHistoryResponse {
+    pub changes: Vec<ConfigChangeInfo>,
+    pub total: usize,
+}
+
+#[derive(Serialize, ToSchema)]
+pub struct ConfigChangeInfo {
+    pub id: i32,
+    pub key_name: String,
+    pub old_value: Option<String>,
+    pub new_value: String,
+    pub changed_at: String,
+}
+
+// 配置验证响应
+#[derive(Serialize, ToSchema)]
+pub struct ConfigValidationResponse {
+    pub valid: bool,
+    pub errors: Vec<String>,
+    pub warnings: Vec<String>,
+}
+
+// 热重载状态响应
+#[derive(Serialize, ToSchema)]
+pub struct HotReloadStatusResponse {
+    pub enabled: bool,
+    pub last_reload: Option<String>,
+    pub pending_changes: usize,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, utoipa::ToSchema)]

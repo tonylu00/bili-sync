@@ -168,3 +168,43 @@ pub struct UpdateVideoStatusRequest {
 pub struct ResetSpecificTasksRequest {
     pub task_indexes: Vec<usize>, // 要重置的任务索引列表 (0-4)
 }
+
+// 配置管理相关请求结构体
+
+// 更新单个配置项请求
+#[derive(Debug, Clone, Deserialize, ToSchema)]
+pub struct UpdateConfigItemRequest {
+    pub value: serde_json::Value,
+}
+
+// 批量更新配置请求
+#[derive(Debug, Clone, Deserialize, ToSchema)]
+pub struct BatchUpdateConfigRequest {
+    pub items: std::collections::HashMap<String, serde_json::Value>,
+}
+
+// 配置历史查询请求
+#[derive(Deserialize, IntoParams)]
+#[allow(dead_code)]
+pub struct ConfigHistoryRequest {
+    pub key: Option<String>,
+    pub limit: Option<u64>,
+    pub offset: Option<u64>,
+}
+
+// 配置导出请求
+#[derive(Deserialize, ToSchema)]
+#[allow(dead_code)]
+pub struct ConfigExportRequest {
+    pub format: String,            // "json" 或 "toml"
+    pub keys: Option<Vec<String>>, // 指定要导出的配置键，None表示导出全部
+}
+
+// 配置导入请求
+#[derive(Deserialize, ToSchema)]
+#[allow(dead_code)]
+pub struct ConfigImportRequest {
+    pub format: String, // "json" 或 "toml"
+    pub data: String,   // 配置数据
+    pub merge: bool,    // 是否合并现有配置，false表示覆盖
+}

@@ -13,7 +13,7 @@ pub struct WatchLaterConfig {
 }
 
 /// NFO 文件使用的时间类型
-#[derive(Serialize, Deserialize, Default, Clone, PartialEq)]
+#[derive(Serialize, Deserialize, Default, Clone, PartialEq, Debug)]
 #[serde(rename_all = "lowercase")]
 pub enum NFOTimeType {
     #[default]
@@ -22,7 +22,7 @@ pub enum NFOTimeType {
 }
 
 /// 多线程下载配置
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct ParallelDownloadConfig {
     /// 是否启用多线程下载
     #[serde(default = "default_parallel_download_enabled")]
@@ -50,7 +50,7 @@ impl Default for ParallelDownloadConfig {
 }
 
 /// 并发下载相关的配置
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct ConcurrentLimit {
     pub video: usize,
     pub page: usize,
@@ -59,7 +59,7 @@ pub struct ConcurrentLimit {
     pub parallel_download: ParallelDownloadConfig,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct RateLimit {
     pub limit: usize,
     pub duration: u64,
@@ -81,7 +81,7 @@ impl Default for ConcurrentLimit {
 }
 
 /// UP主投稿风控配置
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct SubmissionRiskControlConfig {
     /// 大量视频UP主的阈值（超过此数量视为大量视频UP主）
     #[serde(default = "default_large_submission_threshold")]
@@ -196,6 +196,7 @@ impl Default for SubmissionRiskControlConfig {
     }
 }
 
+#[allow(dead_code)]
 pub trait PathSafeTemplate {
     fn path_safe_register(&mut self, name: &'static str, template: &'static str) -> Result<()>;
     fn path_safe_render(&self, name: &'static str, data: &serde_json::Value) -> Result<String>;

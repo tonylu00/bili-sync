@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use anyhow::{Context, Result};
-use axum::extract::Request;
+use axum::extract::{Path, Request};
 use axum::http::{header, Uri};
 use axum::response::IntoResponse;
 use axum::routing::{delete, get, post, put};
@@ -14,11 +14,40 @@ use utoipa_swagger_ui::{Config, SwaggerUi};
 
 use crate::api::auth;
 use crate::api::handler::{
-    add_video_source, delete_video_source, get_bangumi_seasons, get_config, get_logs, get_queue_status,
-    get_subscribed_collections, get_user_collections, get_user_favorites, get_user_followings, get_video,
-    get_video_sources, get_videos, proxy_image, reload_config, reset_all_videos, reset_specific_tasks, reset_video, search_bilibili, update_config,
-    update_video_source_enabled, update_video_status, ApiDoc,
+    add_video_source,
+    batch_update_config_internal,
+    delete_video_source,
+    get_bangumi_seasons,
+    get_config,
+    get_config_history,
+    // 新增配置管理API
+    get_config_item,
+    get_hot_reload_status,
+    get_logs,
+    get_queue_status,
+    get_subscribed_collections,
+    get_user_collections,
+    get_user_favorites,
+    get_user_followings,
+    get_video,
+    get_video_sources,
+    get_videos,
+    proxy_image,
+    reload_config,
+    reload_config_new_internal,
+    reset_all_videos,
+    reset_specific_tasks,
+    reset_video,
+    search_bilibili,
+    update_config,
+    update_config_item_internal,
+    update_video_source_enabled,
+    update_video_status,
+    validate_config,
+    ApiDoc,
 };
+use crate::api::request::{BatchUpdateConfigRequest, UpdateConfigItemRequest};
+use crate::api::wrapper::ApiResponse;
 use crate::config::CONFIG;
 
 #[derive(Embed)]
@@ -29,7 +58,10 @@ pub async fn http_server(database_connection: Arc<DatabaseConnection>) -> Result
     let app = Router::new()
         .route("/api/video-sources", get(get_video_sources))
         .route("/api/video-sources", post(add_video_source))
-        .route("/api/video-sources/{source_type}/{id}/enabled", put(update_video_source_enabled))
+        .route(
+            "/api/video-sources/{source_type}/{id}/enabled",
+            put(update_video_source_enabled),
+        )
         .route("/api/video-sources/{source_type}/{id}", delete(delete_video_source))
         .route("/api/videos", get(get_videos))
         .route("/api/videos/{id}", get(get_video))
@@ -40,6 +72,36 @@ pub async fn http_server(database_connection: Arc<DatabaseConnection>) -> Result
         .route("/api/reload-config", post(reload_config))
         .route("/api/config", get(get_config))
         .route("/api/config", put(update_config))
+        // 新的配置管理API路由
+        .route("/api/config/item/{key}", get(get_config_item))
+        .route(
+            "/api/config/item/{key}",
+            put(
+                |Path(key): Path<String>,
+                 Extension(db): Extension<Arc<DatabaseConnection>>,
+                 axum::Json(request): axum::Json<UpdateConfigItemRequest>| async move {
+                    update_config_item_internal(db, key, request).await.map(ApiResponse::ok)
+                },
+            ),
+        )
+        .route(
+            "/api/config/batch",
+            post(
+                |Extension(db): Extension<Arc<DatabaseConnection>>,
+                 axum::Json(request): axum::Json<BatchUpdateConfigRequest>| async move {
+                    batch_update_config_internal(db, request).await.map(ApiResponse::ok)
+                },
+            ),
+        )
+        .route(
+            "/api/config/reload",
+            post(|Extension(db): Extension<Arc<DatabaseConnection>>| async move {
+                reload_config_new_internal(db).await.map(ApiResponse::ok)
+            }),
+        )
+        .route("/api/config/history", get(get_config_history))
+        .route("/api/config/validate", post(validate_config))
+        .route("/api/config/hot-reload/status", get(get_hot_reload_status))
         .route("/api/bangumi/seasons/{season_id}", get(get_bangumi_seasons))
         .route("/api/search", get(search_bilibili))
         .route("/api/user/favorites", get(get_user_favorites))

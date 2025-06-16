@@ -3,6 +3,7 @@
 pub mod prelude;
 
 pub mod collection;
+pub mod config_item;
 pub mod favorite;
 pub mod page;
 pub mod submission;

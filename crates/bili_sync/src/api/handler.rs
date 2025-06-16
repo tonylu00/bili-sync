@@ -19,10 +19,14 @@ use utoipa::OpenApi;
 
 use crate::api::auth::OpenAPIAuth;
 use crate::api::error::InnerApiError;
-use crate::api::request::{AddVideoSourceRequest, ResetSpecificTasksRequest, UpdateConfigRequest, UpdateVideoStatusRequest, VideosRequest};
+use crate::api::request::{
+    AddVideoSourceRequest, BatchUpdateConfigRequest, ConfigHistoryRequest, ResetSpecificTasksRequest,
+    UpdateConfigItemRequest, UpdateConfigRequest, UpdateVideoStatusRequest, VideosRequest,
+};
 use crate::api::response::{
-    AddVideoSourceResponse, BangumiSeasonInfo, ConfigResponse, DeleteVideoSourceResponse, PageInfo,
-    ResetAllVideosResponse, ResetVideoResponse, UpdateConfigResponse, UpdateVideoStatusResponse, VideoInfo,
+    AddVideoSourceResponse, BangumiSeasonInfo, ConfigChangeInfo, ConfigHistoryResponse, ConfigItemResponse,
+    ConfigReloadResponse, ConfigResponse, ConfigValidationResponse, DeleteVideoSourceResponse, HotReloadStatusResponse,
+    PageInfo, ResetAllVideosResponse, ResetVideoResponse, UpdateConfigResponse, UpdateVideoStatusResponse, VideoInfo,
     VideoResponse, VideoSource, VideoSourcesResponse, VideosResponse,
 };
 use crate::api::wrapper::{ApiError, ApiResponse};
@@ -31,7 +35,7 @@ use crate::utils::status::{PageStatus, VideoStatus};
 
 #[derive(OpenApi)]
 #[openapi(
-    paths(get_video_sources, get_videos, get_video, reset_video, reset_all_videos, reset_specific_tasks, update_video_status, add_video_source, update_video_source_enabled, delete_video_source, reload_config, get_config, update_config, get_bangumi_seasons, search_bilibili, get_user_favorites, get_user_collections, get_user_followings, get_subscribed_collections, get_logs, get_queue_status, proxy_image),
+    paths(get_video_sources, get_videos, get_video, reset_video, reset_all_videos, reset_specific_tasks, update_video_status, add_video_source, update_video_source_enabled, delete_video_source, reload_config, get_config, update_config, get_bangumi_seasons, search_bilibili, get_user_favorites, get_user_collections, get_user_followings, get_subscribed_collections, get_logs, get_queue_status, proxy_image, get_config_item, get_config_history, validate_config, get_hot_reload_status),
     modifiers(&OpenAPIAuth),
     security(
         ("Token" = []),
@@ -61,7 +65,11 @@ pub async fn get_video_sources(
     // 获取各类视频源
     let collection_sources = collection::Entity::find()
         .select_only()
-        .columns([collection::Column::Id, collection::Column::Name, collection::Column::Enabled])
+        .columns([
+            collection::Column::Id,
+            collection::Column::Name,
+            collection::Column::Enabled,
+        ])
         .into_model::<VideoSource>()
         .all(db.as_ref())
         .await?;
@@ -93,7 +101,11 @@ pub async fn get_video_sources(
     let bangumi_sources = video_source::Entity::find()
         .filter(video_source::Column::Type.eq(1))
         .select_only()
-        .columns([video_source::Column::Id, video_source::Column::Name, video_source::Column::Enabled])
+        .columns([
+            video_source::Column::Id,
+            video_source::Column::Name,
+            video_source::Column::Enabled,
+        ])
         .into_model::<VideoSource>()
         .all(db.as_ref())
         .await?;
@@ -560,18 +572,19 @@ pub async fn reset_specific_tasks(
         .filter_map(|(id, pid, name, download_status, video_id)| {
             let mut page_status = PageStatus::from(download_status);
             let mut page_resetted = false;
-            
+
             // 强制重置指定的任务索引（不管当前状态）
             for &task_index in task_indexes {
                 if task_index < 5 {
                     let current_status = page_status.get(task_index);
-                    if current_status != 0 { // 只要不是未开始状态就重置
+                    if current_status != 0 {
+                        // 只要不是未开始状态就重置
                         page_status.set(task_index, 0); // 重置为未开始
                         page_resetted = true;
                     }
                 }
             }
-            
+
             if page_resetted {
                 let page_info = PageInfo::from((id, pid, name, page_status.into()));
                 Some((page_info, video_id))
@@ -596,24 +609,25 @@ pub async fn reset_specific_tasks(
         .filter_map(|mut video_info| {
             let mut video_status = VideoStatus::from(video_info.download_status);
             let mut video_resetted = false;
-            
+
             // 强制重置指定任务（不管当前状态）
             for &task_index in task_indexes {
                 if task_index < 5 {
                     let current_status = video_status.get(task_index);
-                    if current_status != 0 { // 只要不是未开始状态就重置
+                    if current_status != 0 {
+                        // 只要不是未开始状态就重置
                         video_status.set(task_index, 0); // 重置为未开始
                         video_resetted = true;
                     }
                 }
             }
-            
+
             // 如果有分页被重置，同时重置分P下载状态
             if video_ids_with_resetted_pages.contains(&video_info.id) {
                 video_status.set(4, 0); // 将"分P下载"重置为 0
                 video_resetted = true;
             }
-            
+
             if video_resetted {
                 video_info.download_status = video_status.into();
                 Some(video_info)
@@ -1343,11 +1357,15 @@ pub async fn reload_config() -> Result<ApiResponse<bool>, ApiError> {
 
 /// 内部重载配置函数（用于队列处理和直接调用）
 pub async fn reload_config_internal() -> Result<bool, ApiError> {
-    // 调用config中的reload_config函数获取新配置
-    let _new_config = crate::config::reload_config();
+    // 优先从数据库重新加载配置包
+    if let Err(e) = crate::config::reload_config_bundle().await {
+        warn!("从数据库重新加载配置包失败: {}, 回退到TOML重载", e);
+        // 回退到传统的重新加载方式
+        let _new_config = crate::config::reload_config();
+    } else {
+        info!("配置包已从数据库重新加载");
+    }
 
-    // 将配置应用到数据库或其他状态管理中
-    // 这里我们可以执行额外的初始化操作，如果需要的话
     info!("配置已重新加载");
 
     // 返回成功响应
@@ -1372,7 +1390,9 @@ pub async fn update_video_source_enabled(
     Path((source_type, id)): Path<(String, i32)>,
     axum::Json(params): axum::Json<crate::api::request::UpdateVideoSourceEnabledRequest>,
 ) -> Result<ApiResponse<crate::api::response::UpdateVideoSourceEnabledResponse>, ApiError> {
-    update_video_source_enabled_internal(db, source_type, id, params.enabled).await.map(ApiResponse::ok)
+    update_video_source_enabled_internal(db, source_type, id, params.enabled)
+        .await
+        .map(ApiResponse::ok)
 }
 
 /// 内部更新视频源启用状态函数
@@ -1448,7 +1468,11 @@ pub async fn update_video_source_enabled_internal(
                 source_id: id,
                 source_type: "submission".to_string(),
                 enabled,
-                message: format!("UP主投稿 {} 已{}", submission.upper_name, if enabled { "启用" } else { "禁用" }),
+                message: format!(
+                    "UP主投稿 {} 已{}",
+                    submission.upper_name,
+                    if enabled { "启用" } else { "禁用" }
+                ),
             }
         }
         "watch_later" => {
@@ -2315,14 +2339,20 @@ pub async fn update_config_internal(
     }
 
     if let Some(collection_folder_mode) = params.collection_folder_mode {
-        if !collection_folder_mode.trim().is_empty() && collection_folder_mode != original_collection_folder_mode.as_ref() {
+        if !collection_folder_mode.trim().is_empty()
+            && collection_folder_mode != original_collection_folder_mode.as_ref()
+        {
             // 验证合集文件夹模式的有效性
             match collection_folder_mode.as_str() {
                 "separate" | "unified" => {
                     config.collection_folder_mode = Cow::Owned(collection_folder_mode);
                     updated_fields.push("collection_folder_mode");
                 }
-                _ => return Err(anyhow!("无效的合集文件夹模式，只支持 'separate'（分离模式）或 'unified'（统一模式）").into()),
+                _ => {
+                    return Err(
+                        anyhow!("无效的合集文件夹模式，只支持 'separate'（分离模式）或 'unified'（统一模式）").into(),
+                    )
+                }
             }
         }
     }
@@ -2618,9 +2648,12 @@ pub async fn update_config_internal(
             let old_timezone = config.timezone.clone();
             config.timezone = timezone.clone();
             updated_fields.push("timezone");
-            
+
             // 同步数据库中的时间戳到新时区
-            info!("时区配置已更新，开始同步数据库时间戳从 {} 到 {}", old_timezone, timezone);
+            info!(
+                "时区配置已更新，开始同步数据库时间戳从 {} 到 {}",
+                old_timezone, timezone
+            );
             match sync_database_timestamps(db.clone(), &old_timezone, &timezone).await {
                 Ok(count) => {
                     info!("数据库时间戳同步完成，共更新了 {} 条记录", count);
@@ -2736,8 +2769,23 @@ pub async fn update_config_internal(
     // 保存配置到文件
     config.save()?;
 
-    // 重新加载全局配置
-    crate::config::reload_config();
+    // 同时保存配置到数据库
+    {
+        use crate::config::ConfigManager;
+        let manager = ConfigManager::new(db.as_ref().clone());
+        if let Err(e) = manager.save_config(&config).await {
+            warn!("保存配置到数据库失败: {}", e);
+        } else {
+            info!("配置已同步保存到数据库");
+        }
+    }
+
+    // 重新加载全局配置包（从数据库）
+    if let Err(e) = crate::config::reload_config_bundle().await {
+        warn!("重新加载配置包失败: {}", e);
+        // 回退到传统的重新加载方式
+        crate::config::reload_config();
+    }
 
     // 如果更新了命名相关的配置，重命名已下载的文件
     let mut updated_files = 0u32;
@@ -4373,9 +4421,7 @@ pub async fn get_queue_status() -> Result<ApiResponse<QueueStatusResponse>, ApiE
 pub async fn proxy_image(
     Query(params): Query<std::collections::HashMap<String, String>>,
 ) -> Result<axum::response::Response, ApiError> {
-    let url = params
-        .get("url")
-        .ok_or_else(|| anyhow!("缺少url参数"))?;
+    let url = params.get("url").ok_or_else(|| anyhow!("缺少url参数"))?;
 
     // 验证URL是否来自B站
     if !url.contains("hdslb.com") && !url.contains("bilibili.com") {
@@ -4384,7 +4430,7 @@ pub async fn proxy_image(
 
     // 创建HTTP客户端
     let client = reqwest::Client::new();
-    
+
     // 请求图片，添加必要的请求头
     let response = client
         .get(url)
@@ -4407,10 +4453,7 @@ pub async fn proxy_image(
         .to_string();
 
     // 获取图片数据
-    let image_data = response
-        .bytes()
-        .await
-        .map_err(|e| anyhow!("读取图片数据失败: {}", e))?;
+    let image_data = response.bytes().await.map_err(|e| anyhow!("读取图片数据失败: {}", e))?;
 
     // 返回图片响应
     Ok(axum::response::Response::builder()
@@ -4422,18 +4465,14 @@ pub async fn proxy_image(
 }
 
 /// 同步数据库中的时间戳到新时区
-/// 
+///
 /// 该函数会将数据库中所有的时间戳字段从旧时区转换为新时区
 /// 包括：视频源表的created_at、视频表的时间戳字段、页面表的created_at等
-async fn sync_database_timestamps(
-    db: Arc<DatabaseConnection>,
-    old_timezone: &str,
-    new_timezone: &str,
-) -> Result<u32> {
+async fn sync_database_timestamps(db: Arc<DatabaseConnection>, old_timezone: &str, new_timezone: &str) -> Result<u32> {
     use sea_orm::ConnectionTrait;
-    
+
     let mut updated_count = 0u32;
-    
+
     // 解析时区
     let old_tz = match old_timezone {
         "Asia/Shanghai" => 8,
@@ -4451,7 +4490,7 @@ async fn sync_database_timestamps(
         "Asia/Taipei" => 8,
         _ => 8, // 默认北京时间
     };
-    
+
     let new_tz = match new_timezone {
         "Asia/Shanghai" => 8,
         "UTC" => 0,
@@ -4468,31 +4507,26 @@ async fn sync_database_timestamps(
         "Asia/Taipei" => 8,
         _ => 8, // 默认北京时间
     };
-    
+
     let offset_hours = new_tz - old_tz;
-    
+
     if offset_hours == 0 {
         info!("时区偏移为0，无需同步数据库时间戳");
         return Ok(0);
     }
-    
+
     info!("开始同步数据库时间戳，时区偏移: {} 小时", offset_hours);
-    
+
     // 构建时间偏移的SQL表达式
     let offset_sql = if offset_hours > 0 {
         format!("datetime({{field}}, '+{} hours')", offset_hours)
     } else {
         format!("datetime({{field}}, '{} hours')", offset_hours)
     };
-    
+
     // 更新视频源表的 created_at 字段
-    let tables_with_created_at = vec![
-        "favorite",
-        "collection", 
-        "watch_later",
-        "submission"
-    ];
-    
+    let tables_with_created_at = vec!["favorite", "collection", "watch_later", "submission"];
+
     for table in tables_with_created_at {
         // 先处理标准格式的时间戳
         let sql = format!(
@@ -4500,40 +4534,46 @@ async fn sync_database_timestamps(
             table,
             offset_sql.replace("{field}", "created_at")
         );
-        
+
         match db.execute_unprepared(&sql).await {
             Ok(result) => {
                 let rows_affected = result.rows_affected();
                 updated_count += rows_affected as u32;
-                debug!("更新表 {} 的 created_at 字段（标准格式），影响 {} 行", table, rows_affected);
+                debug!(
+                    "更新表 {} 的 created_at 字段（标准格式），影响 {} 行",
+                    table, rows_affected
+                );
             }
             Err(e) => {
                 error!("更新表 {} 的 created_at 字段（标准格式）失败: {}", table, e);
             }
         }
-        
+
         // 处理带UTC后缀的时间戳
         let utc_sql = format!(
             "UPDATE {} SET created_at = {} WHERE created_at IS NOT NULL AND created_at LIKE '% UTC' AND datetime(REPLACE(created_at, ' UTC', '')) IS NOT NULL",
             table,
             offset_sql.replace("{field}", "REPLACE(created_at, ' UTC', '')")
         );
-        
+
         match db.execute_unprepared(&utc_sql).await {
             Ok(result) => {
                 let rows_affected = result.rows_affected();
                 updated_count += rows_affected as u32;
-                debug!("更新表 {} 的 created_at 字段（UTC格式），影响 {} 行", table, rows_affected);
+                debug!(
+                    "更新表 {} 的 created_at 字段（UTC格式），影响 {} 行",
+                    table, rows_affected
+                );
             }
             Err(e) => {
                 error!("更新表 {} 的 created_at 字段（UTC格式）失败: {}", table, e);
             }
         }
     }
-    
+
     // 更新视频表的时间戳字段
     let video_timestamp_fields = vec!["ctime", "pubtime", "favtime", "created_at"];
-    
+
     for field in video_timestamp_fields {
         // 先处理标准格式的时间戳
         let sql = if field == "created_at" {
@@ -4554,7 +4594,7 @@ async fn sync_database_timestamps(
                 field
             )
         };
-        
+
         match db.execute_unprepared(&sql).await {
             Ok(result) => {
                 let rows_affected = result.rows_affected();
@@ -4565,7 +4605,7 @@ async fn sync_database_timestamps(
                 error!("更新视频表的 {} 字段（标准格式）失败: {}", field, e);
             }
         }
-        
+
         // 处理带UTC后缀的时间戳（主要针对created_at字段）
         if field == "created_at" {
             let utc_sql = format!(
@@ -4576,7 +4616,7 @@ async fn sync_database_timestamps(
                 field,
                 field
             );
-            
+
             match db.execute_unprepared(&utc_sql).await {
                 Ok(result) => {
                     let rows_affected = result.rows_affected();
@@ -4589,14 +4629,14 @@ async fn sync_database_timestamps(
             }
         }
     }
-    
+
     // 更新页面表的 created_at 字段
     // 先处理标准格式的时间戳
     let sql = format!(
         "UPDATE page SET created_at = {} WHERE created_at IS NOT NULL AND created_at != '' AND datetime(created_at) IS NOT NULL",
         offset_sql.replace("{field}", "created_at")
     );
-    
+
     match db.execute_unprepared(&sql).await {
         Ok(result) => {
             let rows_affected = result.rows_affected();
@@ -4607,13 +4647,13 @@ async fn sync_database_timestamps(
             error!("更新页面表的 created_at 字段（标准格式）失败: {}", e);
         }
     }
-    
+
     // 处理带UTC后缀的时间戳
     let utc_sql = format!(
         "UPDATE page SET created_at = {} WHERE created_at IS NOT NULL AND created_at LIKE '% UTC' AND datetime(REPLACE(created_at, ' UTC', '')) IS NOT NULL",
         offset_sql.replace("{field}", "REPLACE(created_at, ' UTC', '')")
     );
-    
+
     match db.execute_unprepared(&utc_sql).await {
         Ok(result) => {
             let rows_affected = result.rows_affected();
@@ -4624,22 +4664,17 @@ async fn sync_database_timestamps(
             error!("更新页面表的 created_at 字段（UTC格式）失败: {}", e);
         }
     }
-    
+
     // 更新视频源表的 latest_row_at 字段
-    let tables_with_latest_row_at = vec![
-        "favorite",
-        "collection",
-        "watch_later", 
-        "submission"
-    ];
-    
+    let tables_with_latest_row_at = vec!["favorite", "collection", "watch_later", "submission"];
+
     for table in tables_with_latest_row_at {
         let sql = format!(
             "UPDATE {} SET latest_row_at = {} WHERE latest_row_at IS NOT NULL AND latest_row_at != '1970-01-01 00:00:00' AND datetime(latest_row_at) IS NOT NULL",
             table,
             offset_sql.replace("{field}", "latest_row_at")
         );
-        
+
         match db.execute_unprepared(&sql).await {
             Ok(result) => {
                 let rows_affected = result.rows_affected();
@@ -4651,7 +4686,238 @@ async fn sync_database_timestamps(
             }
         }
     }
-    
+
     info!("数据库时间戳同步完成，总共更新了 {} 条记录", updated_count);
     Ok(updated_count)
+}
+
+// ============================================================================
+// 配置管理 API 端点
+// ============================================================================
+
+/// 获取单个配置项
+#[utoipa::path(
+    get,
+    path = "/api/config/item/{key}",
+    responses(
+        (status = 200, description = "成功获取配置项", body = ConfigItemResponse),
+        (status = 404, description = "配置项不存在"),
+        (status = 500, description = "内部服务器错误")
+    ),
+    security(("Token" = []))
+)]
+pub async fn get_config_item(
+    Path(key): Path<String>,
+    Extension(db): Extension<Arc<DatabaseConnection>>,
+) -> Result<ApiResponse<ConfigItemResponse>, ApiError> {
+    use bili_sync_entity::entities::{config_item, prelude::ConfigItem};
+    use sea_orm::{ColumnTrait, EntityTrait, QueryFilter};
+
+    // 从数据库查找配置项
+    let config_item = ConfigItem::find()
+        .filter(config_item::Column::KeyName.eq(&key))
+        .one(db.as_ref())
+        .await
+        .map_err(|e| ApiError::from(anyhow!("查询配置项失败: {}", e)))?;
+
+    match config_item {
+        Some(item) => {
+            let value: serde_json::Value =
+                serde_json::from_str(&item.value_json).map_err(|e| ApiError::from(anyhow!("解析配置值失败: {}", e)))?;
+
+            let response = ConfigItemResponse {
+                key: item.key_name,
+                value,
+                updated_at: item.updated_at.format("%Y-%m-%d %H:%M:%S UTC").to_string(),
+            };
+
+            Ok(ApiResponse::ok(response))
+        }
+        None => {
+            use crate::api::error::InnerApiError;
+            Err(ApiError::from(InnerApiError::BadRequest(format!(
+                "配置项 '{}' 不存在",
+                key
+            ))))
+        }
+    }
+}
+
+// 删除未使用的外层函数，保留内部实现
+
+pub async fn update_config_item_internal(
+    db: Arc<DatabaseConnection>,
+    key: String,
+    request: UpdateConfigItemRequest,
+) -> Result<ConfigItemResponse, ApiError> {
+    use crate::config::ConfigManager;
+
+    // 创建配置管理器
+    let manager = ConfigManager::new(db.as_ref().clone());
+
+    // 更新配置项
+    if let Err(e) = manager.update_config_item(&key, request.value.clone()).await {
+        warn!("更新配置项失败: {}", e);
+        return Err(ApiError::from(anyhow!("更新配置项失败: {}", e)));
+    }
+
+    // 重新加载配置包
+    if let Err(e) = crate::config::reload_config_bundle().await {
+        warn!("重新加载配置包失败: {}", e);
+    }
+
+    // 返回响应
+    let response = ConfigItemResponse {
+        key: key.clone(),
+        value: request.value,
+        updated_at: chrono::Utc::now().format("%Y-%m-%d %H:%M:%S UTC").to_string(),
+    };
+
+    Ok(response)
+}
+
+// 删除未使用的外层函数，保留内部实现
+
+pub async fn batch_update_config_internal(
+    db: Arc<DatabaseConnection>,
+    request: BatchUpdateConfigRequest,
+) -> Result<ConfigReloadResponse, ApiError> {
+    use crate::config::ConfigManager;
+
+    let manager = ConfigManager::new(db.as_ref().clone());
+
+    // 批量更新配置项
+    for (key, value) in request.items {
+        if let Err(e) = manager.update_config_item(&key, value).await {
+            warn!("更新配置项 '{}' 失败: {}", key, e);
+            return Err(ApiError::from(anyhow!("更新配置项 '{}' 失败: {}", key, e)));
+        }
+    }
+
+    // 重新加载配置包
+    if let Err(e) = crate::config::reload_config_bundle().await {
+        warn!("重新加载配置包失败: {}", e);
+        return Err(ApiError::from(anyhow!("重新加载配置包失败: {}", e)));
+    }
+
+    let response = ConfigReloadResponse {
+        success: true,
+        message: "配置批量更新成功".to_string(),
+        reloaded_at: chrono::Utc::now().format("%Y-%m-%d %H:%M:%S UTC").to_string(),
+    };
+
+    Ok(response)
+}
+
+// 删除未使用的外层函数，保留内部实现
+
+pub async fn reload_config_new_internal(_db: Arc<DatabaseConnection>) -> Result<ConfigReloadResponse, ApiError> {
+    // 重新加载配置包
+    if let Err(e) = crate::config::reload_config_bundle().await {
+        warn!("重新加载配置包失败: {}", e);
+        return Err(ApiError::from(anyhow!("重新加载配置包失败: {}", e)));
+    }
+
+    let response = ConfigReloadResponse {
+        success: true,
+        message: "配置重载成功".to_string(),
+        reloaded_at: chrono::Utc::now().format("%Y-%m-%d %H:%M:%S UTC").to_string(),
+    };
+
+    Ok(response)
+}
+
+/// 获取配置变更历史
+#[utoipa::path(
+    get,
+    path = "/api/config/history",
+    params(ConfigHistoryRequest),
+    responses(
+        (status = 200, description = "成功获取配置变更历史", body = ConfigHistoryResponse),
+        (status = 500, description = "内部服务器错误")
+    ),
+    security(("Token" = []))
+)]
+pub async fn get_config_history(
+    Query(params): Query<ConfigHistoryRequest>,
+    Extension(db): Extension<Arc<DatabaseConnection>>,
+) -> Result<ApiResponse<ConfigHistoryResponse>, ApiError> {
+    use crate::config::ConfigManager;
+
+    let manager = ConfigManager::new(db.as_ref().clone());
+
+    let changes = manager
+        .get_config_history(params.key.as_deref(), params.limit)
+        .await
+        .map_err(|e| ApiError::from(anyhow!("获取配置变更历史失败: {}", e)))?;
+
+    let change_infos: Vec<ConfigChangeInfo> = changes
+        .into_iter()
+        .map(|change| ConfigChangeInfo {
+            id: change.id,
+            key_name: change.key_name,
+            old_value: change.old_value,
+            new_value: change.new_value,
+            changed_at: change.changed_at.format("%Y-%m-%d %H:%M:%S UTC").to_string(),
+        })
+        .collect();
+
+    let response = ConfigHistoryResponse {
+        total: change_infos.len(),
+        changes: change_infos,
+    };
+
+    Ok(ApiResponse::ok(response))
+}
+
+/// 验证配置
+#[utoipa::path(
+    post,
+    path = "/api/config/validate",
+    responses(
+        (status = 200, description = "配置验证结果", body = ConfigValidationResponse),
+        (status = 500, description = "内部服务器错误")
+    ),
+    security(("Token" = []))
+)]
+pub async fn validate_config(
+    Extension(_db): Extension<Arc<DatabaseConnection>>,
+) -> Result<ApiResponse<ConfigValidationResponse>, ApiError> {
+    // 使用当前配置进行验证
+    let is_valid = crate::config::with_config(|bundle| bundle.validate());
+
+    let response = ConfigValidationResponse {
+        valid: is_valid,
+        errors: if is_valid {
+            vec![]
+        } else {
+            vec!["配置验证失败".to_string()]
+        },
+        warnings: vec![],
+    };
+
+    Ok(ApiResponse::ok(response))
+}
+
+/// 获取热重载状态
+#[utoipa::path(
+    get,
+    path = "/api/config/hot-reload/status",
+    responses(
+        (status = 200, description = "热重载状态", body = HotReloadStatusResponse),
+        (status = 500, description = "内部服务器错误")
+    ),
+    security(("Token" = []))
+)]
+pub async fn get_hot_reload_status(
+    Extension(_db): Extension<Arc<DatabaseConnection>>,
+) -> Result<ApiResponse<HotReloadStatusResponse>, ApiError> {
+    // TODO: 实现真正的热重载状态检查
+    let response = HotReloadStatusResponse {
+        enabled: true,
+        last_reload: Some(Utc::now().format("%Y-%m-%d %H:%M:%S UTC").to_string()),
+        pending_changes: 0,
+    };
+
+    Ok(ApiResponse::ok(response))
 }

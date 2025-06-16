@@ -165,4 +165,4 @@ enum Submission {
 enum WatchLater {
     Table,
     Enabled,
-} 
+}

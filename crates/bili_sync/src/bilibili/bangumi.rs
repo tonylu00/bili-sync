@@ -5,8 +5,8 @@ use async_stream::try_stream;
 use chrono::{DateTime, Utc};
 use futures::Stream;
 use serde::Deserialize;
-use tracing;
 use tokio_util::sync::CancellationToken;
+use tracing;
 
 use super::{BiliClient, Validate, VideoInfo};
 
@@ -117,7 +117,13 @@ impl Bangumi {
                 show_title: episode["show_title"].as_str().unwrap_or_default().to_string(),
                 cover: episode["cover"].as_str().unwrap_or_default().to_string(),
             };
-            tracing::debug!("解析剧集：{} (EP{}) BV号: {} 封面: {}", ep.title, ep.id, ep.bvid, ep.cover);
+            tracing::debug!(
+                "解析剧集：{} (EP{}) BV号: {} 封面: {}",
+                ep.title,
+                ep.id,
+                ep.bvid,
+                ep.cover
+            );
             result.push(ep);
         }
 

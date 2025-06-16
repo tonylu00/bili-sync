@@ -7,15 +7,21 @@ use arc_swap::ArcSwapOption;
 use rand::seq::SliceRandom;
 use serde::{Deserialize, Serialize};
 
+mod bundle;
 mod clap;
 mod global;
 mod item;
+mod manager;
 
 use crate::bilibili::{Credential, DanmakuOption, FilterOption};
+pub use crate::config::bundle::ConfigBundle;
 pub use crate::config::clap::version;
-pub use crate::config::global::{reload_config, ARGS, CONFIG, CONFIG_DIR, TEMPLATE};
+pub use crate::config::global::{
+    init_config_with_database, reload_config, reload_config_bundle, with_config, ARGS, CONFIG, CONFIG_DIR, TEMPLATE,
+};
 use crate::config::item::ConcurrentLimit;
 pub use crate::config::item::{NFOTimeType, PathSafeTemplate, RateLimit, SubmissionRiskControlConfig};
+pub use crate::config::manager::ConfigManager;
 
 // 移除不再需要的配置结构体，因为视频源现在存储在数据库中
 // #[derive(Serialize, Deserialize, Default, Debug, Clone)]
@@ -156,6 +162,55 @@ pub struct Config {
     pub timezone: String,
     #[serde(default)]
     pub submission_risk_control: crate::config::item::SubmissionRiskControlConfig,
+}
+
+impl Clone for Config {
+    fn clone(&self) -> Self {
+        Self {
+            auth_token: self.auth_token.clone(),
+            bind_address: self.bind_address.clone(),
+            credential: ArcSwapOption::from(self.credential.load_full()),
+            filter_option: FilterOption {
+                video_max_quality: self.filter_option.video_max_quality,
+                video_min_quality: self.filter_option.video_min_quality,
+                audio_max_quality: self.filter_option.audio_max_quality,
+                audio_min_quality: self.filter_option.audio_min_quality,
+                codecs: self.filter_option.codecs.clone(),
+                no_dolby_video: self.filter_option.no_dolby_video,
+                no_dolby_audio: self.filter_option.no_dolby_audio,
+                no_hdr: self.filter_option.no_hdr,
+                no_hires: self.filter_option.no_hires,
+            },
+            danmaku_option: DanmakuOption {
+                duration: self.danmaku_option.duration,
+                font: self.danmaku_option.font.clone(),
+                font_size: self.danmaku_option.font_size,
+                width_ratio: self.danmaku_option.width_ratio,
+                horizontal_gap: self.danmaku_option.horizontal_gap,
+                lane_size: self.danmaku_option.lane_size,
+                float_percentage: self.danmaku_option.float_percentage,
+                bottom_percentage: self.danmaku_option.bottom_percentage,
+                opacity: self.danmaku_option.opacity,
+                bold: self.danmaku_option.bold,
+                outline: self.danmaku_option.outline,
+                time_offset: self.danmaku_option.time_offset,
+            },
+            video_name: self.video_name.clone(),
+            page_name: self.page_name.clone(),
+            multi_page_name: self.multi_page_name.clone(),
+            bangumi_name: self.bangumi_name.clone(),
+            folder_structure: self.folder_structure.clone(),
+            collection_folder_mode: self.collection_folder_mode.clone(),
+            interval: self.interval,
+            upper_path: self.upper_path.clone(),
+            nfo_time_type: self.nfo_time_type.clone(),
+            concurrent_limit: self.concurrent_limit.clone(),
+            time_format: self.time_format.clone(),
+            cdn_sorting: self.cdn_sorting,
+            timezone: self.timezone.clone(),
+            submission_risk_control: self.submission_risk_control.clone(),
+        }
+    }
 }
 
 impl Default for Config {

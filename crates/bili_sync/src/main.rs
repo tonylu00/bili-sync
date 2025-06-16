@@ -24,7 +24,7 @@ use task::{http_server, video_downloader};
 use tokio_util::sync::CancellationToken;
 use tokio_util::task::TaskTracker;
 
-use crate::config::{ARGS, CONFIG};
+use crate::config::{init_config_with_database, ARGS, CONFIG};
 use crate::database::setup_database;
 use crate::utils::init_logger;
 use crate::utils::signal::terminate;
@@ -35,6 +35,12 @@ async fn main() -> Result<()> {
     init();
 
     let connection = Arc::new(setup_database().await);
+
+    // 初始化数据库配置系统
+    if let Err(e) = init_config_with_database(connection.as_ref().clone()).await {
+        warn!("数据库配置系统初始化失败: {}, 继续使用TOML配置", e);
+    }
+
     let token = CancellationToken::new();
     let tracker = TaskTracker::new();
 

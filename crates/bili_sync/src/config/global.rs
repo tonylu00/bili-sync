@@ -1,54 +1,133 @@
 use std::path::PathBuf;
+use std::sync::{Arc, RwLock};
 
+use anyhow::Result;
+use arc_swap::ArcSwap;
 use clap::Parser;
-use handlebars::handlebars_helper;
 use once_cell::sync::Lazy;
+use tracing::{info, warn};
 
 use crate::config::clap::Args;
-use crate::config::item::PathSafeTemplate;
-use crate::config::Config;
+use crate::config::{Config, ConfigBundle};
 
-/// 全局的 CONFIG，可以从中读取配置信息
-pub static CONFIG: Lazy<Config> = Lazy::new(load_config);
+/// 全局的配置包，使用 ArcSwap 支持热重载
+/// 包含配置、模板引擎、限流器等所有需要热重载的组件
+pub static CONFIG_BUNDLE: Lazy<ArcSwap<ConfigBundle>> =
+    Lazy::new(|| ArcSwap::from_pointee(load_initial_config_bundle()));
 
-/// 重新加载配置
-pub fn reload_config() -> Config {
-    // 由于CONFIG是Lazy，我们无法直接修改，但我们可以返回新的配置
-    // 让调用方使用这个新配置
-    Config::load().unwrap_or_else(|err| {
-        if err
-            .downcast_ref::<std::io::Error>()
-            .is_none_or(|e| e.kind() != std::io::ErrorKind::NotFound)
-        {
-            panic!("加载配置文件失败，错误为： {err}");
-        }
-        warn!("配置文件不存在，使用默认配置..");
-        Config::default()
-    })
+/// 全局的配置管理器，用于数据库操作
+static CONFIG_MANAGER: Lazy<RwLock<Option<crate::config::ConfigManager>>> = Lazy::new(|| RwLock::new(None));
+
+/// 设置配置管理器（在应用启动时调用）
+pub fn set_config_manager(manager: crate::config::ConfigManager) {
+    let mut guard = CONFIG_MANAGER.write().unwrap();
+    *guard = Some(manager);
+    info!("配置管理器已设置");
 }
 
-/// 全局的 TEMPLATE，用来渲染 video_name 和 page_name 模板
-pub static TEMPLATE: Lazy<handlebars::Handlebars> = Lazy::new(|| {
-    let mut handlebars = handlebars::Handlebars::new();
-    handlebars_helper!(truncate: |s: String, len: usize| {
-        if s.chars().count() > len {
-            s.chars().take(len).collect::<String>()
-        } else {
-            s.to_string()
-        }
-    });
-    handlebars.register_helper("truncate", Box::new(truncate));
-    handlebars
-        .path_safe_register("video", &CONFIG.video_name)
-        .expect("failed to register video template");
-    handlebars
-        .path_safe_register("page", &CONFIG.page_name)
-        .expect("failed to register page template");
-    handlebars
-        .path_safe_register("folder_structure", &CONFIG.folder_structure)
-        .expect("failed to register folder_structure template");
-    handlebars
+/// 重新加载配置包（支持热重载）
+pub async fn reload_config_bundle() -> Result<()> {
+    let manager_opt = {
+        let manager_guard = CONFIG_MANAGER.read().unwrap();
+        manager_guard.clone()
+    };
+
+    let new_bundle = if let Some(manager) = manager_opt {
+        // 从数据库加载配置
+        manager.load_config_bundle().await?
+    } else {
+        // 回退到TOML加载
+        warn!("配置管理器未初始化，回退到TOML加载");
+        let config = load_config();
+        ConfigBundle::from_config(config)?
+    };
+
+    CONFIG_BUNDLE.store(Arc::new(new_bundle));
+    info!("配置已重新加载");
+    Ok(())
+}
+
+/// 访问配置包的便捷函数
+pub fn with_config<F, R>(f: F) -> R
+where
+    F: FnOnce(&ConfigBundle) -> R,
+{
+    let bundle = CONFIG_BUNDLE.load();
+    f(&bundle)
+}
+
+/// 获取配置的便捷函数（向后兼容）
+#[allow(dead_code)]
+pub fn get_config() -> Arc<ConfigBundle> {
+    CONFIG_BUNDLE.load_full()
+}
+
+/// 向后兼容的配置重载函数（同步版本）
+pub fn reload_config() -> Config {
+    // 从当前配置包中提取配置
+    with_config(|bundle| bundle.config.clone())
+}
+
+/// 向后兼容的全局配置获取函数
+#[allow(dead_code)]
+pub fn get_current_config() -> Config {
+    with_config(|bundle| bundle.config.clone())
+}
+
+/// 向后兼容的全局配置引用
+pub static CONFIG: Lazy<Config> = Lazy::new(load_config);
+
+/// 向后兼容的全局模板引擎引用  
+pub static TEMPLATE: Lazy<handlebars::Handlebars<'static>> = Lazy::new(|| {
+    let config = load_config();
+    ConfigBundle::from_config(config).expect("创建配置包失败").handlebars
 });
+
+/// 加载初始配置包
+fn load_initial_config_bundle() -> ConfigBundle {
+    info!("开始加载配置包..");
+
+    // 初始加载时，配置管理器可能还没有设置，所以先从TOML加载
+    let config = load_config();
+    let bundle = ConfigBundle::from_config(config).expect("创建配置包失败");
+    info!("配置包加载完毕");
+    bundle
+}
+
+/// 异步初始化配置系统（在数据库连接建立后调用）
+pub async fn init_config_with_database(db: sea_orm::DatabaseConnection) -> Result<()> {
+    info!("开始初始化数据库配置系统");
+
+    // 创建配置管理器
+    let manager = crate::config::ConfigManager::new(db);
+
+    // 确保配置表存在
+    manager.ensure_tables_exist().await?;
+
+    // 尝试从数据库加载配置，如果失败则从TOML迁移
+    let new_bundle = manager.load_config_bundle().await?;
+
+    // 设置全局配置管理器
+    set_config_manager(manager);
+
+    // 更新全局配置包
+    CONFIG_BUNDLE.store(Arc::new(new_bundle));
+
+    info!("数据库配置系统初始化完成");
+    Ok(())
+}
+
+/// 向后兼容的配置加载函数
+pub fn load_config() -> Config {
+    #[cfg(not(test))]
+    {
+        load_config_impl()
+    }
+    #[cfg(test)]
+    {
+        load_config_test()
+    }
+}
 
 /// 全局的 ARGS，用来解析命令行参数
 pub static ARGS: Lazy<Args> = Lazy::new(Args::parse);
@@ -58,7 +137,7 @@ pub static CONFIG_DIR: Lazy<PathBuf> =
     Lazy::new(|| dirs::config_dir().expect("No config path found").join("bili-sync"));
 
 #[cfg(not(test))]
-fn load_config() -> Config {
+fn load_config_impl() -> Config {
     info!("开始加载配置文件..");
     let config = Config::load().unwrap_or_else(|err| {
         if err
@@ -82,7 +161,7 @@ fn load_config() -> Config {
 }
 
 #[cfg(test)]
-fn load_config() -> Config {
+fn load_config_test() -> Config {
     let credential = match (
         std::env::var("TEST_SESSDATA"),
         std::env::var("TEST_BILI_JCT"),

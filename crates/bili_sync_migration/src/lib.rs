@@ -14,6 +14,7 @@ mod m20250531_000001_fix_fid_type;
 mod m20250601_000001_fix_compatibility;
 mod m20250613_000001_add_performance_indexes;
 mod m20250613_000002_add_enabled_field;
+mod m20250616_000001_create_config_tables;
 
 pub struct Migrator;
 
@@ -35,6 +36,7 @@ impl MigratorTrait for Migrator {
             Box::new(m20250601_000001_fix_compatibility::Migration),
             Box::new(m20250613_000001_add_performance_indexes::Migration),
             Box::new(m20250613_000002_add_enabled_field::Migration),
+            Box::new(m20250616_000001_create_config_tables::Migration),
         ]
     }
 }

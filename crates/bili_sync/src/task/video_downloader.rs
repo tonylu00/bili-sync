@@ -3,8 +3,8 @@ use std::sync::Arc;
 
 use anyhow::Result;
 use sea_orm::{ColumnTrait, DatabaseConnection, EntityTrait, PaginatorTrait, QueryFilter};
-use tracing::{debug, error, info, warn};
 use tokio_util::sync::CancellationToken;
+use tracing::{debug, error, info, warn};
 
 use crate::adapter::Args;
 use crate::bilibili::{self, BiliClient, CollectionItem, CollectionType};
@@ -24,7 +24,8 @@ async fn load_video_sources_from_db(
     // 加载合集源（只加载启用的）
     let collections = entities::collection::Entity::find()
         .filter(entities::collection::Column::Enabled.eq(true))
-        .all(connection).await?;
+        .all(connection)
+        .await?;
 
     for collection in collections {
         // 创建拥有的CollectionItem来匹配现有的Args结构
@@ -46,7 +47,8 @@ async fn load_video_sources_from_db(
     // 加载收藏夹源（只加载启用的）
     let favorites = entities::favorite::Entity::find()
         .filter(entities::favorite::Column::Enabled.eq(true))
-        .all(connection).await?;
+        .all(connection)
+        .await?;
 
     for favorite in favorites {
         let fid = favorite.f_id.to_string();
@@ -56,7 +58,8 @@ async fn load_video_sources_from_db(
     // 加载UP主投稿源（只加载启用的）
     let submissions = entities::submission::Entity::find()
         .filter(entities::submission::Column::Enabled.eq(true))
-        .all(connection).await?;
+        .all(connection)
+        .await?;
 
     for submission in submissions {
         let upper_id = submission.upper_id.to_string();
@@ -66,7 +69,8 @@ async fn load_video_sources_from_db(
     // 加载稍后观看源（只加载启用的）
     let watch_later_sources = entities::watch_later::Entity::find()
         .filter(entities::watch_later::Column::Enabled.eq(true))
-        .all(connection).await?;
+        .all(connection)
+        .await?;
 
     for watch_later in watch_later_sources {
         video_sources.push((Args::WatchLater, PathBuf::from(watch_later.path)));

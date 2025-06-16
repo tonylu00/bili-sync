@@ -113,3 +113,10 @@ aria2c
 # GitHub Actions 构建日志
 logs_*/
 UP主投稿风控优化总结.md
+内存泄漏修复报告.md
+bili-sync-AI优化-问题解决方案汇总-2025年06月.md
+bili-sync-AI优化-专业Code-Review报告-2025年06月.md
+config_hot_reload_summary.md
+config_migration_analysis.md
+config_migration_fix.md
+.claude/settings.local.json
