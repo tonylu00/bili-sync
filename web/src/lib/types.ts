@@ -466,3 +466,25 @@ export interface UpdateVideoSourceEnabledResponse {
 	enabled: boolean;
 	message: string;
 }
+
+// 更新凭证请求类型
+export interface UpdateCredentialRequest {
+	sessdata: string;
+	bili_jct: string;
+	buvid3: string;
+	dedeuserid: string;
+	ac_time_value?: string;
+}
+
+// 更新凭证响应类型
+export interface UpdateCredentialResponse {
+	success: boolean;
+	message: string;
+}
+
+// 初始设置检查响应类型
+export interface InitialSetupCheckResponse {
+	needs_setup: boolean;
+	has_auth_token: boolean;
+	has_credential: boolean;
+}

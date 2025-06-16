@@ -208,3 +208,21 @@ pub struct ConfigImportRequest {
     pub data: String,   // 配置数据
     pub merge: bool,    // 是否合并现有配置，false表示覆盖
 }
+
+// 初始设置相关请求
+
+// 设置API Token请求
+#[derive(Deserialize, ToSchema)]
+pub struct SetupAuthTokenRequest {
+    pub auth_token: String,
+}
+
+// 更新凭证请求
+#[derive(Deserialize, ToSchema)]
+pub struct UpdateCredentialRequest {
+    pub sessdata: String,
+    pub bili_jct: String,
+    pub buvid3: String,
+    pub dedeuserid: String,
+    pub ac_time_value: Option<String>,
+}

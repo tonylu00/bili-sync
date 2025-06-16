@@ -16,6 +16,7 @@ use crate::api::auth;
 use crate::api::handler::{
     add_video_source,
     batch_update_config_internal,
+    check_initial_setup,
     delete_video_source,
     get_bangumi_seasons,
     get_config,
@@ -39,8 +40,10 @@ use crate::api::handler::{
     reset_specific_tasks,
     reset_video,
     search_bilibili,
+    setup_auth_token,
     update_config,
     update_config_item_internal,
+    update_credential,
     update_video_source_enabled,
     update_video_status,
     validate_config,
@@ -102,6 +105,10 @@ pub async fn http_server(database_connection: Arc<DatabaseConnection>) -> Result
         .route("/api/config/history", get(get_config_history))
         .route("/api/config/validate", post(validate_config))
         .route("/api/config/hot-reload/status", get(get_hot_reload_status))
+        // 初始设置API路由
+        .route("/api/setup/check", get(check_initial_setup))
+        .route("/api/setup/auth-token", post(setup_auth_token))
+        .route("/api/credential", put(update_credential))
         .route("/api/bangumi/seasons/{season_id}", get(get_bangumi_seasons))
         .route("/api/search", get(search_bilibili))
         .route("/api/user/favorites", get(get_user_favorites))

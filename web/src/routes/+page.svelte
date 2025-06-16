@@ -3,6 +3,7 @@
 	import FilterBadge from '$lib/components/filter-badge.svelte';
 	import Pagination from '$lib/components/pagination.svelte';
 	import AuthLogin from '$lib/components/auth-login.svelte';
+	import InitialSetup from '$lib/components/initial-setup.svelte';
 	import api from '$lib/api';
 	import type { VideosResponse, VideoSourcesResponse, ApiError } from '$lib/types';
 	import { onMount } from 'svelte';
@@ -26,6 +27,8 @@
 
 	// 认证状态
 	let isAuthenticated = false;
+	let needsInitialSetup = false;
+	let checkingSetup = true;
 	let videosData: VideosResponse | null = null;
 	let loading = false;
 	let currentPage = 0;
@@ -79,12 +82,52 @@
 		loadInitialData();
 	}
 
+	// 处理初始设置完成
+	function handleSetupComplete() {
+		needsInitialSetup = false;
+		checkingSetup = true;
+		// 重新检查设置状态
+		checkInitialSetup();
+	}
+
 	// 退出登录
 	function logout() {
 		isAuthenticated = false;
 		api.setAuthToken('');
 		videosData = null;
 		toast.info('已退出登录');
+	}
+
+	// 检查是否需要初始设置
+	async function checkInitialSetup() {
+		try {
+			// 暂时简化逻辑，检查本地是否有token
+			const storedToken = localStorage.getItem('auth_token');
+			
+			if (!storedToken) {
+				// 没有token，需要初始设置
+				needsInitialSetup = true;
+				checkingSetup = false;
+				return;
+			}
+
+			// 有token，尝试验证
+			api.setAuthToken(storedToken);
+			try {
+				await api.getVideoSources();
+				isAuthenticated = true;
+				loadInitialData();
+			} catch (error) {
+				// Token无效，需要重新登录
+				isAuthenticated = false;
+			}
+		} catch (error) {
+			console.error('检查初始设置失败:', error);
+			// 如果检查失败，假设需要初始设置
+			needsInitialSetup = true;
+		} finally {
+			checkingSetup = false;
+		}
 	}
 
 	// 加载初始数据
@@ -267,31 +310,12 @@
 		handleSearchParamsChange();
 	}
 
-	// 检查认证状态
+	// 检查认证状态和初始设置
 	onMount(async () => {
-		const savedToken = localStorage.getItem('auth_token');
-		if (savedToken && savedToken.trim()) {
-			try {
-				// 验证保存的 Token
-				const sources = await api.getVideoSources();
-				setVideoSources(sources.data);
-				isAuthenticated = true;
-
-				setBreadcrumb([
-					{
-						label: '主页',
-						isActive: true
-					}
-				]);
-
-				// 加载视频列表
-				handleSearchParamsChange();
-			} catch (error) {
-				// Token 无效，清除
-				api.setAuthToken('');
-				console.error('Token 验证失败:', error);
-			}
-		}
+		setBreadcrumb([{ label: '主页', isActive: true }]);
+		
+		// 检查是否需要初始设置
+		await checkInitialSetup();
 	});
 
 	$: totalPages = videosData ? Math.ceil(videosData.total_count / pageSize) : 0;
@@ -317,7 +341,16 @@
 
 <svelte:window bind:innerWidth bind:innerHeight />
 
-{#if !isAuthenticated}
+{#if checkingSetup}
+	<div class="flex min-h-screen items-center justify-center bg-gray-50">
+		<div class="text-center">
+			<div class="mb-4 text-lg">正在检查系统状态...</div>
+			<div class="text-sm text-gray-600">请稍候</div>
+		</div>
+	</div>
+{:else if needsInitialSetup}
+	<InitialSetup on:setup-complete={handleSetupComplete} />
+{:else if !isAuthenticated}
 	<AuthLogin on:login-success={handleLoginSuccess} />
 {:else}
 	<FilterBadge {filterTitle} {filterName} onRemove={handleFilterRemove} />

@@ -21,12 +21,14 @@ use crate::api::auth::OpenAPIAuth;
 use crate::api::error::InnerApiError;
 use crate::api::request::{
     AddVideoSourceRequest, BatchUpdateConfigRequest, ConfigHistoryRequest, ResetSpecificTasksRequest,
-    UpdateConfigItemRequest, UpdateConfigRequest, UpdateVideoStatusRequest, VideosRequest,
+    SetupAuthTokenRequest, UpdateConfigItemRequest, UpdateConfigRequest, UpdateCredentialRequest, 
+    UpdateVideoStatusRequest, VideosRequest,
 };
 use crate::api::response::{
     AddVideoSourceResponse, BangumiSeasonInfo, ConfigChangeInfo, ConfigHistoryResponse, ConfigItemResponse,
     ConfigReloadResponse, ConfigResponse, ConfigValidationResponse, DeleteVideoSourceResponse, HotReloadStatusResponse,
-    PageInfo, ResetAllVideosResponse, ResetVideoResponse, UpdateConfigResponse, UpdateVideoStatusResponse, VideoInfo,
+    InitialSetupCheckResponse, PageInfo, ResetAllVideosResponse, ResetVideoResponse, SetupAuthTokenResponse,
+    UpdateConfigResponse, UpdateCredentialResponse, UpdateVideoStatusResponse, VideoInfo,
     VideoResponse, VideoSource, VideoSourcesResponse, VideosResponse,
 };
 use crate::api::wrapper::{ApiError, ApiResponse};
@@ -35,7 +37,7 @@ use crate::utils::status::{PageStatus, VideoStatus};
 
 #[derive(OpenApi)]
 #[openapi(
-    paths(get_video_sources, get_videos, get_video, reset_video, reset_all_videos, reset_specific_tasks, update_video_status, add_video_source, update_video_source_enabled, delete_video_source, reload_config, get_config, update_config, get_bangumi_seasons, search_bilibili, get_user_favorites, get_user_collections, get_user_followings, get_subscribed_collections, get_logs, get_queue_status, proxy_image, get_config_item, get_config_history, validate_config, get_hot_reload_status),
+    paths(get_video_sources, get_videos, get_video, reset_video, reset_all_videos, reset_specific_tasks, update_video_status, add_video_source, update_video_source_enabled, delete_video_source, reload_config, get_config, update_config, get_bangumi_seasons, search_bilibili, get_user_favorites, get_user_collections, get_user_followings, get_subscribed_collections, get_logs, get_queue_status, proxy_image, get_config_item, get_config_history, validate_config, get_hot_reload_status, check_initial_setup, setup_auth_token, update_credential),
     modifiers(&OpenAPIAuth),
     security(
         ("Token" = []),
@@ -4919,5 +4921,144 @@ pub async fn get_hot_reload_status(
         pending_changes: 0,
     };
 
+    Ok(ApiResponse::ok(response))
+}
+
+/// 检查是否需要初始设置
+#[utoipa::path(
+    get,
+    path = "/api/setup/check",
+    responses(
+        (status = 200, description = "初始设置检查结果", body = InitialSetupCheckResponse),
+        (status = 500, description = "内部服务器错误")
+    )
+)]
+pub async fn check_initial_setup() -> Result<ApiResponse<InitialSetupCheckResponse>, ApiError> {
+    // 检查是否有auth_token
+    let config = crate::config::reload_config();
+    let has_auth_token = config.auth_token.is_some() && !config.auth_token.as_ref().unwrap().is_empty();
+    
+    // 检查是否有凭证
+    let credential = config.credential.load();
+    let has_credential = match credential.as_deref() {
+        Some(cred) => {
+            !cred.sessdata.is_empty() 
+                && !cred.bili_jct.is_empty() 
+                && !cred.buvid3.is_empty() 
+                && !cred.dedeuserid.is_empty()
+        }
+        None => false,
+    };
+    
+    let needs_setup = !has_auth_token || !has_credential;
+    
+    let response = InitialSetupCheckResponse {
+        needs_setup,
+        has_auth_token,
+        has_credential,
+    };
+    
+    Ok(ApiResponse::ok(response))
+}
+
+/// 设置API Token（初始设置）
+#[utoipa::path(
+    post,
+    path = "/api/setup/auth-token",
+    request_body = SetupAuthTokenRequest,
+    responses(
+        (status = 200, description = "API Token设置成功", body = SetupAuthTokenResponse),
+        (status = 400, description = "请求参数错误", body = String),
+        (status = 500, description = "服务器内部错误", body = String)
+    )
+)]
+pub async fn setup_auth_token(
+    axum::Json(params): axum::Json<crate::api::request::SetupAuthTokenRequest>,
+) -> Result<ApiResponse<crate::api::response::SetupAuthTokenResponse>, ApiError> {
+    if params.auth_token.trim().is_empty() {
+        return Err(ApiError::from(anyhow!("API Token不能为空")));
+    }
+    
+    // 更新配置文件中的auth_token
+    let mut config = crate::config::reload_config();
+    config.auth_token = Some(params.auth_token.clone());
+    
+    // 保存配置
+    config.save().map_err(|e| ApiError::from(anyhow!("保存配置失败: {}", e)))?;
+    
+    // 重新加载配置
+    crate::config::reload_config();
+    
+    let response = crate::api::response::SetupAuthTokenResponse {
+        success: true,
+        message: "API Token设置成功".to_string(),
+    };
+    
+    Ok(ApiResponse::ok(response))
+}
+
+/// 更新B站登录凭证
+#[utoipa::path(
+    put,
+    path = "/api/credential",
+    request_body = UpdateCredentialRequest,
+    responses(
+        (status = 200, description = "凭证更新成功", body = UpdateCredentialResponse),
+        (status = 400, description = "请求参数错误", body = String),
+        (status = 500, description = "服务器内部错误", body = String)
+    ),
+    security(("Token" = []))
+)]
+pub async fn update_credential(
+    Extension(db): Extension<Arc<DatabaseConnection>>,
+    axum::Json(params): axum::Json<crate::api::request::UpdateCredentialRequest>,
+) -> Result<ApiResponse<crate::api::response::UpdateCredentialResponse>, ApiError> {
+    // 验证必填字段
+    if params.sessdata.trim().is_empty() 
+        || params.bili_jct.trim().is_empty() 
+        || params.buvid3.trim().is_empty() 
+        || params.dedeuserid.trim().is_empty() {
+        return Err(ApiError::from(anyhow!("请填写所有必需的凭证信息")));
+    }
+    
+    // 创建新的凭证
+    let new_credential = crate::bilibili::Credential {
+        sessdata: params.sessdata.trim().to_string(),
+        bili_jct: params.bili_jct.trim().to_string(),
+        buvid3: params.buvid3.trim().to_string(),
+        dedeuserid: params.dedeuserid.trim().to_string(),
+        ac_time_value: params.ac_time_value.unwrap_or_default().trim().to_string(),
+    };
+    
+    // 更新配置中的凭证
+    let config = crate::config::reload_config();
+    config.credential.store(Some(std::sync::Arc::new(new_credential)));
+    
+    // 保存配置到文件
+    config.save().map_err(|e| ApiError::from(anyhow!("保存配置失败: {}", e)))?;
+    
+    // 同时保存配置到数据库
+    {
+        use crate::config::ConfigManager;
+        let manager = ConfigManager::new(db.as_ref().clone());
+        if let Err(e) = manager.save_config(&config).await {
+            warn!("保存配置到数据库失败: {}", e);
+        } else {
+            info!("凭证已同步保存到数据库");
+        }
+    }
+    
+    // 重新加载全局配置包（从数据库）
+    if let Err(e) = crate::config::reload_config_bundle().await {
+        warn!("重新加载配置包失败: {}", e);
+        // 回退到传统的重新加载方式
+        crate::config::reload_config();
+    }
+    
+    let response = crate::api::response::UpdateCredentialResponse {
+        success: true,
+        message: "B站凭证更新成功".to_string(),
+    };
+    
     Ok(ApiResponse::ok(response))
 }

@@ -22,7 +22,10 @@ import type {
 	UserFollowing,
 	UserCollectionInfo,
 	QueueStatusResponse,
-	UpdateVideoSourceEnabledResponse
+	UpdateVideoSourceEnabledResponse,
+	UpdateCredentialRequest,
+	UpdateCredentialResponse,
+	InitialSetupCheckResponse
 } from './types';
 import { ErrorType } from './types';
 
@@ -323,6 +326,29 @@ class ApiClient {
 		request: UpdateVideoStatusRequest
 	): Promise<ApiResponse<UpdateVideoStatusResponse>> {
 		return this.post<UpdateVideoStatusResponse>(`/videos/${id}/update-status`, request);
+	}
+
+	/**
+	 * 检查是否需要初始设置
+	 */
+	async checkInitialSetup(): Promise<ApiResponse<InitialSetupCheckResponse>> {
+		return this.get<InitialSetupCheckResponse>('/setup/check');
+	}
+
+	/**
+	 * 更新B站登录凭证
+	 * @param params 凭证参数
+	 */
+	async updateCredential(params: UpdateCredentialRequest): Promise<ApiResponse<UpdateCredentialResponse>> {
+		return this.put<UpdateCredentialResponse>('/credential', params);
+	}
+
+	/**
+	 * 设置API Token（初始设置时使用）
+	 * @param token API Token
+	 */
+	async setupAuthToken(token: string): Promise<ApiResponse<{ success: boolean; message: string }>> {
+		return this.post<{ success: boolean; message: string }>('/setup/auth-token', { auth_token: token });
 	}
 }
 

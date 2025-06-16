@@ -380,3 +380,27 @@ pub struct OfficialVerify {
     pub type_: i32,
     pub desc: String,
 }
+
+// 初始设置相关响应
+
+// 初始设置检查响应
+#[derive(Serialize, ToSchema)]
+pub struct InitialSetupCheckResponse {
+    pub needs_setup: bool,
+    pub has_auth_token: bool,
+    pub has_credential: bool,
+}
+
+// 设置API Token响应
+#[derive(Serialize, ToSchema)]
+pub struct SetupAuthTokenResponse {
+    pub success: bool,
+    pub message: String,
+}
+
+// 更新凭证响应
+#[derive(Serialize, ToSchema)]
+pub struct UpdateCredentialResponse {
+    pub success: bool,
+    pub message: String,
+}

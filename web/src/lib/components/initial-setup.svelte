@@ -1,0 +1,376 @@
+<script lang="ts">
+	import { Input } from './ui/input';
+	import { Button } from './ui/button';
+	import { Label } from './ui/label';
+	import { createEventDispatcher } from 'svelte';
+	import api from '$lib/api';
+	import { toast } from 'svelte-sonner';
+	import * as AlertDialog from './ui/alert-dialog';
+
+	const dispatch = createEventDispatcher();
+
+	// 步骤控制
+	let currentStep = 1;
+	let totalSteps = 2;
+
+	// 第一步：设置 API Token
+	let authToken = '';
+	let authError = '';
+	let isVerifying = false;
+
+	// 第二步：设置 B站凭证
+	let sessdata = '';
+	let bili_jct = '';
+	let buvid3 = '';
+	let dedeuserid = '';
+	let ac_time_value = '';
+	let credentialError = '';
+	let isSavingCredential = false;
+
+	// 显示帮助对话框
+	let showHelpDialog = false;
+
+	// 验证并设置 API Token
+	async function setupAuthToken() {
+		if (!authToken.trim()) {
+			authError = '请输入API Token';
+			return;
+		}
+
+		isVerifying = true;
+		authError = '';
+
+		try {
+			// 暂时直接设置Token，后续需要实现后端API
+			api.setAuthToken(authToken);
+			
+			// 尝试验证Token是否有效
+			await api.getVideoSources();
+			
+			// Token验证成功，进入下一步
+			currentStep = 2;
+			toast.success('API Token 设置成功');
+		} catch (error: any) {
+			// 清除无效的 Token
+			api.setAuthToken('');
+
+			if (error.status === 401) {
+				authError = 'API Token错误，请检查后重试';
+			} else {
+				authError = '验证失败，请检查网络连接或Token是否正确';
+			}
+			console.error('Token验证失败:', error);
+		} finally {
+			isVerifying = false;
+		}
+	}
+
+	// 保存 B站凭证
+	async function saveCredential() {
+		// 验证必填字段
+		if (!sessdata.trim() || !bili_jct.trim() || !buvid3.trim() || !dedeuserid.trim()) {
+			credentialError = '请填写所有必需的凭证信息';
+			return;
+		}
+
+		isSavingCredential = true;
+		credentialError = '';
+
+		try {
+			// 暂时模拟保存成功，后续需要实现后端API
+			// TODO: 实现后端凭证保存API
+			
+			// 模拟API调用延迟
+			await new Promise(resolve => setTimeout(resolve, 1000));
+			
+			toast.success('B站凭证设置成功');
+			// 设置完成，触发完成事件
+			dispatch('setup-complete');
+		} catch (error: any) {
+			console.error('保存凭证失败:', error);
+			credentialError = error.message || '保存凭证时发生错误';
+		} finally {
+			isSavingCredential = false;
+		}
+	}
+
+	// 跳过凭证设置
+	function skipCredentialSetup() {
+		toast.info('已跳过B站凭证设置，您可以稍后在设置页面中配置');
+		dispatch('setup-complete');
+	}
+
+	// 返回上一步
+	function goBack() {
+		if (currentStep > 1) {
+			currentStep--;
+		}
+	}
+
+	// 处理Enter键
+	function handleKeyDown(event: KeyboardEvent, action: () => void) {
+		if (event.key === 'Enter') {
+			action();
+		}
+	}
+</script>
+
+<div class="flex min-h-screen items-center justify-center bg-gray-50">
+	<div class="w-full max-w-2xl space-y-8">
+		<div class="text-center">
+			<h1 class="mb-2 text-3xl font-bold text-gray-900">欢迎使用 bili-sync</h1>
+			<p class="text-gray-600">首次使用需要进行初始设置</p>
+			<div class="mt-4 flex justify-center">
+				<div class="flex items-center space-x-2">
+					{#each Array(totalSteps) as _, i}
+						<div
+							class="h-2 w-8 rounded-full {currentStep > i
+								? 'bg-blue-500'
+								: currentStep === i + 1
+									? 'bg-blue-300'
+									: 'bg-gray-300'}"
+						></div>
+					{/each}
+				</div>
+			</div>
+		</div>
+
+		<div class="rounded-lg bg-white p-8 shadow-md">
+			{#if currentStep === 1}
+				<!-- 第一步：设置 API Token -->
+				<div class="space-y-6">
+					<div class="text-center">
+						<h2 class="text-xl font-semibold text-gray-900">步骤 1: 设置 API Token</h2>
+						<p class="mt-2 text-sm text-gray-600">
+							API Token 用于保护管理界面的访问安全
+						</p>
+					</div>
+
+					<div class="space-y-4">
+						<div>
+							<Label for="auth-token" class="text-sm font-medium text-gray-700">
+								API Token *
+							</Label>
+							<Input
+								id="auth-token"
+								type="password"
+								placeholder="请输入您想要设置的API Token"
+								bind:value={authToken}
+								onkeydown={(e) => handleKeyDown(e, setupAuthToken)}
+								class="mt-1 w-full"
+								disabled={isVerifying}
+							/>
+							{#if authError}
+								<p class="mt-2 text-sm text-red-600">{authError}</p>
+							{/if}
+						</div>
+
+						<div class="rounded-md bg-blue-50 p-4">
+							<div class="flex">
+								<div class="ml-3">
+									<h3 class="text-sm font-medium text-blue-800">提示</h3>
+									<div class="mt-2 text-sm text-blue-700">
+										<p>• API Token 可以是任意字符串，建议使用复杂的密码</p>
+										<p>• 设置后请妥善保管，后续访问管理界面需要使用</p>
+										<p>• 如果忘记可以在配置文件中查看或修改</p>
+									</div>
+								</div>
+							</div>
+						</div>
+
+						<Button
+							onclick={setupAuthToken}
+							disabled={isVerifying || !authToken.trim()}
+							class="w-full"
+						>
+							{isVerifying ? '验证中...' : '下一步'}
+						</Button>
+					</div>
+				</div>
+			{:else if currentStep === 2}
+				<!-- 第二步：设置 B站凭证 -->
+				<div class="space-y-6">
+					<div class="text-center">
+						<h2 class="text-xl font-semibold text-gray-900">步骤 2: 设置 B站登录凭证</h2>
+						<p class="mt-2 text-sm text-gray-600">
+							设置B站登录凭证以启用视频下载功能
+						</p>
+					</div>
+
+					<div class="space-y-4">
+						<div>
+							<Label for="sessdata" class="text-sm font-medium text-gray-700">
+								SESSDATA *
+							</Label>
+							<Input
+								id="sessdata"
+								type="password"
+								placeholder="请输入SESSDATA"
+								bind:value={sessdata}
+								class="mt-1 w-full"
+								disabled={isSavingCredential}
+							/>
+						</div>
+
+						<div>
+							<Label for="bili_jct" class="text-sm font-medium text-gray-700">
+								bili_jct *
+							</Label>
+							<Input
+								id="bili_jct"
+								type="password"
+								placeholder="请输入bili_jct"
+								bind:value={bili_jct}
+								class="mt-1 w-full"
+								disabled={isSavingCredential}
+							/>
+						</div>
+
+						<div>
+							<Label for="buvid3" class="text-sm font-medium text-gray-700">
+								buvid3 *
+							</Label>
+							<Input
+								id="buvid3"
+								type="text"
+								placeholder="请输入buvid3"
+								bind:value={buvid3}
+								class="mt-1 w-full"
+								disabled={isSavingCredential}
+							/>
+						</div>
+
+						<div>
+							<Label for="dedeuserid" class="text-sm font-medium text-gray-700">
+								DedeUserID *
+							</Label>
+							<Input
+								id="dedeuserid"
+								type="text"
+								placeholder="请输入DedeUserID"
+								bind:value={dedeuserid}
+								class="mt-1 w-full"
+								disabled={isSavingCredential}
+							/>
+						</div>
+
+						<div>
+							<Label for="ac_time_value" class="text-sm font-medium text-gray-700">
+								ac_time_value (可选)
+							</Label>
+							<Input
+								id="ac_time_value"
+								type="password"
+								placeholder="请输入ac_time_value（可选）"
+								bind:value={ac_time_value}
+								class="mt-1 w-full"
+								disabled={isSavingCredential}
+							/>
+						</div>
+
+						{#if credentialError}
+							<p class="text-sm text-red-600">{credentialError}</p>
+						{/if}
+
+						<div class="rounded-md bg-yellow-50 p-4">
+							<div class="flex">
+								<div class="ml-3">
+									<h3 class="text-sm font-medium text-yellow-800">获取凭证信息</h3>
+									<div class="mt-2 text-sm text-yellow-700">
+										<p>请按以下步骤获取B站登录凭证：</p>
+										<ol class="mt-1 list-decimal list-inside space-y-1">
+											<li>在浏览器中登录B站</li>
+											<li>按F12打开开发者工具</li>
+											<li>切换到"网络"或"Network"标签</li>
+											<li>刷新页面，找到任意请求</li>
+											<li>在请求头中找到Cookie字段</li>
+											<li>复制对应的值到上面的输入框中</li>
+										</ol>
+										<Button
+											variant="link"
+											onclick={() => (showHelpDialog = true)}
+											class="mt-2 h-auto p-0 text-yellow-700 underline"
+										>
+											查看详细教程
+										</Button>
+									</div>
+								</div>
+							</div>
+						</div>
+
+						<div class="flex space-x-3">
+							<Button variant="outline" onclick={goBack} class="flex-1">
+								上一步
+							</Button>
+							<Button
+								onclick={saveCredential}
+								disabled={isSavingCredential}
+								class="flex-1"
+							>
+								{isSavingCredential ? '保存中...' : '完成设置'}
+							</Button>
+						</div>
+
+						<Button
+							variant="ghost"
+							onclick={skipCredentialSetup}
+							class="w-full text-gray-500"
+						>
+							跳过此步骤（稍后设置）
+						</Button>
+					</div>
+				</div>
+			{/if}
+		</div>
+	</div>
+</div>
+
+<!-- 帮助对话框 -->
+<AlertDialog.Root bind:open={showHelpDialog}>
+	<AlertDialog.Content class="max-w-2xl">
+		<AlertDialog.Header>
+			<AlertDialog.Title>获取B站登录凭证详细教程</AlertDialog.Title>
+		</AlertDialog.Header>
+		<div class="space-y-4 text-sm">
+			<div>
+				<h4 class="font-medium">方法一：通过开发者工具获取</h4>
+				<ol class="mt-2 list-decimal list-inside space-y-1 text-gray-600">
+					<li>在Chrome或Edge浏览器中登录B站 (bilibili.com)</li>
+					<li>按F12键打开开发者工具</li>
+					<li>点击"Network"（网络）标签</li>
+					<li>刷新页面（Ctrl+R 或 F5）</li>
+					<li>在网络请求列表中点击任意一个请求</li>
+					<li>在右侧面板中找到"Request Headers"（请求头）</li>
+					<li>找到"Cookie"字段，复制其中的值：</li>
+				</ol>
+				<ul class="mt-2 ml-4 list-disc list-inside space-y-1 text-gray-600">
+					<li><code>SESSDATA=</code> 后面的值复制到SESSDATA框</li>
+					<li><code>bili_jct=</code> 后面的值复制到bili_jct框</li>
+					<li><code>buvid3=</code> 后面的值复制到buvid3框</li>
+					<li><code>DedeUserID=</code> 后面的值复制到DedeUserID框</li>
+				</ul>
+			</div>
+			
+			<div>
+				<h4 class="font-medium">方法二：通过浏览器设置获取</h4>
+				<ol class="mt-2 list-decimal list-inside space-y-1 text-gray-600">
+					<li>在Chrome中访问 chrome://settings/content/cookies</li>
+					<li>搜索"bilibili.com"</li>
+					<li>展开bilibili.com，找到对应的Cookie值</li>
+				</ol>
+			</div>
+
+			<div class="rounded-md bg-red-50 p-3">
+				<h4 class="font-medium text-red-800">重要提醒</h4>
+				<p class="mt-1 text-red-700">
+					• 请确保在登录状态下获取Cookie<br>
+					• 这些信息相当于您的登录凭证，请妥善保管<br>
+					• 如果Cookie过期，需要重新获取
+				</p>
+			</div>
+		</div>
+		<AlertDialog.Footer>
+			<AlertDialog.Action>我知道了</AlertDialog.Action>
+		</AlertDialog.Footer>
+	</AlertDialog.Content>
+</AlertDialog.Root> 
