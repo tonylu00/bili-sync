@@ -216,6 +216,14 @@ export interface ConfigResponse {
 	enable_auto_backoff?: boolean;
 	auto_backoff_base_seconds?: number;
 	auto_backoff_max_multiplier?: number;
+	// B站凭证信息
+	credential?: {
+		sessdata: string;
+		bili_jct: string;
+		buvid3: string;
+		dedeuserid: string;
+		ac_time_value: string;
+	};
 }
 
 // 更新配置请求类型

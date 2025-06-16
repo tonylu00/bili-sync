@@ -4,7 +4,6 @@ use std::sync::Arc;
 
 use anyhow::Result;
 use arc_swap::ArcSwapOption;
-use rand::seq::SliceRandom;
 use serde::{Deserialize, Serialize};
 
 mod bundle;

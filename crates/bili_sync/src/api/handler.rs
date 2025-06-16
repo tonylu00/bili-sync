@@ -2122,8 +2122,8 @@ fn reload_config_file() -> Result<()> {
     )
 )]
 pub async fn get_config() -> Result<ApiResponse<crate::api::response::ConfigResponse>, ApiError> {
-    // 使用reload_config获取最新配置，而不是使用全局CONFIG
-    let config = crate::config::reload_config();
+    // 使用配置包系统获取最新配置
+    let config = crate::config::with_config(|bundle| bundle.config.clone());
 
     let nfo_time_type = match config.nfo_time_type {
         crate::config::NFOTimeType::FavTime => "favtime",
@@ -2188,6 +2188,17 @@ pub async fn get_config() -> Result<ApiResponse<crate::api::response::ConfigResp
         enable_auto_backoff: config.submission_risk_control.enable_auto_backoff,
         auto_backoff_base_seconds: config.submission_risk_control.auto_backoff_base_seconds,
         auto_backoff_max_multiplier: config.submission_risk_control.auto_backoff_max_multiplier,
+        // B站凭证信息
+        credential: {
+            let credential = config.credential.load();
+            credential.as_deref().map(|cred| crate::api::response::CredentialInfo {
+                sessdata: cred.sessdata.clone(),
+                bili_jct: cred.bili_jct.clone(),
+                buvid3: cred.buvid3.clone(),
+                dedeuserid: cred.dedeuserid.clone(),
+                ac_time_value: cred.ac_time_value.clone(),
+            })
+        },
     }))
 }
 

@@ -10,7 +10,7 @@ use tokio_util::sync::CancellationToken;
 
 use crate::bilibili::credential::WbiImg;
 use crate::bilibili::{Credential, Validate};
-use crate::config::{RateLimit, CONFIG};
+use crate::config::RateLimit;
 
 #[derive(Debug, Clone)]
 pub struct UserFollowingInfo {
@@ -157,7 +157,8 @@ pub struct BiliClient {
 impl BiliClient {
     pub fn new(cookie: String) -> Self {
         let client = Client::new();
-        let limiter = CONFIG
+        let config = crate::config::reload_config();
+        let limiter = config
             .concurrent_limit
             .rate_limit
             .as_ref()
@@ -180,7 +181,8 @@ impl BiliClient {
 
     /// 获取当前用户ID的辅助函数
     fn get_current_user_id(&self) -> Result<i64, anyhow::Error> {
-        let credential = crate::config::CONFIG.credential.load();
+        let config = crate::config::reload_config();
+        let credential = config.credential.load();
         match credential.as_ref() {
             Some(cred) => cred.dedeuserid.parse::<i64>().map_err(|_| anyhow!("无效的用户ID")),
             None => Err(anyhow!("未设置登录凭据")),
@@ -192,7 +194,8 @@ impl BiliClient {
         if let Some(limiter) = &self.limiter {
             limiter.acquire_one().await;
         }
-        let credential = CONFIG.credential.load();
+        let config = crate::config::reload_config();
+        let credential = config.credential.load();
         self.client.request(method, url, credential.as_deref())
     }
 
@@ -205,7 +208,8 @@ impl BiliClient {
                 _ = limiter.acquire_one() => {},
             }
         }
-        let credential = CONFIG.credential.load();
+        let config = crate::config::reload_config();
+        let credential = config.credential.load();
         let request_builder = self.client.request(Method::GET, url, credential.as_deref());
 
         let response = tokio::select! {
@@ -218,7 +222,8 @@ impl BiliClient {
     }
 
     pub async fn check_refresh(&self) -> Result<()> {
-        let credential = CONFIG.credential.load();
+        let config = crate::config::reload_config();
+        let credential = config.credential.load();
         let Some(credential) = credential.as_deref() else {
             return Ok(());
         };
@@ -226,13 +231,14 @@ impl BiliClient {
             return Ok(());
         }
         let new_credential = credential.refresh(&self.client).await?;
-        CONFIG.credential.store(Some(Arc::new(new_credential)));
-        CONFIG.save()
+        config.credential.store(Some(Arc::new(new_credential)));
+        config.save()
     }
 
     /// 获取 wbi img，用于生成请求签名
     pub async fn wbi_img(&self) -> Result<WbiImg> {
-        let credential = CONFIG.credential.load();
+        let config = crate::config::reload_config();
+        let credential = config.credential.load();
         let credential = credential.as_deref().context("no credential found")?;
         credential.wbi_img(&self.client).await
     }

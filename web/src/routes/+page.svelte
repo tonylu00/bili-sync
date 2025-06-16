@@ -101,25 +101,26 @@
 	// 检查是否需要初始设置
 	async function checkInitialSetup() {
 		try {
-			// 首先尝试调用后端API检查是否需要初始设置
-			try {
-				const setupCheck = await api.checkInitialSetup();
-				if (setupCheck.data.needs_setup) {
-					needsInitialSetup = true;
-					checkingSetup = false;
-					return;
-				}
-			} catch (error) {
-				// 如果后端API调用失败，可能是因为没有auth_token，继续下面的逻辑
-				console.log('后端初始设置检查失败，使用前端逻辑:', error);
-			}
-
 			// 检查本地是否有token
 			const storedToken = localStorage.getItem('auth_token');
 			
 			if (!storedToken) {
-				// 没有token，需要初始设置
-				needsInitialSetup = true;
+				// 没有token，检查是否是全新系统还是新浏览器
+				try {
+					const setupCheck = await api.checkInitialSetup();
+					if (setupCheck.data.needs_setup) {
+						// 全新系统，显示初始设置
+						needsInitialSetup = true;
+					} else {
+						// 系统已配置但新浏览器，显示登录界面
+						needsInitialSetup = false;
+						isAuthenticated = false;
+					}
+				} catch (error) {
+					// 无法连接后端，显示初始设置
+					console.log('无法检查后端状态，显示初始设置:', error);
+					needsInitialSetup = true;
+				}
 				checkingSetup = false;
 				return;
 			}
@@ -131,15 +132,32 @@
 				isAuthenticated = true;
 				loadInitialData();
 			} catch (error) {
-				// Token无效，清除无效token并需要重新登录
+				// Token无效，清除无效token
 				localStorage.removeItem('auth_token');
 				api.setAuthToken('');
-				isAuthenticated = false;
+				
+				// 检查是否是系统问题还是token问题
+				try {
+					const setupCheck = await api.checkInitialSetup();
+					if (setupCheck.data.needs_setup) {
+						// 系统未配置，显示初始设置
+						needsInitialSetup = true;
+					} else {
+						// 系统已配置但token无效，显示登录界面
+						needsInitialSetup = false;
+						isAuthenticated = false;
+					}
+				} catch (apiError) {
+					// 无法检查后端状态，显示登录界面
+					needsInitialSetup = false;
+					isAuthenticated = false;
+				}
 			}
 		} catch (error) {
 			console.error('检查初始设置失败:', error);
-			// 如果检查失败，假设需要初始设置
-			needsInitialSetup = true;
+			// 如果检查失败，显示登录界面（比较安全的选择）
+			needsInitialSetup = false;
+			isAuthenticated = false;
 		} finally {
 			checkingSetup = false;
 		}

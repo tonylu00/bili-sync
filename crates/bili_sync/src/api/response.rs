@@ -190,6 +190,18 @@ pub struct ConfigResponse {
     pub enable_auto_backoff: bool,
     pub auto_backoff_base_seconds: u64,
     pub auto_backoff_max_multiplier: u64,
+    // B站凭证信息
+    pub credential: Option<CredentialInfo>,
+}
+
+// B站凭证信息结构体
+#[derive(Serialize, ToSchema)]
+pub struct CredentialInfo {
+    pub sessdata: String,
+    pub bili_jct: String,
+    pub buvid3: String,
+    pub dedeuserid: String,
+    pub ac_time_value: String,
 }
 
 // 更新配置的响应结构体

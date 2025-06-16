@@ -61,6 +61,14 @@
 	let cdnSorting = false;
 	let timezone = DEFAULT_TIMEZONE;
 
+	// B站凭证设置
+	let sessdata = '';
+	let biliJct = '';
+	let buvid3 = '';
+	let dedeUserId = '';
+	let acTimeValue = '';
+	let credentialSaving = false;
+
 	// UP主投稿风控配置
 	let largeSubmissionThreshold = 100;
 	let baseRequestDelay = 200;
@@ -255,6 +263,13 @@
 			cdnSorting = config.cdn_sorting || false;
 			timezone = config.timezone || getCurrentTimezone();
 
+			// B站凭证设置
+			sessdata = config.credential?.sessdata || '';
+			biliJct = config.credential?.bili_jct || '';
+			buvid3 = config.credential?.buvid3 || '';
+			dedeUserId = config.credential?.dedeuserid || '';
+			acTimeValue = config.credential?.ac_time_value || '';
+
 			// UP主投稿风控配置
 			largeSubmissionThreshold = config.large_submission_threshold || 100;
 			baseRequestDelay = config.base_request_delay || 200;
@@ -351,6 +366,34 @@
 			toast.error('保存失败', { description: error.message });
 		} finally {
 			saving = false;
+		}
+	}
+
+	async function saveCredential() {
+		credentialSaving = true;
+		try {
+			const params = {
+				sessdata: sessdata.trim(),
+				bili_jct: biliJct.trim(),
+				buvid3: buvid3.trim(),
+				dedeuserid: dedeUserId.trim(),
+				ac_time_value: acTimeValue.trim()
+			};
+
+			const response = await api.updateCredential(params);
+
+			if (response.data.success) {
+				toast.success('B站凭证保存成功', { description: response.data.message });
+				// 重新加载配置以获取最新状态
+				await loadConfig();
+			} else {
+				toast.error('保存失败', { description: response.data.message });
+			}
+		} catch (error: any) {
+			console.error('保存B站凭证失败:', error);
+			toast.error('保存失败', { description: error.message });
+		} finally {
+			credentialSaving = false;
 		}
 	}
 </script>
@@ -527,6 +570,100 @@
 										/>
 									</div>
 								{/if}
+							</div>
+
+							<!-- B站凭证设置 -->
+							<div class="space-y-6">
+								<div class="flex items-center justify-between">
+									<h2 class="text-lg font-semibold">B站凭证设置</h2>
+									<Button
+										type="button"
+										variant="outline"
+										size="sm"
+										onclick={saveCredential}
+										disabled={credentialSaving}
+									>
+										{credentialSaving ? '保存中...' : '保存凭证'}
+									</Button>
+								</div>
+
+								<div class="rounded-lg border border-amber-200 bg-amber-50 p-4">
+									<div class="space-y-2 text-sm text-amber-800">
+										<div class="font-medium">🔐 如何获取B站登录凭证：</div>
+										<ol class="ml-4 list-decimal space-y-1">
+											<li>在浏览器中登录B站</li>
+											<li>按F12打开开发者工具</li>
+											<li>切换到"网络"(Network)标签</li>
+											<li>刷新页面，找到任意一个请求</li>
+											<li>在请求头中找到Cookie字段，复制对应的值</li>
+										</ol>
+										<div class="mt-2 text-xs text-amber-600">
+											💡 提示：SESSDATA、bili_jct、buvid3、DedeUserID是必填项，ac_time_value可选
+										</div>
+									</div>
+								</div>
+
+								<div class="grid grid-cols-1 gap-4 md:grid-cols-2">
+									<div class="space-y-2">
+										<Label for="sessdata">SESSDATA *</Label>
+										<Input
+											id="sessdata"
+											type="password"
+											bind:value={sessdata}
+											placeholder="请输入SESSDATA"
+										/>
+									</div>
+
+									<div class="space-y-2">
+										<Label for="bili-jct">bili_jct *</Label>
+										<Input
+											id="bili-jct"
+											type="password"
+											bind:value={biliJct}
+											placeholder="请输入bili_jct"
+										/>
+									</div>
+
+									<div class="space-y-2">
+										<Label for="buvid3">buvid3 *</Label>
+										<Input
+											id="buvid3"
+											bind:value={buvid3}
+											placeholder="请输入buvid3"
+										/>
+									</div>
+
+									<div class="space-y-2">
+										<Label for="dedeuserid">DedeUserID *</Label>
+										<Input
+											id="dedeuserid"
+											bind:value={dedeUserId}
+											placeholder="请输入DedeUserID"
+										/>
+									</div>
+
+									<div class="space-y-2 md:col-span-2">
+										<Label for="ac-time-value">ac_time_value (可选)</Label>
+										<Input
+											id="ac-time-value"
+											bind:value={acTimeValue}
+											placeholder="请输入ac_time_value（可选）"
+										/>
+									</div>
+								</div>
+
+								<div class="rounded-lg border border-green-200 bg-green-50 p-3">
+									<div class="text-sm text-green-800">
+										<div class="font-medium mb-1">✅ 凭证状态检查：</div>
+										<div class="text-xs">
+											{#if sessdata && biliJct && buvid3 && dedeUserId}
+												<span class="text-green-600">✓ 必填凭证已填写完整</span>
+											{:else}
+												<span class="text-orange-600">⚠ 请填写所有必填凭证项</span>
+											{/if}
+										</div>
+									</div>
+								</div>
 							</div>
 
 							<!-- 视频质量设置 -->
