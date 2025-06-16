@@ -79,8 +79,34 @@ pub static CONFIG: Lazy<Config> = Lazy::new(load_config);
 
 /// 向后兼容的全局模板引擎引用  
 pub static TEMPLATE: Lazy<handlebars::Handlebars<'static>> = Lazy::new(|| {
+    use crate::config::PathSafeTemplate;
+    use handlebars::handlebars_helper;
+    
     let config = load_config();
-    ConfigBundle::from_config(config).expect("创建配置包失败").handlebars
+    let mut handlebars = handlebars::Handlebars::new();
+    
+    // 注册自定义 helper
+    handlebars_helper!(truncate: |s: String, len: usize| {
+        if s.chars().count() > len {
+            s.chars().take(len).collect::<String>()
+        } else {
+            s.to_string()
+        }
+    });
+    handlebars.register_helper("truncate", Box::new(truncate));
+    
+    // 注册所有必需的模板
+    let video_name = Box::leak(config.video_name.to_string().into_boxed_str());
+    let page_name = Box::leak(config.page_name.to_string().into_boxed_str());
+    let multi_page_name = Box::leak(config.multi_page_name.to_string().into_boxed_str());
+    let bangumi_name = Box::leak(config.bangumi_name.to_string().into_boxed_str());
+    
+    handlebars.path_safe_register("video", video_name).expect("注册video模板失败");
+    handlebars.path_safe_register("page", page_name).expect("注册page模板失败");
+    handlebars.path_safe_register("multi_page", multi_page_name).expect("注册multi_page模板失败");
+    handlebars.path_safe_register("bangumi", bangumi_name).expect("注册bangumi模板失败");
+    
+    handlebars
 });
 
 /// 加载初始配置包

@@ -33,8 +33,9 @@ impl ConfigBundle {
     }
 
     /// 构建 Handlebars 模板引擎
-    fn build_handlebars(_config: &Config) -> Result<Handlebars<'static>> {
+    fn build_handlebars(config: &Config) -> Result<Handlebars<'static>> {
         use handlebars::handlebars_helper;
+        use crate::config::PathSafeTemplate;
 
         let mut handlebars = Handlebars::new();
 
@@ -48,8 +49,17 @@ impl ConfigBundle {
         });
         handlebars.register_helper("truncate", Box::new(truncate));
 
-        // 暂时跳过模板注册，避免lifetime问题
-        // TODO: 稍后解决handlebars模板注册的lifetime问题
+        // 注册所有必需的模板
+        // 使用 to_string() 转换 Cow<'static, str> 为 &'static str
+        let video_name = Box::leak(config.video_name.to_string().into_boxed_str());
+        let page_name = Box::leak(config.page_name.to_string().into_boxed_str());
+        let multi_page_name = Box::leak(config.multi_page_name.to_string().into_boxed_str());
+        let bangumi_name = Box::leak(config.bangumi_name.to_string().into_boxed_str());
+        
+        handlebars.path_safe_register("video", video_name)?;
+        handlebars.path_safe_register("page", page_name)?;
+        handlebars.path_safe_register("multi_page", multi_page_name)?;
+        handlebars.path_safe_register("bangumi", bangumi_name)?;
 
         Ok(handlebars)
     }
@@ -110,9 +120,7 @@ impl ConfigBundle {
     /// 渲染模板的便捷方法
     #[allow(dead_code)]
     pub fn render_template(&self, template_name: &str, data: &serde_json::Value) -> Result<String> {
-        // 暂时返回简单的渲染结果，避免lifetime问题
-        // TODO: 实现完整的模板渲染
-        Ok(format!("{}({})", template_name, serde_json::to_string(data)?))
+        Ok(self.handlebars.render(template_name, data)?)
     }
 }
 
