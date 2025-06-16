@@ -14,6 +14,9 @@ pub async fn auth(headers: HeaderMap, request: Request, next: Next) -> Result<Re
     let excluded_paths = [
         "/api/search",      // 搜索API不需要认证
         "/api/proxy/image", // 图片代理不需要认证
+        "/api/setup/check", // 初始设置检查不需要认证
+        "/api/setup/auth-token", // 设置auth token不需要认证
+        "/api/credential",  // 更新凭证在初始设置时不需要认证
     ];
 
     let needs_auth = path.starts_with("/api/") && !excluded_paths.iter().any(|&excluded| path.starts_with(excluded));

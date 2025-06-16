@@ -83,6 +83,7 @@ impl MigrationTrait for Migration {
 
 #[derive(DeriveIden)]
 enum ConfigItem {
+    #[sea_orm(iden = "config_items")]
     Table,
     KeyName,
     ValueJson,
@@ -91,6 +92,7 @@ enum ConfigItem {
 
 #[derive(DeriveIden)]
 enum ConfigChange {
+    #[sea_orm(iden = "config_changes")]
     Table,
     Id,
     KeyName,

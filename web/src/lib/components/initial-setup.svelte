@@ -52,15 +52,19 @@
 		authError = '';
 
 		try {
-			// 暂时直接设置Token，后续需要实现后端API
-			api.setAuthToken(authToken);
+			// 调用后端API设置Token
+			const response = await api.setupAuthToken(authToken);
 			
-			// 尝试验证Token是否有效
-			await api.getVideoSources();
-			
-			// Token验证成功，进入下一步
-			currentStep = 2;
-			toast.success('API Token 设置成功');
+			if (response.data.success) {
+				// 设置本地token
+				api.setAuthToken(authToken);
+				
+				// Token设置成功，进入下一步
+				currentStep = 2;
+				toast.success('API Token 设置成功');
+			} else {
+				authError = response.data.message || 'API Token设置失败';
+			}
 		} catch (error: any) {
 			// 清除无效的 Token
 			api.setAuthToken('');
@@ -68,9 +72,9 @@
 			if (error.status === 401) {
 				authError = 'API Token错误，请检查后重试';
 			} else {
-				authError = '验证失败，请检查网络连接或Token是否正确';
+				authError = error.message || '设置失败，请检查网络连接或Token是否正确';
 			}
-			console.error('Token验证失败:', error);
+			console.error('Token设置失败:', error);
 		} finally {
 			isVerifying = false;
 		}
@@ -88,15 +92,22 @@
 		credentialError = '';
 
 		try {
-			// 暂时模拟保存成功，后续需要实现后端API
-			// TODO: 实现后端凭证保存API
+			// 调用后端API保存凭证
+			const response = await api.updateCredential({
+				sessdata: sessdata.trim(),
+				bili_jct: bili_jct.trim(),
+				buvid3: buvid3.trim(),
+				dedeuserid: dedeuserid.trim(),
+				ac_time_value: ac_time_value.trim() || undefined
+			});
 			
-			// 模拟API调用延迟
-			await new Promise(resolve => setTimeout(resolve, 1000));
-			
-			toast.success('B站凭证设置成功');
-			// 设置完成，触发完成事件
-			dispatch('setup-complete');
+			if (response.data.success) {
+				toast.success('B站凭证设置成功');
+				// 设置完成，触发完成事件
+				dispatch('setup-complete');
+			} else {
+				credentialError = response.data.message || 'B站凭证保存失败';
+			}
 		} catch (error: any) {
 			console.error('保存凭证失败:', error);
 			credentialError = error.message || '保存凭证时发生错误';

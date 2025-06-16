@@ -101,7 +101,20 @@
 	// 检查是否需要初始设置
 	async function checkInitialSetup() {
 		try {
-			// 暂时简化逻辑，检查本地是否有token
+			// 首先尝试调用后端API检查是否需要初始设置
+			try {
+				const setupCheck = await api.checkInitialSetup();
+				if (setupCheck.data.needs_setup) {
+					needsInitialSetup = true;
+					checkingSetup = false;
+					return;
+				}
+			} catch (error) {
+				// 如果后端API调用失败，可能是因为没有auth_token，继续下面的逻辑
+				console.log('后端初始设置检查失败，使用前端逻辑:', error);
+			}
+
+			// 检查本地是否有token
 			const storedToken = localStorage.getItem('auth_token');
 			
 			if (!storedToken) {

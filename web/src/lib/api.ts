@@ -459,7 +459,22 @@ export const api = {
 	 * 更新视频源启用状态
 	 */
 	updateVideoSourceEnabled: (sourceType: string, id: number, enabled: boolean) =>
-		apiClient.updateVideoSourceEnabled(sourceType, id, enabled)
+		apiClient.updateVideoSourceEnabled(sourceType, id, enabled),
+
+	/**
+	 * 检查是否需要初始设置
+	 */
+	checkInitialSetup: () => apiClient.checkInitialSetup(),
+
+	/**
+	 * 更新B站登录凭证
+	 */
+	updateCredential: (params: UpdateCredentialRequest) => apiClient.updateCredential(params),
+
+	/**
+	 * 设置API Token（初始设置时使用）
+	 */
+	setupAuthToken: (token: string) => apiClient.setupAuthToken(token)
 };
 
 // 默认导出

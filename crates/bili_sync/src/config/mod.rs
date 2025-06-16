@@ -88,15 +88,10 @@ fn default_timezone() -> String {
     "Asia/Shanghai".to_string()
 }
 
-/// 默认的 auth_token 实现，生成随机 16 位字符串
+/// 默认的 auth_token 实现，首次使用时返回None，需要用户主动设置
 fn default_auth_token() -> Option<String> {
-    let byte_choices = b"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!@#$%^&*()_+-=";
-    let mut rng = rand::thread_rng();
-    Some(
-        (0..16)
-            .map(|_| *(byte_choices.choose(&mut rng).expect("choose byte failed")) as char)
-            .collect(),
-    )
+    // 首次使用时不自动生成token，需要用户通过初始设置界面设置
+    None
 }
 
 fn default_bind_address() -> String {
@@ -216,7 +211,7 @@ impl Clone for Config {
 impl Default for Config {
     fn default() -> Self {
         Self {
-            auth_token: default_auth_token(),
+            auth_token: None,
             bind_address: default_bind_address(),
             credential: ArcSwapOption::from(Some(Arc::new(Credential::default()))),
             filter_option: FilterOption::default(),

@@ -4934,23 +4934,30 @@ pub async fn get_hot_reload_status(
     )
 )]
 pub async fn check_initial_setup() -> Result<ApiResponse<InitialSetupCheckResponse>, ApiError> {
-    // 检查是否有auth_token
-    let config = crate::config::reload_config();
-    let has_auth_token = config.auth_token.is_some() && !config.auth_token.as_ref().unwrap().is_empty();
+    // 使用配置包系统获取最新配置
+    let (has_auth_token, has_credential) = crate::config::with_config(|bundle| {
+        let config = &bundle.config;
+        
+        // 检查是否有auth_token
+        let has_auth_token = config.auth_token.is_some() && !config.auth_token.as_ref().unwrap().is_empty();
+        
+        // 检查是否有凭证
+        let credential = config.credential.load();
+        let has_credential = match credential.as_deref() {
+            Some(cred) => {
+                !cred.sessdata.is_empty() 
+                    && !cred.bili_jct.is_empty() 
+                    && !cred.buvid3.is_empty() 
+                    && !cred.dedeuserid.is_empty()
+            }
+            None => false,
+        };
+        
+        (has_auth_token, has_credential)
+    });
     
-    // 检查是否有凭证
-    let credential = config.credential.load();
-    let has_credential = match credential.as_deref() {
-        Some(cred) => {
-            !cred.sessdata.is_empty() 
-                && !cred.bili_jct.is_empty() 
-                && !cred.buvid3.is_empty() 
-                && !cred.dedeuserid.is_empty()
-        }
-        None => false,
-    };
-    
-    let needs_setup = !has_auth_token || !has_credential;
+    // 如果没有auth_token，则需要初始设置
+    let needs_setup = !has_auth_token;
     
     let response = InitialSetupCheckResponse {
         needs_setup,
@@ -4973,6 +4980,7 @@ pub async fn check_initial_setup() -> Result<ApiResponse<InitialSetupCheckRespon
     )
 )]
 pub async fn setup_auth_token(
+    Extension(db): Extension<Arc<DatabaseConnection>>,
     axum::Json(params): axum::Json<crate::api::request::SetupAuthTokenRequest>,
 ) -> Result<ApiResponse<crate::api::response::SetupAuthTokenResponse>, ApiError> {
     if params.auth_token.trim().is_empty() {
@@ -4983,11 +4991,26 @@ pub async fn setup_auth_token(
     let mut config = crate::config::reload_config();
     config.auth_token = Some(params.auth_token.clone());
     
-    // 保存配置
+    // 保存配置到文件
     config.save().map_err(|e| ApiError::from(anyhow!("保存配置失败: {}", e)))?;
     
-    // 重新加载配置
-    crate::config::reload_config();
+    // 同时保存配置到数据库
+    {
+        use crate::config::ConfigManager;
+        let manager = ConfigManager::new(db.as_ref().clone());
+        if let Err(e) = manager.save_config(&config).await {
+            warn!("保存配置到数据库失败: {}", e);
+        } else {
+            info!("API Token已同步保存到数据库");
+        }
+    }
+    
+    // 重新加载全局配置包（从数据库）
+    if let Err(e) = crate::config::reload_config_bundle().await {
+        warn!("重新加载配置包失败: {}", e);
+        // 回退到传统的重新加载方式
+        crate::config::reload_config();
+    }
     
     let response = crate::api::response::SetupAuthTokenResponse {
         success: true,
@@ -5006,8 +5029,7 @@ pub async fn setup_auth_token(
         (status = 200, description = "凭证更新成功", body = UpdateCredentialResponse),
         (status = 400, description = "请求参数错误", body = String),
         (status = 500, description = "服务器内部错误", body = String)
-    ),
-    security(("Token" = []))
+    )
 )]
 pub async fn update_credential(
     Extension(db): Extension<Arc<DatabaseConnection>>,
