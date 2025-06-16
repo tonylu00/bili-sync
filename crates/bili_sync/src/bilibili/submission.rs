@@ -10,7 +10,7 @@ use tracing::{debug, info, warn};
 use crate::bilibili::credential::encoded_query;
 use crate::bilibili::favorite_list::Upper;
 use crate::bilibili::{BiliClient, Validate, VideoInfo, MIXIN_KEY};
-use crate::config::{SubmissionRiskControlConfig, CONFIG};
+use crate::config::SubmissionRiskControlConfig;
 pub struct Submission<'a> {
     client: &'a BiliClient,
     upper_id: String,
@@ -67,7 +67,8 @@ impl<'a> Submission<'a> {
             let mut total_video_count: Option<i64> = None;
             let mut is_large_submission = false;
 
-            let config = &CONFIG.submission_risk_control;
+            let current_config = crate::config::reload_config();
+            let config = &current_config.submission_risk_control;
 
             loop {
                 // 在第一次请求后实施延迟策略

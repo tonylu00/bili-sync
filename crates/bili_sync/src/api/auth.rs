@@ -7,7 +7,6 @@ use utoipa::openapi::security::{ApiKey, ApiKeyValue, SecurityScheme};
 use utoipa::Modify;
 
 use crate::api::wrapper::ApiResponse;
-use crate::config::CONFIG;
 
 pub async fn auth(headers: HeaderMap, request: Request, next: Next) -> Result<Response, StatusCode> {
     // 排除不需要认证的路径
@@ -19,7 +18,8 @@ pub async fn auth(headers: HeaderMap, request: Request, next: Next) -> Result<Re
 
     let needs_auth = path.starts_with("/api/") && !excluded_paths.iter().any(|&excluded| path.starts_with(excluded));
 
-    if needs_auth && get_token(&headers) != CONFIG.auth_token {
+    let current_config = crate::config::reload_config();
+    if needs_auth && get_token(&headers) != current_config.auth_token {
         return Ok(ApiResponse::unauthorized(()).into_response());
     }
     Ok(next.run(request).await)

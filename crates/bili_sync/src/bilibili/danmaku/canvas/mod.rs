@@ -10,7 +10,7 @@ use crate::bilibili::danmaku::danmu::DanmuType;
 use crate::bilibili::danmaku::{Danmu, DrawEffect, Drawable};
 use crate::bilibili::PageInfo;
 
-#[derive(Debug, serde::Deserialize, serde::Serialize)]
+#[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
 pub struct DanmakuOption {
     pub duration: f64,
     pub font: String,

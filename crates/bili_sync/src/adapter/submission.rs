@@ -40,10 +40,9 @@ impl VideoSource for submission::Model {
     }
 
     fn should_take(&self, release_datetime: &chrono::DateTime<Utc>, latest_row_at: &chrono::DateTime<Utc>) -> bool {
-        use crate::config::CONFIG;
-
         // 检查是否启用增量获取
-        if CONFIG.submission_risk_control.enable_incremental_fetch {
+        let current_config = crate::config::reload_config();
+        if current_config.submission_risk_control.enable_incremental_fetch {
             // 增量模式：只获取比上次扫描时间更新的视频
             let should_take = release_datetime > latest_row_at;
 
@@ -72,9 +71,8 @@ impl VideoSource for submission::Model {
     }
 
     fn log_refresh_video_start(&self) {
-        use crate::config::CONFIG;
-
-        if CONFIG.submission_risk_control.enable_incremental_fetch {
+        let current_config = crate::config::reload_config();
+        if current_config.submission_risk_control.enable_incremental_fetch {
             info!("开始增量扫描「{}」投稿（仅获取新视频）..", self.upper_name);
         } else {
             info!("开始全量扫描「{}」投稿（获取所有视频）..", self.upper_name);

@@ -16,7 +16,7 @@ use tracing::{debug, error, info, warn};
 
 use crate::adapter::{video_source_from, Args, VideoSource, VideoSourceEnum};
 use crate::bilibili::{BestStream, BiliClient, BiliError, Dimension, PageInfo, Video, VideoInfo};
-use crate::config::{PathSafeTemplate, ARGS, CONFIG, TEMPLATE};
+use crate::config::{PathSafeTemplate, ARGS, TEMPLATE};
 use crate::error::{DownloadAbortError, ExecutionStatus, ProcessPageError};
 use crate::unified_downloader::UnifiedDownloader;
 use crate::utils::format_arg::{page_format_args, video_format_args};
@@ -385,7 +385,8 @@ pub async fn fetch_video_details(
         info!("开始并发处理 {} 个普通视频的详情", normal_videos.len());
 
         // 使用信号量控制并发数
-        let semaphore = Semaphore::new(CONFIG.concurrent_limit.video);
+        let current_config = crate::config::reload_config();
+        let semaphore = Semaphore::new(current_config.concurrent_limit.video);
 
         let tasks = normal_videos
             .into_iter()
@@ -480,7 +481,8 @@ pub async fn download_unprocessed_videos(
     token: CancellationToken,
 ) -> Result<()> {
     video_source.log_download_video_start();
-    let semaphore = Semaphore::new(CONFIG.concurrent_limit.video);
+    let current_config = crate::config::reload_config();
+    let semaphore = Semaphore::new(current_config.concurrent_limit.video);
     let unhandled_videos_pages = filter_unhandled_video_pages(video_source.filter_expr(), connection).await?;
 
     // 只有当有未处理视频时才显示日志
@@ -657,7 +659,8 @@ pub async fn download_video_pages(
     }
 
     let upper_id = video_model.upper_id.to_string();
-    let base_upper_path = &CONFIG
+    let current_config = crate::config::reload_config();
+    let base_upper_path = &current_config
         .upper_path
         .join(upper_id.chars().next().context("upper_id is empty")?.to_string())
         .join(upper_id);
@@ -811,7 +814,8 @@ pub async fn dispatch_download_page(args: DownloadPageArgs<'_>, token: Cancellat
         return Ok(ExecutionStatus::Skipped);
     }
 
-    let child_semaphore = Semaphore::new(CONFIG.concurrent_limit.page);
+    let current_config = crate::config::reload_config();
+    let child_semaphore = Semaphore::new(current_config.concurrent_limit.page);
     let tasks = args
         .pages
         .into_iter()

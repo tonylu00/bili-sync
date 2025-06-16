@@ -2,7 +2,6 @@ use anyhow::{bail, Context, Result};
 use serde::{Deserialize, Serialize};
 
 use crate::bilibili::error::BiliError;
-use crate::config::CONFIG;
 
 pub struct PageAnalyzer {
     info: serde_json::Value,
@@ -149,7 +148,8 @@ impl Stream {
                 let mut urls = std::iter::once(url.as_str())
                     .chain(backup_url.iter().map(|s| s.as_str()))
                     .collect();
-                if !CONFIG.cdn_sorting {
+                let current_config = crate::config::reload_config();
+                if !current_config.cdn_sorting {
                     urls
                 } else {
                     urls.sort_by_key(|u| {
