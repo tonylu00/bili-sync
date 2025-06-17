@@ -2093,8 +2093,27 @@ where
     // 移除配置文件保存 - 配置现在完全基于数据库
     // config.save()?;
 
-    // 重新加载全局配置
-    crate::config::reload_config();
+    // 保存配置到数据库
+    if let Some(manager) = crate::config::get_config_manager() {
+        if let Err(e) = tokio::task::block_in_place(|| {
+            tokio::runtime::Handle::current().block_on(manager.save_config(&config))
+        }) {
+            warn!("保存配置到数据库失败: {}", e);
+        } else {
+            info!("配置已保存到数据库");
+        }
+    } else {
+        warn!("配置管理器未初始化，无法保存到数据库");
+    }
+
+    // 重新加载全局配置包（从数据库）
+    if let Err(e) = tokio::task::block_in_place(|| {
+        tokio::runtime::Handle::current().block_on(crate::config::reload_config_bundle())
+    }) {
+        warn!("重新加载配置包失败: {}", e);
+        // 回退到传统的重新加载方式
+        crate::config::reload_config();
+    }
 
     info!("配置已更新，视频源删除完成");
     Ok(())
@@ -2103,13 +2122,14 @@ where
 // 移除配置文件操作 - 配置现在完全基于数据库
 #[allow(dead_code)]
 fn reload_config_file() -> Result<()> {
-    // 使用公共的 reload_config 函数重新加载配置
-    let _new_config = crate::config::reload_config();
-
-    // 移除配置文件保存 - 配置现在完全基于数据库
-    // if let Err(e) = new_config.save() {
-    //     warn!("保存重载的配置时出错: {}", e);
-    // }
+    // 重新加载全局配置包（从数据库）
+    if let Err(e) = tokio::task::block_in_place(|| {
+        tokio::runtime::Handle::current().block_on(crate::config::reload_config_bundle())
+    }) {
+        warn!("重新加载配置包失败: {}", e);
+        // 回退到传统的重新加载方式
+        let _new_config = crate::config::reload_config();
+    }
 
     info!("配置已成功重新加载，新添加的视频源将在下一轮下载任务中生效");
     Ok(())

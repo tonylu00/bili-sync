@@ -12,8 +12,9 @@ use crate::config::{Config, ConfigBundle};
 
 /// 全局的配置包，使用 ArcSwap 支持热重载
 /// 包含配置、模板引擎、限流器等所有需要热重载的组件
+/// 初始化时使用空配置包，在数据库初始化后再设置真实配置
 pub static CONFIG_BUNDLE: Lazy<ArcSwap<ConfigBundle>> =
-    Lazy::new(|| ArcSwap::from_pointee(load_initial_config_bundle()));
+    Lazy::new(|| ArcSwap::from_pointee(load_minimal_config_bundle()));
 
 /// 全局的配置管理器，用于数据库操作
 static CONFIG_MANAGER: Lazy<RwLock<Option<crate::config::ConfigManager>>> = Lazy::new(|| RwLock::new(None));
@@ -23,6 +24,12 @@ pub fn set_config_manager(manager: crate::config::ConfigManager) {
     let mut guard = CONFIG_MANAGER.write().unwrap();
     *guard = Some(manager);
     info!("配置管理器已设置");
+}
+
+/// 获取配置管理器（用于credential刷新等场景）
+pub fn get_config_manager() -> Option<crate::config::ConfigManager> {
+    let guard = CONFIG_MANAGER.read().unwrap();
+    guard.clone()
 }
 
 /// 重新加载配置包（支持热重载）
@@ -111,7 +118,19 @@ pub static TEMPLATE: Lazy<handlebars::Handlebars<'static>> = Lazy::new(|| {
     handlebars
 });
 
-/// 加载初始配置包
+/// 加载最小配置包（不进行配置检查，避免重复警告）
+fn load_minimal_config_bundle() -> ConfigBundle {
+    info!("开始加载配置包..");
+
+    // 创建默认配置但不进行检查
+    let config = Config::default();
+    let bundle = ConfigBundle::from_config(config).expect("创建配置包失败");
+    info!("配置包加载完毕");
+    bundle
+}
+
+/// 加载初始配置包（已弃用，由数据库配置系统取代）
+#[allow(dead_code)]
 fn load_initial_config_bundle() -> ConfigBundle {
     info!("开始加载配置包..");
 
@@ -141,6 +160,15 @@ pub async fn init_config_with_database(db: sea_orm::DatabaseConnection) -> Resul
     // 更新全局配置包
     CONFIG_BUNDLE.store(Arc::new(new_bundle));
 
+    // 现在进行配置检查（从数据库加载的配置）
+    info!("检查配置..");
+    let config = reload_config();
+    if config.check() {
+        info!("配置检查通过");
+    } else {
+        info!("您可以访问管理页 http://{}/ 添加视频源", config.bind_address);
+    }
+
     info!("数据库配置系统初始化完成");
     Ok(())
 }
@@ -168,26 +196,16 @@ pub static CONFIG_DIR: Lazy<PathBuf> =
 fn load_config_impl() -> Config {
     info!("开始加载默认配置..");
     // 配置现在完全基于数据库，不再从配置文件加载
-    // let config = Config::load().unwrap_or_else(|err| {
-    //     if err
-    //         .downcast_ref::<std::io::Error>()
-    //         .is_none_or(|e| e.kind() != std::io::ErrorKind::NotFound)
-    //     {
-    //         panic!("加载配置文件失败，错误为： {err}");
-    //     }
-    //     warn!("配置文件不存在，使用默认配置..");
-    //     Config::default()
-    // });
     let config = Config::default();
     info!("默认配置加载完毕");
-    // 不再保存配置文件，因为配置完全基于数据库
-    // config.save().expect("保存默认配置时遇到错误");
-    info!("检查配置..");
-    if config.check() {
-        info!("配置检查通过");
-    } else {
-        info!("您可以访问管理页 http://{}/ 添加视频源", config.bind_address);
-    }
+    // 移除配置检查，避免在静态初始化时产生警告
+    // 配置检查将在数据库配置系统初始化后进行
+    // info!("检查配置..");
+    // if config.check() {
+    //     info!("配置检查通过");
+    // } else {
+    //     info!("您可以访问管理页 http://{}/ 添加视频源", config.bind_address);
+    // }
     config
 }
 
