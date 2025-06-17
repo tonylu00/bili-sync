@@ -29,7 +29,7 @@
 
 #### 1. 配置系统修复
 - **数据库存储**：配置现在完全存储在数据库中，config.toml 仅作为初始配置
-- **热重载实现**：使用 ArcSwap<ConfigBundle> 架构，实现高性能配置热更新
+- **热重载实现**：使用 ArcSwap&lt;ConfigBundle&gt; 架构，实现高性能配置热更新
 - **凭证保存**：修复 BiliClient::check_refresh() 中 credential 刷新后无法持久化的问题
 - **任务队列**：配置保存通过专门的任务队列处理，避免并发冲突
 
@@ -40,7 +40,7 @@
 
 #### 3. 内存管理优化
 - **内存泄漏修复**：完全移除 Box::leak 导致的内存泄漏
-- **配置管理器**：新增 get_config_manager() 函数提供安全的配置访问
+- **配置管理器**：新增 `get_config_manager()` 函数提供安全的配置访问
 
 ### 🔧 技术细节
 
@@ -49,16 +49,16 @@
 // 新的配置管理结构
 pub struct ConfigBundle {
     pub config: Config,
-    pub handlebars: Handlebars<'static>,
-    pub rate_limiter: Arc<RateLimiter>,
+    pub handlebars: Handlebars&lt;'static&gt;,
+    pub rate_limiter: Arc&lt;RateLimiter&gt;,
 }
 
 // 使用 ArcSwap 实现热重载
-static CONFIG_BUNDLE: Lazy<ArcSwap<ConfigBundle>> = ...
+static CONFIG_BUNDLE: Lazy&lt;ArcSwap&lt;ConfigBundle&gt;&gt; = ...
 
 // 安全的配置访问
-pub fn with_config<F, R>(f: F) -> R 
-where F: FnOnce(&ConfigBundle) -> R
+pub fn with_config&lt;F, R&gt;(f: F) -&gt; R 
+where F: FnOnce(&ConfigBundle) -&gt; R
 ```
 
 #### 文件名处理增强
@@ -193,7 +193,7 @@ for ep in episodes {
 }
 
 // 优化后：并发处理
-let tasks: Vec<_> = episodes.into_iter()
+let tasks: Vec&lt;_&gt; = episodes.into_iter()
     .map(|ep| fetch_episode_detail(ep))
     .collect();
 let results = futures::future::try_join_all(tasks).await?;
