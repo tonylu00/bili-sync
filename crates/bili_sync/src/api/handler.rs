@@ -37,7 +37,7 @@ use crate::utils::status::{PageStatus, VideoStatus};
 
 #[derive(OpenApi)]
 #[openapi(
-    paths(get_video_sources, get_videos, get_video, reset_video, reset_all_videos, reset_specific_tasks, update_video_status, add_video_source, update_video_source_enabled, delete_video_source, reload_config, get_config, update_config, get_bangumi_seasons, search_bilibili, get_user_favorites, get_user_collections, get_user_followings, get_subscribed_collections, get_logs, get_queue_status, proxy_image, get_config_item, get_config_history, validate_config, get_hot_reload_status, check_initial_setup, setup_auth_token, update_credential),
+    paths(get_video_sources, get_videos, get_video, reset_video, reset_all_videos, reset_specific_tasks, update_video_status, add_video_source, update_video_source_enabled, delete_video_source, reload_config, get_config, update_config, get_bangumi_seasons, search_bilibili, get_user_favorites, get_user_collections, get_user_followings, get_subscribed_collections, get_logs, get_queue_status, proxy_image, get_config_item, get_config_history, validate_config, get_hot_reload_status, check_initial_setup, setup_auth_token, update_credential, pause_scanning_endpoint, resume_scanning_endpoint, get_task_control_status),
     modifiers(&OpenAPIAuth),
     security(
         ("Token" = []),
@@ -2836,7 +2836,7 @@ pub async fn update_config_internal(
 
     if should_rename {
         // 暂停定时扫描任务，避免与重命名操作产生数据库锁定冲突
-        crate::task::pause_scanning();
+        crate::task::pause_scanning().await;
         info!("重命名操作开始，已暂停定时扫描任务");
 
         // 根据更新的字段类型来决定重命名哪些文件
@@ -5135,4 +5135,66 @@ pub async fn update_credential(
     };
 
     Ok(ApiResponse::ok(response))
+}
+
+/// 暂停扫描功能
+#[utoipa::path(
+    post,
+    path = "/api/task-control/pause",
+    responses(
+        (status = 200, description = "暂停成功", body = crate::api::response::TaskControlResponse),
+        (status = 500, description = "内部错误")
+    )
+)]
+pub async fn pause_scanning_endpoint() -> Result<ApiResponse<crate::api::response::TaskControlResponse>, ApiError> {
+    crate::task::pause_scanning().await;
+    Ok(ApiResponse::ok(crate::api::response::TaskControlResponse {
+        success: true,
+        message: "已暂停所有扫描和下载任务".to_string(),
+        is_paused: true,
+    }))
+}
+
+/// 恢复扫描功能
+#[utoipa::path(
+    post,
+    path = "/api/task-control/resume",
+    responses(
+        (status = 200, description = "恢复成功", body = crate::api::response::TaskControlResponse),
+        (status = 500, description = "内部错误")
+    )
+)]
+pub async fn resume_scanning_endpoint() -> Result<ApiResponse<crate::api::response::TaskControlResponse>, ApiError> {
+    crate::task::resume_scanning();
+    Ok(ApiResponse::ok(crate::api::response::TaskControlResponse {
+        success: true,
+        message: "已恢复所有扫描和下载任务".to_string(),
+        is_paused: false,
+    }))
+}
+
+/// 获取任务控制状态
+#[utoipa::path(
+    get,
+    path = "/api/task-control/status",
+    responses(
+        (status = 200, description = "获取状态成功", body = crate::api::response::TaskControlStatusResponse),
+        (status = 500, description = "内部错误")
+    )
+)]
+pub async fn get_task_control_status() -> Result<ApiResponse<crate::api::response::TaskControlStatusResponse>, ApiError> {
+    let is_paused = crate::task::TASK_CONTROLLER.is_paused();
+    let is_scanning = crate::task::TASK_CONTROLLER.is_scanning();
+    
+    Ok(ApiResponse::ok(crate::api::response::TaskControlStatusResponse {
+        is_paused,
+        is_scanning,
+        message: if is_paused {
+            "任务已暂停".to_string()
+        } else if is_scanning {
+            "正在扫描中".to_string()
+        } else {
+            "任务空闲".to_string()
+        },
+    }))
 }

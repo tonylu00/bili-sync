@@ -5,7 +5,7 @@
 	import AuthLogin from '$lib/components/auth-login.svelte';
 	import InitialSetup from '$lib/components/initial-setup.svelte';
 	import api from '$lib/api';
-	import type { VideosResponse, VideoSourcesResponse, ApiError } from '$lib/types';
+	import type { VideosResponse, VideoSourcesResponse, ApiError, TaskControlStatusResponse } from '$lib/types';
 	import { onMount } from 'svelte';
 	import { page } from '$app/stores';
 	import { goto } from '$app/navigation';
@@ -24,6 +24,9 @@
 	import * as AlertDialog from '$lib/components/ui/alert-dialog/index.js';
 	import { Label } from '$lib/components/ui/label/index.js';
 	import RotateCcwIcon from '@lucide/svelte/icons/rotate-ccw';
+	import PauseIcon from '@lucide/svelte/icons/pause';
+	import PlayIcon from '@lucide/svelte/icons/play';
+	import { onDestroy } from 'svelte';
 
 	// 认证状态
 	let isAuthenticated = false;
@@ -35,6 +38,11 @@
 	let pageSize = 20; // 改为可变的
 	let currentFilter: { type: string; id: string } | null = null;
 	let lastSearch: string | null = null;
+
+	// 任务控制状态
+	let taskControlStatus: TaskControlStatusResponse | null = null;
+	let loadingTaskControl = false;
+	let statusUpdateInterval: ReturnType<typeof setInterval> | null = null;
 
 	// 响应式变量
 	let innerWidth = 0;
@@ -170,11 +178,75 @@
 			const sources = await api.getVideoSources();
 			setVideoSources(sources.data);
 
+			// 加载任务控制状态
+			await loadTaskControlStatus();
+
+			// 启动定时更新任务状态（每5秒更新一次）
+			if (!statusUpdateInterval) {
+				statusUpdateInterval = setInterval(async () => {
+					if (isAuthenticated) {
+						await loadTaskControlStatus();
+					}
+				}, 5000);
+			}
+
 			// 加载视频列表
 			handleSearchParamsChange();
 		} catch (error) {
 			console.error('加载数据失败:', error);
 			toast.error('加载数据失败');
+		}
+	}
+
+	// 加载任务控制状态
+	async function loadTaskControlStatus() {
+		try {
+			const response = await api.getTaskControlStatus();
+			taskControlStatus = response.data;
+		} catch (error) {
+			console.error('获取任务控制状态失败:', error);
+		}
+	}
+
+	// 暂停所有任务
+	async function pauseAllTasks() {
+		if (loadingTaskControl) return;
+		
+		loadingTaskControl = true;
+		try {
+			const response = await api.pauseScanning();
+			if (response.data.success) {
+				toast.success(response.data.message);
+				await loadTaskControlStatus();
+			} else {
+				toast.error('暂停任务失败');
+			}
+		} catch (error) {
+			console.error('暂停任务失败:', error);
+			toast.error('暂停任务失败');
+		} finally {
+			loadingTaskControl = false;
+		}
+	}
+
+	// 恢复所有任务
+	async function resumeAllTasks() {
+		if (loadingTaskControl) return;
+		
+		loadingTaskControl = true;
+		try {
+			const response = await api.resumeScanning();
+			if (response.data.success) {
+				toast.success(response.data.message);
+				await loadTaskControlStatus();
+			} else {
+				toast.error('恢复任务失败');
+			}
+		} catch (error) {
+			console.error('恢复任务失败:', error);
+			toast.error('恢复任务失败');
+		} finally {
+			loadingTaskControl = false;
 		}
 	}
 
@@ -351,6 +423,14 @@
 		await checkInitialSetup();
 	});
 
+	// 清理定时器
+	onDestroy(() => {
+		if (statusUpdateInterval) {
+			clearInterval(statusUpdateInterval);
+			statusUpdateInterval = null;
+		}
+	});
+
 	$: totalPages = videosData ? Math.ceil(videosData.total_count / pageSize) : 0;
 	$: filterTitle = currentFilter ? getFilterTitle(currentFilter.type) : '';
 	$: filterName = currentFilter ? getFilterName(currentFilter.type, currentFilter.id) : '';
@@ -431,6 +511,29 @@
 						<option value={100}>100</option>
 					</select>
 				</div>
+				
+				<!-- 任务控制按钮 -->
+				{#if taskControlStatus}
+					<Button
+						size="sm"
+						variant={taskControlStatus.is_paused ? "default" : "destructive"}
+						onclick={taskControlStatus.is_paused ? resumeAllTasks : pauseAllTasks}
+						disabled={loadingTaskControl}
+						class="w-full sm:w-auto"
+						title={taskControlStatus.is_paused ? '恢复所有下载和扫描任务' : '停止所有下载和扫描任务'}
+					>
+						{#if loadingTaskControl}
+							<RotateCcwIcon class="mr-2 h-4 w-4 animate-spin" />
+							处理中...
+						{:else if taskControlStatus.is_paused}
+							<PlayIcon class="mr-2 h-4 w-4" />
+							恢复任务
+						{:else}
+							<PauseIcon class="mr-2 h-4 w-4" />
+							停止任务
+						{/if}
+					</Button>
+				{/if}
 				
 				<!-- 强制重置按钮 -->
 				<Button

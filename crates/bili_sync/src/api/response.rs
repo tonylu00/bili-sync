@@ -416,3 +416,19 @@ pub struct UpdateCredentialResponse {
     pub success: bool,
     pub message: String,
 }
+
+/// 任务控制响应
+#[derive(Serialize, ToSchema)]
+pub struct TaskControlResponse {
+    pub success: bool,
+    pub message: String,
+    pub is_paused: bool,
+}
+
+/// 任务控制状态响应
+#[derive(Serialize, ToSchema)]
+pub struct TaskControlStatusResponse {
+    pub is_paused: bool,
+    pub is_scanning: bool,
+    pub message: String,
+}

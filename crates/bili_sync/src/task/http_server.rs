@@ -27,18 +27,21 @@ use crate::api::handler::{
     get_logs,
     get_queue_status,
     get_subscribed_collections,
+    get_task_control_status,
     get_user_collections,
     get_user_favorites,
     get_user_followings,
     get_video,
     get_video_sources,
     get_videos,
+    pause_scanning_endpoint,
     proxy_image,
     reload_config,
     reload_config_new_internal,
     reset_all_videos,
     reset_specific_tasks,
     reset_video,
+    resume_scanning_endpoint,
     search_bilibili,
     setup_auth_token,
     update_config,
@@ -118,6 +121,9 @@ pub async fn http_server(database_connection: Arc<DatabaseConnection>) -> Result
         .route("/api/logs", get(get_logs))
         .route("/api/queue-status", get(get_queue_status))
         .route("/api/proxy/image", get(proxy_image))
+        .route("/api/task-control/status", get(get_task_control_status))
+        .route("/api/task-control/pause", post(pause_scanning_endpoint))
+        .route("/api/task-control/resume", post(resume_scanning_endpoint))
         .merge(
             SwaggerUi::new("/swagger-ui/")
                 .url("/api-docs/openapi.json", ApiDoc::openapi())

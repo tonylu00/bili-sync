@@ -25,7 +25,9 @@ import type {
 	UpdateVideoSourceEnabledResponse,
 	UpdateCredentialRequest,
 	UpdateCredentialResponse,
-	InitialSetupCheckResponse
+	InitialSetupCheckResponse,
+	TaskControlStatusResponse,
+	TaskControlResponse
 } from './types';
 import { ErrorType } from './types';
 
@@ -350,6 +352,27 @@ class ApiClient {
 	async setupAuthToken(token: string): Promise<ApiResponse<{ success: boolean; message: string }>> {
 		return this.post<{ success: boolean; message: string }>('/setup/auth-token', { auth_token: token });
 	}
+
+	/**
+	 * 获取任务控制状态
+	 */
+	async getTaskControlStatus(): Promise<ApiResponse<TaskControlStatusResponse>> {
+		return this.get<TaskControlStatusResponse>('/task-control/status');
+	}
+
+	/**
+	 * 暂停所有扫描和下载任务
+	 */
+	async pauseScanning(): Promise<ApiResponse<TaskControlResponse>> {
+		return this.post<TaskControlResponse>('/task-control/pause');
+	}
+
+	/**
+	 * 恢复所有扫描和下载任务
+	 */
+	async resumeScanning(): Promise<ApiResponse<TaskControlResponse>> {
+		return this.post<TaskControlResponse>('/task-control/resume');
+	}
 }
 
 // 创建默认的 API 客户端实例
@@ -474,7 +497,22 @@ export const api = {
 	/**
 	 * 设置API Token（初始设置时使用）
 	 */
-	setupAuthToken: (token: string) => apiClient.setupAuthToken(token)
+	setupAuthToken: (token: string) => apiClient.setupAuthToken(token),
+
+	/**
+	 * 获取任务控制状态
+	 */
+	getTaskControlStatus: () => apiClient.getTaskControlStatus(),
+
+	/**
+	 * 暂停所有扫描和下载任务
+	 */
+	pauseScanning: () => apiClient.pauseScanning(),
+
+	/**
+	 * 恢复所有扫描和下载任务
+	 */
+	resumeScanning: () => apiClient.resumeScanning()
 };
 
 // 默认导出

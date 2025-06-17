@@ -10,6 +10,9 @@ use std::collections::VecDeque;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use tokio::sync::Mutex;
+use tracing::{debug, error, info};
+use anyhow::Result;
+use tokio_util::sync::CancellationToken;
 
 /// 删除视频源任务结构体
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -540,6 +543,12 @@ pub struct TaskController {
     pub is_paused: AtomicBool,
     /// 是否正在扫描（用于检测扫描状态）
     pub is_scanning: AtomicBool,
+    /// 是否刚刚恢复（用于立即开始新扫描）
+    pub just_resumed: AtomicBool,
+    /// 全局取消令牌，用于取消所有下载任务
+    pub cancellation_token: Arc<Mutex<CancellationToken>>,
+    /// 下载器的引用，用于暂停时停止下载
+    pub downloader: Arc<Mutex<Option<Arc<crate::unified_downloader::UnifiedDownloader>>>>,
 }
 
 impl TaskController {
@@ -547,24 +556,65 @@ impl TaskController {
         Self {
             is_paused: AtomicBool::new(false),
             is_scanning: AtomicBool::new(false),
+            just_resumed: AtomicBool::new(false),
+            cancellation_token: Arc::new(Mutex::new(CancellationToken::new())),
+            downloader: Arc::new(Mutex::new(None)),
         }
     }
 
+    /// 设置下载器引用
+    pub async fn set_downloader(&self, downloader: Option<Arc<crate::unified_downloader::UnifiedDownloader>>) {
+        let mut guard = self.downloader.lock().await;
+        *guard = downloader;
+    }
+
     /// 暂停定时扫描任务
-    pub fn pause(&self) {
+    pub async fn pause(&self) {
         self.is_paused.store(true, Ordering::SeqCst);
-        info!("定时扫描任务已暂停");
+        // 立即重置扫描状态
+        self.is_scanning.store(false, Ordering::SeqCst);
+        // 重置恢复标志
+        self.just_resumed.store(false, Ordering::SeqCst);
+        
+        // 取消所有正在进行的下载任务
+        if let Ok(token) = self.cancellation_token.try_lock() {
+            token.cancel();
+        }
+
+        // 停止下载器
+        if let Ok(downloader_guard) = self.downloader.try_lock() {
+            if let Some(downloader) = downloader_guard.as_ref() {
+                if let Err(e) = downloader.shutdown().await {
+                    error!("停止下载器失败: {:#}", e);
+                } else {
+                    info!("下载器已停止");
+                }
+            }
+        }
+        
+        info!("定时扫描任务已暂停，所有下载任务已取消");
     }
 
     /// 恢复定时扫描任务
     pub fn resume(&self) {
         self.is_paused.store(false, Ordering::SeqCst);
-        info!("定时扫描任务已恢复");
+        // 设置恢复标志，表示应该立即开始新扫描
+        self.just_resumed.store(true, Ordering::SeqCst);
+        // 创建新的取消令牌，用于新的下载任务
+        if let Ok(mut token) = self.cancellation_token.try_lock() {
+            *token = CancellationToken::new();
+        }
+        info!("定时扫描任务已恢复，将立即开始新一轮扫描");
     }
 
     /// 检查是否暂停
     pub fn is_paused(&self) -> bool {
         self.is_paused.load(Ordering::SeqCst)
+    }
+
+    /// 检查是否刚刚恢复（并重置标志）
+    pub fn take_just_resumed(&self) -> bool {
+        self.just_resumed.swap(false, Ordering::SeqCst)
     }
 
     /// 设置扫描状态
@@ -587,6 +637,12 @@ impl TaskController {
         while self.is_paused() {
             tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
         }
+    }
+
+    /// 获取当前的取消令牌
+    pub async fn get_cancellation_token(&self) -> CancellationToken {
+        let token = self.cancellation_token.lock().await;
+        token.clone()
     }
 }
 
@@ -613,8 +669,8 @@ pub static CONFIG_TASK_QUEUE: once_cell::sync::Lazy<Arc<ConfigTaskQueue>> =
     once_cell::sync::Lazy::new(|| Arc::new(ConfigTaskQueue::new()));
 
 /// 暂停定时扫描任务的便捷函数
-pub fn pause_scanning() {
-    TASK_CONTROLLER.pause();
+pub async fn pause_scanning() {
+    TASK_CONTROLLER.pause().await;
 }
 
 /// 恢复定时扫描任务的便捷函数

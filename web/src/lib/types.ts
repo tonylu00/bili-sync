@@ -496,3 +496,17 @@ export interface InitialSetupCheckResponse {
 	has_auth_token: boolean;
 	has_credential: boolean;
 }
+
+// 任务控制响应类型
+export interface TaskControlResponse {
+	success: boolean;
+	message: string;
+	is_paused: boolean;
+}
+
+// 任务控制状态响应类型
+export interface TaskControlStatusResponse {
+	is_paused: boolean;
+	is_scanning: boolean;
+	message: string;
+}

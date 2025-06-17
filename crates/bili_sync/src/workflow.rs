@@ -147,11 +147,10 @@ pub async fn process_video_source(
         warn!("已开启仅扫描模式，跳过视频下载..");
     } else {
         // 从数据库中查找所有未下载的视频与分页，下载并处理
-        if let Err(e) = download_unprocessed_videos(bili_client, &video_source, connection, downloader, token).await {
+        if let Err(e) = download_unprocessed_videos(bili_client, &video_source, connection, downloader, token.clone()).await {
             let error_msg = format!("{:#}", e);
             if retry_with_refresh(error_msg).await.is_ok() {
-                // 刷新成功，重试
-                let token = CancellationToken::new(); // a new token for retry
+                // 刷新成功，重试（继续使用原有的取消令牌）
                 download_unprocessed_videos(bili_client, &video_source, connection, downloader, token).await?;
             } else {
                 return Err(e);
@@ -611,18 +610,18 @@ pub async fn download_video_pages(
                     // 分离模式（默认）：每个视频有自己的文件夹
                     video_source
                         .path()
-                        .join(crate::config::with_config(|bundle| {
+                        .join(crate::utils::filenamify::filenamify(&crate::config::with_config(|bundle| {
                             bundle.handlebars.render("video", &video_format_args(&video_model))
-                        }).map_err(|e| anyhow::anyhow!("模板渲染失败: {}", e))?)
+                        }).map_err(|e| anyhow::anyhow!("模板渲染失败: {}", e))?))
                 }
             }
         } else {
             // 其他类型的视频源使用原来的逻辑
             video_source
                 .path()
-                .join(crate::config::with_config(|bundle| {
+                .join(crate::utils::filenamify::filenamify(&crate::config::with_config(|bundle| {
                     bundle.handlebars.render("video", &video_format_args(&video_model))
-                }).map_err(|e| anyhow::anyhow!("模板渲染失败: {}", e))?)
+                }).map_err(|e| anyhow::anyhow!("模板渲染失败: {}", e))?))
         };
         (path, None)
     };
@@ -647,9 +646,9 @@ pub async fn download_video_pages(
     // 为多P视频生成基于视频名称的文件名
     let video_base_name = if !is_single_page {
         // 使用video_name模板渲染视频名称
-        crate::config::with_config(|bundle| {
+        crate::utils::filenamify::filenamify(&crate::config::with_config(|bundle| {
             bundle.handlebars.render("video", &video_format_args(&video_model))
-        }).map_err(|e| anyhow::anyhow!("模板渲染失败: {}", e))?
+        }).map_err(|e| anyhow::anyhow!("模板渲染失败: {}", e))?)
     } else {
         String::new() // 单P视频不需要这些文件
     };
@@ -894,7 +893,8 @@ pub async fn download_page(
             // 统一模式：使用S01E01格式命名
             match get_collection_video_episode_number(connection, collection_source.id, &video_model.bvid).await {
                 Ok(episode_number) => {
-                    format!("S01E{:02} - {}", episode_number, video_model.name)
+                    let clean_name = crate::utils::filenamify::filenamify(&video_model.name);
+                    format!("S01E{:02} - {}", episode_number, clean_name)
                 }
                 Err(_) => {
                     // 如果获取序号失败，使用默认命名
