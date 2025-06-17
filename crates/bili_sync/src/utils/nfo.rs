@@ -243,13 +243,15 @@ impl NFO<'_> {
 
 impl<'a> From<&'a video::Model> for Movie<'a> {
     fn from(video: &'a video::Model) -> Self {
+        // 使用动态配置而非静态CONFIG
+        let config = crate::config::reload_config();
         Self {
             name: &video.name,
             intro: &video.intro,
             bvid: &video.bvid,
             upper_id: video.upper_id,
             upper_name: &video.upper_name,
-            aired: match crate::config::reload_config().nfo_time_type {
+            aired: match config.nfo_time_type {
                 NFOTimeType::FavTime => video.favtime,
                 NFOTimeType::PubTime => video.pubtime,
             },
@@ -263,13 +265,15 @@ impl<'a> From<&'a video::Model> for Movie<'a> {
 
 impl<'a> From<&'a video::Model> for TVShow<'a> {
     fn from(video: &'a video::Model) -> Self {
+        // 使用动态配置而非静态CONFIG
+        let config = crate::config::reload_config();
         Self {
             name: &video.name,
             intro: &video.intro,
             bvid: &video.bvid,
             upper_id: video.upper_id,
             upper_name: &video.upper_name,
-            aired: match crate::config::reload_config().nfo_time_type {
+            aired: match config.nfo_time_type {
                 NFOTimeType::FavTime => video.favtime,
                 NFOTimeType::PubTime => video.pubtime,
             },

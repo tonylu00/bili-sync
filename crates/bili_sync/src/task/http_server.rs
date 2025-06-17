@@ -51,7 +51,7 @@ use crate::api::handler::{
 };
 use crate::api::request::{BatchUpdateConfigRequest, UpdateConfigItemRequest};
 use crate::api::wrapper::ApiResponse;
-use crate::config::CONFIG;
+// CONFIG导入已移除 - 现在使用动态配置
 
 #[derive(Embed)]
 #[folder = "../../web/build"]
@@ -131,10 +131,12 @@ pub async fn http_server(database_connection: Arc<DatabaseConnection>) -> Result
         .fallback_service(get(frontend_files))
         .layer(Extension(database_connection))
         .layer(middleware::from_fn(auth::auth));
-    let listener = tokio::net::TcpListener::bind(&CONFIG.bind_address)
+    // 使用动态配置而非静态CONFIG
+    let config = crate::config::reload_config();
+    let listener = tokio::net::TcpListener::bind(&config.bind_address)
         .await
         .context("bind address failed")?;
-    info!("开始运行管理页: http://{}", CONFIG.bind_address);
+    info!("开始运行管理页: http://{}", config.bind_address);
     Ok(axum::serve(listener, ServiceExt::<Request>::into_make_service(app)).await?)
 }
 

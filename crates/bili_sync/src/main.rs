@@ -19,12 +19,12 @@ use std::fmt::Debug;
 use std::future::Future;
 use std::sync::Arc;
 
-use once_cell::sync::Lazy;
+// 移除未使用的Lazy导入
 use task::{http_server, video_downloader};
 use tokio_util::sync::CancellationToken;
 use tokio_util::task::TaskTracker;
 
-use crate::config::{init_config_with_database, ARGS, CONFIG};
+use crate::config::{init_config_with_database, ARGS};
 use crate::database::setup_database;
 use crate::utils::init_logger;
 use crate::utils::signal::terminate;
@@ -71,17 +71,17 @@ fn spawn_task(
     });
 }
 
-/// 初始化日志系统，打印欢迎信息，加载配置文件
+/// 初始化日志系统，打印欢迎信息
 fn init() {
     init_logger(&ARGS.log_level);
     info!("欢迎使用 Bili-Sync，当前程序版本：{}", config::version());
     info!("现项目地址：https://github.com/qq1582185982/bili-sync-01");
     info!("原项目地址：https://github.com/amtoaer/bili-sync");
     debug!("系统初始化完成，日志级别: {}", ARGS.log_level);
-    debug!("开始加载配置文件...");
-
-    Lazy::force(&CONFIG);
-    debug!("配置文件加载完成");
+    // 移除配置文件强制加载 - 配置现在完全基于数据库
+    // debug!("开始加载配置文件...");
+    // Lazy::force(&CONFIG);
+    // debug!("配置文件加载完成");
 }
 
 async fn handle_shutdown(tracker: TaskTracker, token: CancellationToken) {

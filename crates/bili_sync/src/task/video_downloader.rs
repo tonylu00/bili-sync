@@ -8,7 +8,7 @@ use tracing::{debug, error, info, warn};
 
 use crate::adapter::Args;
 use crate::bilibili::{self, BiliClient, CollectionItem, CollectionType};
-use crate::config::{Config, CONFIG};
+use crate::config::Config;
 use crate::initialization;
 use crate::task::TASK_CONTROLLER;
 use crate::unified_downloader::UnifiedDownloader;
@@ -150,8 +150,9 @@ async fn init_all_sources(
 pub async fn video_downloader(connection: Arc<DatabaseConnection>) {
     let bili_client = BiliClient::new(String::new());
 
-    // 在启动时初始化所有视频源
-    if let Err(e) = init_all_sources(&CONFIG, &connection).await {
+    // 在启动时初始化所有视频源 - 使用动态配置而非静态CONFIG
+    let config = crate::config::reload_config();
+    if let Err(e) = init_all_sources(&config, &connection).await {
         error!("启动时初始化视频源失败: {}", e);
     } else {
         info!("启动时视频源初始化成功");

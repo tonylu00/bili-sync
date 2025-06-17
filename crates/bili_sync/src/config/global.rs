@@ -74,7 +74,9 @@ pub fn get_current_config() -> Config {
     with_config(|bundle| bundle.config.clone())
 }
 
-/// 向后兼容的全局配置引用
+/// 向后兼容的全局配置引用 - 已弃用，请使用reload_config()函数
+#[deprecated(note = "配置现在完全基于数据库，请使用reload_config()函数")]
+#[allow(dead_code)]
 pub static CONFIG: Lazy<Config> = Lazy::new(load_config);
 
 /// 向后兼容的全局模板引擎引用  

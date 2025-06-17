@@ -15,7 +15,7 @@ use crate::bilibili::{Credential, DanmakuOption, FilterOption};
 pub use crate::config::bundle::ConfigBundle;
 pub use crate::config::clap::version;
 pub use crate::config::global::{
-    init_config_with_database, reload_config, reload_config_bundle, with_config, ARGS, CONFIG, CONFIG_DIR, TEMPLATE,
+    init_config_with_database, reload_config, reload_config_bundle, with_config, ARGS, CONFIG_DIR, TEMPLATE,
 };
 use crate::config::item::ConcurrentLimit;
 pub use crate::config::item::{NFOTimeType, PathSafeTemplate, RateLimit, SubmissionRiskControlConfig};
