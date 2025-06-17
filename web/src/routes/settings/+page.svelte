@@ -208,7 +208,7 @@
 			{ name: '{{season_pad}}', desc: '补零的季度号（多P视频默认为01）' }
 		],
 		common: [
-			{ name: '{{ truncate title 10 }}', desc: '截取函数示例：截取标题前10个字符' },
+			{ name: '{{truncate title 10}}', desc: '截取函数示例：截取标题前10个字符' },
 			{ name: '路径分隔符', desc: '支持使用 / 或 \\\\ 创建子文件夹' }
 		],
 		time: [
@@ -627,8 +627,8 @@
 </div>
 
 <!-- 文件命名设置抽屉 -->
-<Sheet open={openSheet === 'naming'} onOpenChange={(open) => !open && (openSheet = null)}>
-	<SheetContent side={isMobile ? 'bottom' : 'right'} class="{isMobile ? 'h-[85vh] max-h-[85vh]' : '!w-screen !h-screen !max-w-none !inset-y-0 !right-0'} {!isMobile ? 'overflow-hidden' : ''}">
+<Sheet open={openSheet === 'naming'} onOpenChange={(open) => { if (!open) openSheet = null; }}>
+	<SheetContent side={isMobile ? 'bottom' : 'right'} class="{isMobile ? 'h-[85vh] max-h-[85vh]' : '!w-screen !h-screen !max-w-none !inset-y-0 !right-0'} [&>button]:hidden">
 		{#if !isMobile && randomCovers.length > 0}
 			<!-- 电脑端背景图 -->
 			<div class="absolute inset-0" style="z-index: 0;">
@@ -643,11 +643,22 @@
 				<div class="absolute inset-0" style="background: linear-gradient(to bottom right, rgba(255,255,255,0.85), rgba(255,255,255,0.5));"></div>
 			</div>
 		{/if}
-		<div class="h-full flex items-center justify-center {isMobile ? '' : 'p-8'} relative" style="z-index: 1;">
-			<div class="{isMobile ? 'w-full h-full bg-background' : 'max-w-4xl w-full bg-white/90 backdrop-blur-md rounded-lg shadow-2xl border'} overflow-hidden relative">
-				<SheetHeader class="{isMobile ? '' : 'p-6 border-b'}">
+		<div class="h-full flex items-center justify-center {isMobile ? '' : 'p-8'} relative z-10">
+			<div class="{isMobile ? 'w-full h-full bg-background' : 'max-w-4xl w-full bg-card/95 backdrop-blur-sm rounded-lg shadow-2xl border'} overflow-hidden relative">
+				<SheetHeader class="{isMobile ? '' : 'p-6 border-b'} relative">
 					<SheetTitle>文件命名设置</SheetTitle>
 					<SheetDescription>配置视频、分页、番剧等文件命名模板</SheetDescription>
+					<!-- 自定义关闭按钮 -->
+					<button
+						onclick={() => openSheet = null}
+						class="absolute top-2 right-2 p-1 rounded-sm opacity-70 ring-offset-background transition-opacity hover:opacity-100 focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:pointer-events-none hover:bg-gray-100"
+						type="button"
+					>
+						<svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+							<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+						</svg>
+						<span class="sr-only">关闭</span>
+					</button>
 				</SheetHeader>
 				<form onsubmit={(e) => { e.preventDefault(); saveConfig(); }} class="flex flex-col {isMobile ? 'h-[calc(100%-5rem)]' : 'h-[calc(100%-8rem)]'}">
 					<div class="flex-1 overflow-y-auto px-6 py-6 space-y-6">
@@ -717,7 +728,7 @@
 								<Input
 									id="video-name"
 									bind:value={videoName}
-									placeholder="{{title}}"
+									placeholder="{`{{title}}`}"
 								/>
 							</div>
 
@@ -726,7 +737,7 @@
 								<Input
 									id="page-name"
 									bind:value={pageName}
-									placeholder="{{bvid}}"
+									placeholder="{`{{bvid}}`}"
 								/>
 							</div>
 
@@ -735,7 +746,7 @@
 								<Input
 									id="multi-page-name"
 									bind:value={multiPageName}
-									placeholder="{{bvid}}/{{bvid}}.P{{pid_pad}}.{{ptitle}}"
+									placeholder="{`{{bvid}}/{{bvid}}.P{{pid_pad}}.{{ptitle}}`}"
 								/>
 							</div>
 
@@ -744,7 +755,7 @@
 								<Input
 									id="bangumi-name"
 									bind:value={bangumiName}
-									placeholder="{{title}}/Season {{season_pad}}/{{title}} - S{{season_pad}}E{{pid_pad}}"
+									placeholder="{`{{title}}/Season {{season_pad}}/{{title}} - S{{season_pad}}E{{pid_pad}}`}"
 								/>
 							</div>
 						</div>
@@ -754,7 +765,7 @@
 							<Input
 								id="folder-structure"
 								bind:value={folderStructure}
-								placeholder="{{upper_name}}/{{title}}"
+								placeholder="{`{{upper_name}}/{{title}}`}"
 							/>
 							<p class="text-muted-foreground text-sm">
 								定义视频文件的文件夹层级结构
@@ -810,7 +821,7 @@
 						<div class="rounded-lg border border-orange-200 bg-orange-50 p-3">
 							<h5 class="mb-2 font-medium text-orange-800">命名模板说明</h5>
 							<div class="space-y-1 text-orange-700 text-sm">
-								<p>• 使用双花括号 {{}} 包裹变量名</p>
+								<p>• 使用双花括号 {`{{}}`} 包裹变量名</p>
 								<p>• 支持使用 / 或 \\ 创建子文件夹</p>
 								<p>• 非法字符会自动替换为下划线</p>
 								<p>• 时间变量需要配合时间格式使用</p>
@@ -829,8 +840,8 @@
 </Sheet>
 
 <!-- 视频质量设置抽屉 -->
-<Sheet open={openSheet === 'quality'} onOpenChange={(open) => !open && (openSheet = null)}>
-	<SheetContent side={isMobile ? 'bottom' : 'right'} class={isMobile ? 'h-[85vh] max-h-[85vh]' : '!w-screen !h-screen !max-w-none !inset-y-0 !right-0'}>
+<Sheet open={openSheet === 'quality'} onOpenChange={(open) => { if (!open) openSheet = null; }}>
+	<SheetContent side={isMobile ? 'bottom' : 'right'} class="{isMobile ? 'h-[85vh] max-h-[85vh]' : '!w-screen !h-screen !max-w-none !inset-y-0 !right-0'} [&>button]:hidden">
 		{#if !isMobile && randomCovers.length > 0}
 			<!-- 电脑端背景图 -->
 			<div class="absolute inset-0 z-0 overflow-hidden">
@@ -846,9 +857,20 @@
 		{/if}
 		<div class="h-full flex items-center justify-center {isMobile ? '' : 'p-8'} relative z-10">
 			<div class="{isMobile ? 'w-full h-full bg-background' : 'max-w-4xl w-full bg-card/95 backdrop-blur-sm rounded-lg shadow-2xl border'} overflow-hidden relative">
-				<SheetHeader class="{isMobile ? '' : 'p-6 border-b'}">
+				<SheetHeader class="{isMobile ? '' : 'p-6 border-b'} relative">
 					<SheetTitle>视频质量设置</SheetTitle>
 					<SheetDescription>设置视频/音频质量、编解码器等参数</SheetDescription>
+					<!-- 自定义关闭按钮 -->
+					<button
+						onclick={() => openSheet = null}
+						class="absolute top-2 right-2 p-1 rounded-sm opacity-70 ring-offset-background transition-opacity hover:opacity-100 focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:pointer-events-none hover:bg-gray-100"
+						type="button"
+					>
+						<svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+							<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+						</svg>
+						<span class="sr-only">关闭</span>
+					</button>
 				</SheetHeader>
 				<form onsubmit={(e) => { e.preventDefault(); saveConfig(); }} class="flex flex-col {isMobile ? 'h-[calc(100%-5rem)]' : 'h-[calc(100%-8rem)]'}">
 					<div class="flex-1 overflow-y-auto px-6 py-6 space-y-6">
@@ -1038,8 +1060,8 @@
 </Sheet>
 
 <!-- 下载设置抽屉 -->
-<Sheet open={openSheet === 'download'} onOpenChange={(open) => !open && (openSheet = null)}>
-	<SheetContent side={isMobile ? 'bottom' : 'right'} class={isMobile ? 'h-[85vh] max-h-[85vh]' : '!w-screen !h-screen !max-w-none !inset-y-0 !right-0'}>
+<Sheet open={openSheet === 'download'} onOpenChange={(open) => { if (!open) openSheet = null; }}>
+	<SheetContent side={isMobile ? 'bottom' : 'right'} class="{isMobile ? 'h-[85vh] max-h-[85vh]' : '!w-screen !h-screen !max-w-none !inset-y-0 !right-0'} [&>button]:hidden">
 		{#if !isMobile && randomCovers.length > 0}
 			<!-- 电脑端背景图 -->
 			<div class="absolute inset-0 z-0 overflow-hidden">
@@ -1055,9 +1077,20 @@
 		{/if}
 		<div class="h-full flex items-center justify-center {isMobile ? '' : 'p-8'} relative z-10">
 			<div class="{isMobile ? 'w-full h-full bg-background' : 'max-w-4xl w-full bg-card/95 backdrop-blur-sm rounded-lg shadow-2xl border'} overflow-hidden relative">
-				<SheetHeader class="{isMobile ? '' : 'p-6 border-b'}">
+				<SheetHeader class="{isMobile ? '' : 'p-6 border-b'} relative">
 					<SheetTitle>下载设置</SheetTitle>
 					<SheetDescription>并行下载、并发控制、速率限制配置</SheetDescription>
+					<!-- 自定义关闭按钮 -->
+					<button
+						onclick={() => openSheet = null}
+						class="absolute top-2 right-2 p-1 rounded-sm opacity-70 ring-offset-background transition-opacity hover:opacity-100 focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:pointer-events-none hover:bg-gray-100"
+						type="button"
+					>
+						<svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+							<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+						</svg>
+						<span class="sr-only">关闭</span>
+					</button>
 				</SheetHeader>
 				<form onsubmit={(e) => { e.preventDefault(); saveConfig(); }} class="flex flex-col {isMobile ? 'h-[calc(100%-5rem)]' : 'h-[calc(100%-8rem)]'}">
 					<div class="flex-1 overflow-y-auto px-6 py-6 space-y-6">
@@ -1170,8 +1203,8 @@
 </Sheet>
 
 <!-- 弹幕设置抽屉 -->
-<Sheet open={openSheet === 'danmaku'} onOpenChange={(open) => !open && (openSheet = null)}>
-	<SheetContent side={isMobile ? 'bottom' : 'right'} class={isMobile ? 'h-[85vh] max-h-[85vh]' : '!w-screen !h-screen !max-w-none !inset-y-0 !right-0'}>
+<Sheet open={openSheet === 'danmaku'} onOpenChange={(open) => { if (!open) openSheet = null; }}>
+	<SheetContent side={isMobile ? 'bottom' : 'right'} class="{isMobile ? 'h-[85vh] max-h-[85vh]' : '!w-screen !h-screen !max-w-none !inset-y-0 !right-0'} [&>button]:hidden">
 		{#if !isMobile && randomCovers.length > 0}
 			<!-- 电脑端背景图 -->
 			<div class="absolute inset-0 z-0 overflow-hidden">
@@ -1187,9 +1220,20 @@
 		{/if}
 		<div class="h-full flex items-center justify-center {isMobile ? '' : 'p-8'} relative z-10">
 			<div class="{isMobile ? 'w-full h-full bg-background' : 'max-w-4xl w-full bg-card/95 backdrop-blur-sm rounded-lg shadow-2xl border'} overflow-hidden relative">
-				<SheetHeader class="{isMobile ? '' : 'p-6 border-b'}">
+				<SheetHeader class="{isMobile ? '' : 'p-6 border-b'} relative">
 					<SheetTitle>弹幕设置</SheetTitle>
 					<SheetDescription>弹幕显示样式和布局参数</SheetDescription>
+					<!-- 自定义关闭按钮 -->
+					<button
+						onclick={() => openSheet = null}
+						class="absolute top-2 right-2 p-1 rounded-sm opacity-70 ring-offset-background transition-opacity hover:opacity-100 focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:pointer-events-none hover:bg-gray-100"
+						type="button"
+					>
+						<svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+							<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+						</svg>
+						<span class="sr-only">关闭</span>
+					</button>
 				</SheetHeader>
 				<form onsubmit={(e) => { e.preventDefault(); saveConfig(); }} class="flex flex-col {isMobile ? 'h-[calc(100%-5rem)]' : 'h-[calc(100%-8rem)]'}">
 					<div class="flex-1 overflow-y-auto px-6 py-6 space-y-6">
@@ -1357,8 +1401,8 @@
 </Sheet>
 
 <!-- B站凭证设置抽屉 -->
-<Sheet open={openSheet === 'credential'} onOpenChange={(open) => !open && (openSheet = null)}>
-	<SheetContent side={isMobile ? 'bottom' : 'right'} class={isMobile ? 'h-[85vh] max-h-[85vh]' : '!w-screen !h-screen !max-w-none !inset-y-0 !right-0'}>
+<Sheet open={openSheet === 'credential'} onOpenChange={(open) => { if (!open) openSheet = null; }}>
+	<SheetContent side={isMobile ? 'bottom' : 'right'} class="{isMobile ? 'h-[85vh] max-h-[85vh]' : '!w-screen !h-screen !max-w-none !inset-y-0 !right-0'} [&>button]:hidden">
 		{#if !isMobile && randomCovers.length > 0}
 			<!-- 电脑端背景图 -->
 			<div class="absolute inset-0 z-0 overflow-hidden">
@@ -1374,9 +1418,20 @@
 		{/if}
 		<div class="h-full flex items-center justify-center {isMobile ? '' : 'p-8'} relative z-10">
 			<div class="{isMobile ? 'w-full h-full bg-background' : 'max-w-4xl w-full bg-card/95 backdrop-blur-sm rounded-lg shadow-2xl border'} overflow-hidden relative">
-				<SheetHeader class="{isMobile ? '' : 'p-6 border-b'}">
+				<SheetHeader class="{isMobile ? '' : 'p-6 border-b'} relative">
 					<SheetTitle>B站凭证设置</SheetTitle>
 					<SheetDescription>配置B站登录凭证信息</SheetDescription>
+					<!-- 自定义关闭按钮 -->
+					<button
+						onclick={() => openSheet = null}
+						class="absolute top-2 right-2 p-1 rounded-sm opacity-70 ring-offset-background transition-opacity hover:opacity-100 focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:pointer-events-none hover:bg-gray-100"
+						type="button"
+					>
+						<svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+							<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+						</svg>
+						<span class="sr-only">关闭</span>
+					</button>
 				</SheetHeader>
 				<form onsubmit={(e) => { e.preventDefault(); saveCredential(); }} class="flex flex-col {isMobile ? 'h-[calc(100%-5rem)]' : 'h-[calc(100%-8rem)]'}">
 					<div class="flex-1 overflow-y-auto px-6 py-6 space-y-6">
@@ -1470,8 +1525,8 @@
 </Sheet>
 
 <!-- 风控配置抽屉 -->
-<Sheet open={openSheet === 'risk'} onOpenChange={(open) => !open && (openSheet = null)}>
-	<SheetContent side={isMobile ? 'bottom' : 'right'} class={isMobile ? 'h-[85vh] max-h-[85vh]' : '!w-screen !h-screen !max-w-none !inset-y-0 !right-0'}>
+<Sheet open={openSheet === 'risk'} onOpenChange={(open) => { if (!open) openSheet = null; }}>
+	<SheetContent side={isMobile ? 'bottom' : 'right'} class="{isMobile ? 'h-[85vh] max-h-[85vh]' : '!w-screen !h-screen !max-w-none !inset-y-0 !right-0'} [&>button]:hidden">
 		{#if !isMobile && randomCovers.length > 0}
 			<!-- 电脑端背景图 -->
 			<div class="absolute inset-0 z-0 overflow-hidden">
@@ -1487,9 +1542,20 @@
 		{/if}
 		<div class="h-full flex items-center justify-center {isMobile ? '' : 'p-8'} relative z-10">
 			<div class="{isMobile ? 'w-full h-full bg-background' : 'max-w-4xl w-full bg-card/95 backdrop-blur-sm rounded-lg shadow-2xl border'} overflow-hidden relative">
-				<SheetHeader class="{isMobile ? '' : 'p-6 border-b'}">
+				<SheetHeader class="{isMobile ? '' : 'p-6 border-b'} relative">
 					<SheetTitle>风控配置</SheetTitle>
 					<SheetDescription>UP主投稿获取风控策略，用于优化大量视频UP主的获取</SheetDescription>
+					<!-- 自定义关闭按钮 -->
+					<button
+						onclick={() => openSheet = null}
+						class="absolute top-2 right-2 p-1 rounded-sm opacity-70 ring-offset-background transition-opacity hover:opacity-100 focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:pointer-events-none hover:bg-gray-100"
+						type="button"
+					>
+						<svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+							<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+						</svg>
+						<span class="sr-only">关闭</span>
+					</button>
 				</SheetHeader>
 				<form onsubmit={(e) => { e.preventDefault(); saveConfig(); }} class="flex flex-col {isMobile ? 'h-[calc(100%-5rem)]' : 'h-[calc(100%-8rem)]'}">
 					<div class="flex-1 overflow-y-auto px-6 py-6 space-y-6">
@@ -1710,8 +1776,8 @@
 </Sheet>
 
 <!-- 系统设置抽屉 -->
-<Sheet open={openSheet === 'system'} onOpenChange={(open) => !open && (openSheet = null)}>
-	<SheetContent side={isMobile ? 'bottom' : 'right'} class={isMobile ? 'h-[85vh] max-h-[85vh]' : '!w-screen !h-screen !max-w-none !inset-y-0 !right-0'}>
+<Sheet open={openSheet === 'system'} onOpenChange={(open) => { if (!open) openSheet = null; }}>
+	<SheetContent side={isMobile ? 'bottom' : 'right'} class="{isMobile ? 'h-[85vh] max-h-[85vh]' : '!w-screen !h-screen !max-w-none !inset-y-0 !right-0'} [&>button]:hidden">
 		{#if !isMobile && randomCovers.length > 0}
 			<!-- 电脑端背景图 -->
 			<div class="absolute inset-0 z-0 overflow-hidden">
@@ -1727,9 +1793,20 @@
 		{/if}
 		<div class="h-full flex items-center justify-center {isMobile ? '' : 'p-8'} relative z-10">
 			<div class="{isMobile ? 'w-full h-full bg-background' : 'max-w-4xl w-full bg-card/95 backdrop-blur-sm rounded-lg shadow-2xl border'} overflow-hidden relative">
-				<SheetHeader class="{isMobile ? '' : 'p-6 border-b'}">
+				<SheetHeader class="{isMobile ? '' : 'p-6 border-b'} relative">
 					<SheetTitle>系统设置</SheetTitle>
 					<SheetDescription>时区、扫描间隔等其他设置</SheetDescription>
+					<!-- 自定义关闭按钮 -->
+					<button
+						onclick={() => openSheet = null}
+						class="absolute top-2 right-2 p-1 rounded-sm opacity-70 ring-offset-background transition-opacity hover:opacity-100 focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:pointer-events-none hover:bg-gray-100"
+						type="button"
+					>
+						<svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+							<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+						</svg>
+						<span class="sr-only">关闭</span>
+					</button>
 				</SheetHeader>
 				<form onsubmit={(e) => { e.preventDefault(); saveConfig(); }} class="flex flex-col {isMobile ? 'h-[calc(100%-5rem)]' : 'h-[calc(100%-8rem)]'}">
 					<div class="flex-1 overflow-y-auto px-6 py-6 space-y-6">
