@@ -8,7 +8,7 @@ titleTemplate: 由 Rust & Tokio 驱动的哔哩哔哩同步工具
 hero:
   name: "bili-sync"
   text: "由 Rust & Tokio 驱动的哔哩哔哩同步工具"
-  tagline: "v2.7.2 Final - 智能化系统，真正零干预的下载体验"
+  tagline: "v2.7.3 - 配置系统全面升级，支持热重载和智能文件名处理"
   actions:
     - theme: brand
       text: 什么是 bili-sync？
@@ -24,18 +24,18 @@ hero:
     alt: bili-sync
 
 features:
-  - icon: 🤖
-    title: 智能风控处理系统
-    details: 革命性突破！自动检测、处理、恢复风控，用户完全无感知的零干预体验
-  - icon: 🔄
-    title: 双重重置系统
-    details: 自动重置 + 精确手动重置的完美结合，智能保护已完成内容
-  - icon: 🖼️
-    title: 完美视觉体验
-    details: 图片代理技术解决防盗链，动态分页智能适配，现代化界面设计
-  - icon: 🎛️
-    title: 智能视频源管理
-    details: 启用/禁用功能精确控制扫描，智能任务队列避免冲突
+  - icon: 🔥
+    title: 配置热重载系统
+    details: 配置完全基于数据库，支持实时热重载，无需重启即可生效
+  - icon: 📝
+    title: 智能文件名处理
+    details: 自动处理所有特殊字符，支持全角转换，确保跨平台兼容性
+  - icon: 🚀
+    title: 任务队列优化
+    details: 配置保存通过任务队列处理，彻底解决数据库锁定问题
+  - icon: 🎯
+    title: 初始设置向导
+    details: 友好的初始设置界面，轻松配置 Cookie 和基本参数
   - icon: 💾
     title: 专为 NAS 设计
     details: 可被 Emby、Jellyfin 等媒体服务器一键识别，完整的元数据支持

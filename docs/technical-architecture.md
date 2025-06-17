@@ -1,11 +1,11 @@
 ---
 title: "技术架构文档"
-description: "bili-sync v2.7.2 Final 完整技术架构和设计理念"
+description: "bili-sync v2.7.3 完整技术架构和设计理念"
 ---
 
 # 技术架构文档
 
-bili-sync v2.7.2 Final 采用现代化的技术架构，实现了高性能、高可靠性和高可扩展性的设计目标。本文档详细介绍系统的技术架构、设计理念和核心实现。
+bili-sync v2.7.3 采用现代化的技术架构，实现了高性能、高可靠性和高可扩展性的设计目标。本文档详细介绍系统的技术架构、设计理念和核心实现。
 
 ## 🏗️ 整体架构
 
@@ -26,22 +26,24 @@ graph TB
     end
     
     subgraph "业务逻辑层 (Business Logic)"
-        G[智能风控处理]
-        H[双重重置系统]
+        G[配置热重载系统]
+        H[任务队列管理]
         I[视频源管理]
         J[下载调度器]
+        K[文件名处理引擎]
     end
     
     subgraph "数据访问层 (Data Access)"
-        K[SeaORM]
-        L[SQLite数据库]
-        M[数据迁移系统]
+        L[SeaORM]
+        M[SQLite数据库]
+        N[数据迁移系统]
+        O[配置数据库存储]
     end
     
     subgraph "外部服务层 (External Services)"
-        N[哔哩哔哩 API]
-        O[Aria2下载器]
-        P[FFmpeg处理]
+        P[哔哩哔哩 API]
+        Q[Aria2下载器]
+        R[FFmpeg处理]
     end
     
     A --> D
@@ -53,12 +55,14 @@ graph TB
     G --> J
     H --> J
     I --> J
-    J --> K
+    J --> L
     K --> L
-    K --> M
-    J --> N
-    J --> O
+    L --> M
+    L --> N
+    L --> O
     J --> P
+    J --> Q
+    J --> R
 ```
 
 ### 技术栈
@@ -101,9 +105,210 @@ graph TB
 
 ## 🧠 核心子系统
 
-### 智能风控处理系统
+### 配置热重载系统
 
 #### 架构设计
+```rust
+// 配置热重载架构 - ArcSwap模式
+use arc_swap::ArcSwap;
+use once_cell::sync::Lazy;
+
+pub struct ConfigBundle {
+    pub config: Config,
+    pub handlebars: Handlebars<'static>,
+    pub rate_limiter: Arc<RateLimiter>,
+}
+
+// 全局配置存储
+static CONFIG_BUNDLE: Lazy<ArcSwap<ConfigBundle>> = Lazy::new(|| {
+    ArcSwap::from_pointee(ConfigBundle::default())
+});
+
+// 安全的配置访问
+pub fn with_config<F, R>(f: F) -> R 
+where 
+    F: FnOnce(&ConfigBundle) -> R 
+{
+    let guard = CONFIG_BUNDLE.load();
+    f(&guard)
+}
+
+// 热重载实现
+pub async fn reload_config(connection: &DatabaseConnection) -> Result<()> {
+    // 从数据库加载配置
+    let config = ConfigManager::load_from_database(connection).await?;
+    
+    // 创建新的配置包
+    let new_bundle = ConfigBundle {
+        config: config.clone(),
+        handlebars: create_handlebars(&config)?,
+        rate_limiter: Arc::new(create_rate_limiter(&config)),
+    };
+    
+    // 原子性替换
+    CONFIG_BUNDLE.store(Arc::new(new_bundle));
+    
+    info!("配置热重载成功");
+    Ok(())
+}
+```
+
+#### 数据库存储设计
+```rust
+// 配置项实体
+#[derive(Clone, Debug, DeriveEntityModel)]
+#[sea_orm(table_name = "config_items")]
+pub struct Model {
+    #[sea_orm(primary_key, auto_increment = false)]
+    pub key_name: String,
+    pub value_json: String,
+    pub updated_at: DateTime<Utc>,
+}
+
+// 配置管理器
+pub struct ConfigManager {
+    connection: DatabaseConnection,
+}
+
+impl ConfigManager {
+    // 保存配置到数据库
+    pub async fn save_config(&self, key: &str, value: &impl Serialize) -> Result<()> {
+        let value_json = serde_json::to_string(value)?;
+        
+        let config_item = config_item::ActiveModel {
+            key_name: Set(key.to_string()),
+            value_json: Set(value_json),
+            updated_at: Set(Utc::now()),
+        };
+        
+        ConfigItem::insert(config_item)
+            .on_conflict(
+                OnConflict::column(config_item::Column::KeyName)
+                    .update_columns([
+                        config_item::Column::ValueJson,
+                        config_item::Column::UpdatedAt,
+                    ])
+                    .to_owned()
+            )
+            .exec(&self.connection)
+            .await?;
+            
+        Ok(())
+    }
+}
+```
+
+### 任务队列系统
+
+#### 队列架构
+```rust
+// 任务队列设计 - 避免数据库锁定
+pub struct TaskQueueManager {
+    config_queue: Arc<Mutex<VecDeque<ConfigTask>>>,
+    delete_queue: Arc<Mutex<VecDeque<DeleteTask>>>,
+    add_queue: Arc<Mutex<VecDeque<AddTask>>>,
+}
+
+// 配置更新任务
+pub enum ConfigTask {
+    UpdateConfig(UpdateConfigRequest),
+    ReloadConfig,
+    SaveCredential(Credential),
+}
+
+impl TaskQueueManager {
+    // 处理配置任务队列
+    pub async fn process_config_queue(&self, connection: &DatabaseConnection) -> Result<()> {
+        let mut queue = self.config_queue.lock().await;
+        
+        while let Some(task) = queue.pop_front() {
+            match task {
+                ConfigTask::UpdateConfig(req) => {
+                    // 更新配置到数据库
+                    let manager = get_config_manager()?;
+                    manager.update_config(req).await?;
+                    
+                    // 触发热重载
+                    reload_config(connection).await?;
+                }
+                ConfigTask::SaveCredential(credential) => {
+                    // 保存凭证到数据库
+                    let manager = get_config_manager()?;
+                    manager.save_config("credential", &credential).await?;
+                }
+                _ => {}
+            }
+        }
+        
+        Ok(())
+    }
+}
+```
+
+### 文件名处理引擎
+
+#### 智能文件名清理
+```rust
+// 增强的文件名处理函数
+pub fn filenamify<S: AsRef<str>>(input: S) -> String {
+    let mut input = input.as_ref().to_string();
+    
+    // 1. 全角字符映射
+    let char_mappings = [
+        ('：', "-"),     // 全角冒号
+        ('「', "["),     // 日文引号左
+        ('」', "]"),     // 日文引号右
+        ('（', "("),     // 全角括号左
+        ('）', ")"),     // 全角括号右
+        ('《', "_"),     // 书名号左
+        ('》', "_"),     // 书名号右
+        ('　', " "),     // 全角空格
+    ];
+    
+    for (from, to) in &char_mappings {
+        input = input.replace(*from, to);
+    }
+    
+    // 2. Windows保留字符处理
+    let reserved = regex!("[<>:\"/\\\\|?*\u{0000}-\u{001F}\u{007F}\u{0080}-\u{009F}]+");
+    input = reserved.replace_all(&input, "_").into_owned();
+    
+    // 3. 特殊符号处理
+    let problematic = regex!("[★☆♪♫♬♩♭♮♯※〈〉〔〕【】『』〖〗‖§¶°±×÷≈≠≤≥∞∴∵∠⊥∥∧∨∩∪⊂⊃⊆⊇∈∉∃∀]");
+    input = problematic.replace_all(&input, "_").into_owned();
+    
+    // 4. Windows保留名称检查
+    let windows_reserved = regex!("^(con|prn|aux|nul|com\\d|lpt\\d)$");
+    if windows_reserved.is_match(&input.to_lowercase()) {
+        input.push('_');
+    }
+    
+    // 5. 清理和长度限制
+    input = input.trim_matches(|c| c == ' ' || c == '_' || c == '.').to_string();
+    
+    if input.len() > 200 {
+        input = input.chars().take(200).collect::<String>();
+        // 确保UTF-8边界安全
+        while !input.is_char_boundary(input.len()) {
+            input.pop();
+        }
+    }
+    
+    if input.is_empty() {
+        input = "unnamed".to_string();
+    }
+    
+    input
+}
+
+// 统一的路径生成
+pub fn generate_safe_path(base: &Path, name: &str) -> PathBuf {
+    let safe_name = filenamify(name);
+    base.join(safe_name)
+}
+```
+
+### 智能风控处理系统
 ```rust
 // 风控检测与处理架构
 pub struct RiskControlProcessor {

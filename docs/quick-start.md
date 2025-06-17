@@ -8,7 +8,11 @@
 程序使用 Rust 编写，不需要 Runtime 且并为各个平台提供了预编译文件，绝大多数情况下是没有使用障碍的。
 
 > [!TIP]
-> **v2.6.2 重大变更**：视频源配置已完全迁移到数据库管理！现在通过 Web 界面添加和管理视频源，无需手动编辑配置文件。
+> **v2.7.3 重大更新**：
+> - 配置系统全面升级，支持热重载
+> - 文件名处理增强，自动处理所有特殊字符
+> - 初始设置向导，简化配置流程
+> - 任务队列优化，彻底解决数据库锁定问题
 
 > [!IMPORTANT]
 > 如果您从旧版本升级，请查看 [配置迁移指南](./MIGRATION_GUIDE)。
@@ -72,11 +76,11 @@ Linux/amd64 与 Linux/arm64 两个平台可直接使用 Docker 或 Docker Compos
 ```yaml
 services:
   bili-sync-rs:
-    # 推荐使用优化版镜像，提供更好的稳定性和功能
+    # v2.7.3 最新版镜像
     # GitHub 镜像（国外用户推荐）
-    image: qq1582185982/bili-sync:latest
+    image: qq1582185982/bili-sync:v2.7.3
     # 国内镜像（国内用户推荐）
-    # image: docker.cnb.cool/sviplk.com/docker/bili-sync:latest
+    # image: docker.cnb.cool/sviplk.com/docker/bili-sync:v2.7.3
     restart: unless-stopped
     network_mode: bridge
     # 该选项请仅在日志终端支持彩色输出时启用，否则日志中可能会出现乱码
@@ -105,12 +109,14 @@ services:
 
 ## 程序配置
 
-程序首次运行时，会在配置目录（具体位置见下文）生成一个 `config.toml` 文件。您需要对该文件进行少量修改才能成功运行程序。
+程序首次运行时会显示初始设置向导，引导您完成基本配置。配置现在完全存储在数据库中，支持热重载。
 
 > [!IMPORTANT]
-> **重大变更！** 视频源配置已从 `config.toml` 迁移到数据库：
-> - ❌ 不再需要在 `config.toml` 中配置 `favorite_list`、`collection_list` 等
-> - ✅ 所有视频源通过 Web 管理界面 `http://127.0.0.1:12345` 进行添加和管理
+> **v2.7.3 配置系统变更！** 
+> - ✅ 首次启动显示初始设置向导
+> - ✅ 配置完全存储在数据库中，支持热重载
+> - ✅ 所有视频源通过 Web 管理界面进行管理
+> - ❌ config.toml 仅作为初始配置参考
 
 ### 配置文件位置
 
@@ -153,7 +159,13 @@ ac_time_value = ""
 - **`auth_token`**: 访问 Web UI 的密码，请务必修改为一个安全的字符串。
 - **`bind_address`**: Web Server 监听的地址和端口。
 - **`interval`**: 程序自动扫描同步的间隔时间（秒）。
-- **`credential`**: 哔哩哔哩账号的身份凭据，是访问B站API所必需的。请参考[凭据获取流程](https://nemo2011.github.io/bilibili-api/#/get-credential)获取并填写。
+- **`credential`**: 哔哩哔哩账号的身份凭据，是访问B站API所必需的。
+
+> [!TIP]
+> v2.7.3 新特性：
+> - 配置修改后立即生效，无需重启
+> - 通过 Web 界面的设置页面管理所有配置
+> - 支持配置历史记录查看
 
 ## Web UI 使用指南
 
@@ -163,7 +175,9 @@ ac_time_value = ""
 
 启动程序后，在浏览器中打开 `http://<你的IP地址>:12345` 即可访问。如果是本机运行，则为 `http://127.0.0.1:12345`。
 
-首次访问时，您需要输入在 `config.toml` 中设置的 `auth_token` 进行身份验证。
+首次访问时：
+- 如果尚未设置凭据，会显示初始设置向导
+- 如果已设置凭据，需要输入 `auth_token` 进行身份验证
 
 ### 管理视频源
 
