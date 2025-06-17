@@ -574,7 +574,7 @@ pub async fn reset_specific_tasks(
         .filter_map(|(id, pid, name, download_status, video_id)| {
             let mut page_status = PageStatus::from(download_status);
             let mut page_resetted = false;
-
+            
             // 强制重置指定的任务索引（不管当前状态）
             for &task_index in task_indexes {
                 if task_index < 5 {
@@ -586,7 +586,7 @@ pub async fn reset_specific_tasks(
                     }
                 }
             }
-
+            
             if page_resetted {
                 let page_info = PageInfo::from((id, pid, name, page_status.into()));
                 Some((page_info, video_id))
@@ -611,7 +611,7 @@ pub async fn reset_specific_tasks(
         .filter_map(|mut video_info| {
             let mut video_status = VideoStatus::from(video_info.download_status);
             let mut video_resetted = false;
-
+            
             // 强制重置指定任务（不管当前状态）
             for &task_index in task_indexes {
                 if task_index < 5 {
@@ -623,13 +623,13 @@ pub async fn reset_specific_tasks(
                     }
                 }
             }
-
+            
             // 如果有分页被重置，同时重置分P下载状态
             if video_ids_with_resetted_pages.contains(&video_info.id) {
                 video_status.set(4, 0); // 将"分P下载"重置为 0
                 video_resetted = true;
             }
-
+            
             if video_resetted {
                 video_info.download_status = video_status.into();
                 Some(video_info)
@@ -1363,7 +1363,7 @@ pub async fn reload_config_internal() -> Result<bool, ApiError> {
     if let Err(e) = crate::config::reload_config_bundle().await {
         warn!("从数据库重新加载配置包失败: {}, 回退到TOML重载", e);
         // 回退到传统的重新加载方式
-        let _new_config = crate::config::reload_config();
+    let _new_config = crate::config::reload_config();
     } else {
         info!("配置包已从数据库重新加载");
     }
@@ -2661,7 +2661,7 @@ pub async fn update_config_internal(
             let old_timezone = config.timezone.clone();
             config.timezone = timezone.clone();
             updated_fields.push("timezone");
-
+            
             // 同步数据库中的时间戳到新时区
             info!(
                 "时区配置已更新，开始同步数据库时间戳从 {} 到 {}",
@@ -2797,7 +2797,7 @@ pub async fn update_config_internal(
     if let Err(e) = crate::config::reload_config_bundle().await {
         warn!("重新加载配置包失败: {}", e);
         // 回退到传统的重新加载方式
-        crate::config::reload_config();
+    crate::config::reload_config();
     }
 
     // 如果更新了命名相关的配置，重命名已下载的文件
@@ -4443,7 +4443,7 @@ pub async fn proxy_image(
 
     // 创建HTTP客户端
     let client = reqwest::Client::new();
-
+    
     // 请求图片，添加必要的请求头
     let response = client
         .get(url)
@@ -4478,14 +4478,14 @@ pub async fn proxy_image(
 }
 
 /// 同步数据库中的时间戳到新时区
-///
+/// 
 /// 该函数会将数据库中所有的时间戳字段从旧时区转换为新时区
 /// 包括：视频源表的created_at、视频表的时间戳字段、页面表的created_at等
 async fn sync_database_timestamps(db: Arc<DatabaseConnection>, old_timezone: &str, new_timezone: &str) -> Result<u32> {
     use sea_orm::ConnectionTrait;
-
+    
     let mut updated_count = 0u32;
-
+    
     // 解析时区
     let old_tz = match old_timezone {
         "Asia/Shanghai" => 8,
@@ -4503,7 +4503,7 @@ async fn sync_database_timestamps(db: Arc<DatabaseConnection>, old_timezone: &st
         "Asia/Taipei" => 8,
         _ => 8, // 默认北京时间
     };
-
+    
     let new_tz = match new_timezone {
         "Asia/Shanghai" => 8,
         "UTC" => 0,
@@ -4520,26 +4520,26 @@ async fn sync_database_timestamps(db: Arc<DatabaseConnection>, old_timezone: &st
         "Asia/Taipei" => 8,
         _ => 8, // 默认北京时间
     };
-
+    
     let offset_hours = new_tz - old_tz;
-
+    
     if offset_hours == 0 {
         info!("时区偏移为0，无需同步数据库时间戳");
         return Ok(0);
     }
-
+    
     info!("开始同步数据库时间戳，时区偏移: {} 小时", offset_hours);
-
+    
     // 构建时间偏移的SQL表达式
     let offset_sql = if offset_hours > 0 {
         format!("datetime({{field}}, '+{} hours')", offset_hours)
     } else {
         format!("datetime({{field}}, '{} hours')", offset_hours)
     };
-
+    
     // 更新视频源表的 created_at 字段
     let tables_with_created_at = vec!["favorite", "collection", "watch_later", "submission"];
-
+    
     for table in tables_with_created_at {
         // 先处理标准格式的时间戳
         let sql = format!(
@@ -4547,7 +4547,7 @@ async fn sync_database_timestamps(db: Arc<DatabaseConnection>, old_timezone: &st
             table,
             offset_sql.replace("{field}", "created_at")
         );
-
+        
         match db.execute_unprepared(&sql).await {
             Ok(result) => {
                 let rows_affected = result.rows_affected();
@@ -4561,14 +4561,14 @@ async fn sync_database_timestamps(db: Arc<DatabaseConnection>, old_timezone: &st
                 error!("更新表 {} 的 created_at 字段（标准格式）失败: {}", table, e);
             }
         }
-
+        
         // 处理带UTC后缀的时间戳
         let utc_sql = format!(
             "UPDATE {} SET created_at = {} WHERE created_at IS NOT NULL AND created_at LIKE '% UTC' AND datetime(REPLACE(created_at, ' UTC', '')) IS NOT NULL",
             table,
             offset_sql.replace("{field}", "REPLACE(created_at, ' UTC', '')")
         );
-
+        
         match db.execute_unprepared(&utc_sql).await {
             Ok(result) => {
                 let rows_affected = result.rows_affected();
@@ -4583,10 +4583,10 @@ async fn sync_database_timestamps(db: Arc<DatabaseConnection>, old_timezone: &st
             }
         }
     }
-
+    
     // 更新视频表的时间戳字段
     let video_timestamp_fields = vec!["ctime", "pubtime", "favtime", "created_at"];
-
+    
     for field in video_timestamp_fields {
         // 先处理标准格式的时间戳
         let sql = if field == "created_at" {
@@ -4607,7 +4607,7 @@ async fn sync_database_timestamps(db: Arc<DatabaseConnection>, old_timezone: &st
                 field
             )
         };
-
+        
         match db.execute_unprepared(&sql).await {
             Ok(result) => {
                 let rows_affected = result.rows_affected();
@@ -4618,7 +4618,7 @@ async fn sync_database_timestamps(db: Arc<DatabaseConnection>, old_timezone: &st
                 error!("更新视频表的 {} 字段（标准格式）失败: {}", field, e);
             }
         }
-
+        
         // 处理带UTC后缀的时间戳（主要针对created_at字段）
         if field == "created_at" {
             let utc_sql = format!(
@@ -4629,7 +4629,7 @@ async fn sync_database_timestamps(db: Arc<DatabaseConnection>, old_timezone: &st
                 field,
                 field
             );
-
+            
             match db.execute_unprepared(&utc_sql).await {
                 Ok(result) => {
                     let rows_affected = result.rows_affected();
@@ -4642,14 +4642,14 @@ async fn sync_database_timestamps(db: Arc<DatabaseConnection>, old_timezone: &st
             }
         }
     }
-
+    
     // 更新页面表的 created_at 字段
     // 先处理标准格式的时间戳
     let sql = format!(
         "UPDATE page SET created_at = {} WHERE created_at IS NOT NULL AND created_at != '' AND datetime(created_at) IS NOT NULL",
         offset_sql.replace("{field}", "created_at")
     );
-
+    
     match db.execute_unprepared(&sql).await {
         Ok(result) => {
             let rows_affected = result.rows_affected();
@@ -4660,13 +4660,13 @@ async fn sync_database_timestamps(db: Arc<DatabaseConnection>, old_timezone: &st
             error!("更新页面表的 created_at 字段（标准格式）失败: {}", e);
         }
     }
-
+    
     // 处理带UTC后缀的时间戳
     let utc_sql = format!(
         "UPDATE page SET created_at = {} WHERE created_at IS NOT NULL AND created_at LIKE '% UTC' AND datetime(REPLACE(created_at, ' UTC', '')) IS NOT NULL",
         offset_sql.replace("{field}", "REPLACE(created_at, ' UTC', '')")
     );
-
+    
     match db.execute_unprepared(&utc_sql).await {
         Ok(result) => {
             let rows_affected = result.rows_affected();
@@ -4677,17 +4677,17 @@ async fn sync_database_timestamps(db: Arc<DatabaseConnection>, old_timezone: &st
             error!("更新页面表的 created_at 字段（UTC格式）失败: {}", e);
         }
     }
-
+    
     // 更新视频源表的 latest_row_at 字段
     let tables_with_latest_row_at = vec!["favorite", "collection", "watch_later", "submission"];
-
+    
     for table in tables_with_latest_row_at {
         let sql = format!(
             "UPDATE {} SET latest_row_at = {} WHERE latest_row_at IS NOT NULL AND latest_row_at != '1970-01-01 00:00:00' AND datetime(latest_row_at) IS NOT NULL",
             table,
             offset_sql.replace("{field}", "latest_row_at")
         );
-
+        
         match db.execute_unprepared(&sql).await {
             Ok(result) => {
                 let rows_affected = result.rows_affected();
@@ -4699,7 +4699,7 @@ async fn sync_database_timestamps(db: Arc<DatabaseConnection>, old_timezone: &st
             }
         }
     }
-
+    
     info!("数据库时间戳同步完成，总共更新了 {} 条记录", updated_count);
     Ok(updated_count)
 }
@@ -4737,13 +4737,13 @@ pub async fn get_config_item(
         Some(item) => {
             let value: serde_json::Value =
                 serde_json::from_str(&item.value_json).map_err(|e| ApiError::from(anyhow!("解析配置值失败: {}", e)))?;
-
+            
             let response = ConfigItemResponse {
                 key: item.key_name,
                 value,
                 updated_at: item.updated_at.format("%Y-%m-%d %H:%M:%S UTC").to_string(),
             };
-
+            
             Ok(ApiResponse::ok(response))
         }
         None => {
@@ -4767,7 +4767,7 @@ pub async fn update_config_item_internal(
 
     // 创建配置管理器
     let manager = ConfigManager::new(db.as_ref().clone());
-
+    
     // 更新配置项
     if let Err(e) = manager.update_config_item(&key, request.value.clone()).await {
         warn!("更新配置项失败: {}", e);
@@ -4798,7 +4798,7 @@ pub async fn batch_update_config_internal(
     use crate::config::ConfigManager;
 
     let manager = ConfigManager::new(db.as_ref().clone());
-
+    
     // 批量更新配置项
     for (key, value) in request.items {
         if let Err(e) = manager.update_config_item(&key, value).await {
@@ -4858,7 +4858,7 @@ pub async fn get_config_history(
     use crate::config::ConfigManager;
 
     let manager = ConfigManager::new(db.as_ref().clone());
-
+    
     let changes = manager
         .get_config_history(params.key.as_deref(), params.limit)
         .await
@@ -5092,6 +5092,6 @@ pub async fn update_credential(
         success: true,
         message: "B站凭证更新成功".to_string(),
     };
-    
+
     Ok(ApiResponse::ok(response))
 }
