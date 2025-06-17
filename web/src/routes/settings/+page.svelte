@@ -97,37 +97,7 @@
 	let parallelDownloadEnabled = false;
 	let parallelDownloadThreads = 4;
 	
-	// 新增的配置数据
-	let download_manager = 'httpx';
-	let ffmpeg_path = '';
-	let http_header: { [key: string]: string } = {};
-	let download_rate_limit = 0;
-	let multiple_parts_download = false;
-	let use_proxy = false;
-	let http_proxy = '';
-	let credential = '';
-	let cookies: { name: string; value: string; expires_at: number }[] = [];
-	let global_path_filter: { type: string; value: string }[] = [];
-	let headers: { [key: string]: string } = {};
-	let webhooks = {
-		video_refresh: { url: '', events: [] },
-		video_download: { url: '', events: [] },
-		other: { url: '', events: [] }
-	};
-	let min_free_space_gb = 10;
-	let download_subtitle = true;
-	let download_danmaku = true;
-	let download_cover = true;
-	let overwrite_mode = 'skip';
-	let clear_temp_file = true;
-	let mixed_download_mode = false;
-	let disable_redirection = false;
-	let watch_later_collection_name = 'biliwatch稍后再看';
-	let enable_upload_notify = false;
-	let enable_favorite_notify = false;
-	let enable_https = false;
-	let https_cert = '';
-	let https_key = '';
+
 
 	// 视频质量设置
 	let videoMaxQuality = 'Quality8k';
@@ -409,38 +379,6 @@
 			enableAutoBackoff = config.enable_auto_backoff || true;
 			autoBackoffBaseSeconds = config.auto_backoff_base_seconds || 10;
 			autoBackoffMaxMultiplier = config.auto_backoff_max_multiplier || 5;
-			
-			// 加载新增的配置数据
-			download_manager = config.download_manager || 'httpx';
-			ffmpeg_path = config.ffmpeg_path || '';
-			http_header = config.http_header || {};
-			download_rate_limit = config.download_rate_limit || 0;
-			multiple_parts_download = config.multiple_parts_download || false;
-			use_proxy = config.use_proxy || false;
-			http_proxy = config.http_proxy || '';
-			credential = config.credential || '';
-			cookies = config.cookies || [];
-			global_path_filter = config.global_path_filter || [];
-			headers = config.headers || {};
-			webhooks = config.webhooks || {
-				video_refresh: { url: '', events: [] },
-				video_download: { url: '', events: [] },
-				other: { url: '', events: [] }
-			};
-			min_free_space_gb = config.min_free_space_gb || 10;
-			download_subtitle = config.download_subtitle || true;
-			download_danmaku = config.download_danmaku || true;
-			download_cover = config.download_cover || true;
-			overwrite_mode = config.overwrite_mode || 'skip';
-			clear_temp_file = config.clear_temp_file || true;
-			mixed_download_mode = config.mixed_download_mode || false;
-			disable_redirection = config.disable_redirection || false;
-			watch_later_collection_name = config.watch_later_collection_name || 'biliwatch稍后再看';
-			enable_upload_notify = config.enable_upload_notify || false;
-			enable_favorite_notify = config.enable_favorite_notify || false;
-			enable_https = config.enable_https || false;
-			https_cert = config.https_cert || '';
-			https_key = config.https_key || '';
 		} catch (error: any) {
 			console.error('加载配置失败:', error);
 			toast.error('加载配置失败', { description: error.message });
@@ -508,34 +446,7 @@
 				batch_delay_seconds: batchDelaySeconds,
 				enable_auto_backoff: enableAutoBackoff,
 				auto_backoff_base_seconds: autoBackoffBaseSeconds,
-				auto_backoff_max_multiplier: autoBackoffMaxMultiplier,
-				// 新增的配置数据
-				download_manager: download_manager,
-				ffmpeg_path: ffmpeg_path,
-				http_header: http_header,
-				download_rate_limit: download_rate_limit,
-				multiple_parts_download: multiple_parts_download,
-				use_proxy: use_proxy,
-				http_proxy: http_proxy,
-				credential: credential,
-				cookies: cookies,
-				global_path_filter: global_path_filter,
-				headers: headers,
-				webhooks: webhooks,
-				min_free_space_gb: min_free_space_gb,
-				download_subtitle: download_subtitle,
-				download_danmaku: download_danmaku,
-				download_cover: download_cover,
-				overwrite_mode: overwrite_mode,
-				clear_temp_file: clear_temp_file,
-				mixed_download_mode: mixed_download_mode,
-				disable_redirection: disable_redirection,
-				watch_later_collection_name: watch_later_collection_name,
-				enable_upload_notify: enable_upload_notify,
-				enable_favorite_notify: enable_favorite_notify,
-				enable_https: enable_https,
-				https_cert: https_cert,
-				https_key: https_key
+				auto_backoff_max_multiplier: autoBackoffMaxMultiplier
 			};
 
 			const response = await api.updateConfig(params);
@@ -781,11 +692,11 @@
 									class="border-input bg-background ring-offset-background focus-visible:ring-ring flex h-10 w-full rounded-md border px-3 py-2 text-sm focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:outline-none"
 								>
 									<option value="separate">分离模式</option>
-									<option value="nested">嵌套模式</option>
+									<option value="unified">统一模式</option>
 								</select>
 								<p class="text-muted-foreground text-sm">
-									分离：合集名作为单独文件夹<br />
-									嵌套：合集名嵌入文件夹结构
+									分离模式·：每个视频独立文件夹<br />
+									统一模式：所有视频在合集文件夹下
 								</p>
 							</div>
 
