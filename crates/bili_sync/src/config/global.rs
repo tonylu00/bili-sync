@@ -86,7 +86,9 @@ pub fn get_current_config() -> Config {
 #[allow(dead_code)]
 pub static CONFIG: Lazy<Config> = Lazy::new(load_config);
 
-/// 向后兼容的全局模板引擎引用  
+/// 向后兼容的全局模板引擎引用 - 已弃用，请使用ConfigBundle中的handlebars
+#[deprecated(note = "模板引擎现在通过ConfigBundle提供热更新支持，请使用with_config(|bundle| bundle.handlebars)")]
+#[allow(dead_code)]
 pub static TEMPLATE: Lazy<handlebars::Handlebars<'static>> = Lazy::new(|| {
     use crate::config::PathSafeTemplate;
     use handlebars::handlebars_helper;

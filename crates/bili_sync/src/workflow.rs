@@ -16,7 +16,7 @@ use tracing::{debug, error, info, warn};
 
 use crate::adapter::{video_source_from, Args, VideoSource, VideoSourceEnum};
 use crate::bilibili::{BestStream, BiliClient, BiliError, Dimension, PageInfo, Video, VideoInfo};
-use crate::config::{PathSafeTemplate, ARGS, TEMPLATE};
+use crate::config::ARGS;
 use crate::error::{DownloadAbortError, ExecutionStatus, ProcessPageError};
 use crate::unified_downloader::UnifiedDownloader;
 use crate::utils::format_arg::{page_format_args, video_format_args};
@@ -42,32 +42,6 @@ struct EpisodeInfo {
 }
 
 /// 创建一个配置了 truncate 辅助函数的 handlebars 实例
-fn create_handlebars_with_helpers() -> handlebars::Handlebars<'static> {
-    let mut handlebars = handlebars::Handlebars::new();
-    // 注册 truncate 辅助函数
-    handlebars.register_helper(
-        "truncate",
-        Box::new(
-            |h: &handlebars::Helper,
-             _: &handlebars::Handlebars,
-             _: &handlebars::Context,
-             _: &mut handlebars::RenderContext,
-             out: &mut dyn handlebars::Output|
-             -> handlebars::HelperResult {
-                let s = h.param(0).and_then(|v| v.value().as_str()).unwrap_or("");
-                let len = h.param(1).and_then(|v| v.value().as_u64()).unwrap_or(0) as usize;
-                let result = if s.chars().count() > len {
-                    s.chars().take(len).collect::<String>()
-                } else {
-                    s.to_string()
-                };
-                out.write(&result)?;
-                Ok(())
-            },
-        ),
-    );
-    handlebars
-}
 
 /// 完整地处理某个视频来源，返回新增的视频数量
 pub async fn process_video_source(
@@ -637,14 +611,18 @@ pub async fn download_video_pages(
                     // 分离模式（默认）：每个视频有自己的文件夹
                     video_source
                         .path()
-                        .join(TEMPLATE.path_safe_render("video", &video_format_args(&video_model))?)
+                        .join(crate::config::with_config(|bundle| {
+                            bundle.handlebars.render("video", &video_format_args(&video_model))
+                        }).map_err(|e| anyhow::anyhow!("模板渲染失败: {}", e))?)
                 }
             }
         } else {
             // 其他类型的视频源使用原来的逻辑
             video_source
                 .path()
-                .join(TEMPLATE.path_safe_render("video", &video_format_args(&video_model))?)
+                .join(crate::config::with_config(|bundle| {
+                    bundle.handlebars.render("video", &video_format_args(&video_model))
+                }).map_err(|e| anyhow::anyhow!("模板渲染失败: {}", e))?)
         };
         (path, None)
     };
@@ -669,7 +647,9 @@ pub async fn download_video_pages(
     // 为多P视频生成基于视频名称的文件名
     let video_base_name = if !is_single_page {
         // 使用video_name模板渲染视频名称
-        TEMPLATE.path_safe_render("video", &video_format_args(&video_model))?
+        crate::config::with_config(|bundle| {
+            bundle.handlebars.render("video", &video_format_args(&video_model))
+        }).map_err(|e| anyhow::anyhow!("模板渲染失败: {}", e))?
     } else {
         String::new() // 单P视频不需要这些文件
     };
@@ -918,17 +898,17 @@ pub async fn download_page(
                 }
                 Err(_) => {
                     // 如果获取序号失败，使用默认命名
-                    let handlebars = create_handlebars_with_helpers();
-                    let rendered =
-                        handlebars.render_template(&config.page_name, &page_format_args(video_model, &page_model))?;
+                    let rendered = crate::config::with_config(|bundle| {
+                        bundle.handlebars.render("page", &page_format_args(video_model, &page_model))
+                    }).map_err(|e| anyhow::anyhow!("模板渲染失败: {}", e))?;
                     crate::utils::filenamify::filenamify(&rendered)
                 }
             }
         } else {
             // 分离模式：使用原有逻辑
-            let handlebars = create_handlebars_with_helpers();
-            let rendered =
-                handlebars.render_template(&config.page_name, &page_format_args(video_model, &page_model))?;
+            let rendered = crate::config::with_config(|bundle| {
+                bundle.handlebars.render("page", &page_format_args(video_model, &page_model))
+            }).map_err(|e| anyhow::anyhow!("模板渲染失败: {}", e))?;
             crate::utils::filenamify::filenamify(&rendered)
         }
     } else if is_bangumi {
@@ -939,18 +919,17 @@ pub async fn download_page(
                 .await?
         } else {
             // 如果类型不匹配，使用最新配置手动渲染
-            let current_config = crate::config::reload_config();
-            let handlebars = create_handlebars_with_helpers();
-            let rendered =
-                handlebars.render_template(&current_config.page_name, &page_format_args(video_model, &page_model))?;
+            let rendered = crate::config::with_config(|bundle| {
+                bundle.handlebars.render("page", &page_format_args(video_model, &page_model))
+            }).map_err(|e| anyhow::anyhow!("模板渲染失败: {}", e))?;
             crate::utils::filenamify::filenamify(&rendered)
         }
     } else if !is_single_page {
         // 对于多P视频（非番剧），使用最新配置中的multi_page_name模板
-        let current_config = crate::config::reload_config();
         let page_args = page_format_args(video_model, &page_model);
-        let handlebars = create_handlebars_with_helpers();
-        match handlebars.render_template(&current_config.multi_page_name, &page_args) {
+        match crate::config::with_config(|bundle| {
+            bundle.handlebars.render("multi_page", &page_args)
+        }) {
             Ok(rendered) => crate::utils::filenamify::filenamify(&rendered),
             Err(_) => {
                 // 如果渲染失败，使用默认格式
@@ -961,10 +940,9 @@ pub async fn download_page(
         }
     } else {
         // 单P视频使用最新配置的page_name模板
-        let current_config = crate::config::reload_config();
-        let handlebars = create_handlebars_with_helpers();
-        let rendered =
-            handlebars.render_template(&current_config.page_name, &page_format_args(video_model, &page_model))?;
+        let rendered = crate::config::with_config(|bundle| {
+            bundle.handlebars.render("page", &page_format_args(video_model, &page_model))
+        }).map_err(|e| anyhow::anyhow!("模板渲染失败: {}", e))?;
         crate::utils::filenamify::filenamify(&rendered)
     };
 
