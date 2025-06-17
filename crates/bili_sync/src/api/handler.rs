@@ -5028,8 +5028,17 @@ pub async fn setup_auth_token(
     // 移除配置文件保存 - 配置现在完全基于数据库
     // config.save().map_err(|e| ApiError::from(anyhow!("保存配置失败: {}", e)))?;
     
-    // 保存配置到数据库
-    {
+    // 检查是否正在扫描，如果是则通过任务队列处理
+    if crate::task::is_scanning() {
+        // 将配置更新任务加入队列
+        use uuid::Uuid;
+        let reload_task = crate::task::ReloadConfigTask {
+            task_id: Uuid::new_v4().to_string(),
+        };
+        crate::task::enqueue_reload_task(reload_task).await;
+        info!("检测到正在扫描，API Token保存任务已加入队列");
+    } else {
+        // 直接保存配置到数据库
         use crate::config::ConfigManager;
         let manager = ConfigManager::new(db.as_ref().clone());
         if let Err(e) = manager.save_config(&config).await {
@@ -5037,13 +5046,13 @@ pub async fn setup_auth_token(
         } else {
             info!("API Token已保存到数据库");
         }
-    }
-    
-    // 重新加载全局配置包（从数据库）
-    if let Err(e) = crate::config::reload_config_bundle().await {
-        warn!("重新加载配置包失败: {}", e);
-        // 回退到传统的重新加载方式
-        crate::config::reload_config();
+        
+        // 重新加载全局配置包（从数据库）
+        if let Err(e) = crate::config::reload_config_bundle().await {
+            warn!("重新加载配置包失败: {}", e);
+            // 回退到传统的重新加载方式
+            crate::config::reload_config();
+        }
     }
     
     let response = crate::api::response::SetupAuthTokenResponse {
@@ -5093,8 +5102,17 @@ pub async fn update_credential(
     // 移除配置文件保存 - 配置现在完全基于数据库
     // config.save().map_err(|e| ApiError::from(anyhow!("保存配置失败: {}", e)))?;
     
-    // 保存配置到数据库
-    {
+    // 检查是否正在扫描，如果是则通过任务队列处理
+    if crate::task::is_scanning() {
+        // 将配置更新任务加入队列
+        use uuid::Uuid;
+        let reload_task = crate::task::ReloadConfigTask {
+            task_id: Uuid::new_v4().to_string(),
+        };
+        crate::task::enqueue_reload_task(reload_task).await;
+        info!("检测到正在扫描，凭证保存任务已加入队列");
+    } else {
+        // 直接保存配置到数据库
         use crate::config::ConfigManager;
         let manager = ConfigManager::new(db.as_ref().clone());
         if let Err(e) = manager.save_config(&config).await {
@@ -5102,13 +5120,13 @@ pub async fn update_credential(
         } else {
             info!("凭证已保存到数据库");
         }
-    }
-    
-    // 重新加载全局配置包（从数据库）
-    if let Err(e) = crate::config::reload_config_bundle().await {
-        warn!("重新加载配置包失败: {}", e);
-        // 回退到传统的重新加载方式
-        crate::config::reload_config();
+        
+        // 重新加载全局配置包（从数据库）
+        if let Err(e) = crate::config::reload_config_bundle().await {
+            warn!("重新加载配置包失败: {}", e);
+            // 回退到传统的重新加载方式
+            crate::config::reload_config();
+        }
     }
     
     let response = crate::api::response::UpdateCredentialResponse {

@@ -233,34 +233,31 @@ impl BiliClient {
         let new_credential = credential.refresh(&self.client).await?;
         config.credential.store(Some(Arc::new(new_credential.clone())));
         
-        // 将刷新后的credential保存到数据库
-        if let Err(e) = self.save_refreshed_credential_to_database(new_credential).await {
-            warn!("保存刷新后的credential到数据库失败: {}", e);
+        // 将刷新后的credential通过任务队列保存到数据库
+        if let Err(e) = self.enqueue_credential_save_task(new_credential).await {
+            warn!("将credential刷新任务加入队列失败: {}", e);
         } else {
-            info!("credential已刷新并保存到数据库");
+            info!("credential已刷新，保存任务已加入队列");
         }
         
         Ok(())
     }
     
-    /// 将刷新后的credential保存到数据库
-    async fn save_refreshed_credential_to_database(&self, new_credential: crate::bilibili::Credential) -> Result<()> {
-        // 获取配置管理器
-        if let Some(manager) = crate::config::get_config_manager() {
-            // 创建一个新的配置，更新credential
-            let updated_config = crate::config::reload_config();
-            updated_config.credential.store(Some(Arc::new(new_credential)));
-            
-            // 保存到数据库
-            manager.save_config(&updated_config).await?;
-            
-            // 重新加载配置包
-            if let Err(e) = crate::config::reload_config_bundle().await {
-                warn!("重新加载配置包失败: {}", e);
-            }
-        } else {
-            return Err(anyhow::anyhow!("配置管理器未初始化"));
-        }
+    /// 将credential刷新任务加入配置任务队列
+    async fn enqueue_credential_save_task(&self, new_credential: crate::bilibili::Credential) -> Result<()> {
+        use uuid::Uuid;
+        
+        // 更新内存中的配置
+        let updated_config = crate::config::reload_config();
+        updated_config.credential.store(Some(Arc::new(new_credential)));
+        
+        // 创建重载配置任务，让任务队列处理数据库保存
+        let reload_task = crate::task::ReloadConfigTask {
+            task_id: Uuid::new_v4().to_string(),
+        };
+        
+        // 将任务加入队列
+        crate::task::enqueue_reload_task(reload_task).await;
         
         Ok(())
     }
