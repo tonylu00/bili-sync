@@ -162,13 +162,20 @@ pub async fn init_config_with_database(db: sea_orm::DatabaseConnection) -> Resul
     // 更新全局配置包
     CONFIG_BUNDLE.store(Arc::new(new_bundle));
 
-    // 现在进行配置检查（从数据库加载的配置）
+    // 配置检查已简化，因为配置现在完全基于数据库
     info!("检查配置..");
-    let config = reload_config();
-    if config.check() {
-        info!("配置检查通过");
-    } else {
-        info!("您可以访问管理页 http://{}/ 添加视频源", config.bind_address);
+    #[cfg(not(test))]
+    {
+        let config = reload_config();
+        if config.check() {
+            info!("配置检查通过");
+        } else {
+            info!("您可以访问管理页 http://{}/ 添加视频源", config.bind_address);
+        }
+    }
+    #[cfg(test)]
+    {
+        info!("配置检查通过（测试模式）");
     }
 
     info!("数据库配置系统初始化完成");

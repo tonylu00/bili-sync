@@ -16,12 +16,12 @@ bili_sync_entity = { path = "crates/bili_sync_entity" }
 bili_sync_migration = { path = "crates/bili_sync_migration" }
 
 # Build script dependencies
-walkdir = "2.4.0"
+# walkdir = "2.4.0" # 已移除：未使用
 
 anyhow = { version = "1.0.98", features = ["backtrace"] }
 arc-swap = { version = "1.7.1", features = ["serde"] }
 assert_matches = "1.5.0"
-async-std = { version = "1.13.1", features = ["attributes", "tokio1"] }
+async-std = { version = "1.13.1", features = ["attributes", "tokio1"] } # 仅在 migration 中使用
 async-stream = "0.3.6"
 async-trait = "0.1.88"
 axum = { version = "0.8.4", features = ["macros"] }
@@ -34,7 +34,7 @@ dirs = "6.0.0"
 enum_dispatch = "0.3.13"
 float-ord = "0.3.2"
 futures = "0.3.31"
-glob = "0.3.1"
+# glob = "0.3.1" # 已移除：未使用
 handlebars = "6.3.2"
 hex = "0.4.3"
 leaky-bucket = "1.1.2"
@@ -42,7 +42,7 @@ md5 = "0.7.0"
 memchr = "2.7.4"
 mime_guess = "2.0.5"
 once_cell = "1.21.3"
-parking_lot = "0.12.4"
+# parking_lot = "0.12.4" # 已移除：未使用
 prost = "0.13.5"
 quick-xml = { version = "0.37.5", features = ["async-tokio"] }
 rand = "0.8.5"
@@ -71,9 +71,9 @@ strum = { version = "0.27.1", features = ["derive"] }
 thiserror = "2.0.12"
 tokio = { version = "1.45.0", features = ["full"] }
 tokio-util = { version = "0.7.15", features = ["io", "rt"] }
-toml = "0.8.22"
-toml_edit = "0.22.22"
-tower = "0.5.2"
+# toml = "0.8.22" # 已移除：配置已迁移到数据库
+# toml_edit = "0.22.22" # 已移除：配置已迁移到数据库
+# tower = "0.5.2" # 已移除：未使用
 tracing = "0.1.41"
 tracing-subscriber = { version = "0.3.19", features = ["chrono"] }
 utoipa = { version = "5.3.1", features = ["axum_extras"] }

@@ -1945,7 +1945,7 @@ mod tests {
     use handlebars::handlebars_helper;
     use serde_json::json;
 
-    use super::*;
+    use crate::config::PathSafeTemplate;
 
     #[test]
     fn test_template_usage() {
