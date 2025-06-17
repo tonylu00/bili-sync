@@ -164,22 +164,25 @@ pub static CONFIG_DIR: Lazy<PathBuf> =
 
 #[cfg(not(test))]
 fn load_config_impl() -> Config {
-    info!("开始加载配置文件..");
-    let config = Config::load().unwrap_or_else(|err| {
-        if err
-            .downcast_ref::<std::io::Error>()
-            .is_none_or(|e| e.kind() != std::io::ErrorKind::NotFound)
-        {
-            panic!("加载配置文件失败，错误为： {err}");
-        }
-        warn!("配置文件不存在，使用默认配置..");
-        Config::default()
-    });
-    info!("配置文件加载完毕，覆盖刷新原有配置");
-    config.save().expect("保存默认配置时遇到错误");
-    info!("检查配置文件..");
+    info!("开始加载默认配置..");
+    // 配置现在完全基于数据库，不再从配置文件加载
+    // let config = Config::load().unwrap_or_else(|err| {
+    //     if err
+    //         .downcast_ref::<std::io::Error>()
+    //         .is_none_or(|e| e.kind() != std::io::ErrorKind::NotFound)
+    //     {
+    //         panic!("加载配置文件失败，错误为： {err}");
+    //     }
+    //     warn!("配置文件不存在，使用默认配置..");
+    //     Config::default()
+    // });
+    let config = Config::default();
+    info!("默认配置加载完毕");
+    // 不再保存配置文件，因为配置完全基于数据库
+    // config.save().expect("保存默认配置时遇到错误");
+    info!("检查配置..");
     if config.check() {
-        info!("配置文件检查通过");
+        info!("配置检查通过");
     } else {
         info!("您可以访问管理页 http://{}/ 添加视频源", config.bind_address);
     }

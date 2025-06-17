@@ -2,7 +2,6 @@ use std::borrow::Cow;
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use anyhow::Result;
 use arc_swap::ArcSwapOption;
 use serde::{Deserialize, Serialize};
 
@@ -234,132 +233,6 @@ impl Default for Config {
 }
 
 impl Config {
-    pub fn save(&self) -> Result<()> {
-        let config_path = CONFIG_DIR.join("config.toml");
-        std::fs::create_dir_all(&*CONFIG_DIR)?;
-
-        // 使用 toml_edit 库来原生支持注释，而不是手动字符串操作
-        let config_content = self.save_with_structured_comments()?;
-
-        std::fs::write(config_path, config_content)?;
-        Ok(())
-    }
-
-    /// 使用结构化方式生成带注释的配置文件内容
-    fn save_with_structured_comments(&self) -> Result<String> {
-        // 先序列化为基本的 TOML 字符串
-        let toml_str = toml::to_string_pretty(self)?;
-
-        // 使用 toml_edit 解析并添加注释
-        let mut doc = toml_str.parse::<toml_edit::DocumentMut>()?;
-
-        // 为各个部分添加注释
-        self.add_structured_comments(&mut doc);
-
-        Ok(doc.to_string())
-    }
-
-    /// 使用 toml_edit 的原生 API 添加注释
-    fn add_structured_comments(&self, doc: &mut toml_edit::DocumentMut) {
-        // 移除视频源相关的注释，因为现在视频源存储在数据库中
-        // if let Some(favorite_item) = doc.get_mut("favorite_list") {
-        //     if let Some(table) = favorite_item.as_table_mut() {
-        //         table
-        //             .decor_mut()
-        //             .set_prefix("\n# 收藏夹配置\n# 格式: 收藏夹ID = \"保存路径\"\n# 收藏夹ID可以从收藏夹URL中获取\n");
-        //     }
-        // }
-
-        // if let Some(collection_item) = doc.get_mut("collection_list") {
-        //     if let Some(table) = collection_item.as_table_mut() {
-        //         table.decor_mut().set_prefix("\n# 合集配置\n# 格式: 合集类型:UP主ID:合集ID = \"保存路径\"\n# 合集类型: season(视频合集) 或 series(视频列表)\n");
-        //     }
-        // }
-
-        // if let Some(submission_item) = doc.get_mut("submission_list") {
-        //     if let Some(table) = submission_item.as_table_mut() {
-        //         table
-        //             .decor_mut()
-        //             .set_prefix("\n# UP主投稿配置\n# 格式: UP主ID = \"保存路径\"\n# UP主ID可以从UP主空间URL中获取\n");
-        //     }
-        // }
-
-        // if let Some(bangumi_item) = doc.get_mut("bangumi") {
-        //     if let Some(array) = bangumi_item.as_array_mut() {
-        //         if !array.is_empty() {
-        //             array.decor_mut().set_prefix("\n# 番剧配置，可以添加多个[[bangumi]]块\n# season_id: 番剧的season_id，可以从B站番剧页面URL中获取\n# path: 保存番剧的本地路径，必须是绝对路径\n# 注意: season_id和path不能为空，否则程序会报错\n");
-        //         }
-        //     }
-        // }
-
-        // 为并发限制部分添加注释
-        if let Some(concurrent_item) = doc.get_mut("concurrent_limit") {
-            if let Some(table) = concurrent_item.as_table_mut() {
-                table
-                    .decor_mut()
-                    .set_prefix("\n# 并发下载配置\n# video: 同时下载的视频数量\n# page: 每个视频同时下载的分页数量\n");
-
-                // 为并行下载子部分添加注释
-                if let Some(parallel_item) = table.get_mut("parallel_download") {
-                    if let Some(sub_table) = parallel_item.as_table_mut() {
-                        sub_table.decor_mut().set_prefix(
-                            "\n# 多线程下载配置\n# enabled: 是否启用多线程下载\n# threads: 每个文件的下载线程数\n",
-                        );
-                    }
-                }
-            }
-        }
-
-        // 为凭据部分添加注释
-        if let Some(credential_item) = doc.get_mut("credential") {
-            if let Some(table) = credential_item.as_table_mut() {
-                table
-                    .decor_mut()
-                    .set_prefix("\n# B站登录凭据信息\n# 请从浏览器开发者工具中获取这些值\n");
-            }
-        }
-
-        // 为过滤选项添加注释
-        if let Some(filter_item) = doc.get_mut("filter_option") {
-            if let Some(table) = filter_item.as_table_mut() {
-                table
-                    .decor_mut()
-                    .set_prefix("\n# 视频质量过滤配置\n# 可以设置视频和音频的质量范围\n");
-            }
-        }
-
-        // 为弹幕选项添加注释
-        if let Some(danmaku_item) = doc.get_mut("danmaku_option") {
-            if let Some(table) = danmaku_item.as_table_mut() {
-                table
-                    .decor_mut()
-                    .set_prefix("\n# 弹幕样式配置\n# 用于设置下载弹幕的显示样式\n");
-            }
-        }
-
-        // 为UP主投稿风控配置添加注释
-        if let Some(submission_risk_item) = doc.get_mut("submission_risk_control") {
-            if let Some(table) = submission_risk_item.as_table_mut() {
-                table
-                    .decor_mut()
-                    .set_prefix("\n# UP主投稿风控配置\n# 用于优化大量视频UP主的获取策略，避免触发风控\n# large_submission_threshold: 大量视频UP主阈值（默认300个视频）\n# base_request_delay: 基础请求间隔（毫秒，默认200ms）\n# large_submission_delay_multiplier: 大量视频UP主延迟倍数（默认2倍）\n# enable_progressive_delay: 启用渐进式延迟（默认true）\n# max_delay_multiplier: 最大延迟倍数（默认4倍）\n# enable_incremental_fetch: 启用增量获取（默认true）\n# incremental_fallback_to_full: 增量获取失败时回退到全量获取（默认true）\n# enable_batch_processing: 启用分批处理（默认false）\n# batch_size: 分批大小（页数，默认5页）\n# batch_delay_seconds: 批次间延迟（秒，默认2秒）\n# enable_auto_backoff: 启用自动退避（默认true）\n# auto_backoff_base_seconds: 自动退避基础时间（秒，默认10秒）\n# auto_backoff_max_multiplier: 自动退避最大倍数（默认5倍）\n");
-            }
-        }
-    }
-
-    #[cfg(not(test))]
-    fn load() -> Result<Self> {
-        let config_path = CONFIG_DIR.join("config.toml");
-        let config_content = std::fs::read_to_string(config_path)?;
-        Ok(toml::from_str(&config_content)?)
-    }
-
-    #[cfg(test)]
-    fn load() -> Result<Self> {
-        // 在测试环境下，返回默认配置
-        Ok(Self::default())
-    }
-
     #[cfg(not(test))]
     pub fn check(&self) -> bool {
         let mut ok = true;
@@ -444,11 +317,8 @@ impl Config {
         }
 
         if critical_error {
-            warn!(
-                "配置文件中检测到凭证未设置，程序将继续运行但功能受限。配置文件位置: {}",
-                CONFIG_DIR.join("config.toml").display()
-            );
-            warn!("请通过Web管理界面或配置文件添加B站登录凭证以启用完整功能");
+            warn!("配置中检测到凭证未设置，程序将继续运行但功能受限");
+            warn!("请通过Web管理界面添加B站登录凭证以启用完整功能");
             // 不再使用 panic!，而是允许程序继续运行
         }
 

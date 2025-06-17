@@ -45,9 +45,10 @@ use crate::utils::status::{PageStatus, VideoStatus};
 )]
 pub struct ApiDoc;
 
-/// 获取配置文件路径，提供统一的错误处理
+/// 移除配置文件路径获取 - 配置现在完全基于数据库
 #[allow(dead_code)]
 fn get_config_path() -> Result<PathBuf> {
+    // 配置现在完全基于数据库，不再使用配置文件
     dirs::config_dir()
         .context("无法获取配置目录")
         .map(|dir| dir.join("bili-sync").join("config.toml"))
@@ -2077,6 +2078,8 @@ pub async fn delete_video_source_internal(
 
 /// 更新配置文件的辅助函数
 #[allow(dead_code)]
+// 移除配置文件操作 - 配置现在完全基于数据库
+#[allow(dead_code)]
 fn update_config_file<F>(update_fn: F) -> Result<()>
 where
     F: FnOnce(&mut crate::config::Config) -> Result<()>,
@@ -2087,28 +2090,28 @@ where
     // 应用更新函数
     update_fn(&mut config)?;
 
-    // 保存更新后的配置
-    config.save()?;
+    // 移除配置文件保存 - 配置现在完全基于数据库
+    // config.save()?;
 
     // 重新加载全局配置
     crate::config::reload_config();
 
-    info!("配置文件已更新，视频源删除完成");
+    info!("配置已更新，视频源删除完成");
     Ok(())
 }
 
-// 在添加视频源成功后调用此函数获取新配置
+// 移除配置文件操作 - 配置现在完全基于数据库
 #[allow(dead_code)]
 fn reload_config_file() -> Result<()> {
     // 使用公共的 reload_config 函数重新加载配置
-    let new_config = crate::config::reload_config();
+    let _new_config = crate::config::reload_config();
 
-    // 保存新配置以确保格式正确和一致性
-    if let Err(e) = new_config.save() {
-        warn!("保存重载的配置时出错: {}", e);
-    }
+    // 移除配置文件保存 - 配置现在完全基于数据库
+    // if let Err(e) = new_config.save() {
+    //     warn!("保存重载的配置时出错: {}", e);
+    // }
 
-    info!("配置文件已成功重新加载，新添加的视频源将在下一轮下载任务中生效");
+    info!("配置已成功重新加载，新添加的视频源将在下一轮下载任务中生效");
     Ok(())
 }
 
@@ -2779,17 +2782,17 @@ pub async fn update_config_internal(
         });
     }
 
-    // 保存配置到文件
-    config.save()?;
+    // 移除配置文件保存 - 配置现在完全基于数据库
+    // config.save()?;
 
-    // 同时保存配置到数据库
+    // 保存配置到数据库
     {
         use crate::config::ConfigManager;
         let manager = ConfigManager::new(db.as_ref().clone());
         if let Err(e) = manager.save_config(&config).await {
             warn!("保存配置到数据库失败: {}", e);
         } else {
-            info!("配置已同步保存到数据库");
+            info!("配置已保存到数据库");
         }
     }
 
@@ -4998,21 +5001,21 @@ pub async fn setup_auth_token(
         return Err(ApiError::from(anyhow!("API Token不能为空")));
     }
     
-    // 更新配置文件中的auth_token
+    // 更新配置中的auth_token
     let mut config = crate::config::reload_config();
     config.auth_token = Some(params.auth_token.clone());
     
-    // 保存配置到文件
-    config.save().map_err(|e| ApiError::from(anyhow!("保存配置失败: {}", e)))?;
+    // 移除配置文件保存 - 配置现在完全基于数据库
+    // config.save().map_err(|e| ApiError::from(anyhow!("保存配置失败: {}", e)))?;
     
-    // 同时保存配置到数据库
+    // 保存配置到数据库
     {
         use crate::config::ConfigManager;
         let manager = ConfigManager::new(db.as_ref().clone());
         if let Err(e) = manager.save_config(&config).await {
             warn!("保存配置到数据库失败: {}", e);
         } else {
-            info!("API Token已同步保存到数据库");
+            info!("API Token已保存到数据库");
         }
     }
     
@@ -5067,17 +5070,17 @@ pub async fn update_credential(
     let config = crate::config::reload_config();
     config.credential.store(Some(std::sync::Arc::new(new_credential)));
     
-    // 保存配置到文件
-    config.save().map_err(|e| ApiError::from(anyhow!("保存配置失败: {}", e)))?;
+    // 移除配置文件保存 - 配置现在完全基于数据库
+    // config.save().map_err(|e| ApiError::from(anyhow!("保存配置失败: {}", e)))?;
     
-    // 同时保存配置到数据库
+    // 保存配置到数据库
     {
         use crate::config::ConfigManager;
         let manager = ConfigManager::new(db.as_ref().clone());
         if let Err(e) = manager.save_config(&config).await {
             warn!("保存配置到数据库失败: {}", e);
         } else {
-            info!("凭证已同步保存到数据库");
+            info!("凭证已保存到数据库");
         }
     }
     

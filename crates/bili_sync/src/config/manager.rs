@@ -108,12 +108,11 @@ impl ConfigManager {
         Ok(config)
     }
 
-    /// 从TOML文件加载配置
+    /// 移除TOML文件加载 - 配置现在完全基于数据库
     fn load_from_toml(&self) -> Result<Config> {
-        Config::load().or_else(|_| {
-            warn!("配置文件不存在，使用默认配置");
-            Ok(Config::default())
-        })
+        // 配置现在完全基于数据库，不再从TOML文件加载
+        warn!("TOML配置已弃用，使用默认配置");
+        Ok(Config::default())
     }
 
     /// 将配置保存到数据库

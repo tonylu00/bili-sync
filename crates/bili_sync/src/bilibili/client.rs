@@ -232,7 +232,9 @@ impl BiliClient {
         }
         let new_credential = credential.refresh(&self.client).await?;
         config.credential.store(Some(Arc::new(new_credential)));
-        config.save()
+        // 移除配置文件保存 - 配置现在完全基于数据库
+        // config.save()
+        Ok(())
     }
 
     /// 获取 wbi img，用于生成请求签名
