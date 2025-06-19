@@ -119,6 +119,27 @@ async fn stream_video_impl(
 async fn find_video_file(video_id: &str, db: &DatabaseConnection) -> Result<PathBuf> {
     debug!("查找视频文件: {}", video_id);
     
+    // 首先尝试作为分页ID查找
+    if let Ok(page_id) = video_id.parse::<i32>() {
+        // 尝试从page表查找
+        if let Some(page_record) = page::Entity::find_by_id(page_id)
+            .one(db)
+            .await
+            .context("查询分页记录失败")?
+        {
+            if let Some(file_path) = &page_record.path {
+                let page_path = PathBuf::from(file_path);
+                if page_path.exists() && page_path.is_file() {
+                    info!("通过分页ID找到视频文件: {:?}", page_path);
+                    return Ok(page_path);
+                }
+            }
+            
+            // 如果分页没有路径或路径无效，返回错误
+            bail!("分页记录存在但没有有效的文件路径: page_id={}", page_id);
+        }
+    }
+    
     // 尝试解析video_id为数字ID或BVID
     let video_model = if let Ok(id) = video_id.parse::<i32>() {
         // 按数字ID查找

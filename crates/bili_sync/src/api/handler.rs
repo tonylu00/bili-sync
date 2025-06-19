@@ -232,8 +232,9 @@ pub async fn get_video(
             page::Column::Pid,
             page::Column::Name,
             page::Column::DownloadStatus,
+            page::Column::Path,
         ])
-        .into_tuple::<(i32, i32, String, u32)>()
+        .into_tuple::<(i32, i32, String, u32, Option<String>)>()
         .all(db.as_ref())
         .await?
         .into_iter()

@@ -89,6 +89,7 @@ pub struct PageInfo {
     pub pid: i32,
     pub name: String,
     pub download_status: [u32; 5],
+    pub path: Option<String>,
 }
 
 impl From<(i32, i32, String, u32)> for PageInfo {
@@ -98,6 +99,19 @@ impl From<(i32, i32, String, u32)> for PageInfo {
             pid,
             name,
             download_status: PageStatus::from(download_status).into(),
+            path: None,
+        }
+    }
+}
+
+impl From<(i32, i32, String, u32, Option<String>)> for PageInfo {
+    fn from((id, pid, name, download_status, path): (i32, i32, String, u32, Option<String>)) -> Self {
+        Self {
+            id,
+            pid,
+            name,
+            download_status: PageStatus::from(download_status).into(),
+            path,
         }
     }
 }

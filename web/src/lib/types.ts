@@ -55,6 +55,7 @@ export interface PageInfo {
 	pid: number;
 	name: string;
 	download_status: [number, number, number, number, number];
+	path?: string;
 }
 
 // 单个视频响应类型
