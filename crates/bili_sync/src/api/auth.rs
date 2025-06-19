@@ -17,6 +17,7 @@ pub async fn auth(headers: HeaderMap, request: Request, next: Next) -> Result<Re
         "/api/setup/check", // 初始设置检查不需要认证
         "/api/setup/auth-token", // 设置auth token不需要认证
         "/api/credential",  // 更新凭证在初始设置时不需要认证
+        "/api/videos/stream", // 视频流API不需要认证（供播放器使用）
     ];
 
     let needs_auth = path.starts_with("/api/") && !excluded_paths.iter().any(|&excluded| path.starts_with(excluded));

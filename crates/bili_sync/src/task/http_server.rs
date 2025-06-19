@@ -52,6 +52,7 @@ use crate::api::handler::{
     validate_config,
     ApiDoc,
 };
+use crate::api::video_stream::stream_video;
 use crate::api::request::{BatchUpdateConfigRequest, UpdateConfigItemRequest};
 use crate::api::wrapper::ApiResponse;
 // CONFIG导入已移除 - 现在使用动态配置
@@ -124,6 +125,8 @@ pub async fn http_server(database_connection: Arc<DatabaseConnection>) -> Result
         .route("/api/task-control/status", get(get_task_control_status))
         .route("/api/task-control/pause", post(pause_scanning_endpoint))
         .route("/api/task-control/resume", post(resume_scanning_endpoint))
+        // 视频流API
+        .route("/api/videos/stream/{video_id}", get(stream_video))
         .merge(
             SwaggerUi::new("/swagger-ui/")
                 .url("/api-docs/openapi.json", ApiDoc::openapi())

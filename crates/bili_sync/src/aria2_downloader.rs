@@ -70,12 +70,16 @@ pub struct Aria2Downloader {
     aria2_instances: Arc<Mutex<Vec<Aria2Instance>>>,
     aria2_binary_path: PathBuf,
     instance_count: usize,
+    #[allow(dead_code)]
     next_instance_index: std::sync::atomic::AtomicUsize,
 }
 
 impl Aria2Downloader {
     /// 创建新的aria2下载器实例，支持多进程
     pub async fn new(client: Client) -> Result<Self> {
+        // 启动前先清理所有旧的aria2进程
+        Self::cleanup_all_aria2_processes().await;
+        
         let aria2_binary_path = Self::extract_aria2_binary().await?;
         
         // 确定进程数量：根据系统资源动态计算
@@ -119,6 +123,82 @@ impl Aria2Downloader {
                   _ => "超大线程数使用更多进程提升并发"
               });
         optimal_count
+    }
+
+    /// 清理所有aria2进程 (Windows兼容)
+    async fn cleanup_all_aria2_processes() {
+        info!("清理所有旧的aria2进程...");
+        
+        #[cfg(target_os = "windows")]
+        {
+            // Windows: 使用taskkill强制终止所有aria2进程
+            let output = tokio::process::Command::new("taskkill")
+                .args(&["/F", "/IM", "aria2c.exe"])
+                .output()
+                .await;
+                
+            match output {
+                Ok(result) => {
+                    if result.status.success() {
+                        let stdout = String::from_utf8_lossy(&result.stdout);
+                        info!("Windows aria2进程清理完成: {}", stdout.trim());
+                    } else {
+                        let stderr = String::from_utf8_lossy(&result.stderr);
+                        debug!("Windows aria2进程清理: {}", stderr.trim());
+                    }
+                }
+                Err(e) => {
+                    warn!("Windows aria2进程清理失败: {}", e);
+                }
+            }
+        }
+        
+        #[cfg(target_os = "linux")]
+        {
+            // Linux: 使用pkill强制终止
+            let output = tokio::process::Command::new("pkill")
+                .args(&["-9", "-f", "aria2c"])
+                .output()
+                .await;
+                
+            match output {
+                Ok(result) => {
+                    if result.status.success() {
+                        info!("Linux aria2进程清理完成");
+                    } else {
+                        debug!("Linux aria2进程清理: 没有找到运行中的aria2进程");
+                    }
+                }
+                Err(e) => {
+                    debug!("Linux aria2进程清理失败: {}", e);
+                }
+            }
+        }
+        
+        #[cfg(any(target_os = "macos", target_os = "ios"))]
+        {
+            // macOS: 使用pkill强制终止
+            let output = tokio::process::Command::new("pkill")
+                .args(&["-9", "-f", "aria2c"])
+                .output()
+                .await;
+                
+            match output {
+                Ok(result) => {
+                    if result.status.success() {
+                        info!("macOS aria2进程清理完成");
+                    } else {
+                        debug!("macOS aria2进程清理: 没有找到运行中的aria2进程");
+                    }
+                }
+                Err(e) => {
+                    debug!("macOS aria2进程清理失败: {}", e);
+                }
+            }
+        }
+        
+        // 等待进程完全终止
+        tokio::time::sleep(Duration::from_millis(2000)).await;
     }
 
     /// 计算单个实例的最优线程数
@@ -832,9 +912,43 @@ impl Aria2Downloader {
             
             shutdown_futures.push(shutdown_future);
             
-            // 强制终止进程
+            // 强制终止进程 - Windows兼容性改进
             if let Err(e) = instance.process.kill().await {
                 warn!("终止aria2实例 {} 失败: {}", i + 1, e);
+                
+                // 如果普通kill失败，尝试使用系统命令强制终止
+                #[cfg(target_os = "windows")]
+                {
+                    if let Some(pid) = instance.process.id() {
+                        let _ = tokio::process::Command::new("taskkill")
+                            .args(&["/F", "/PID", &pid.to_string()])
+                            .output()
+                            .await;
+                        info!("已强制终止Windows aria2进程 PID: {}", pid);
+                    }
+                }
+                
+                #[cfg(target_os = "linux")]
+                {
+                    if let Some(pid) = instance.process.id() {
+                        let _ = tokio::process::Command::new("kill")
+                            .args(&["-9", &pid.to_string()])
+                            .output()
+                            .await;
+                        info!("已强制终止Linux aria2进程 PID: {}", pid);
+                    }
+                }
+                
+                #[cfg(any(target_os = "macos", target_os = "ios"))]
+                {
+                    if let Some(pid) = instance.process.id() {
+                        let _ = tokio::process::Command::new("kill")
+                            .args(&["-9", &pid.to_string()])
+                            .output()
+                            .await;
+                        info!("已强制终止macOS aria2进程 PID: {}", pid);
+                    }
+                }
             } else {
                 debug!("aria2实例 {} 已终止", i + 1);
             }
@@ -844,11 +958,17 @@ impl Aria2Downloader {
         futures::future::join_all(shutdown_futures).await;
         
         instances.clear();
+        
+        // 最后再次确保所有aria2进程都被清理
+        tokio::time::sleep(Duration::from_millis(1000)).await;
+        Self::cleanup_all_aria2_processes().await;
+        
         info!("所有aria2实例已关闭");
         Ok(())
     }
 
     /// 健康检查：移除不健康的实例并重新启动
+    #[allow(dead_code)]
     pub async fn health_check(&mut self) -> Result<()> {
         let mut instances = self.aria2_instances.lock().await;
         let mut unhealthy_indices = Vec::new();
