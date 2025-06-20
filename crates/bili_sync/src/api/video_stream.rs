@@ -85,7 +85,7 @@ async fn stream_video_impl(
     headers: HeaderMap,
     db: Arc<DatabaseConnection>,
 ) -> Result<Response> {
-    info!("请求视频流: {}", video_id);
+    debug!("请求视频流: {}", video_id);
 
     // 从数据库查询视频文件路径
     let video_path = find_video_file(&video_id, &db).await?;
@@ -130,7 +130,7 @@ async fn find_video_file(video_id: &str, db: &DatabaseConnection) -> Result<Path
             if let Some(file_path) = &page_record.path {
                 let page_path = PathBuf::from(file_path);
                 if page_path.exists() && page_path.is_file() {
-                    info!("通过分页ID找到视频文件: {:?}", page_path);
+                    debug!("通过分页ID找到视频文件: {:?}", page_path);
                     return Ok(page_path);
                 }
             }
@@ -291,7 +291,7 @@ async fn serve_partial_content(
     let actual_content_length = actual_end - start + 1;
 
     // 读取文件片段
-    info!("尝试打开文件: {:?}", video_path);
+    debug!("尝试打开文件: {:?}", video_path);
     let mut file = File::open(video_path).with_context(|| format!("无法打开视频文件: {:?}", video_path))?;
     file.seek(SeekFrom::Start(start)).context("文件定位失败")?;
 
