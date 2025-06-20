@@ -223,12 +223,12 @@ if errorlevel 1 (
     )
 )
 echo 同步 SvelteKit 配置...
-npx svelte-kit sync
+call npx svelte-kit sync
 if errorlevel 1 (
     echo SvelteKit 同步失败
     exit /b 1
 )
-npm run build
+call npm run build
 if errorlevel 1 (
     echo 前端构建失败
     exit /b 1

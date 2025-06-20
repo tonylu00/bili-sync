@@ -143,11 +143,10 @@ impl Aria2Downloader {
             match output {
                 Ok(result) => {
                     if result.status.success() {
-                        let stdout = String::from_utf8_lossy(&result.stdout);
-                        info!("Windows aria2进程清理完成: {}", stdout.trim());
+                        // Windows taskkill 输出使用系统默认编码，不直接解码以避免乱码
+                        info!("Windows aria2进程清理完成");
                     } else {
-                        let stderr = String::from_utf8_lossy(&result.stderr);
-                        debug!("Windows aria2进程清理: {}", stderr.trim());
+                        debug!("Windows aria2进程清理出现问题，但进程可能已终止");
                     }
                 }
                 Err(e) => {
