@@ -511,3 +511,40 @@ export interface TaskControlStatusResponse {
 	is_scanning: boolean;
 	message: string;
 }
+
+// 视频播放信息响应类型
+export interface VideoPlayInfoResponse {
+	success: boolean;
+	video_streams: VideoStreamInfo[];
+	audio_streams: AudioStreamInfo[];
+	subtitle_streams: SubtitleStreamInfo[];
+	video_title: string;
+	video_duration?: number;
+	video_quality_description: string;
+}
+
+// 视频流信息类型
+export interface VideoStreamInfo {
+	url: string;
+	backup_urls: string[];
+	quality: number;
+	quality_description: string;
+	codecs: string;
+	width?: number;
+	height?: number;
+}
+
+// 音频流信息类型
+export interface AudioStreamInfo {
+	url: string;
+	backup_urls: string[];
+	quality: number;
+	quality_description: string;
+}
+
+// 字幕信息类型
+export interface SubtitleStreamInfo {
+	language: string;
+	language_doc: string;
+	url: string;
+}

@@ -446,3 +446,44 @@ pub struct TaskControlStatusResponse {
     pub is_scanning: bool,
     pub message: String,
 }
+
+/// 视频播放信息响应
+#[derive(Serialize, ToSchema)]
+pub struct VideoPlayInfoResponse {
+    pub success: bool,
+    pub video_streams: Vec<VideoStreamInfo>,
+    pub audio_streams: Vec<AudioStreamInfo>,
+    pub subtitle_streams: Vec<SubtitleStreamInfo>,
+    pub video_title: String,
+    pub video_duration: Option<u32>,
+    pub video_quality_description: String,
+}
+
+/// 视频流信息
+#[derive(Serialize, ToSchema)]
+pub struct VideoStreamInfo {
+    pub url: String,
+    pub backup_urls: Vec<String>,
+    pub quality: u32,
+    pub quality_description: String,
+    pub codecs: String,
+    pub width: Option<u32>,
+    pub height: Option<u32>,
+}
+
+/// 音频流信息
+#[derive(Serialize, ToSchema)]
+pub struct AudioStreamInfo {
+    pub url: String,
+    pub backup_urls: Vec<String>,
+    pub quality: u32,
+    pub quality_description: String,
+}
+
+/// 字幕信息
+#[derive(Serialize, ToSchema)]
+pub struct SubtitleStreamInfo {
+    pub language: String,
+    pub language_doc: String,
+    pub url: String,
+}

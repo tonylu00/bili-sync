@@ -32,10 +32,12 @@ use crate::api::handler::{
     get_user_favorites,
     get_user_followings,
     get_video,
+    get_video_play_info,
     get_video_sources,
     get_videos,
     pause_scanning_endpoint,
     proxy_image,
+    proxy_video_stream,
     reload_config,
     reload_config_new_internal,
     reset_all_videos,
@@ -127,6 +129,9 @@ pub async fn http_server(database_connection: Arc<DatabaseConnection>) -> Result
         .route("/api/task-control/resume", post(resume_scanning_endpoint))
         // 视频流API
         .route("/api/videos/stream/{video_id}", get(stream_video))
+        // 新增在线播放API
+        .route("/api/videos/{video_id}/play-info", get(get_video_play_info))
+        .route("/api/videos/proxy-stream", get(proxy_video_stream))
         .merge(
             SwaggerUi::new("/swagger-ui/")
                 .url("/api-docs/openapi.json", ApiDoc::openapi())

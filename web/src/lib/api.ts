@@ -27,7 +27,8 @@ import type {
 	UpdateCredentialResponse,
 	InitialSetupCheckResponse,
 	TaskControlStatusResponse,
-	TaskControlResponse
+	TaskControlResponse,
+	VideoPlayInfoResponse
 } from './types';
 import { ErrorType } from './types';
 
@@ -373,6 +374,23 @@ class ApiClient {
 	async resumeScanning(): Promise<ApiResponse<TaskControlResponse>> {
 		return this.post<TaskControlResponse>('/task-control/resume');
 	}
+
+	/**
+	 * 获取视频播放信息（在线播放用）
+	 * @param videoId 视频ID或分页ID
+	 */
+	async getVideoPlayInfo(videoId: string | number): Promise<ApiResponse<VideoPlayInfoResponse>> {
+		return this.get<VideoPlayInfoResponse>(`/videos/${videoId}/play-info`);
+	}
+
+	/**
+	 * 获取代理视频流URL
+	 * @param streamUrl 原始视频流URL
+	 */
+	getProxyStreamUrl(streamUrl: string): string {
+		const encodedUrl = encodeURIComponent(streamUrl);
+		return `${this.baseURL}/videos/proxy-stream?url=${encodedUrl}`;
+	}
 }
 
 // 创建默认的 API 客户端实例
@@ -512,7 +530,17 @@ export const api = {
 	/**
 	 * 恢复所有扫描和下载任务
 	 */
-	resumeScanning: () => apiClient.resumeScanning()
+	resumeScanning: () => apiClient.resumeScanning(),
+
+	/**
+	 * 获取视频播放信息（在线播放用）
+	 */
+	getVideoPlayInfo: (videoId: string | number) => apiClient.getVideoPlayInfo(videoId),
+
+	/**
+	 * 获取代理视频流URL
+	 */
+	getProxyStreamUrl: (streamUrl: string) => apiClient.getProxyStreamUrl(streamUrl)
 };
 
 // 默认导出

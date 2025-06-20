@@ -301,7 +301,7 @@ impl<'a> Video<'a> {
     }
 }
 
-fn bvid_to_aid(bvid: &str) -> u64 {
+pub fn bvid_to_aid(bvid: &str) -> u64 {
     let mut bvid = bvid.chars().collect::<Vec<_>>();
     (bvid[3], bvid[9]) = (bvid[9], bvid[3]);
     (bvid[4], bvid[7]) = (bvid[7], bvid[4]);

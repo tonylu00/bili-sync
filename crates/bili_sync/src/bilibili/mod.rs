@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-pub use analyzer::{AudioQuality, BestStream, FilterOption, VideoCodecs, VideoQuality};
+pub use analyzer::{AudioQuality, BestStream, FilterOption, Stream, VideoCodecs, VideoQuality};
 use anyhow::{bail, ensure, Result};
 use arc_swap::ArcSwapOption;
 use chrono::serde::ts_seconds;
@@ -14,7 +14,7 @@ pub use favorite_list::FavoriteList;
 use favorite_list::Upper;
 use once_cell::sync::Lazy;
 pub use submission::Submission;
-pub use video::{Dimension, PageInfo, Video};
+pub use video::{Dimension, PageInfo, Video, bvid_to_aid};
 pub use watch_later::WatchLater;
 pub mod bangumi;
 
