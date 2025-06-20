@@ -4,15 +4,15 @@ pub mod video_downloader;
 pub use http_server::http_server;
 pub use video_downloader::video_downloader;
 
+use anyhow::Result;
 use sea_orm::DatabaseConnection;
 use serde::{Deserialize, Serialize};
 use std::collections::VecDeque;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use tokio::sync::Mutex;
-use tracing::{debug, error, info};
-use anyhow::Result;
 use tokio_util::sync::CancellationToken;
+use tracing::{debug, error, info};
 
 /// 删除视频源任务结构体
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -575,7 +575,7 @@ impl TaskController {
         self.is_scanning.store(false, Ordering::SeqCst);
         // 重置恢复标志
         self.just_resumed.store(false, Ordering::SeqCst);
-        
+
         // 取消所有正在进行的下载任务
         if let Ok(token) = self.cancellation_token.try_lock() {
             token.cancel();
@@ -591,7 +591,7 @@ impl TaskController {
                 }
             }
         }
-        
+
         info!("定时扫描任务已暂停，所有下载任务已取消");
     }
 

@@ -52,8 +52,8 @@ use crate::api::handler::{
     validate_config,
     ApiDoc,
 };
-use crate::api::video_stream::stream_video;
 use crate::api::request::{BatchUpdateConfigRequest, UpdateConfigItemRequest};
+use crate::api::video_stream::stream_video;
 use crate::api::wrapper::ApiResponse;
 // CONFIG导入已移除 - 现在使用动态配置
 

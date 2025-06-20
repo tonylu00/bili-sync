@@ -3,7 +3,7 @@ use axum::extract::Path;
 use axum::http::{header, HeaderMap, HeaderValue, StatusCode};
 use axum::response::{IntoResponse, Response};
 use axum::Extension;
-use sea_orm::{DatabaseConnection, EntityTrait, ColumnTrait, QueryFilter};
+use sea_orm::{ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter};
 use std::fs::File;
 use std::io::{Read, Seek, SeekFrom};
 use std::path::PathBuf;
@@ -11,7 +11,7 @@ use std::sync::Arc;
 use tokio::fs;
 use tracing::{debug, error, info, warn};
 
-use bili_sync_entity::entities::{video, page};
+use bili_sync_entity::entities::{page, video};
 
 /// Range请求参数
 #[derive(Debug)]
@@ -72,28 +72,18 @@ pub async fn stream_video(
         Ok(response) => response,
         Err(e) => {
             error!("视频流传输失败: {:#}", e);
-            (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                "Internal Server Error",
-            ).into_response()
+            (StatusCode::INTERNAL_SERVER_ERROR, "Internal Server Error").into_response()
         }
     }
 }
 
-async fn stream_video_impl(
-    video_id: String,
-    headers: HeaderMap,
-    db: Arc<DatabaseConnection>,
-) -> Result<Response> {
+async fn stream_video_impl(video_id: String, headers: HeaderMap, db: Arc<DatabaseConnection>) -> Result<Response> {
     debug!("请求视频流: {}", video_id);
 
     // 从数据库查询视频文件路径
     let video_path = find_video_file(&video_id, &db).await?;
-    
-    let file_size = fs::metadata(&video_path)
-        .await
-        .context("无法获取文件大小")?
-        .len();
+
+    let file_size = fs::metadata(&video_path).await.context("无法获取文件大小")?.len();
 
     debug!("视频文件路径: {:?}, 大小: {} bytes", video_path, file_size);
 
@@ -118,7 +108,7 @@ async fn stream_video_impl(
 /// 查找视频文件路径
 async fn find_video_file(video_id: &str, db: &DatabaseConnection) -> Result<PathBuf> {
     debug!("查找视频文件: {}", video_id);
-    
+
     // 首先尝试作为分页ID查找
     if let Ok(page_id) = video_id.parse::<i32>() {
         // 尝试从page表查找
@@ -134,12 +124,12 @@ async fn find_video_file(video_id: &str, db: &DatabaseConnection) -> Result<Path
                     return Ok(page_path);
                 }
             }
-            
+
             // 如果分页没有路径或路径无效，返回错误
             bail!("分页记录存在但没有有效的文件路径: page_id={}", page_id);
         }
     }
-    
+
     // 尝试解析video_id为数字ID或BVID
     let video_model = if let Ok(id) = video_id.parse::<i32>() {
         // 按数字ID查找
@@ -155,20 +145,20 @@ async fn find_video_file(video_id: &str, db: &DatabaseConnection) -> Result<Path
             .await
             .context("查询视频记录失败")?
     };
-    
+
     let video = video_model.ok_or_else(|| anyhow::anyhow!("视频记录不存在: {}", video_id))?;
-    
+
     // 检查下载状态 - download_status的第2位(索引1)为2表示已完成
     // 这里我们简化检查，只要文件存在就可以播放
-    
+
     // 获取文件路径
     let video_path = PathBuf::from(&video.path);
-    
+
     // 检查路径是否存在
     if !video_path.exists() {
         bail!("视频路径不存在: {:?}", video_path);
     }
-    
+
     // 如果是文件夹，在其中查找视频文件
     let actual_video_file = if video_path.is_dir() {
         info!("检测到文件夹路径，开始查找视频文件: {:?}", video_path);
@@ -177,7 +167,7 @@ async fn find_video_file(video_id: &str, db: &DatabaseConnection) -> Result<Path
         // 如果是文件，直接使用
         video_path
     };
-    
+
     // 如果仍然找不到，尝试查找Pages表中的视频文件
     if !actual_video_file.exists() || actual_video_file.is_dir() {
         info!("主路径未找到视频文件，尝试查找Pages表");
@@ -186,17 +176,21 @@ async fn find_video_file(video_id: &str, db: &DatabaseConnection) -> Result<Path
             .all(db)
             .await
             .context("查询视频页面失败")?;
-            
+
         for page_record in pages {
             if let Some(file_path) = &page_record.path {
                 let page_path = PathBuf::from(file_path);
                 if page_path.exists() && page_path.is_file() {
                     info!("找到页面文件: {:?}", page_path);
-                    
+
                     // 检查文件权限和可读性
                     match std::fs::metadata(&page_path) {
                         Ok(metadata) => {
-                            info!("页面文件元数据 - 大小: {} bytes, 只读: {}", metadata.len(), metadata.permissions().readonly());
+                            info!(
+                                "页面文件元数据 - 大小: {} bytes, 只读: {}",
+                                metadata.len(),
+                                metadata.permissions().readonly()
+                            );
                             return Ok(page_path);
                         }
                         Err(e) => {
@@ -207,38 +201,42 @@ async fn find_video_file(video_id: &str, db: &DatabaseConnection) -> Result<Path
                 }
             }
         }
-        
+
         bail!("未找到可播放的视频文件");
     }
-    
+
     debug!("找到视频文件: {:?}", actual_video_file);
-    
+
     // 检查文件权限和可读性
     match std::fs::metadata(&actual_video_file) {
         Ok(metadata) => {
-            info!("文件元数据 - 大小: {} bytes, 只读: {}", metadata.len(), metadata.permissions().readonly());
+            info!(
+                "文件元数据 - 大小: {} bytes, 只读: {}",
+                metadata.len(),
+                metadata.permissions().readonly()
+            );
         }
         Err(e) => {
             error!("无法获取文件元数据: {}", e);
             bail!("文件元数据获取失败: {:?}", e);
         }
     }
-    
+
     Ok(actual_video_file)
 }
 
 /// 在指定文件夹中查找视频文件
 async fn find_video_file_in_directory(dir_path: &PathBuf) -> Result<PathBuf> {
     debug!("在文件夹中查找视频文件: {:?}", dir_path);
-    
+
     let video_extensions = ["mp4", "mkv", "avi", "webm", "flv", "mov", "wmv", "m4v"];
-    
+
     // 读取文件夹内容
     let mut entries = fs::read_dir(dir_path).await.context("无法读取文件夹内容")?;
-    
+
     while let Some(entry) = entries.next_entry().await.context("读取文件夹条目失败")? {
         let path = entry.path();
-        
+
         if path.is_file() {
             if let Some(extension) = path.extension() {
                 if let Some(ext_str) = extension.to_str() {
@@ -250,12 +248,12 @@ async fn find_video_file_in_directory(dir_path: &PathBuf) -> Result<PathBuf> {
             }
         }
     }
-    
+
     bail!("文件夹中未找到视频文件: {:?}", dir_path);
 }
 
 /// 根据文件扩展名获取MIME类型
-fn get_video_mime_type(path: &PathBuf) -> &'static str {
+fn get_video_mime_type(path: &std::path::Path) -> &'static str {
     match path.extension().and_then(|ext| ext.to_str()) {
         Some("mp4") => "video/mp4",
         Some("webm") => "video/webm",
@@ -270,11 +268,7 @@ fn get_video_mime_type(path: &PathBuf) -> &'static str {
 }
 
 /// 提供部分内容 (Range请求)
-async fn serve_partial_content(
-    video_path: &PathBuf,
-    range: RangeSpec,
-    file_size: u64,
-) -> Result<Response> {
+async fn serve_partial_content(video_path: &PathBuf, range: RangeSpec, file_size: u64) -> Result<Response> {
     let start = range.start;
     let end = range.end.unwrap_or(file_size - 1);
     let content_length = end - start + 1;
@@ -315,16 +309,10 @@ async fn serve_partial_content(
         header::CONTENT_RANGE,
         HeaderValue::from_str(&format!("bytes {}-{}/{}", start, actual_end, file_size))?,
     );
-    headers.insert(
-        header::ACCEPT_RANGES,
-        HeaderValue::from_static("bytes"),
-    );
-    
+    headers.insert(header::ACCEPT_RANGES, HeaderValue::from_static("bytes"));
+
     // 添加缓存控制头，让浏览器更好地处理视频流
-    headers.insert(
-        header::CACHE_CONTROL,
-        HeaderValue::from_static("public, max-age=3600"),
-    );
+    headers.insert(header::CACHE_CONTROL, HeaderValue::from_static("public, max-age=3600"));
 
     Ok(response)
 }
@@ -336,14 +324,14 @@ async fn serve_full_content(video_path: &PathBuf, file_size: u64) -> Result<Resp
     // 对于大文件，返回前10MB的内容，让浏览器使用Range请求获取后续内容
     const INITIAL_CHUNK_SIZE: u64 = 10 * 1024 * 1024;
     let content_length = file_size.min(INITIAL_CHUNK_SIZE);
-    
+
     info!("读取文件前 {} bytes: {:?}", content_length, video_path);
     let mut file = File::open(video_path).with_context(|| format!("无法打开视频文件: {:?}", video_path))?;
     let mut buffer = vec![0u8; content_length as usize];
     file.read_exact(&mut buffer).context("读取文件内容失败")?;
 
     let mut response = Response::new(buffer.into());
-    
+
     if content_length < file_size {
         // 如果只返回部分内容，使用206状态码
         *response.status_mut() = StatusCode::PARTIAL_CONTENT;
@@ -366,14 +354,8 @@ async fn serve_full_content(video_path: &PathBuf, file_size: u64) -> Result<Resp
         header::CONTENT_LENGTH,
         HeaderValue::from_str(&content_length.to_string())?,
     );
-    headers.insert(
-        header::ACCEPT_RANGES,
-        HeaderValue::from_static("bytes"),
-    );
-    headers.insert(
-        header::CACHE_CONTROL,
-        HeaderValue::from_static("public, max-age=3600"),
-    );
+    headers.insert(header::ACCEPT_RANGES, HeaderValue::from_static("bytes"));
+    headers.insert(header::CACHE_CONTROL, HeaderValue::from_static("public, max-age=3600"));
 
     Ok(response)
 }

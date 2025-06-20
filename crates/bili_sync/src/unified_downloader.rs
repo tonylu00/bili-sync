@@ -30,13 +30,13 @@ impl UnifiedDownloader {
     pub async fn new_smart(client: Client) -> Self {
         // 获取最新配置
         let config = crate::config::reload_config();
-        
+
         // 检查是否启用了多线程下载
         if !config.concurrent_limit.parallel_download.enabled {
             info!("多线程下载已禁用，使用原生下载器");
             return Self::Native(Downloader::new(client));
         }
-        
+
         // 如果启用了多线程下载，尝试使用aria2
         match Aria2Downloader::new(client.clone()).await {
             Ok(aria2_downloader) => {

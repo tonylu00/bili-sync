@@ -79,9 +79,9 @@ impl Aria2Downloader {
     pub async fn new(client: Client) -> Result<Self> {
         // 启动前先清理所有旧的aria2进程
         Self::cleanup_all_aria2_processes().await;
-        
+
         let aria2_binary_path = Self::extract_aria2_binary().await?;
-        
+
         // 确定进程数量：根据系统资源动态计算
         let instance_count = Self::calculate_optimal_instance_count();
         info!("创建 {} 个aria2进程实例", instance_count);
@@ -103,40 +103,43 @@ impl Aria2Downloader {
     fn calculate_optimal_instance_count() -> usize {
         let config = crate::config::reload_config();
         let total_threads = config.concurrent_limit.parallel_download.threads;
-        
+
         // 智能计算：根据总线程数和系统负载动态调整，增加并发进程数
         let optimal_count = match total_threads {
-            1..=4 => 1,        // 少量线程用单进程
-            5..=8 => 2,        // 中等线程用双进程
-            9..=16 => 4,       // 较多线程用四进程 (充分利用16线程)
-            17..=32 => 5,      // 大量线程用五进程
+            1..=4 => 1,                                                          // 少量线程用单进程
+            5..=8 => 2,                                                          // 中等线程用双进程
+            9..=16 => 4,                                                         // 较多线程用四进程 (充分利用16线程)
+            17..=32 => 5,                                                        // 大量线程用五进程
             _ => std::cmp::min(8, (total_threads as f64 / 6.0).ceil() as usize), // 超大线程数动态计算，更多进程
         };
-        
-        info!("智能分析 - 总线程数: {}, 计算出最优进程数: {}, 决策依据: {}", 
-              total_threads, optimal_count, 
-              match total_threads {
-                  1..=4 => "少量线程使用单进程",
-                  5..=8 => "中等线程使用双进程", 
-                  9..=16 => "充分利用线程数，使用四进程",
-                  17..=32 => "大量线程使用五进程",
-                  _ => "超大线程数使用更多进程提升并发"
-              });
+
+        info!(
+            "智能分析 - 总线程数: {}, 计算出最优进程数: {}, 决策依据: {}",
+            total_threads,
+            optimal_count,
+            match total_threads {
+                1..=4 => "少量线程使用单进程",
+                5..=8 => "中等线程使用双进程",
+                9..=16 => "充分利用线程数，使用四进程",
+                17..=32 => "大量线程使用五进程",
+                _ => "超大线程数使用更多进程提升并发",
+            }
+        );
         optimal_count
     }
 
     /// 清理所有aria2进程 (Windows兼容)
     async fn cleanup_all_aria2_processes() {
         info!("清理所有旧的aria2进程...");
-        
+
         #[cfg(target_os = "windows")]
         {
             // Windows: 使用taskkill强制终止所有aria2进程
             let output = tokio::process::Command::new("taskkill")
-                .args(&["/F", "/IM", "aria2c.exe"])
+                .args(["/F", "/IM", "aria2c.exe"])
                 .output()
                 .await;
-                
+
             match output {
                 Ok(result) => {
                     if result.status.success() {
@@ -152,15 +155,15 @@ impl Aria2Downloader {
                 }
             }
         }
-        
+
         #[cfg(target_os = "linux")]
         {
             // Linux: 使用pkill强制终止
             let output = tokio::process::Command::new("pkill")
-                .args(&["-9", "-f", "aria2c"])
+                .args(["-9", "-f", "aria2c"])
                 .output()
                 .await;
-                
+
             match output {
                 Ok(result) => {
                     if result.status.success() {
@@ -174,15 +177,15 @@ impl Aria2Downloader {
                 }
             }
         }
-        
+
         #[cfg(any(target_os = "macos", target_os = "ios"))]
         {
             // macOS: 使用pkill强制终止
             let output = tokio::process::Command::new("pkill")
-                .args(&["-9", "-f", "aria2c"])
+                .args(["-9", "-f", "aria2c"])
                 .output()
                 .await;
-                
+
             match output {
                 Ok(result) => {
                     if result.status.success() {
@@ -196,7 +199,7 @@ impl Aria2Downloader {
                 }
             }
         }
-        
+
         // 等待进程完全终止
         tokio::time::sleep(Duration::from_millis(2000)).await;
     }
@@ -205,23 +208,19 @@ impl Aria2Downloader {
     fn calculate_threads_per_instance(total_threads: usize, instance_count: usize) -> usize {
         let base_threads = total_threads / instance_count;
         let remainder = total_threads % instance_count;
-        
+
         // 基础分配 + 考虑余数
-        let threads_per_instance = if remainder > 0 {
-            base_threads + 1
-        } else {
-            base_threads
-        };
-        
+        let threads_per_instance = if remainder > 0 { base_threads + 1 } else { base_threads };
+
         // 智能限制：根据线程数量动态调整上限
         let max_threads_per_instance = match total_threads {
-            1..=16 => total_threads,           // 小量线程不限制
-            17..=32 => 16,                     // 中等线程限制到16
-            33..=64 => 20,                     // 较多线程限制到20
-            65..=128 => 24,                    // 大量线程限制到24
-            _ => 32,                           // 超大量线程限制到32
+            1..=16 => total_threads, // 小量线程不限制
+            17..=32 => 16,           // 中等线程限制到16
+            33..=64 => 20,           // 较多线程限制到20
+            65..=128 => 24,          // 大量线程限制到24
+            _ => 32,                 // 超大量线程限制到32
         };
-        
+
         std::cmp::min(threads_per_instance, max_threads_per_instance)
     }
 
@@ -239,26 +238,28 @@ impl Aria2Downloader {
                 std::cmp::max(base_threads, std::cmp::min(max_for_large_file, total_threads))
             }
         };
-        
+
         std::cmp::max(smart_threads, 1) // 至少1个线程
     }
 
     /// 尝试获取文件大小（用于智能线程调整）
     async fn try_get_file_size(&self, url: &str) -> Option<u64> {
-        match self.client
+        match self
+            .client
             .head(url)
-            .header("User-Agent", "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36")
+            .header(
+                "User-Agent",
+                "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36",
+            )
             .header("Referer", "https://www.bilibili.com")
             .send()
             .await
         {
-            Ok(response) => {
-                response
-                    .headers()
-                    .get("content-length")
-                    .and_then(|v| v.to_str().ok())
-                    .and_then(|s| s.parse::<u64>().ok())
-            }
+            Ok(response) => response
+                .headers()
+                .get("content-length")
+                .and_then(|v| v.to_str().ok())
+                .and_then(|s| s.parse::<u64>().ok()),
             Err(_) => None,
         }
     }
@@ -266,33 +267,33 @@ impl Aria2Downloader {
     /// 启动所有aria2进程实例
     async fn start_all_instances(&mut self) -> Result<()> {
         let mut instances = Vec::new();
-        
+
         for i in 0..self.instance_count {
             let rpc_port = Self::find_available_port().await?;
             let rpc_secret = Self::generate_secret();
-            
+
             info!("启动第 {} 个aria2进程，端口: {}", i + 1, rpc_port);
-            
+
             let process = self.start_single_instance(rpc_port, &rpc_secret).await?;
             let instance = Aria2Instance::new(process, rpc_port, rpc_secret);
-            
+
             // 验证连接
             if let Err(e) = self.test_instance_connection(rpc_port, &instance.rpc_secret).await {
                 warn!("aria2实例 {} 连接测试失败: {:#}", i + 1, e);
                 continue;
             }
-            
+
             instances.push(instance);
             info!("aria2实例 {} 启动成功", i + 1);
         }
-        
+
         if instances.is_empty() {
             bail!("没有成功启动任何aria2实例");
         }
-        
+
         *self.aria2_instances.lock().await = instances;
         info!("成功启动 {} 个aria2实例", self.aria2_instances.lock().await.len());
-        
+
         Ok(())
     }
 
@@ -539,11 +540,14 @@ impl Aria2Downloader {
     async fn start_single_instance(&self, rpc_port: u16, rpc_secret: &str) -> Result<tokio::process::Child> {
         let current_config = crate::config::reload_config();
         let total_threads = current_config.concurrent_limit.parallel_download.threads;
-        
+
         // 智能计算当前实例应该使用的线程数
         let threads = Self::calculate_threads_per_instance(total_threads, self.instance_count);
-        
-        info!("启动aria2实例，分配线程数: {} (总线程: {}, 实例数: {})", threads, total_threads, self.instance_count);
+
+        info!(
+            "启动aria2实例，分配线程数: {} (总线程: {}, 实例数: {})",
+            threads, total_threads, self.instance_count
+        );
 
         let mut args = vec![
             "--enable-rpc".to_string(),
@@ -609,7 +613,7 @@ impl Aria2Downloader {
         // 等待aria2启动
         for _ in 0..10 {
             tokio::time::sleep(Duration::from_millis(500)).await;
-            
+
             if let Ok(response) = self.client.post(&url).json(&payload).send().await {
                 if response.status().is_success() {
                     return Ok(());
@@ -623,7 +627,7 @@ impl Aria2Downloader {
     /// 选择最佳aria2实例（负载均衡）
     async fn select_best_instance(&self) -> Result<(usize, u16, String)> {
         let instances = self.aria2_instances.lock().await;
-        
+
         if instances.is_empty() {
             bail!("没有可用的aria2实例");
         }
@@ -651,12 +655,20 @@ impl Aria2Downloader {
         }
 
         let file_name = path.file_name().and_then(|n| n.to_str()).context("Invalid file name")?;
-        let dir = path.parent().and_then(|p| p.to_str()).context("Invalid directory path")?;
+        let dir = path
+            .parent()
+            .and_then(|p| p.to_str())
+            .context("Invalid directory path")?;
 
         // 选择最佳的aria2实例
         let (instance_index, rpc_port, rpc_secret) = self.select_best_instance().await?;
-        
-        info!("使用aria2实例 {} (端口: {}) 下载: {}", instance_index + 1, rpc_port, file_name);
+
+        info!(
+            "使用aria2实例 {} (端口: {}) 下载: {}",
+            instance_index + 1,
+            rpc_port,
+            file_name
+        );
 
         // 增加该实例的负载计数
         {
@@ -667,10 +679,14 @@ impl Aria2Downloader {
         }
 
         // 构建aria2 RPC请求
-        let gid = self.add_download_task_to_instance(urls, dir, file_name, rpc_port, &rpc_secret).await?;
+        let gid = self
+            .add_download_task_to_instance(urls, dir, file_name, rpc_port, &rpc_secret)
+            .await?;
 
         // 等待下载完成
-        let result = self.wait_for_download_on_instance(&gid, rpc_port, &rpc_secret, instance_index).await;
+        let result = self
+            .wait_for_download_on_instance(&gid, rpc_port, &rpc_secret, instance_index)
+            .await;
 
         // 减少该实例的负载计数
         {
@@ -692,19 +708,29 @@ impl Aria2Downloader {
     }
 
     /// 添加下载任务到指定实例
-    async fn add_download_task_to_instance(&self, urls: &[&str], dir: &str, file_name: &str, rpc_port: u16, rpc_secret: &str) -> Result<String> {
+    async fn add_download_task_to_instance(
+        &self,
+        urls: &[&str],
+        dir: &str,
+        file_name: &str,
+        rpc_port: u16,
+        rpc_secret: &str,
+    ) -> Result<String> {
         let url = format!("http://127.0.0.1:{}/jsonrpc", rpc_port);
 
         // 智能计算当前实例的线程数
         let current_config = crate::config::reload_config();
         let total_threads = current_config.concurrent_limit.parallel_download.threads;
         let base_threads = Self::calculate_threads_per_instance(total_threads, self.instance_count);
-        
+
         // 尝试获取文件大小，并根据大小智能调整线程数
         let threads = if let Some(file_size_bytes) = self.try_get_file_size(urls[0]).await {
             let file_size_mb = file_size_bytes / 1_048_576; // 转换为MB
             let smart_threads = Self::calculate_smart_threads_for_file(file_size_mb, base_threads, total_threads);
-            info!("文件大小: {} MB，智能调整线程数: {} (基础: {}, 总线程: {})", file_size_mb, smart_threads, base_threads, total_threads);
+            info!(
+                "文件大小: {} MB，智能调整线程数: {} (基础: {}, 总线程: {})",
+                file_size_mb, smart_threads, base_threads, total_threads
+            );
             smart_threads
         } else {
             debug!("无法获取文件大小，使用基础线程数: {}", base_threads);
@@ -787,7 +813,13 @@ impl Aria2Downloader {
     }
 
     /// 在指定实例上等待下载完成
-    async fn wait_for_download_on_instance(&self, gid: &str, rpc_port: u16, rpc_secret: &str, _instance_index: usize) -> Result<()> {
+    async fn wait_for_download_on_instance(
+        &self,
+        gid: &str,
+        rpc_port: u16,
+        rpc_secret: &str,
+        _instance_index: usize,
+    ) -> Result<()> {
         let url = format!("http://127.0.0.1:{}/jsonrpc", rpc_port);
 
         loop {
@@ -864,7 +896,7 @@ impl Aria2Downloader {
     /// 合并视频和音频文件
     pub async fn merge(&self, video_path: &Path, audio_path: &Path, output_path: &Path) -> Result<()> {
         use crate::downloader::Downloader;
-        
+
         // 使用内置的合并功能
         let temp_downloader = Downloader::new(self.client.clone());
         temp_downloader.merge(video_path, audio_path, output_path).await
@@ -873,13 +905,13 @@ impl Aria2Downloader {
     /// 重新启动所有aria2进程
     pub async fn restart(&mut self) -> Result<()> {
         info!("重新启动所有aria2实例...");
-        
+
         // 关闭现有实例
         self.shutdown().await?;
-        
+
         // 重新启动实例
         self.start_all_instances().await?;
-        
+
         info!("所有aria2实例已重新启动");
         Ok(())
     }
@@ -887,15 +919,15 @@ impl Aria2Downloader {
     /// 优雅关闭所有aria2进程
     pub async fn shutdown(&self) -> Result<()> {
         info!("正在关闭所有aria2实例...");
-        
+
         let mut instances = self.aria2_instances.lock().await;
         let mut shutdown_futures = Vec::new();
-        
+
         for (i, instance) in instances.iter_mut().enumerate() {
             let rpc_port = instance.rpc_port;
             let rpc_secret = instance.rpc_secret.clone();
             let client = self.client.clone();
-            
+
             // 尝试优雅关闭aria2实例
             let shutdown_future = async move {
                 let url = format!("http://127.0.0.1:{}/jsonrpc", rpc_port);
@@ -905,45 +937,45 @@ impl Aria2Downloader {
                     "id": "shutdown",
                     "params": [format!("token:{}", rpc_secret)]
                 });
-                
+
                 let _ = client.post(&url).json(&payload).send().await;
                 tokio::time::sleep(Duration::from_millis(1000)).await;
             };
-            
+
             shutdown_futures.push(shutdown_future);
-            
+
             // 强制终止进程 - Windows兼容性改进
             if let Err(e) = instance.process.kill().await {
                 warn!("终止aria2实例 {} 失败: {}", i + 1, e);
-                
+
                 // 如果普通kill失败，尝试使用系统命令强制终止
                 #[cfg(target_os = "windows")]
                 {
                     if let Some(pid) = instance.process.id() {
                         let _ = tokio::process::Command::new("taskkill")
-                            .args(&["/F", "/PID", &pid.to_string()])
+                            .args(["/F", "/PID", &pid.to_string()])
                             .output()
                             .await;
                         info!("已强制终止Windows aria2进程 PID: {}", pid);
                     }
                 }
-                
+
                 #[cfg(target_os = "linux")]
                 {
                     if let Some(pid) = instance.process.id() {
                         let _ = tokio::process::Command::new("kill")
-                            .args(&["-9", &pid.to_string()])
+                            .args(["-9", &pid.to_string()])
                             .output()
                             .await;
                         info!("已强制终止Linux aria2进程 PID: {}", pid);
                     }
                 }
-                
+
                 #[cfg(any(target_os = "macos", target_os = "ios"))]
                 {
                     if let Some(pid) = instance.process.id() {
                         let _ = tokio::process::Command::new("kill")
-                            .args(&["-9", &pid.to_string()])
+                            .args(["-9", &pid.to_string()])
                             .output()
                             .await;
                         info!("已强制终止macOS aria2进程 PID: {}", pid);
@@ -953,16 +985,16 @@ impl Aria2Downloader {
                 debug!("aria2实例 {} 已终止", i + 1);
             }
         }
-        
+
         // 等待所有优雅关闭完成
         futures::future::join_all(shutdown_futures).await;
-        
+
         instances.clear();
-        
+
         // 最后再次确保所有aria2进程都被清理
         tokio::time::sleep(Duration::from_millis(1000)).await;
         Self::cleanup_all_aria2_processes().await;
-        
+
         info!("所有aria2实例已关闭");
         Ok(())
     }
@@ -972,7 +1004,7 @@ impl Aria2Downloader {
     pub async fn health_check(&mut self) -> Result<()> {
         let mut instances = self.aria2_instances.lock().await;
         let mut unhealthy_indices = Vec::new();
-        
+
         // 检查每个实例的健康状态
         for (i, instance) in instances.iter_mut().enumerate() {
             if !instance.is_healthy() {
@@ -980,27 +1012,27 @@ impl Aria2Downloader {
                 unhealthy_indices.push(i);
             }
         }
-        
+
         // 移除不健康的实例
         for &index in unhealthy_indices.iter().rev() {
             instances.remove(index);
         }
-        
+
         let unhealthy_count = unhealthy_indices.len();
         drop(instances);
-        
+
         // 重新启动不健康的实例
         if unhealthy_count > 0 {
             info!("重新启动 {} 个不健康的aria2实例", unhealthy_count);
-            
+
             for _ in 0..unhealthy_count {
                 let rpc_port = Self::find_available_port().await?;
                 let rpc_secret = Self::generate_secret();
-                
+
                 match self.start_single_instance(rpc_port, &rpc_secret).await {
                     Ok(process) => {
                         let instance = Aria2Instance::new(process, rpc_port, rpc_secret.clone());
-                        
+
                         // 验证连接
                         if self.test_instance_connection(rpc_port, &rpc_secret).await.is_ok() {
                             self.aria2_instances.lock().await.push(instance);
@@ -1015,12 +1047,12 @@ impl Aria2Downloader {
                 }
             }
         }
-        
+
         let current_count = self.aria2_instances.lock().await.len();
         if current_count == 0 {
             bail!("所有aria2实例都不可用");
         }
-        
+
         info!("健康检查完成，当前可用实例数: {}", current_count);
         Ok(())
     }
@@ -1030,16 +1062,16 @@ impl Aria2Downloader {
     pub async fn get_instances_status(&self) -> Vec<(u16, String, usize, bool)> {
         let mut instances = self.aria2_instances.lock().await;
         let mut status_list = Vec::new();
-        
+
         for instance in instances.iter_mut() {
             let port = instance.rpc_port;
             let secret = instance.rpc_secret.clone();
             let load = instance.get_load();
             let healthy = instance.is_healthy();
-            
+
             status_list.push((port, secret, load, healthy));
         }
-        
+
         status_list
     }
 }

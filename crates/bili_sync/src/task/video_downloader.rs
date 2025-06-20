@@ -258,7 +258,7 @@ pub async fn video_downloader(connection: Arc<DatabaseConnection>) {
 
             // 创建共享的下载器实例，供所有视频源使用
             let downloader = UnifiedDownloader::new_smart(bili_client.client.clone()).await;
-            
+
             // 设置下载器引用到TaskController中，以便暂停时能停止下载
             let downloader_arc = std::sync::Arc::new(downloader);
             TASK_CONTROLLER.set_downloader(Some(downloader_arc.clone())).await;
@@ -276,14 +276,14 @@ pub async fn video_downloader(connection: Arc<DatabaseConnection>) {
 
                 // 获取全局取消令牌，用于下载任务控制
                 let cancellation_token = TASK_CONTROLLER.get_cancellation_token().await;
-                
+
                 match process_video_source(
                     args,
                     &bili_client,
                     path,
-                                            &connection,
-                        &downloader_arc,
-                        cancellation_token,
+                    &connection,
+                    &downloader_arc,
+                    cancellation_token,
                 )
                 .await
                 {
@@ -370,13 +370,13 @@ pub async fn video_downloader(connection: Arc<DatabaseConnection>) {
             if TASK_CONTROLLER.is_paused() {
                 debug!("等待期间检测到暂停信号，等待恢复...");
                 TASK_CONTROLLER.wait_if_paused().await;
-                
+
                 // 检查是否刚刚恢复，如果是则立即开始新扫描
                 if TASK_CONTROLLER.take_just_resumed() {
                     info!("任务恢复，立即开始新一轮扫描");
                     break; // 跳出等待循环，立即开始新扫描
                 }
-                
+
                 info!("等待期间暂停任务已恢复，继续等待");
                 continue; // 暂停期间不计入等待时间
             }

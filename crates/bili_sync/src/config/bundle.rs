@@ -34,8 +34,8 @@ impl ConfigBundle {
 
     /// 构建 Handlebars 模板引擎
     fn build_handlebars(config: &Config) -> Result<Handlebars<'static>> {
-        use handlebars::handlebars_helper;
         use crate::config::PathSafeTemplate;
+        use handlebars::handlebars_helper;
 
         let mut handlebars = Handlebars::new();
 
@@ -55,7 +55,7 @@ impl ConfigBundle {
         let page_name = Box::leak(config.page_name.to_string().into_boxed_str());
         let multi_page_name = Box::leak(config.multi_page_name.to_string().into_boxed_str());
         let bangumi_name = Box::leak(config.bangumi_name.to_string().into_boxed_str());
-        
+
         handlebars.path_safe_register("video", video_name)?;
         handlebars.path_safe_register("page", page_name)?;
         handlebars.path_safe_register("multi_page", multi_page_name)?;
