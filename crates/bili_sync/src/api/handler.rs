@@ -3055,7 +3055,7 @@ async fn rename_existing_files(
 
         // 格式化时间
         let formatted_pubtime = video.pubtime.format(&config.time_format).to_string();
-        template_data.insert("pubtime".to_string(), serde_json::Value::String(formatted_pubtime));
+        template_data.insert("pubtime".to_string(), serde_json::Value::String(formatted_pubtime.clone()));
 
         let formatted_favtime = video.favtime.format(&config.time_format).to_string();
         template_data.insert("fav_time".to_string(), serde_json::Value::String(formatted_favtime));
@@ -3094,68 +3094,77 @@ async fn rename_existing_files(
                 }
             }
         } else {
-            // 非番剧视频的重命名逻辑（原有逻辑）
+            // 非番剧视频的重命名逻辑（改进的智能重组逻辑）
             // 渲染新的视频文件夹名称（使用video_name模板）
             let template_value = serde_json::Value::Object(template_data.clone().into_iter().collect());
             let rendered_name = handlebars
                 .render("video", &template_value)
                 .unwrap_or_else(|_| video.name.clone());
-            let new_video_name =
+            let base_video_name =
                 crate::utils::filenamify::filenamify(&rendered_name).replace("__SEP__", std::path::MAIN_SEPARATOR_STR);
 
             // 使用视频记录中的路径信息
             let video_path = Path::new(&video.path);
             if let Some(parent_dir) = video_path.parent() {
-                let old_path = video_path;
-                let new_path = parent_dir.join(&new_video_name);
+                // 智能去重：如果文件夹名已存在，追加唯一标识符
+                let new_video_name = generate_unique_folder_name(parent_dir, &base_video_name, &video.bvid, &formatted_pubtime);
+                let expected_new_path = parent_dir.join(&new_video_name);
 
                 // 智能查找实际的文件夹路径
-                let actual_old_path = if old_path.exists() {
-                    old_path.to_path_buf()
+                let actual_old_path = if video_path.exists() {
+                    video_path.to_path_buf()
                 } else {
-                    // 尝试在父目录中查找可能的文件夹
+                    // 尝试在父目录中查找可能包含此视频文件的文件夹
                     if let Ok(entries) = std::fs::read_dir(parent_dir) {
                         let mut found_path = None;
                         for entry in entries.flatten() {
                             let entry_path = entry.path();
                             if entry_path.is_dir() {
-                                let dir_name = entry_path.file_name().unwrap_or_default().to_string_lossy();
-                                // 检查是否包含视频的bvid或标题
-                                if dir_name.contains(&video.bvid) || dir_name.contains(&video.name) {
-                                    found_path = Some(entry_path);
-                                    break;
-                                }
+                                                                 // 检查文件夹内是否包含属于此视频的文件
+                                 if let Ok(files) = std::fs::read_dir(&entry_path) {
+                                     for file_entry in files.flatten() {
+                                         let file_name_os = file_entry.file_name();
+                                         let file_name = file_name_os.to_string_lossy();
+                                         // 通过bvid匹配文件
+                                         if file_name.contains(&video.bvid) {
+                                             found_path = Some(entry_path.clone());
+                                             break;
+                                         }
+                                     }
+                                     if found_path.is_some() {
+                                         break;
+                                     }
+                                 }
                             }
                         }
-                        found_path.unwrap_or_else(|| old_path.to_path_buf())
+                        found_path.unwrap_or_else(|| video_path.to_path_buf())
                     } else {
-                        old_path.to_path_buf()
+                        video_path.to_path_buf()
                     }
                 };
 
-                // 确定最终的视频文件夹路径
-                if actual_old_path.exists() && actual_old_path != new_path {
-                    // 使用四步法安全重命名，避免父子目录冲突
-                    match safe_rename_directory(&actual_old_path, &new_path).await {
-                        Ok(_) => {
-                            debug!("重命名视频文件夹成功: {:?} -> {:?}", actual_old_path, new_path);
-                            updated_count += 1;
-                            new_path.clone()
+                // 处理文件夹重组的情况
+                if actual_old_path.exists() {
+                    if actual_old_path != expected_new_path {
+                        // 需要重命名或移动文件
+                        match reorganize_video_folder(&actual_old_path, &expected_new_path, &video.bvid).await {
+                            Ok(_) => {
+                                info!("重组视频文件夹成功: {:?} -> {:?}", actual_old_path, expected_new_path);
+                                updated_count += 1;
+                                expected_new_path.clone()
+                            }
+                            Err(e) => {
+                                warn!("重组视频文件夹失败: {:?} -> {:?}, 错误: {}", actual_old_path, expected_new_path, e);
+                                actual_old_path.clone()
+                            }
                         }
-                        Err(e) => {
-                            warn!(
-                                "重命名视频文件夹失败: {:?} -> {:?}, 错误: {}",
-                                actual_old_path, new_path, e
-                            );
-                            actual_old_path.clone()
-                        }
+                    } else {
+                        // 文件夹已经是正确的名称和位置
+                        actual_old_path.clone()
                     }
-                } else if actual_old_path.exists() {
-                    // 文件夹已经是正确的名称，不需要重命名
-                    actual_old_path.clone()
                 } else {
                     // 文件夹不存在，使用新路径
-                    new_path.clone()
+                    expected_new_path.clone()
                 }
             } else {
                 video_path.to_path_buf()
@@ -5603,6 +5612,143 @@ pub async fn proxy_video_stream(
 }
 
 /// 四步法安全重命名目录，避免父子目录冲突
+/// 生成唯一的文件夹名称，避免同名冲突
+fn generate_unique_folder_name(parent_dir: &std::path::Path, base_name: &str, bvid: &str, pubtime: &str) -> String {
+    let mut unique_name = base_name.to_string();
+    let mut counter = 0;
+
+    // 检查基础名称是否已存在
+    let base_path = parent_dir.join(&unique_name);
+    if !base_path.exists() {
+        return unique_name;
+    }
+
+    // 如果存在，先尝试追加发布时间
+    unique_name = format!("{}-{}", base_name, pubtime);
+    let time_path = parent_dir.join(&unique_name);
+    if !time_path.exists() {
+        info!("检测到文件夹名冲突，追加发布时间: {} -> {}", base_name, unique_name);
+        return unique_name;
+    }
+
+    // 如果发布时间也冲突，追加BVID
+    unique_name = format!("{}-{}", base_name, bvid);
+    let bvid_path = parent_dir.join(&unique_name);
+    if !bvid_path.exists() {
+        info!("检测到文件夹名冲突，追加BVID: {} -> {}", base_name, unique_name);
+        return unique_name;
+    }
+
+    // 如果都冲突，使用数字后缀
+    loop {
+        counter += 1;
+        unique_name = format!("{}-{}", base_name, counter);
+        let numbered_path = parent_dir.join(&unique_name);
+        if !numbered_path.exists() {
+            warn!("检测到严重文件夹名冲突，使用数字后缀: {} -> {}", base_name, unique_name);
+            return unique_name;
+        }
+
+        // 防止无限循环
+        if counter > 1000 {
+            warn!("文件夹名冲突解决失败，使用随机后缀");
+            unique_name = format!("{}-{}", base_name, uuid::Uuid::new_v4().to_string().split('-').next().unwrap_or("random"));
+            return unique_name;
+        }
+    }
+}
+
+/// 智能重组视频文件夹
+/// 处理从共享文件夹（如按UP主分类）到独立文件夹（如按视频标题分类）的重组
+async fn reorganize_video_folder(
+    source_path: &std::path::Path,
+    target_path: &std::path::Path,
+    video_bvid: &str,
+) -> Result<(), std::io::Error> {
+        info!("开始重组视频文件夹: {:?} -> {:?} (bvid: {})", source_path, target_path, video_bvid);
+
+    // 检查源路径是否存在
+    if !source_path.exists() {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::NotFound,
+            format!("源文件夹不存在: {:?}", source_path),
+        ));
+    }
+
+    // 如果目标路径已存在且相同，则无需重组
+    if source_path == target_path {
+        debug!("源路径和目标路径相同，无需重组");
+        return Ok(());
+    }
+
+    // 创建目标文件夹
+    if let Some(parent) = target_path.parent() {
+        std::fs::create_dir_all(parent)?;
+    }
+
+    // 收集需要移动的文件（只移动属于特定视频的文件）
+    let mut files_to_move = Vec::new();
+
+    if let Ok(entries) = std::fs::read_dir(source_path) {
+        for entry in entries.flatten() {
+            let file_path = entry.path();
+            let file_name = file_path.file_name().unwrap_or_default().to_string_lossy();
+
+            // 只选择属于指定bvid的文件
+            if file_name.contains(video_bvid) {
+                files_to_move.push(file_path);
+            }
+        }
+    }
+
+    if files_to_move.is_empty() {
+        warn!("在源文件夹中未找到属于视频 {} 的文件", video_bvid);
+        return Ok(());
+    }
+
+    info!("找到 {} 个属于视频 {} 的文件需要移动", files_to_move.len(), video_bvid);
+
+    // 创建目标目录
+    std::fs::create_dir_all(target_path)?;
+
+    // 移动属于该视频的所有文件
+    for file_path in files_to_move {
+        if let Some(file_name) = file_path.file_name() {
+            let target_file = target_path.join(file_name);
+
+            match std::fs::rename(&file_path, &target_file) {
+                Ok(_) => {
+                    debug!("移动文件成功: {:?} -> {:?}", file_path, target_file);
+                }
+                Err(e) => {
+                    warn!("移动文件失败: {:?} -> {:?}, 错误: {}", file_path, target_file, e);
+                    // 继续处理其他文件，不因单个文件失败而终止
+                }
+            }
+        }
+    }
+
+    // 检查源文件夹是否还有其他文件，如果为空则删除
+    if let Ok(remaining_entries) = std::fs::read_dir(source_path) {
+        let remaining_count = remaining_entries.count();
+        if remaining_count == 0 {
+            match std::fs::remove_dir(source_path) {
+                Ok(_) => {
+                    info!("删除空文件夹: {:?}", source_path);
+                }
+                Err(e) => {
+                    debug!("删除空文件夹失败（可能不为空）: {:?}, 错误: {}", source_path, e);
+                }
+            }
+        } else {
+            debug!("源文件夹仍有 {} 个其他文件，保留文件夹: {:?}", remaining_count, source_path);
+        }
+    }
+
+    info!("重组视频文件夹完成: {} -> {:?}", video_bvid, target_path);
+    Ok(())
+}
+
 async fn safe_rename_directory(old_path: &std::path::Path, new_path: &std::path::Path) -> Result<(), std::io::Error> {
     // 步骤1：记录现有模板路径
     debug!("开始四步法重命名: {:?} -> {:?}", old_path, new_path);
