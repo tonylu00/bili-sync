@@ -5257,6 +5257,11 @@ pub async fn get_video_play_info(
     let filter_option = FilterOption::default();
     let best_stream = page_analyzer.best_stream(&filter_option)
         .map_err(|e| ApiError::from(anyhow!("获取最佳视频流失败: {}", e)))?;
+    
+    debug!("获取到的流类型: {:?}", match &best_stream {
+        BestStream::VideoAudio { .. } => "DASH视频+音频分离流",
+        BestStream::Mixed(_) => "混合流（包含音频）",
+    });
 
     let mut video_streams = Vec::new();
     let mut audio_streams = Vec::new();

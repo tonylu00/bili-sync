@@ -27,6 +27,7 @@
 	let onlinePlayMode = false; // false: 本地播放, true: 在线播放
 	let onlinePlayInfo: any = null;
 	let loadingPlayInfo = false;
+	let isFullscreen = false; // 是否全屏模式
 
 	// 检查视频是否可播放（分P下载任务已完成）
 	function isVideoPlayable(video: any): boolean {
@@ -162,11 +163,79 @@
 		}
 		return '';
 	}
+	
+	// 获取音频播放源
+	function getAudioSource() {
+		if (onlinePlayMode && onlinePlayInfo && onlinePlayInfo.audio_streams && onlinePlayInfo.audio_streams.length > 0) {
+			const audioStream = onlinePlayInfo.audio_streams[0];
+			return api.getProxyStreamUrl(audioStream.url);
+		}
+		return '';
+	}
+	
+	// 检查是否是DASH分离流
+	function isDashSeparatedStream() {
+		return onlinePlayMode && onlinePlayInfo && 
+			onlinePlayInfo.audio_streams && onlinePlayInfo.audio_streams.length > 0 && 
+			onlinePlayInfo.video_streams && onlinePlayInfo.video_streams.length > 0;
+	}
+	
+
+	// 初始化音频同步
+	function initAudioSync() {
+		if (isDashSeparatedStream()) {
+			setTimeout(() => {
+				const audio = document.querySelector('#sync-audio') as HTMLAudioElement;
+				if (audio) {
+					audio.volume = 1.0; // 固定100%音量
+					audio.muted = false;
+				}
+			}, 100);
+		}
+	}
+
+	// 监听全屏变化事件
+	function handleFullscreenChange() {
+		isFullscreen = !!(document.fullscreenElement || (document as any).webkitFullscreenElement || (document as any).mozFullScreenElement);
+	}
+
+	// 组件挂载时添加全屏事件监听
+	onMount(() => {
+		document.addEventListener('fullscreenchange', handleFullscreenChange);
+		document.addEventListener('webkitfullscreenchange', handleFullscreenChange);
+		document.addEventListener('mozfullscreenchange', handleFullscreenChange);
+		
+		return () => {
+			document.removeEventListener('fullscreenchange', handleFullscreenChange);
+			document.removeEventListener('webkitfullscreenchange', handleFullscreenChange);
+			document.removeEventListener('mozfullscreenchange', handleFullscreenChange);
+		};
+	});
 </script>
 
 <svelte:head>
 	<title>{videoData?.video.name || '视频详情'} - Bili Sync</title>
 </svelte:head>
+
+<style>
+	/* 在线播放时隐藏原生音量控制 */
+	.video-container.online-mode video::-webkit-media-controls-volume-control-container {
+		display: none !important;
+	}
+	
+	.video-container.online-mode video::-webkit-media-controls-mute-button {
+		display: none !important;
+	}
+	
+	.video-container.online-mode video::-moz-volume-control {
+		display: none !important;
+	}
+	
+	/* 视频容器 */
+	.video-container {
+		position: relative;
+	}
+</style>
 
 {#if loading}
 	<div class="flex items-center justify-center py-12">
@@ -347,6 +416,11 @@
 										<span class="text-xs text-gray-500">
 											{onlinePlayInfo.video_quality_description}
 										</span>
+										{#if isDashSeparatedStream()}
+											<span class="text-xs text-green-600">
+												视频+音频同步播放
+											</span>
+										{/if}
 									{/if}
 								</div>
 								<div class="flex items-center gap-2">
@@ -383,36 +457,99 @@
 									</div>
 								{:else}
 									{#key `${currentPlayingPageIndex}-${onlinePlayMode}`}
-										<video 
-											controls 
-											autoplay
-											class="w-full h-auto"
-											style="aspect-ratio: 16/9; max-height: 70vh;"
-											src={getVideoSource()}
-											crossorigin="anonymous"
-											onerror={(e) => {
-												console.warn('视频加载错误:', e);
-											}}
-											onloadstart={() => {
-												console.log('开始加载视频:', getVideoSource());
-											}}
+										<div class="relative video-container {onlinePlayMode ? 'online-mode' : ''}"
+											role="group"
 										>
-											<!-- 默认空字幕轨道用于无障碍功能 -->
-											<track kind="captions" srclang="zh" label="无字幕" default />
-											{#if onlinePlayMode && onlinePlayInfo && onlinePlayInfo.subtitle_streams}
-												{#each onlinePlayInfo.subtitle_streams as subtitle}
-													<track 
-														kind="subtitles" 
-														srclang={subtitle.language}
-														label={subtitle.language_doc}
-														src={subtitle.url}
-													/>
-												{/each}
+											<video 
+												controls 
+												autoplay
+												class="w-full h-auto"
+												style="aspect-ratio: 16/9; max-height: 70vh;"
+												src={getVideoSource()}
+												crossorigin="anonymous"
+												onerror={(e) => {
+													console.warn('视频加载错误:', e);
+												}}
+												onloadstart={() => {
+													console.log('开始加载视频:', getVideoSource());
+												}}
+												onplay={() => {
+													// 同步播放音频
+													if (isDashSeparatedStream()) {
+														const audio = document.querySelector('#sync-audio');
+														if (audio) audio.play();
+													}
+												}}
+												onpause={() => {
+													// 同步暂停音频
+													if (isDashSeparatedStream()) {
+														const audio = document.querySelector('#sync-audio');
+														if (audio) audio.pause();
+													}
+												}}
+												onseeked={() => {
+													// 同步音频时间
+													if (isDashSeparatedStream()) {
+														const video = document.querySelector('video');
+														const audio = document.querySelector('#sync-audio');
+														if (video && audio) audio.currentTime = video.currentTime;
+													}
+												}}
+												onvolumechange={() => {
+													// 同步音量控制 - 固定100%音量
+													if (isDashSeparatedStream()) {
+														const video = document.querySelector('video');
+														const audio = document.querySelector('#sync-audio');
+														if (video && audio) {
+															audio.volume = 1.0;
+															audio.muted = video.muted;
+														}
+													}
+												}}
+												onloadedmetadata={() => {
+													// 初始化时同步音量设置 - 固定100%音量
+													if (isDashSeparatedStream()) {
+														const video = document.querySelector('video');
+														const audio = document.querySelector('#sync-audio');
+														if (video && audio) {
+															audio.volume = 1.0;
+															audio.muted = video.muted;
+														}
+														// 初始化音频同步
+														initAudioSync();
+													}
+												}}
+											>
+												<!-- 默认空字幕轨道用于无障碍功能 -->
+												<track kind="captions" srclang="zh" label="无字幕" default />
+												{#if onlinePlayMode && onlinePlayInfo && onlinePlayInfo.subtitle_streams}
+													{#each onlinePlayInfo.subtitle_streams as subtitle}
+														<track 
+															kind="subtitles" 
+															srclang={subtitle.language}
+															label={subtitle.language_doc}
+															src={subtitle.url}
+														/>
+													{/each}
+												{/if}
+												您的浏览器不支持视频播放。
+											</video>
+											
+											
+
+											<!-- 隐藏的音频元素用于DASH分离流 -->
+											{#if isDashSeparatedStream()}
+												<audio 
+													id="sync-audio"
+													src={getAudioSource()}
+													crossorigin="anonymous"
+													style="display: none;"
+												></audio>
 											{/if}
-											您的浏览器不支持视频播放。
-										</video>
+										</div>
 									{/key}
 								{/if}
+								
 							</div>
 							
 							<!-- 分页选择按钮 -->
