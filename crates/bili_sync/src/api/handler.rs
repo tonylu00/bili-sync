@@ -3,6 +3,7 @@ use std::sync::Arc;
 
 use anyhow::{anyhow, Context, Result};
 use axum::extract::{Extension, Path, Query};
+use axum::http::{HeaderMap, HeaderValue};
 use bili_sync_entity::*;
 use bili_sync_migration::Expr;
 use chrono::Utc;
@@ -34,6 +35,8 @@ use crate::api::response::{
 use crate::api::wrapper::{ApiError, ApiResponse};
 use crate::utils::nfo::NFO;
 use crate::utils::status::{PageStatus, VideoStatus};
+
+
 
 #[derive(OpenApi)]
 #[openapi(
@@ -2969,8 +2972,13 @@ async fn rename_existing_files(
     let mut handlebars = Handlebars::new();
 
     // 使用register_template_string而不是path_safe_register来避免生命周期问题
-    let video_template = config.video_name.replace(std::path::MAIN_SEPARATOR_STR, "__SEP__");
-    let page_template = config.page_name.replace(std::path::MAIN_SEPARATOR_STR, "__SEP__");
+    // 同时处理正斜杠和反斜杠，确保跨平台兼容性
+    let video_template = config.video_name
+        .replace('/', "__SEP__")
+        .replace('\\', "__SEP__");
+    let page_template = config.page_name
+        .replace('/', "__SEP__")
+        .replace('\\', "__SEP__");
 
     handlebars.register_template_string("video", video_template)?;
     handlebars.register_template_string("page", page_template)?;
@@ -3127,8 +3135,8 @@ async fn rename_existing_files(
 
                 // 确定最终的视频文件夹路径
                 if actual_old_path.exists() && actual_old_path != new_path {
-                    // 需要重命名视频文件夹
-                    match std::fs::rename(&actual_old_path, &new_path) {
+                    // 使用四步法安全重命名，避免父子目录冲突
+                    match safe_rename_directory(&actual_old_path, &new_path).await {
                         Ok(_) => {
                             debug!("重命名视频文件夹成功: {:?} -> {:?}", actual_old_path, new_path);
                             updated_count += 1;
@@ -5592,4 +5600,116 @@ pub async fn proxy_video_stream(
 
     debug!("返回流式响应，状态码: {}", status);
     proxy_response
+}
+
+/// 四步法安全重命名目录，避免父子目录冲突
+async fn safe_rename_directory(old_path: &std::path::Path, new_path: &std::path::Path) -> Result<(), std::io::Error> {
+    // 步骤1：记录现有模板路径
+    debug!("开始四步法重命名: {:?} -> {:?}", old_path, new_path);
+
+    if !old_path.exists() {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::NotFound,
+            "源目录不存在",
+        ));
+    }
+
+    // 步骤2：随机重命名现有目录到临时名称，完全避免路径冲突
+    let timestamp = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs();
+
+    let temp_name = format!("temp_rename_{}", timestamp);
+    let parent_dir = old_path.parent().ok_or_else(|| {
+        std::io::Error::new(std::io::ErrorKind::InvalidInput, "无法获取父目录")
+    })?;
+    let temp_path = parent_dir.join(&temp_name);
+
+    // 确保临时目录名不存在
+    let mut counter = 0;
+    let mut final_temp_path = temp_path.clone();
+    while final_temp_path.exists() {
+        counter += 1;
+        final_temp_path = parent_dir.join(format!("{}_{}", temp_name, counter));
+        if counter > 100 {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::AlreadyExists,
+                "无法生成唯一的临时目录名",
+            ));
+        }
+    }
+
+    debug!("步骤2: 将 {:?} 重命名为临时目录 {:?}", old_path, final_temp_path);
+    std::fs::rename(old_path, &final_temp_path)?;
+
+    // 步骤3：创建新模板目录结构
+    debug!("步骤3: 创建新目录结构 {:?}", new_path);
+
+    // 检查新路径是否需要创建父目录
+    if let Some(new_parent) = new_path.parent() {
+        if !new_parent.exists() {
+            std::fs::create_dir_all(new_parent)?;
+        }
+    }
+
+    // 步骤4：移动文件从临时目录到新目录结构中
+    debug!("步骤4: 移动内容从 {:?} 到 {:?}", final_temp_path, new_path);
+
+    // 创建最终目标目录
+    std::fs::create_dir_all(new_path)?;
+
+    // 移动所有文件和子目录
+    match move_directory_contents(&final_temp_path, new_path).await {
+        Ok(_) => {
+            // 成功移动后，清理临时目录
+            if let Err(e) = std::fs::remove_dir_all(&final_temp_path) {
+                warn!("清理临时目录失败: {:?}, 错误: {}", final_temp_path, e);
+            } else {
+                debug!("成功清理临时目录: {:?}", final_temp_path);
+            }
+            Ok(())
+        }
+        Err(e) => {
+            // 移动失败，尝试回退
+            warn!("移动文件失败，尝试回退: {}", e);
+            if let Err(rollback_err) = std::fs::rename(&final_temp_path, old_path) {
+                error!("回退失败: {}, 原始错误: {}", rollback_err, e);
+                Err(std::io::Error::new(
+                    std::io::ErrorKind::Other,
+                    format!("移动失败且回退失败: 移动错误={}, 回退错误={}", e, rollback_err),
+                ))
+            } else {
+                debug!("成功回退到原始状态");
+                Err(e)
+            }
+        }
+    }
+}
+
+/// 移动目录内容从源目录到目标目录
+async fn move_directory_contents(
+    source_dir: &std::path::Path,
+    target_dir: &std::path::Path,
+) -> Result<(), std::io::Error> {
+    let entries = std::fs::read_dir(source_dir)?;
+
+    for entry in entries {
+        let entry = entry?;
+        let source_path = entry.path();
+        let file_name = entry.file_name();
+        let target_path = target_dir.join(&file_name);
+
+        if source_path.is_dir() {
+            // 递归移动子目录 - 使用Box::pin避免无限大小的future
+            std::fs::create_dir_all(&target_path)?;
+            Box::pin(move_directory_contents(&source_path, &target_path)).await?;
+            std::fs::remove_dir(&source_path)?;
+        } else {
+            // 移动文件
+            std::fs::rename(&source_path, &target_path)?;
+        }
+    }
+
+    Ok(())
 }

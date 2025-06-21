@@ -117,10 +117,46 @@ impl ConfigBundle {
         self.config.interval
     }
 
-    /// 渲染模板的便捷方法
+    /// 渲染模板的便捷方法（使用path_safe_render确保分隔符正确处理）
     #[allow(dead_code)]
     pub fn render_template(&self, template_name: &str, data: &serde_json::Value) -> Result<String> {
-        Ok(self.handlebars.render(template_name, data)?)
+        use crate::utils::filenamify::filenamify;
+
+        // 直接使用handlebars的render方法，然后手动处理分隔符
+        let rendered = self.handlebars.render(template_name, data)?;
+        Ok(filenamify(&rendered).replace("__SEP__", std::path::MAIN_SEPARATOR_STR))
+    }
+
+    /// 渲染视频名称模板的便捷方法
+    pub fn render_video_template(&self, data: &serde_json::Value) -> Result<String> {
+        use crate::utils::filenamify::filenamify;
+
+        let rendered = self.handlebars.render("video", data)?;
+        Ok(filenamify(&rendered).replace("__SEP__", std::path::MAIN_SEPARATOR_STR))
+    }
+
+    /// 渲染分页名称模板的便捷方法
+    pub fn render_page_template(&self, data: &serde_json::Value) -> Result<String> {
+        use crate::utils::filenamify::filenamify;
+
+        let rendered = self.handlebars.render("page", data)?;
+        Ok(filenamify(&rendered).replace("__SEP__", std::path::MAIN_SEPARATOR_STR))
+    }
+
+    /// 渲染多P视频分页名称模板的便捷方法
+    pub fn render_multi_page_template(&self, data: &serde_json::Value) -> Result<String> {
+        use crate::utils::filenamify::filenamify;
+
+        let rendered = self.handlebars.render("multi_page", data)?;
+        Ok(filenamify(&rendered).replace("__SEP__", std::path::MAIN_SEPARATOR_STR))
+    }
+
+    /// 渲染番剧名称模板的便捷方法
+    pub fn render_bangumi_template(&self, data: &serde_json::Value) -> Result<String> {
+        use crate::utils::filenamify::filenamify;
+
+        let rendered = self.handlebars.render("bangumi", data)?;
+        Ok(filenamify(&rendered).replace("__SEP__", std::path::MAIN_SEPARATOR_STR))
     }
 }
 

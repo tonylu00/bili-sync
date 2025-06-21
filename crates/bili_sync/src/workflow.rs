@@ -610,22 +610,22 @@ pub async fn download_video_pages(
                 }
                 _ => {
                     // 分离模式（默认）：每个视频有自己的文件夹
-                    video_source.path().join(crate::utils::filenamify::filenamify(
+                    video_source.path().join(
                         &crate::config::with_config(|bundle| {
-                            bundle.handlebars.render("video", &video_format_args(&video_model))
+                            bundle.render_video_template(&video_format_args(&video_model))
                         })
                         .map_err(|e| anyhow::anyhow!("模板渲染失败: {}", e))?,
-                    ))
+                    )
                 }
             }
         } else {
             // 其他类型的视频源使用原来的逻辑
-            video_source.path().join(crate::utils::filenamify::filenamify(
+            video_source.path().join(
                 &crate::config::with_config(|bundle| {
-                    bundle.handlebars.render("video", &video_format_args(&video_model))
+                    bundle.render_video_template(&video_format_args(&video_model))
                 })
                 .map_err(|e| anyhow::anyhow!("模板渲染失败: {}", e))?,
-            ))
+            )
         };
         (path, None)
     };
@@ -650,10 +650,8 @@ pub async fn download_video_pages(
     // 为多P视频生成基于视频名称的文件名
     let video_base_name = if !is_single_page {
         // 使用video_name模板渲染视频名称
-        crate::utils::filenamify::filenamify(
-            &crate::config::with_config(|bundle| bundle.handlebars.render("video", &video_format_args(&video_model)))
-                .map_err(|e| anyhow::anyhow!("模板渲染失败: {}", e))?,
-        )
+        crate::config::with_config(|bundle| bundle.render_video_template(&video_format_args(&video_model)))
+            .map_err(|e| anyhow::anyhow!("模板渲染失败: {}", e))?
     } else {
         String::new() // 单P视频不需要这些文件
     };
@@ -903,24 +901,18 @@ pub async fn download_page(
                 }
                 Err(_) => {
                     // 如果获取序号失败，使用默认命名
-                    let rendered = crate::config::with_config(|bundle| {
-                        bundle
-                            .handlebars
-                            .render("page", &page_format_args(video_model, &page_model))
+                    crate::config::with_config(|bundle| {
+                        bundle.render_page_template(&page_format_args(video_model, &page_model))
                     })
-                    .map_err(|e| anyhow::anyhow!("模板渲染失败: {}", e))?;
-                    crate::utils::filenamify::filenamify(&rendered)
+                    .map_err(|e| anyhow::anyhow!("模板渲染失败: {}", e))?
                 }
             }
         } else {
             // 分离模式：使用原有逻辑
-            let rendered = crate::config::with_config(|bundle| {
-                bundle
-                    .handlebars
-                    .render("page", &page_format_args(video_model, &page_model))
+            crate::config::with_config(|bundle| {
+                bundle.render_page_template(&page_format_args(video_model, &page_model))
             })
-            .map_err(|e| anyhow::anyhow!("模板渲染失败: {}", e))?;
-            crate::utils::filenamify::filenamify(&rendered)
+            .map_err(|e| anyhow::anyhow!("模板渲染失败: {}", e))?
         }
     } else if is_bangumi {
         // 番剧使用专用的模板方法
@@ -930,19 +922,16 @@ pub async fn download_page(
                 .await?
         } else {
             // 如果类型不匹配，使用最新配置手动渲染
-            let rendered = crate::config::with_config(|bundle| {
-                bundle
-                    .handlebars
-                    .render("page", &page_format_args(video_model, &page_model))
+            crate::config::with_config(|bundle| {
+                bundle.render_page_template(&page_format_args(video_model, &page_model))
             })
-            .map_err(|e| anyhow::anyhow!("模板渲染失败: {}", e))?;
-            crate::utils::filenamify::filenamify(&rendered)
+            .map_err(|e| anyhow::anyhow!("模板渲染失败: {}", e))?
         }
     } else if !is_single_page {
         // 对于多P视频（非番剧），使用最新配置中的multi_page_name模板
         let page_args = page_format_args(video_model, &page_model);
-        match crate::config::with_config(|bundle| bundle.handlebars.render("multi_page", &page_args)) {
-            Ok(rendered) => crate::utils::filenamify::filenamify(&rendered),
+        match crate::config::with_config(|bundle| bundle.render_multi_page_template(&page_args)) {
+            Ok(rendered) => rendered,
             Err(_) => {
                 // 如果渲染失败，使用默认格式
                 let season_number = 1;
@@ -952,13 +941,10 @@ pub async fn download_page(
         }
     } else {
         // 单P视频使用最新配置的page_name模板
-        let rendered = crate::config::with_config(|bundle| {
-            bundle
-                .handlebars
-                .render("page", &page_format_args(video_model, &page_model))
+        crate::config::with_config(|bundle| {
+            bundle.render_page_template(&page_format_args(video_model, &page_model))
         })
-        .map_err(|e| anyhow::anyhow!("模板渲染失败: {}", e))?;
-        crate::utils::filenamify::filenamify(&rendered)
+        .map_err(|e| anyhow::anyhow!("模板渲染失败: {}", e))?
     };
 
     let (poster_path, video_path, nfo_path, danmaku_path, fanart_path, subtitle_path) = if is_single_page {

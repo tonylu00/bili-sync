@@ -1,24 +1,36 @@
 <script lang="ts">
+	import api from '$lib/api';
+	import { Button } from '$lib/components/ui/button';
+	import { Card, CardDescription, CardHeader, CardTitle } from '$lib/components/ui/card';
 	import { Input } from '$lib/components/ui/input';
 	import { Label } from '$lib/components/ui/label';
-	import { Button } from '$lib/components/ui/button';
-	import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '$lib/components/ui/card';
-	import { Sheet, SheetContent, SheetDescription, SheetFooter, SheetHeader, SheetTitle } from '$lib/components/ui/sheet';
-	import { toast } from 'svelte-sonner';
+	import {
+		Sheet,
+		SheetContent,
+		SheetDescription,
+		SheetFooter,
+		SheetHeader,
+		SheetTitle
+	} from '$lib/components/ui/sheet';
 	import { setBreadcrumb } from '$lib/stores/breadcrumb';
-	import api from '$lib/api';
-	import { onMount } from 'svelte';
-	import type { ConfigResponse, VideoInfo, ApiResponse, VideosResponse } from '$lib/types';
-	import { TIMEZONE_OPTIONS, DEFAULT_TIMEZONE, getCurrentTimezone, setTimezone } from '$lib/utils/timezone';
-	import { 
-		FileTextIcon, 
-		VideoIcon, 
-		DownloadIcon, 
-		MessageSquareIcon, 
-		KeyIcon, 
-		ShieldIcon, 
-		SettingsIcon 
+	import type { ConfigResponse, VideoInfo } from '$lib/types';
+	import {
+		DEFAULT_TIMEZONE,
+		getCurrentTimezone,
+		setTimezone,
+		TIMEZONE_OPTIONS
+	} from '$lib/utils/timezone';
+	import {
+		DownloadIcon,
+		FileTextIcon,
+		KeyIcon,
+		MessageSquareIcon,
+		SettingsIcon,
+		ShieldIcon,
+		VideoIcon
 	} from 'lucide-svelte';
+	import { onMount } from 'svelte';
+	import { toast } from 'svelte-sonner';
 
 	let config: ConfigResponse | null = null;
 	let loading = false;
@@ -26,18 +38,18 @@
 
 	// 控制各个抽屉的开关状态
 	let openSheet: string | null = null;
-	
+
 	// 随机视频封面背景
 	let randomCovers: string[] = [];
 	let currentBackgroundIndex = 0;
-	
+
 	// 获取代理后的图片URL
 	function getProxiedImageUrl(originalUrl: string): string {
 		if (!originalUrl) return '';
 		// 使用后端代理端点
 		return `/api/proxy/image?url=${encodeURIComponent(originalUrl)}`;
 	}
-	
+
 	// 设置分类
 	const settingCategories = [
 		{
@@ -96,8 +108,6 @@
 	let nfoTimeType = 'favtime';
 	let parallelDownloadEnabled = false;
 	let parallelDownloadThreads = 4;
-	
-
 
 	// 视频质量设置
 	let videoMaxQuality = 'Quality8k';
@@ -159,6 +169,8 @@
 
 	// 显示帮助信息的状态（在文件命名抽屉中使用）
 	let showHelp = false;
+	let showNamingHelp = false;
+	let showVariableHelp = false;
 
 	// 变量说明
 	const variableHelp = {
@@ -282,7 +294,7 @@
 		await loadConfig();
 		await loadRandomCovers();
 	});
-	
+
 	async function loadRandomCovers() {
 		try {
 			// 获取一些随机视频封面
@@ -297,7 +309,7 @@
 			console.error('Failed to load random covers:', error);
 		}
 	}
-	
+
 	// 当打开抽屉时切换背景
 	$: if (openSheet && randomCovers.length > 0) {
 		currentBackgroundIndex = Math.floor(Math.random() * randomCovers.length);
@@ -514,18 +526,18 @@
 				<!-- 设置分类卡片列表 -->
 				<div class="grid gap-4 {isMobile ? 'grid-cols-1' : 'grid-cols-2 lg:grid-cols-3'}">
 					{#each settingCategories as category}
-						<Card 
-							class="cursor-pointer transition-all hover:shadow-md hover:border-primary/50"
-							onclick={() => openSheet = category.id}
+						<Card
+							class="hover:border-primary/50 cursor-pointer transition-all hover:shadow-md"
+							onclick={() => (openSheet = category.id)}
 						>
 							<CardHeader>
 								<div class="flex items-start gap-3">
-									<div class="p-2 rounded-lg bg-primary/10">
-										<svelte:component this={category.icon} class="h-5 w-5 text-primary" />
+									<div class="bg-primary/10 rounded-lg p-2">
+										<svelte:component this={category.icon} class="text-primary h-5 w-5" />
 									</div>
 									<div class="flex-1">
 										<CardTitle class="text-base">{category.title}</CardTitle>
-										<CardDescription class="text-sm mt-1">{category.description}</CardDescription>
+										<CardDescription class="mt-1 text-sm">{category.description}</CardDescription>
 									</div>
 								</div>
 							</CardHeader>
@@ -538,46 +550,74 @@
 </div>
 
 <!-- 文件命名设置抽屉 -->
-<Sheet open={openSheet === 'naming'} onOpenChange={(open) => { if (!open) openSheet = null; }}>
-	<SheetContent side={isMobile ? 'bottom' : 'right'} class="{isMobile ? 'h-[85vh] max-h-[85vh]' : '!w-screen !h-screen !max-w-none !inset-y-0 !right-0'} [&>button]:hidden">
+<Sheet
+	open={openSheet === 'naming'}
+	onOpenChange={(open) => {
+		if (!open) openSheet = null;
+	}}
+>
+	<SheetContent
+		side={isMobile ? 'bottom' : 'right'}
+		class="{isMobile
+			? 'h-[85vh] max-h-[85vh]'
+			: '!inset-y-0 !right-0 !h-screen !w-screen !max-w-none'} [&>button]:hidden"
+	>
 		{#if !isMobile && randomCovers.length > 0}
 			<!-- 电脑端背景图 -->
 			<div class="absolute inset-0" style="z-index: 0;">
-				<img 
-					src={randomCovers[currentBackgroundIndex]} 
+				<img
+					src={randomCovers[currentBackgroundIndex]}
 					alt="背景"
-					class="w-full h-full object-cover"
+					class="h-full w-full object-cover"
 					style="opacity: 0.6; filter: contrast(1.1) brightness(0.9);"
 					loading="lazy"
 					onerror={(e) => console.error('Image load error:', e)}
 				/>
-				<div class="absolute inset-0" style="background: linear-gradient(to bottom right, rgba(255,255,255,0.85), rgba(255,255,255,0.5));"></div>
+				<div
+					class="absolute inset-0"
+					style="background: linear-gradient(to bottom right, rgba(255,255,255,0.85), rgba(255,255,255,0.5));"
+				></div>
 			</div>
 		{/if}
-		<div class="h-full flex items-center justify-center {isMobile ? '' : 'p-8'} relative z-10">
-			<div class="{isMobile ? 'w-full h-full bg-background' : 'max-w-4xl w-full bg-card/95 backdrop-blur-sm rounded-lg shadow-2xl border'} overflow-hidden relative">
-				<SheetHeader class="{isMobile ? '' : 'p-6 border-b'} relative">
+		<div class="flex h-full items-center justify-center {isMobile ? '' : 'p-8'} relative z-10">
+			<div
+				class="{isMobile
+					? 'bg-background h-full w-full'
+					: 'bg-card/95 w-full max-w-4xl rounded-lg border shadow-2xl backdrop-blur-sm'} relative"
+			>
+				<SheetHeader class="{isMobile ? '' : 'border-b p-6'} relative">
 					<SheetTitle>文件命名设置</SheetTitle>
 					<SheetDescription>配置视频、分页、番剧等文件命名模板</SheetDescription>
 					<!-- 自定义关闭按钮 -->
 					<button
-						onclick={() => openSheet = null}
-						class="absolute top-2 right-2 p-1 rounded-sm opacity-70 ring-offset-background transition-opacity hover:opacity-100 focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:pointer-events-none hover:bg-gray-100"
+						onclick={() => (openSheet = null)}
+						class="ring-offset-background focus:ring-ring absolute right-2 top-2 rounded-sm p-1 opacity-70 transition-opacity hover:bg-gray-100 hover:opacity-100 focus:outline-none focus:ring-2 focus:ring-offset-2 disabled:pointer-events-none"
 						type="button"
 					>
 						<svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-							<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+							<path
+								stroke-linecap="round"
+								stroke-linejoin="round"
+								stroke-width="2"
+								d="M6 18L18 6M6 6l12 12"
+							/>
 						</svg>
 						<span class="sr-only">关闭</span>
 					</button>
 				</SheetHeader>
-				<form onsubmit={(e) => { e.preventDefault(); saveConfig(); }} class="flex flex-col {isMobile ? 'h-[calc(100%-5rem)]' : 'h-[calc(100%-8rem)]'}">
-					<div class="flex-1 overflow-y-auto px-6 py-6 space-y-6">
+				<form
+					onsubmit={(e) => {
+						e.preventDefault();
+						saveConfig();
+					}}
+					class="flex flex-col {isMobile ? 'h-[calc(100vh-10rem)]' : 'h-[calc(100vh-12rem)]'}"
+				>
+					<div class="min-h-0 flex-1 space-y-6 overflow-y-auto px-6 py-6">
 						<div class="flex items-center justify-between">
 							<h3 class="text-base font-semibold">文件命名模板</h3>
 							<button
 								type="button"
-								onclick={() => showHelp = !showHelp}
+								onclick={() => (showHelp = !showHelp)}
 								class="text-sm text-blue-600 hover:text-blue-800"
 							>
 								{showHelp ? '隐藏' : '显示'}变量说明
@@ -592,7 +632,9 @@
 										<div class="space-y-1">
 											{#each variableHelp.video as item}
 												<div class="flex">
-													<code class="mr-2 rounded bg-blue-100 px-1 text-blue-800">{item.name}</code>
+													<code class="mr-2 rounded bg-blue-100 px-1 text-blue-800"
+														>{item.name}</code
+													>
 													<span class="text-gray-600">{item.desc}</span>
 												</div>
 											{/each}
@@ -603,7 +645,9 @@
 										<div class="space-y-1">
 											{#each variableHelp.page as item}
 												<div class="flex">
-													<code class="mr-2 rounded bg-blue-100 px-1 text-blue-800">{item.name}</code>
+													<code class="mr-2 rounded bg-blue-100 px-1 text-blue-800"
+														>{item.name}</code
+													>
 													<span class="text-gray-600">{item.desc}</span>
 												</div>
 											{/each}
@@ -612,7 +656,9 @@
 										<div class="space-y-1">
 											{#each variableHelp.common as item}
 												<div class="flex">
-													<code class="mr-2 rounded bg-blue-100 px-1 text-blue-800">{item.name}</code>
+													<code class="mr-2 rounded bg-blue-100 px-1 text-blue-800"
+														>{item.name}</code
+													>
 													<span class="text-gray-600">{item.desc}</span>
 												</div>
 											{/each}
@@ -623,7 +669,9 @@
 										<div class="grid grid-cols-3 gap-2">
 											{#each variableHelp.time as item}
 												<div class="flex">
-													<code class="mr-2 rounded bg-blue-100 px-1 text-blue-800">{item.name}</code>
+													<code class="mr-2 rounded bg-blue-100 px-1 text-blue-800"
+														>{item.name}</code
+													>
 													<span class="text-gray-600">{item.desc}</span>
 												</div>
 											{/each}
@@ -633,23 +681,205 @@
 							</div>
 						{/if}
 
+						<!-- 文件命名模板说明按钮 -->
+						<div class="mb-4 flex items-center justify-between">
+							<h4 class="text-lg font-medium">文件命名设置</h4>
+							<Button
+								variant="outline"
+								size="sm"
+								onclick={() => (showNamingHelp = !showNamingHelp)}
+								class="h-8"
+							>
+								{showNamingHelp ? '隐藏' : '显示'}说明
+								<svg
+									class="ml-1 h-4 w-4 transform transition-transform {showNamingHelp
+										? 'rotate-180'
+										: ''}"
+									fill="none"
+									stroke="currentColor"
+									viewBox="0 0 24 24"
+								>
+									<path
+										stroke-linecap="round"
+										stroke-linejoin="round"
+										stroke-width="2"
+										d="M19 9l-7 7-7-7"
+									/>
+								</svg>
+							</Button>
+						</div>
+
+						{#if showNamingHelp}
+							<div class="mb-4 rounded-lg border border-blue-200 bg-blue-50 p-4">
+								<h5 class="mb-3 font-medium text-blue-800">📝 文件命名模板详细说明</h5>
+								<div class="space-y-4 text-sm text-blue-700">
+									<div class="rounded-md bg-blue-100 p-3">
+										<p class="mb-2 font-semibold text-blue-900">⚠️ 重要声明</p>
+										<div class="space-y-1 text-sm">
+											<p>
+												• <strong
+													>要实现按UP主分类的文件夹结构，请在"视频文件名模板"中设置路径！</strong
+												>
+											</p>
+											<p>• "单P视频文件名模板"主要控制最终的文件名，不建议设置路径分隔符</p>
+											<p>• 路径分隔符 <code>/</code> 会自动创建对应的文件夹层级结构</p>
+											<p>
+												• 非法字符（如 <code>:</code> <code>*</code> <code>?</code>
+												<code>&lt;</code> <code>&gt;</code> <code>|</code>）会自动替换为
+												<code>_</code>
+											</p>
+											<p>• 模板变量区分大小写，请确保变量名拼写正确</p>
+											<p>• 变量不存在或为空时，会显示为空字符串</p>
+										</div>
+									</div>
+
+									<div class="grid grid-cols-1 gap-3 md:grid-cols-2">
+										<div class="rounded-md border border-blue-300 bg-white p-3">
+											<p class="mb-2 font-medium text-blue-900">
+												📁 <strong>视频文件名模板</strong>
+											</p>
+											<p>• <strong>主要作用</strong>：控制文件夹层级结构和主路径</p>
+											<p>• <strong>支持功能</strong>：使用 <code>/</code> 创建子目录结构</p>
+											<p>
+												• <strong>推荐设置</strong>：<code
+													>{`{{upper_name}}/{{pubdate}}-{{title}}`}</code
+												>
+											</p>
+											<p class="mt-1 text-xs text-blue-600">👆 这样设置会按UP主名称创建文件夹</p>
+										</div>
+										<div class="rounded-md border border-blue-300 bg-white p-3">
+											<p class="mb-2 font-medium text-blue-900">
+												🎬 <strong>单P视频文件名模板</strong>
+											</p>
+											<p>• <strong>主要作用</strong>：控制最终的视频文件名</p>
+											<p>• <strong>注意事项</strong>：不建议使用路径分隔符 <code>/</code></p>
+											<p>
+												• <strong>推荐设置</strong>：<code>{`{{title}}`}</code> 或
+												<code>{`{{bvid}}-{{title}}`}</code>
+											</p>
+											<p class="mt-1 text-xs text-blue-600">👆 这样设置会生成简洁的文件名</p>
+										</div>
+										<div class="rounded-md border border-blue-300 bg-white p-3">
+											<p class="mb-2 font-medium text-blue-900">
+												📺 <strong>多P视频文件名模板</strong>
+											</p>
+											<p>• <strong>主要作用</strong>：控制多分P视频的组织方式</p>
+											<p>• <strong>支持功能</strong>：自动为每个分P创建对应文件</p>
+											<p>
+												• <strong>推荐设置</strong>：<code
+													>{`{{bvid}}/P{{pid_pad}}.{{ptitle}}`}</code
+												>
+											</p>
+											<p class="mt-1 text-xs text-blue-600">👆 这样会在BV号文件夹下创建分P文件</p>
+										</div>
+										<div class="rounded-md border border-blue-300 bg-white p-3">
+											<p class="mb-2 font-medium text-blue-900">
+												🎭 <strong>番剧文件名模板</strong>
+											</p>
+											<p>• <strong>主要作用</strong>：控制番剧的季度文件夹结构</p>
+											<p>• <strong>支持功能</strong>：季集编号自动格式化</p>
+											<p>
+												• <strong>推荐设置</strong>：<code
+													>{`{{title}}/Season {{season_pad}}/S{{season_pad}}E{{pid_pad}}`}</code
+												>
+											</p>
+											<p class="mt-1 text-xs text-blue-600">👆 标准的番剧组织结构</p>
+										</div>
+									</div>
+
+									<div class="rounded-md border border-amber-300 bg-amber-100 p-3">
+										<p class="mb-2 font-semibold text-amber-800">❓ 常见问题解答</p>
+										<div class="space-y-2 text-sm text-amber-700">
+											<div>
+												<p class="font-medium">Q: 为什么我设置了路径但还是生成单文件夹？</p>
+												<p>
+													A: 请检查您是否在正确的字段中设置了路径。要创建子文件夹，需要在<strong
+														>"视频文件名模板"</strong
+													>中使用 <code>/</code>。
+												</p>
+											</div>
+											<div>
+												<p class="font-medium">Q: 文件名太长被截断怎么办？</p>
+												<p>
+													A: 使用 <code>{`{{truncate title 20}}`}</code> 限制标题长度，或者调整模板减少不必要的信息。
+												</p>
+											</div>
+											<div>
+												<p class="font-medium">Q: 时间格式如何自定义？</p>
+												<p>
+													A: 在"时间格式"字段中设置，如 <code>%Y-%m-%d</code> 生成 2025-04-29 格式。
+												</p>
+											</div>
+											<div>
+												<p class="font-medium">Q: 如何避免文件名中的特殊字符？</p>
+												<p>A: 系统会自动将不安全字符替换为下划线，无需手动处理。</p>
+											</div>
+										</div>
+									</div>
+
+									<div class="rounded-md border border-green-300 bg-green-100 p-3">
+										<p class="mb-2 font-semibold text-green-800">✅ 推荐配置方案</p>
+										<div class="space-y-3 text-sm">
+											<div class="rounded border border-green-200 bg-white p-2">
+												<p class="font-medium text-green-800">方案一：按UP主分类 + 日期</p>
+												<p>
+													<strong>视频文件名模板</strong>：<code
+														>{`{{upper_name}}/{{pubdate}}-{{truncate title 20}}`}</code
+													>
+												</p>
+												<p><strong>单P视频文件名模板</strong>：<code>{`{{title}}`}</code></p>
+												<p class="mt-1 text-xs text-green-600">
+													📂 结果：庄心妍/2025-04-29-没想到吧～这些歌原来是我唱的！/标题.mp4
+												</p>
+											</div>
+											<div class="rounded border border-green-200 bg-white p-2">
+												<p class="font-medium text-green-800">方案二：按UP主分类 + BV号</p>
+												<p>
+													<strong>视频文件名模板</strong>：<code
+														>{`{{upper_name}}/{{bvid}}-{{truncate title 15}}`}</code
+													>
+												</p>
+												<p>
+													<strong>单P视频文件名模板</strong>：<code>{`{{pubdate}}-{{title}}`}</code>
+												</p>
+												<p class="mt-1 text-xs text-green-600">
+													📂
+													结果：庄心妍/BV1m9GCzEEG3-没想到吧～这些歌原来是我唱的/2025-04-29-标题.mp4
+												</p>
+											</div>
+											<div class="rounded border border-green-200 bg-white p-2">
+												<p class="font-medium text-green-800">方案三：极简分类</p>
+												<p><strong>视频文件名模板</strong>：<code>{`{{upper_name}}`}</code></p>
+												<p>
+													<strong>单P视频文件名模板</strong>：<code
+														>{`{{pubdate}}-{{bvid}}-{{truncate title 20}}`}</code
+													>
+												</p>
+												<p class="mt-1 text-xs text-green-600">
+													📂 结果：庄心妍/2025-04-29-BV1m9GCzEEG3-没想到吧～这些歌原来是我唱的！.mp4
+												</p>
+											</div>
+										</div>
+									</div>
+								</div>
+							</div>
+						{/if}
+
 						<div class="grid grid-cols-1 gap-4 md:grid-cols-2">
 							<div class="space-y-2">
 								<Label for="video-name">视频文件名模板</Label>
-								<Input
-									id="video-name"
-									bind:value={videoName}
-									placeholder="{`{{title}}`}"
-								/>
+								<Input id="video-name" bind:value={videoName} placeholder={`{{title}}`} />
+								<p class="text-muted-foreground text-xs">
+									控制主要文件夹结构，支持使用 / 创建子目录
+								</p>
 							</div>
 
 							<div class="space-y-2">
 								<Label for="page-name">单P视频文件名模板</Label>
-								<Input
-									id="page-name"
-									bind:value={pageName}
-									placeholder="{`{{bvid}}`}"
-								/>
+								<Input id="page-name" bind:value={pageName} placeholder={`{{bvid}}`} />
+								<p class="text-muted-foreground text-xs">
+									控制单P视频的具体文件名，不建议使用路径分隔符
+								</p>
 							</div>
 
 							<div class="space-y-2">
@@ -657,8 +887,9 @@
 								<Input
 									id="multi-page-name"
 									bind:value={multiPageName}
-									placeholder="{`{{bvid}}/{{bvid}}.P{{pid_pad}}.{{ptitle}}`}"
+									placeholder={`{{bvid}}/{{bvid}}.P{{pid_pad}}.{{ptitle}}`}
 								/>
+								<p class="text-muted-foreground text-xs">控制多P视频的文件夹和文件名结构</p>
 							</div>
 
 							<div class="space-y-2">
@@ -666,8 +897,9 @@
 								<Input
 									id="bangumi-name"
 									bind:value={bangumiName}
-									placeholder="{`{{title}}/Season {{season_pad}}/{{title}} - S{{season_pad}}E{{pid_pad}}`}"
+									placeholder={`{{title}}/Season {{season_pad}}/{{title}} - S{{season_pad}}E{{pid_pad}}`}
 								/>
+								<p class="text-muted-foreground text-xs">控制番剧的季度文件夹和集数文件名</p>
 							</div>
 						</div>
 
@@ -676,11 +908,9 @@
 							<Input
 								id="folder-structure"
 								bind:value={folderStructure}
-								placeholder="{`{{upper_name}}/{{title}}`}"
+								placeholder={`{{upper_name}}/{{title}}`}
 							/>
-							<p class="text-muted-foreground text-sm">
-								定义视频文件的文件夹层级结构
-							</p>
+							<p class="text-muted-foreground text-sm">定义视频文件的文件夹层级结构</p>
 						</div>
 
 						<div class="grid grid-cols-1 gap-4 md:grid-cols-2">
@@ -689,7 +919,7 @@
 								<select
 									id="collection-folder-mode"
 									bind:value={collectionFolderMode}
-									class="border-input bg-background ring-offset-background focus-visible:ring-ring flex h-10 w-full rounded-md border px-3 py-2 text-sm focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:outline-none"
+									class="border-input bg-background ring-offset-background focus-visible:ring-ring flex h-10 w-full rounded-md border px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2"
 								>
 									<option value="separate">分离模式</option>
 									<option value="unified">统一模式</option>
@@ -702,14 +932,8 @@
 
 							<div class="space-y-2">
 								<Label for="time-format">时间格式</Label>
-								<Input
-									id="time-format"
-									bind:value={timeFormat}
-									placeholder="%Y-%m-%d %H-%M-%S"
-								/>
-								<p class="text-muted-foreground text-sm">
-									控制时间变量的显示格式
-								</p>
+								<Input id="time-format" bind:value={timeFormat} placeholder="%Y-%m-%d %H-%M-%S" />
+								<p class="text-muted-foreground text-sm">控制时间变量的显示格式</p>
 							</div>
 						</div>
 
@@ -718,28 +942,102 @@
 							<select
 								id="nfo-time-type"
 								bind:value={nfoTimeType}
-								class="border-input bg-background ring-offset-background focus-visible:ring-ring flex h-10 w-full rounded-md border px-3 py-2 text-sm focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:outline-none"
+								class="border-input bg-background ring-offset-background focus-visible:ring-ring flex h-10 w-full rounded-md border px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2"
 							>
 								{#each nfoTimeTypeOptions as option}
 									<option value={option.value}>{option.label}</option>
 								{/each}
 							</select>
-							<p class="text-muted-foreground text-sm">
-								选择NFO文件中使用的时间类型
-							</p>
+							<p class="text-muted-foreground text-sm">选择NFO文件中使用的时间类型</p>
 						</div>
 
-						<div class="rounded-lg border border-orange-200 bg-orange-50 p-3">
-							<h5 class="mb-2 font-medium text-orange-800">命名模板说明</h5>
-							<div class="space-y-1 text-orange-700 text-sm">
-								<p>• 使用双花括号 {`{{}}`} 包裹变量名</p>
-								<p>• 支持使用 / 或 \\ 创建子文件夹</p>
-								<p>• 非法字符会自动替换为下划线</p>
-								<p>• 时间变量需要配合时间格式使用</p>
+						<!-- 变量参考面板 -->
+						<div class="rounded-lg border border-orange-200 bg-orange-50 p-4">
+							<div class="mb-3 flex items-center justify-between">
+								<h5 class="font-medium text-orange-800">🔧 模板变量参考</h5>
+								<Button
+									variant="ghost"
+									size="sm"
+									onclick={() => (showVariableHelp = !showVariableHelp)}
+									class="h-6 text-orange-600 hover:text-orange-800"
+								>
+									{showVariableHelp ? '收起' : '展开'}
+									<svg
+										class="ml-1 h-3 w-3 transform transition-transform {showVariableHelp
+											? 'rotate-180'
+											: ''}"
+										fill="none"
+										stroke="currentColor"
+										viewBox="0 0 24 24"
+									>
+										<path
+											stroke-linecap="round"
+											stroke-linejoin="round"
+											stroke-width="2"
+											d="M19 9l-7 7-7-7"
+										/>
+									</svg>
+								</Button>
 							</div>
+
+							{#if showVariableHelp}
+								<div class="grid grid-cols-1 gap-4 pb-4 text-sm text-orange-700 md:grid-cols-2">
+									<div>
+										<p class="mb-2 font-medium">📊 基础变量</p>
+										<div class="space-y-1 pl-2">
+											<p>• <code>{`{{title}}`}</code> - 视频标题</p>
+											<p>• <code>{`{{bvid}}`}</code> - 视频BV号</p>
+											<p>• <code>{`{{upper_name}}`}</code> - UP主名称</p>
+											<p>• <code>{`{{upper_mid}}`}</code> - UP主ID</p>
+											<p>• <code>{`{{view}}`}</code> - 播放量</p>
+											<p>• <code>{`{{like}}`}</code> - 点赞数</p>
+											<p>• <code>{`{{coin}}`}</code> - 投币数</p>
+											<p>• <code>{`{{favorite}}`}</code> - 收藏数</p>
+										</div>
+									</div>
+									<div>
+										<p class="mb-2 font-medium">⏰ 时间变量</p>
+										<div class="space-y-1 pl-2">
+											<p>• <code>{`{{pubtime}}`}</code> - 发布时间</p>
+											<p>• <code>{`{{pubdate}}`}</code> - 发布日期</p>
+											<p>• <code>{`{{ctime}}`}</code> - 创建时间</p>
+											<p>• <code>{`{{now}}`}</code> - 当前时间</p>
+										</div>
+									</div>
+									<div>
+										<p class="mb-2 font-medium">📚 多P/番剧变量</p>
+										<div class="space-y-1 pl-2">
+											<p>• <code>{`{{pid}}`}</code> - 分P序号</p>
+											<p>• <code>{`{{pid_pad}}`}</code> - 分P序号(补零)</p>
+											<p>• <code>{`{{ptitle}}`}</code> - 分P标题</p>
+											<p>• <code>{`{{season}}`}</code> - 季度编号</p>
+											<p>• <code>{`{{season_pad}}`}</code> - 季度编号(补零)</p>
+										</div>
+									</div>
+									<div>
+										<p class="mb-2 font-medium">🛠️ 高级功能</p>
+										<div class="space-y-1 pl-2">
+											<p>• <code>{`{{truncate title 20}}`}</code> - 截断标题</p>
+											<p>• 使用 <code>/</code> 创建子文件夹</p>
+											<p>• 非法字符自动替换为 <code>_</code></p>
+											<p>• 时间格式由"时间格式"设置控制</p>
+										</div>
+									</div>
+								</div>
+								<div class="mt-4 rounded-md bg-orange-100 p-3">
+									<p class="mb-1 font-medium text-orange-800">💡 配置建议</p>
+									<p class="text-sm text-orange-700">
+										• 要按UP主分类，在"视频文件名模板"中使用：<code
+											>{`{{upper_name}}/{{pubdate}}-{{title}}`}</code
+										><br />
+										• "单P视频文件名模板"建议简单命名：<code>{`{{title}}`}</code> 或
+										<code>{`{{bvid}}-{{title}}`}</code>
+									</p>
+								</div>
+							{/if}
 						</div>
 					</div>
-					<SheetFooter class="border-t pt-4 pb-safe">
+					<SheetFooter class="pb-safe border-t pt-4">
 						<Button type="submit" disabled={saving} class="w-full">
 							{saving ? '保存中...' : '保存设置'}
 						</Button>
@@ -751,215 +1049,255 @@
 </Sheet>
 
 <!-- 视频质量设置抽屉 -->
-<Sheet open={openSheet === 'quality'} onOpenChange={(open) => { if (!open) openSheet = null; }}>
-	<SheetContent side={isMobile ? 'bottom' : 'right'} class="{isMobile ? 'h-[85vh] max-h-[85vh]' : '!w-screen !h-screen !max-w-none !inset-y-0 !right-0'} [&>button]:hidden">
+<Sheet
+	open={openSheet === 'quality'}
+	onOpenChange={(open) => {
+		if (!open) openSheet = null;
+	}}
+>
+	<SheetContent
+		side={isMobile ? 'bottom' : 'right'}
+		class="{isMobile
+			? 'h-[85vh] max-h-[85vh]'
+			: '!inset-y-0 !right-0 !h-screen !w-screen !max-w-none'} [&>button]:hidden"
+	>
 		{#if !isMobile && randomCovers.length > 0}
 			<!-- 电脑端背景图 -->
 			<div class="absolute inset-0 z-0 overflow-hidden">
-				<img 
-					src={randomCovers[(currentBackgroundIndex + 1) % randomCovers.length]} 
+				<img
+					src={randomCovers[(currentBackgroundIndex + 1) % randomCovers.length]}
 					alt="背景"
-					class="w-full h-full object-cover"
+					class="h-full w-full object-cover"
 					style="opacity: 0.6; filter: contrast(1.1) brightness(0.9);"
 					loading="lazy"
 				/>
-				<div class="absolute inset-0" style="background: linear-gradient(to bottom right, rgba(255,255,255,0.85), rgba(255,255,255,0.5));"></div>
+				<div
+					class="absolute inset-0"
+					style="background: linear-gradient(to bottom right, rgba(255,255,255,0.85), rgba(255,255,255,0.5));"
+				></div>
 			</div>
 		{/if}
-		<div class="h-full flex items-center justify-center {isMobile ? '' : 'p-8'} relative z-10">
-			<div class="{isMobile ? 'w-full h-full bg-background' : 'max-w-4xl w-full bg-card/95 backdrop-blur-sm rounded-lg shadow-2xl border'} overflow-hidden relative">
-				<SheetHeader class="{isMobile ? '' : 'p-6 border-b'} relative">
+		<div class="flex h-full items-center justify-center {isMobile ? '' : 'p-8'} relative z-10">
+			<div
+				class="{isMobile
+					? 'bg-background h-full w-full'
+					: 'bg-card/95 w-full max-w-4xl rounded-lg border shadow-2xl backdrop-blur-sm'} relative overflow-hidden"
+			>
+				<SheetHeader class="{isMobile ? '' : 'border-b p-6'} relative">
 					<SheetTitle>视频质量设置</SheetTitle>
 					<SheetDescription>设置视频/音频质量、编解码器等参数</SheetDescription>
 					<!-- 自定义关闭按钮 -->
 					<button
-						onclick={() => openSheet = null}
-						class="absolute top-2 right-2 p-1 rounded-sm opacity-70 ring-offset-background transition-opacity hover:opacity-100 focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:pointer-events-none hover:bg-gray-100"
+						onclick={() => (openSheet = null)}
+						class="ring-offset-background focus:ring-ring absolute right-2 top-2 rounded-sm p-1 opacity-70 transition-opacity hover:bg-gray-100 hover:opacity-100 focus:outline-none focus:ring-2 focus:ring-offset-2 disabled:pointer-events-none"
 						type="button"
 					>
 						<svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-							<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+							<path
+								stroke-linecap="round"
+								stroke-linejoin="round"
+								stroke-width="2"
+								d="M6 18L18 6M6 6l12 12"
+							/>
 						</svg>
 						<span class="sr-only">关闭</span>
 					</button>
 				</SheetHeader>
-				<form onsubmit={(e) => { e.preventDefault(); saveConfig(); }} class="flex flex-col {isMobile ? 'h-[calc(100%-5rem)]' : 'h-[calc(100%-8rem)]'}">
-					<div class="flex-1 overflow-y-auto px-6 py-6 space-y-6">
-				<div class="grid grid-cols-1 gap-4 md:grid-cols-2">
-					<div class="space-y-2">
-						<Label for="video-max-quality">视频最高质量</Label>
-						<select
-							id="video-max-quality"
-							bind:value={videoMaxQuality}
-							class="border-input bg-background ring-offset-background focus-visible:ring-ring flex h-10 w-full rounded-md border px-3 py-2 text-sm focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:outline-none"
-						>
-							{#each videoQualityOptions as option}
-								<option value={option.value}>{option.label}</option>
-							{/each}
-						</select>
-					</div>
-
-					<div class="space-y-2">
-						<Label for="video-min-quality">视频最低质量</Label>
-						<select
-							id="video-min-quality"
-							bind:value={videoMinQuality}
-							class="border-input bg-background ring-offset-background focus-visible:ring-ring flex h-10 w-full rounded-md border px-3 py-2 text-sm focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:outline-none"
-						>
-							{#each videoQualityOptions as option}
-								<option value={option.value}>{option.label}</option>
-							{/each}
-						</select>
-					</div>
-
-					<div class="space-y-2">
-						<Label for="audio-max-quality">音频最高质量</Label>
-						<select
-							id="audio-max-quality"
-							bind:value={audioMaxQuality}
-							class="border-input bg-background ring-offset-background focus-visible:ring-ring flex h-10 w-full rounded-md border px-3 py-2 text-sm focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:outline-none"
-						>
-							{#each audioQualityOptions as option}
-								<option value={option.value}>{option.label}</option>
-							{/each}
-						</select>
-					</div>
-
-					<div class="space-y-2">
-						<Label for="audio-min-quality">音频最低质量</Label>
-						<select
-							id="audio-min-quality"
-							bind:value={audioMinQuality}
-							class="border-input bg-background ring-offset-background focus-visible:ring-ring flex h-10 w-full rounded-md border px-3 py-2 text-sm focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:outline-none"
-						>
-							{#each audioQualityOptions as option}
-								<option value={option.value}>{option.label}</option>
-							{/each}
-						</select>
-					</div>
-				</div>
-
-				<div class="space-y-2">
-					<Label>编解码器优先级顺序</Label>
-					<p class="text-muted-foreground mb-3 text-sm">
-						拖拽以调整优先级，越靠前优先级越高。根据设备硬件解码支持情况选择：
-					</p>
-					<div class="mb-3 rounded-lg border border-blue-200 bg-blue-50 p-3">
-						<div class="space-y-2 text-xs text-blue-700">
-							<div>
-								<strong>🎯 AVC (H.264)：</strong>兼容性最好，几乎所有设备都支持硬件解码，播放流畅，但文件体积较大
-							</div>
-							<div>
-								<strong>🚀 HEV (H.265)：</strong>新一代编码，体积更小，需要较新设备硬件解码支持
-							</div>
-							<div>
-								<strong>⚡ AV1：</strong>最新编码格式，压缩率最高，需要最新设备支持，软解可能卡顿
-							</div>
-							<div class="mt-2 border-t border-blue-300 pt-1">
-								<strong>💡 推荐设置：</strong>如果设备较老或追求兼容性，将AVC放首位；如果设备支持新编码且网络较慢，可优先HEV或AV1
-							</div>
-						</div>
-					</div>
-					<div class="space-y-2">
-						{#each codecs as codec, index}
-							<div
-								class="flex cursor-move items-center gap-3 rounded-lg border bg-gray-50 p-3"
-								draggable="true"
-								ondragstart={(e) => handleDragStart(e, index)}
-								ondragover={handleDragOver}
-								ondrop={(e) => handleDrop(e, index)}
-								role="button"
-								tabindex="0"
-							>
-								<div class="flex items-center gap-2 text-gray-400">
-									<svg class="h-4 w-4" fill="currentColor" viewBox="0 0 20 20">
-										<path d="M7 2a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2V4a2 2 0 0 0-2-2H7zM8 6h4v2H8V6zm0 4h4v2H8v-2z" />
-									</svg>
-								</div>
-								<div class="flex flex-1 items-center gap-2">
-									<span class="bg-primary text-primary-foreground flex h-6 w-6 items-center justify-center rounded-full text-sm font-medium">
-										{index + 1}
-									</span>
-									<span class="font-medium">
-										{codecOptions.find((option) => option.value === codec)?.label || codec}
-									</span>
-								</div>
-								<button
-									type="button"
-									class="p-1 text-red-500 hover:text-red-700"
-									onclick={() => removeCodec(index)}
-									title="移除此编解码器"
-									aria-label="移除此编解码器"
-								>
-									<svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-										<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
-									</svg>
-								</button>
-							</div>
-						{/each}
-
-						{#if codecs.length < codecOptions.length}
-							<div class="mt-2">
+				<form
+					onsubmit={(e) => {
+						e.preventDefault();
+						saveConfig();
+					}}
+					class="flex flex-col {isMobile ? 'h-[calc(100%-5rem)]' : 'h-[calc(100%-8rem)]'}"
+				>
+					<div class="flex-1 space-y-6 overflow-y-auto px-6 py-6">
+						<div class="grid grid-cols-1 gap-4 md:grid-cols-2">
+							<div class="space-y-2">
+								<Label for="video-max-quality">视频最高质量</Label>
 								<select
-									class="w-full rounded-md border p-2 text-sm"
-									onchange={handleAddCodec}
-									value=""
+									id="video-max-quality"
+									bind:value={videoMaxQuality}
+									class="border-input bg-background ring-offset-background focus-visible:ring-ring flex h-10 w-full rounded-md border px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2"
 								>
-									<option value="" disabled>添加编解码器...</option>
-									{#each codecOptions as option}
-										{#if !codecs.includes(option.value)}
-											<option value={option.value}>{option.label}</option>
-										{/if}
+									{#each videoQualityOptions as option}
+										<option value={option.value}>{option.label}</option>
 									{/each}
 								</select>
 							</div>
-						{/if}
-					</div>
-				</div>
 
-				<div class="grid grid-cols-1 gap-4 md:grid-cols-2">
-					<div class="flex items-center space-x-2">
-						<input
-							type="checkbox"
-							id="no-dolby-video"
-							bind:checked={noDolbyVideo}
-							class="text-primary focus:ring-primary h-4 w-4 rounded border-gray-300"
-						/>
-						<Label for="no-dolby-video" class="text-sm">禁用杜比视界</Label>
-					</div>
+							<div class="space-y-2">
+								<Label for="video-min-quality">视频最低质量</Label>
+								<select
+									id="video-min-quality"
+									bind:value={videoMinQuality}
+									class="border-input bg-background ring-offset-background focus-visible:ring-ring flex h-10 w-full rounded-md border px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2"
+								>
+									{#each videoQualityOptions as option}
+										<option value={option.value}>{option.label}</option>
+									{/each}
+								</select>
+							</div>
 
-					<div class="flex items-center space-x-2">
-						<input
-							type="checkbox"
-							id="no-dolby-audio"
-							bind:checked={noDolbyAudio}
-							class="text-primary focus:ring-primary h-4 w-4 rounded border-gray-300"
-						/>
-						<Label for="no-dolby-audio" class="text-sm">禁用杜比全景声</Label>
-					</div>
+							<div class="space-y-2">
+								<Label for="audio-max-quality">音频最高质量</Label>
+								<select
+									id="audio-max-quality"
+									bind:value={audioMaxQuality}
+									class="border-input bg-background ring-offset-background focus-visible:ring-ring flex h-10 w-full rounded-md border px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2"
+								>
+									{#each audioQualityOptions as option}
+										<option value={option.value}>{option.label}</option>
+									{/each}
+								</select>
+							</div>
 
-					<div class="flex items-center space-x-2">
-						<input
-							type="checkbox"
-							id="no-hdr"
-							bind:checked={noHdr}
-							class="text-primary focus:ring-primary h-4 w-4 rounded border-gray-300"
-						/>
-						<Label for="no-hdr" class="text-sm">禁用HDR</Label>
-					</div>
+							<div class="space-y-2">
+								<Label for="audio-min-quality">音频最低质量</Label>
+								<select
+									id="audio-min-quality"
+									bind:value={audioMinQuality}
+									class="border-input bg-background ring-offset-background focus-visible:ring-ring flex h-10 w-full rounded-md border px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2"
+								>
+									{#each audioQualityOptions as option}
+										<option value={option.value}>{option.label}</option>
+									{/each}
+								</select>
+							</div>
+						</div>
 
-					<div class="flex items-center space-x-2">
-						<input
-							type="checkbox"
-							id="no-hires"
-							bind:checked={noHires}
-							class="text-primary focus:ring-primary h-4 w-4 rounded border-gray-300"
-						/>
-						<Label for="no-hires" class="text-sm">禁用Hi-Res音频</Label>
+						<div class="space-y-2">
+							<Label>编解码器优先级顺序</Label>
+							<p class="text-muted-foreground mb-3 text-sm">
+								拖拽以调整优先级，越靠前优先级越高。根据设备硬件解码支持情况选择：
+							</p>
+							<div class="mb-3 rounded-lg border border-blue-200 bg-blue-50 p-3">
+								<div class="space-y-2 text-xs text-blue-700">
+									<div>
+										<strong>🎯 AVC (H.264)：</strong
+										>兼容性最好，几乎所有设备都支持硬件解码，播放流畅，但文件体积较大
+									</div>
+									<div>
+										<strong>🚀 HEV (H.265)：</strong>新一代编码，体积更小，需要较新设备硬件解码支持
+									</div>
+									<div>
+										<strong>⚡ AV1：</strong
+										>最新编码格式，压缩率最高，需要最新设备支持，软解可能卡顿
+									</div>
+									<div class="mt-2 border-t border-blue-300 pt-1">
+										<strong>💡 推荐设置：</strong
+										>如果设备较老或追求兼容性，将AVC放首位；如果设备支持新编码且网络较慢，可优先HEV或AV1
+									</div>
+								</div>
+							</div>
+							<div class="space-y-2">
+								{#each codecs as codec, index}
+									<div
+										class="flex cursor-move items-center gap-3 rounded-lg border bg-gray-50 p-3"
+										draggable="true"
+										ondragstart={(e) => handleDragStart(e, index)}
+										ondragover={handleDragOver}
+										ondrop={(e) => handleDrop(e, index)}
+										role="button"
+										tabindex="0"
+									>
+										<div class="flex items-center gap-2 text-gray-400">
+											<svg class="h-4 w-4" fill="currentColor" viewBox="0 0 20 20">
+												<path
+													d="M7 2a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2V4a2 2 0 0 0-2-2H7zM8 6h4v2H8V6zm0 4h4v2H8v-2z"
+												/>
+											</svg>
+										</div>
+										<div class="flex flex-1 items-center gap-2">
+											<span
+												class="bg-primary text-primary-foreground flex h-6 w-6 items-center justify-center rounded-full text-sm font-medium"
+											>
+												{index + 1}
+											</span>
+											<span class="font-medium">
+												{codecOptions.find((option) => option.value === codec)?.label || codec}
+											</span>
+										</div>
+										<button
+											type="button"
+											class="p-1 text-red-500 hover:text-red-700"
+											onclick={() => removeCodec(index)}
+											title="移除此编解码器"
+											aria-label="移除此编解码器"
+										>
+											<svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+												<path
+													stroke-linecap="round"
+													stroke-linejoin="round"
+													stroke-width="2"
+													d="M6 18L18 6M6 6l12 12"
+												/>
+											</svg>
+										</button>
+									</div>
+								{/each}
+
+								{#if codecs.length < codecOptions.length}
+									<div class="mt-2">
+										<select
+											class="w-full rounded-md border p-2 text-sm"
+											onchange={handleAddCodec}
+											value=""
+										>
+											<option value="" disabled>添加编解码器...</option>
+											{#each codecOptions as option}
+												{#if !codecs.includes(option.value)}
+													<option value={option.value}>{option.label}</option>
+												{/if}
+											{/each}
+										</select>
+									</div>
+								{/if}
+							</div>
+						</div>
+
+						<div class="grid grid-cols-1 gap-4 md:grid-cols-2">
+							<div class="flex items-center space-x-2">
+								<input
+									type="checkbox"
+									id="no-dolby-video"
+									bind:checked={noDolbyVideo}
+									class="text-primary focus:ring-primary h-4 w-4 rounded border-gray-300"
+								/>
+								<Label for="no-dolby-video" class="text-sm">禁用杜比视界</Label>
+							</div>
+
+							<div class="flex items-center space-x-2">
+								<input
+									type="checkbox"
+									id="no-dolby-audio"
+									bind:checked={noDolbyAudio}
+									class="text-primary focus:ring-primary h-4 w-4 rounded border-gray-300"
+								/>
+								<Label for="no-dolby-audio" class="text-sm">禁用杜比全景声</Label>
+							</div>
+
+							<div class="flex items-center space-x-2">
+								<input
+									type="checkbox"
+									id="no-hdr"
+									bind:checked={noHdr}
+									class="text-primary focus:ring-primary h-4 w-4 rounded border-gray-300"
+								/>
+								<Label for="no-hdr" class="text-sm">禁用HDR</Label>
+							</div>
+
+							<div class="flex items-center space-x-2">
+								<input
+									type="checkbox"
+									id="no-hires"
+									bind:checked={noHires}
+									class="text-primary focus:ring-primary h-4 w-4 rounded border-gray-300"
+								/>
+								<Label for="no-hires" class="text-sm">禁用Hi-Res音频</Label>
+							</div>
+						</div>
 					</div>
-				</div>
-					</div>
-					<SheetFooter class="border-t pt-4 pb-safe">
+					<SheetFooter class="pb-safe border-t pt-4">
 						<Button type="submit" disabled={saving} class="w-full">
 							{saving ? '保存中...' : '保存设置'}
 						</Button>
@@ -971,44 +1309,71 @@
 </Sheet>
 
 <!-- 下载设置抽屉 -->
-<Sheet open={openSheet === 'download'} onOpenChange={(open) => { if (!open) openSheet = null; }}>
-	<SheetContent side={isMobile ? 'bottom' : 'right'} class="{isMobile ? 'h-[85vh] max-h-[85vh]' : '!w-screen !h-screen !max-w-none !inset-y-0 !right-0'} [&>button]:hidden">
+<Sheet
+	open={openSheet === 'download'}
+	onOpenChange={(open) => {
+		if (!open) openSheet = null;
+	}}
+>
+	<SheetContent
+		side={isMobile ? 'bottom' : 'right'}
+		class="{isMobile
+			? 'h-[85vh] max-h-[85vh]'
+			: '!inset-y-0 !right-0 !h-screen !w-screen !max-w-none'} [&>button]:hidden"
+	>
 		{#if !isMobile && randomCovers.length > 0}
 			<!-- 电脑端背景图 -->
 			<div class="absolute inset-0 z-0 overflow-hidden">
-				<img 
-					src={randomCovers[(currentBackgroundIndex + 2) % randomCovers.length]} 
+				<img
+					src={randomCovers[(currentBackgroundIndex + 2) % randomCovers.length]}
 					alt="背景"
-					class="w-full h-full object-cover"
+					class="h-full w-full object-cover"
 					style="opacity: 0.6; filter: contrast(1.1) brightness(0.9);"
 					loading="lazy"
 				/>
-				<div class="absolute inset-0" style="background: linear-gradient(to bottom right, rgba(255,255,255,0.85), rgba(255,255,255,0.5));"></div>
+				<div
+					class="absolute inset-0"
+					style="background: linear-gradient(to bottom right, rgba(255,255,255,0.85), rgba(255,255,255,0.5));"
+				></div>
 			</div>
 		{/if}
-		<div class="h-full flex items-center justify-center {isMobile ? '' : 'p-8'} relative z-10">
-			<div class="{isMobile ? 'w-full h-full bg-background' : 'max-w-4xl w-full bg-card/95 backdrop-blur-sm rounded-lg shadow-2xl border'} overflow-hidden relative">
-				<SheetHeader class="{isMobile ? '' : 'p-6 border-b'} relative">
+		<div class="flex h-full items-center justify-center {isMobile ? '' : 'p-8'} relative z-10">
+			<div
+				class="{isMobile
+					? 'bg-background h-full w-full'
+					: 'bg-card/95 w-full max-w-4xl rounded-lg border shadow-2xl backdrop-blur-sm'} relative overflow-hidden"
+			>
+				<SheetHeader class="{isMobile ? '' : 'border-b p-6'} relative">
 					<SheetTitle>下载设置</SheetTitle>
 					<SheetDescription>并行下载、并发控制、速率限制配置</SheetDescription>
 					<!-- 自定义关闭按钮 -->
 					<button
-						onclick={() => openSheet = null}
-						class="absolute top-2 right-2 p-1 rounded-sm opacity-70 ring-offset-background transition-opacity hover:opacity-100 focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:pointer-events-none hover:bg-gray-100"
+						onclick={() => (openSheet = null)}
+						class="ring-offset-background focus:ring-ring absolute right-2 top-2 rounded-sm p-1 opacity-70 transition-opacity hover:bg-gray-100 hover:opacity-100 focus:outline-none focus:ring-2 focus:ring-offset-2 disabled:pointer-events-none"
 						type="button"
 					>
 						<svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-							<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+							<path
+								stroke-linecap="round"
+								stroke-linejoin="round"
+								stroke-width="2"
+								d="M6 18L18 6M6 6l12 12"
+							/>
 						</svg>
 						<span class="sr-only">关闭</span>
 					</button>
 				</SheetHeader>
-				<form onsubmit={(e) => { e.preventDefault(); saveConfig(); }} class="flex flex-col {isMobile ? 'h-[calc(100%-5rem)]' : 'h-[calc(100%-8rem)]'}">
-					<div class="flex-1 overflow-y-auto px-6 py-6 space-y-6">
-						
+				<form
+					onsubmit={(e) => {
+						e.preventDefault();
+						saveConfig();
+					}}
+					class="flex flex-col {isMobile ? 'h-[calc(100%-5rem)]' : 'h-[calc(100%-8rem)]'}"
+				>
+					<div class="flex-1 space-y-6 overflow-y-auto px-6 py-6">
 						<div class="mt-6 space-y-6">
 							<h3 class="text-base font-semibold">下载配置</h3>
-							
+
 							<div class="flex items-center space-x-2">
 								<input
 									type="checkbox"
@@ -1016,7 +1381,10 @@
 									bind:checked={parallelDownloadEnabled}
 									class="text-primary focus:ring-primary h-4 w-4 rounded border-gray-300"
 								/>
-								<Label for="parallel-download" class="text-sm leading-none font-medium peer-disabled:cursor-not-allowed peer-disabled:opacity-70">
+								<Label
+									for="parallel-download"
+									class="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
+								>
 									启用多线程下载
 								</Label>
 							</div>
@@ -1038,7 +1406,7 @@
 
 						<div class="mt-6 space-y-6">
 							<h3 class="text-base font-semibold">并发控制</h3>
-							
+
 							<div class="grid grid-cols-1 gap-4 md:grid-cols-2">
 								<div class="space-y-2">
 									<Label for="concurrent-video">同时处理视频数</Label>
@@ -1094,15 +1462,17 @@
 
 						<div class="mt-6 rounded-lg border border-purple-200 bg-purple-50 p-3">
 							<h5 class="mb-2 font-medium text-purple-800">并发控制说明</h5>
-							<div class="space-y-1 text-purple-700 text-sm">
+							<div class="space-y-1 text-sm text-purple-700">
 								<p><strong>视频并发数：</strong>同时处理的视频数量（建议1-5）</p>
 								<p><strong>分页并发数：</strong>每个视频内的并发分页数（建议1-3）</p>
-								<p><strong>请求频率限制：</strong>防止API请求过频繁导致风控，调小limit可减少被限制</p>
+								<p>
+									<strong>请求频率限制：</strong>防止API请求过频繁导致风控，调小limit可减少被限制
+								</p>
 								<p><strong>总并行度：</strong>约等于 视频并发数 × 分页并发数</p>
 							</div>
 						</div>
 					</div>
-					<SheetFooter class="border-t pt-4 pb-safe">
+					<SheetFooter class="pb-safe border-t pt-4">
 						<Button type="submit" disabled={saving} class="w-full">
 							{saving ? '保存中...' : '保存设置'}
 						</Button>
@@ -1114,193 +1484,221 @@
 </Sheet>
 
 <!-- 弹幕设置抽屉 -->
-<Sheet open={openSheet === 'danmaku'} onOpenChange={(open) => { if (!open) openSheet = null; }}>
-	<SheetContent side={isMobile ? 'bottom' : 'right'} class="{isMobile ? 'h-[85vh] max-h-[85vh]' : '!w-screen !h-screen !max-w-none !inset-y-0 !right-0'} [&>button]:hidden">
+<Sheet
+	open={openSheet === 'danmaku'}
+	onOpenChange={(open) => {
+		if (!open) openSheet = null;
+	}}
+>
+	<SheetContent
+		side={isMobile ? 'bottom' : 'right'}
+		class="{isMobile
+			? 'h-[85vh] max-h-[85vh]'
+			: '!inset-y-0 !right-0 !h-screen !w-screen !max-w-none'} [&>button]:hidden"
+	>
 		{#if !isMobile && randomCovers.length > 0}
 			<!-- 电脑端背景图 -->
 			<div class="absolute inset-0 z-0 overflow-hidden">
-				<img 
-					src={randomCovers[(currentBackgroundIndex + 3) % randomCovers.length]} 
+				<img
+					src={randomCovers[(currentBackgroundIndex + 3) % randomCovers.length]}
 					alt="背景"
-					class="w-full h-full object-cover"
+					class="h-full w-full object-cover"
 					style="opacity: 0.6; filter: contrast(1.1) brightness(0.9);"
 					loading="lazy"
 				/>
-				<div class="absolute inset-0" style="background: linear-gradient(to bottom right, rgba(255,255,255,0.85), rgba(255,255,255,0.5));"></div>
+				<div
+					class="absolute inset-0"
+					style="background: linear-gradient(to bottom right, rgba(255,255,255,0.85), rgba(255,255,255,0.5));"
+				></div>
 			</div>
 		{/if}
-		<div class="h-full flex items-center justify-center {isMobile ? '' : 'p-8'} relative z-10">
-			<div class="{isMobile ? 'w-full h-full bg-background' : 'max-w-4xl w-full bg-card/95 backdrop-blur-sm rounded-lg shadow-2xl border'} overflow-hidden relative">
-				<SheetHeader class="{isMobile ? '' : 'p-6 border-b'} relative">
+		<div class="flex h-full items-center justify-center {isMobile ? '' : 'p-8'} relative z-10">
+			<div
+				class="{isMobile
+					? 'bg-background h-full w-full'
+					: 'bg-card/95 w-full max-w-4xl rounded-lg border shadow-2xl backdrop-blur-sm'} relative overflow-hidden"
+			>
+				<SheetHeader class="{isMobile ? '' : 'border-b p-6'} relative">
 					<SheetTitle>弹幕设置</SheetTitle>
 					<SheetDescription>弹幕显示样式和布局参数</SheetDescription>
 					<!-- 自定义关闭按钮 -->
 					<button
-						onclick={() => openSheet = null}
-						class="absolute top-2 right-2 p-1 rounded-sm opacity-70 ring-offset-background transition-opacity hover:opacity-100 focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:pointer-events-none hover:bg-gray-100"
+						onclick={() => (openSheet = null)}
+						class="ring-offset-background focus:ring-ring absolute right-2 top-2 rounded-sm p-1 opacity-70 transition-opacity hover:bg-gray-100 hover:opacity-100 focus:outline-none focus:ring-2 focus:ring-offset-2 disabled:pointer-events-none"
 						type="button"
 					>
 						<svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-							<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+							<path
+								stroke-linecap="round"
+								stroke-linejoin="round"
+								stroke-width="2"
+								d="M6 18L18 6M6 6l12 12"
+							/>
 						</svg>
 						<span class="sr-only">关闭</span>
 					</button>
 				</SheetHeader>
-				<form onsubmit={(e) => { e.preventDefault(); saveConfig(); }} class="flex flex-col {isMobile ? 'h-[calc(100%-5rem)]' : 'h-[calc(100%-8rem)]'}">
-					<div class="flex-1 overflow-y-auto px-6 py-6 space-y-6">
-				<div class="grid grid-cols-1 gap-4 md:grid-cols-2">
-					<div class="space-y-2">
-						<Label for="danmaku-duration">弹幕持续时间（秒）</Label>
-						<Input
-							id="danmaku-duration"
-							type="number"
-							bind:value={danmakuDuration}
-							min="1"
-							max="60"
-							step="0.1"
-							placeholder="15.0"
-						/>
-					</div>
+				<form
+					onsubmit={(e) => {
+						e.preventDefault();
+						saveConfig();
+					}}
+					class="flex flex-col {isMobile ? 'h-[calc(100%-5rem)]' : 'h-[calc(100%-8rem)]'}"
+				>
+					<div class="flex-1 space-y-6 overflow-y-auto px-6 py-6">
+						<div class="grid grid-cols-1 gap-4 md:grid-cols-2">
+							<div class="space-y-2">
+								<Label for="danmaku-duration">弹幕持续时间（秒）</Label>
+								<Input
+									id="danmaku-duration"
+									type="number"
+									bind:value={danmakuDuration}
+									min="1"
+									max="60"
+									step="0.1"
+									placeholder="15.0"
+								/>
+							</div>
 
-					<div class="space-y-2">
-						<Label for="danmaku-font">字体</Label>
-						<Input id="danmaku-font" bind:value={danmakuFont} placeholder="黑体" />
-					</div>
+							<div class="space-y-2">
+								<Label for="danmaku-font">字体</Label>
+								<Input id="danmaku-font" bind:value={danmakuFont} placeholder="黑体" />
+							</div>
 
-					<div class="space-y-2">
-						<Label for="danmaku-font-size">字体大小</Label>
-						<Input
-							id="danmaku-font-size"
-							type="number"
-							bind:value={danmakuFontSize}
-							min="10"
-							max="100"
-							placeholder="25"
-						/>
-					</div>
+							<div class="space-y-2">
+								<Label for="danmaku-font-size">字体大小</Label>
+								<Input
+									id="danmaku-font-size"
+									type="number"
+									bind:value={danmakuFontSize}
+									min="10"
+									max="100"
+									placeholder="25"
+								/>
+							</div>
 
-					<div class="space-y-2">
-						<Label for="danmaku-width-ratio">宽度比例</Label>
-						<Input
-							id="danmaku-width-ratio"
-							type="number"
-							bind:value={danmakuWidthRatio}
-							min="0.1"
-							max="3.0"
-							step="0.1"
-							placeholder="1.2"
-						/>
-					</div>
+							<div class="space-y-2">
+								<Label for="danmaku-width-ratio">宽度比例</Label>
+								<Input
+									id="danmaku-width-ratio"
+									type="number"
+									bind:value={danmakuWidthRatio}
+									min="0.1"
+									max="3.0"
+									step="0.1"
+									placeholder="1.2"
+								/>
+							</div>
 
-					<div class="space-y-2">
-						<Label for="danmaku-horizontal-gap">水平间距</Label>
-						<Input
-							id="danmaku-horizontal-gap"
-							type="number"
-							bind:value={danmakuHorizontalGap}
-							min="0"
-							max="100"
-							step="1"
-							placeholder="20.0"
-						/>
-					</div>
+							<div class="space-y-2">
+								<Label for="danmaku-horizontal-gap">水平间距</Label>
+								<Input
+									id="danmaku-horizontal-gap"
+									type="number"
+									bind:value={danmakuHorizontalGap}
+									min="0"
+									max="100"
+									step="1"
+									placeholder="20.0"
+								/>
+							</div>
 
-					<div class="space-y-2">
-						<Label for="danmaku-lane-size">轨道高度</Label>
-						<Input
-							id="danmaku-lane-size"
-							type="number"
-							bind:value={danmakuLaneSize}
-							min="10"
-							max="100"
-							placeholder="32"
-						/>
-					</div>
+							<div class="space-y-2">
+								<Label for="danmaku-lane-size">轨道高度</Label>
+								<Input
+									id="danmaku-lane-size"
+									type="number"
+									bind:value={danmakuLaneSize}
+									min="10"
+									max="100"
+									placeholder="32"
+								/>
+							</div>
 
-					<div class="space-y-2">
-						<Label for="danmaku-float-percentage">滚动弹幕占比</Label>
-						<Input
-							id="danmaku-float-percentage"
-							type="number"
-							bind:value={danmakuFloatPercentage}
-							min="0"
-							max="1"
-							step="0.1"
-							placeholder="0.5"
-						/>
-					</div>
+							<div class="space-y-2">
+								<Label for="danmaku-float-percentage">滚动弹幕占比</Label>
+								<Input
+									id="danmaku-float-percentage"
+									type="number"
+									bind:value={danmakuFloatPercentage}
+									min="0"
+									max="1"
+									step="0.1"
+									placeholder="0.5"
+								/>
+							</div>
 
-					<div class="space-y-2">
-						<Label for="danmaku-bottom-percentage">底部弹幕占比</Label>
-						<Input
-							id="danmaku-bottom-percentage"
-							type="number"
-							bind:value={danmakuBottomPercentage}
-							min="0"
-							max="1"
-							step="0.1"
-							placeholder="0.3"
-						/>
-					</div>
+							<div class="space-y-2">
+								<Label for="danmaku-bottom-percentage">底部弹幕占比</Label>
+								<Input
+									id="danmaku-bottom-percentage"
+									type="number"
+									bind:value={danmakuBottomPercentage}
+									min="0"
+									max="1"
+									step="0.1"
+									placeholder="0.3"
+								/>
+							</div>
 
-					<div class="space-y-2">
-						<Label for="danmaku-opacity">不透明度</Label>
-						<Input
-							id="danmaku-opacity"
-							type="number"
-							bind:value={danmakuOpacity}
-							min="0"
-							max="100"
-							placeholder="76"
-						/>
-					</div>
+							<div class="space-y-2">
+								<Label for="danmaku-opacity">不透明度</Label>
+								<Input
+									id="danmaku-opacity"
+									type="number"
+									bind:value={danmakuOpacity}
+									min="0"
+									max="100"
+									placeholder="76"
+								/>
+							</div>
 
-					<div class="space-y-2">
-						<Label for="danmaku-outline">描边宽度</Label>
-						<Input
-							id="danmaku-outline"
-							type="number"
-							bind:value={danmakuOutline}
-							min="0"
-							max="5"
-							step="0.1"
-							placeholder="0.8"
-						/>
-					</div>
+							<div class="space-y-2">
+								<Label for="danmaku-outline">描边宽度</Label>
+								<Input
+									id="danmaku-outline"
+									type="number"
+									bind:value={danmakuOutline}
+									min="0"
+									max="5"
+									step="0.1"
+									placeholder="0.8"
+								/>
+							</div>
 
-					<div class="space-y-2">
-						<Label for="danmaku-time-offset">时间偏移（秒）</Label>
-						<Input
-							id="danmaku-time-offset"
-							type="number"
-							bind:value={danmakuTimeOffset}
-							step="0.1"
-							placeholder="0.0"
-						/>
-					</div>
+							<div class="space-y-2">
+								<Label for="danmaku-time-offset">时间偏移（秒）</Label>
+								<Input
+									id="danmaku-time-offset"
+									type="number"
+									bind:value={danmakuTimeOffset}
+									step="0.1"
+									placeholder="0.0"
+								/>
+							</div>
 
-					<div class="flex items-center space-x-2">
-						<input
-							type="checkbox"
-							id="danmaku-bold"
-							bind:checked={danmakuBold}
-							class="text-primary focus:ring-primary h-4 w-4 rounded border-gray-300"
-						/>
-						<Label for="danmaku-bold" class="text-sm">加粗字体</Label>
-					</div>
-				</div>
+							<div class="flex items-center space-x-2">
+								<input
+									type="checkbox"
+									id="danmaku-bold"
+									bind:checked={danmakuBold}
+									class="text-primary focus:ring-primary h-4 w-4 rounded border-gray-300"
+								/>
+								<Label for="danmaku-bold" class="text-sm">加粗字体</Label>
+							</div>
+						</div>
 
-				<div class="rounded-lg border border-green-200 bg-green-50 p-3">
-					<h5 class="mb-2 font-medium text-green-800">弹幕设置说明</h5>
-					<div class="space-y-1 text-green-700 text-sm">
-						<p><strong>持续时间：</strong>弹幕在屏幕上显示的时间（秒）</p>
-						<p><strong>字体样式：</strong>字体、大小、加粗、描边等外观设置</p>
-						<p><strong>布局设置：</strong>轨道高度、间距、占比等位置控制</p>
-						<p><strong>时间偏移：</strong>正值延后弹幕，负值提前弹幕</p>
+						<div class="rounded-lg border border-green-200 bg-green-50 p-3">
+							<h5 class="mb-2 font-medium text-green-800">弹幕设置说明</h5>
+							<div class="space-y-1 text-sm text-green-700">
+								<p><strong>持续时间：</strong>弹幕在屏幕上显示的时间（秒）</p>
+								<p><strong>字体样式：</strong>字体、大小、加粗、描边等外观设置</p>
+								<p><strong>布局设置：</strong>轨道高度、间距、占比等位置控制</p>
+								<p><strong>时间偏移：</strong>正值延后弹幕，负值提前弹幕</p>
+							</div>
+						</div>
 					</div>
-				</div>
-					</div>
-					<SheetFooter class="border-t pt-4 pb-safe">
+					<SheetFooter class="pb-safe border-t pt-4">
 						<Button type="submit" disabled={saving} class="w-full">
 							{saving ? '保存中...' : '保存设置'}
 						</Button>
@@ -1312,119 +1710,139 @@
 </Sheet>
 
 <!-- B站凭证设置抽屉 -->
-<Sheet open={openSheet === 'credential'} onOpenChange={(open) => { if (!open) openSheet = null; }}>
-	<SheetContent side={isMobile ? 'bottom' : 'right'} class="{isMobile ? 'h-[85vh] max-h-[85vh]' : '!w-screen !h-screen !max-w-none !inset-y-0 !right-0'} [&>button]:hidden">
+<Sheet
+	open={openSheet === 'credential'}
+	onOpenChange={(open) => {
+		if (!open) openSheet = null;
+	}}
+>
+	<SheetContent
+		side={isMobile ? 'bottom' : 'right'}
+		class="{isMobile
+			? 'h-[85vh] max-h-[85vh]'
+			: '!inset-y-0 !right-0 !h-screen !w-screen !max-w-none'} [&>button]:hidden"
+	>
 		{#if !isMobile && randomCovers.length > 0}
 			<!-- 电脑端背景图 -->
 			<div class="absolute inset-0 z-0 overflow-hidden">
-				<img 
-					src={randomCovers[(currentBackgroundIndex + 4) % randomCovers.length]} 
+				<img
+					src={randomCovers[(currentBackgroundIndex + 4) % randomCovers.length]}
 					alt="背景"
-					class="w-full h-full object-cover"
+					class="h-full w-full object-cover"
 					style="opacity: 0.6; filter: contrast(1.1) brightness(0.9);"
 					loading="lazy"
 				/>
-				<div class="absolute inset-0" style="background: linear-gradient(to bottom right, rgba(255,255,255,0.85), rgba(255,255,255,0.5));"></div>
+				<div
+					class="absolute inset-0"
+					style="background: linear-gradient(to bottom right, rgba(255,255,255,0.85), rgba(255,255,255,0.5));"
+				></div>
 			</div>
 		{/if}
-		<div class="h-full flex items-center justify-center {isMobile ? '' : 'p-8'} relative z-10">
-			<div class="{isMobile ? 'w-full h-full bg-background' : 'max-w-4xl w-full bg-card/95 backdrop-blur-sm rounded-lg shadow-2xl border'} overflow-hidden relative">
-				<SheetHeader class="{isMobile ? '' : 'p-6 border-b'} relative">
+		<div class="flex h-full items-center justify-center {isMobile ? '' : 'p-8'} relative z-10">
+			<div
+				class="{isMobile
+					? 'bg-background h-full w-full'
+					: 'bg-card/95 w-full max-w-4xl rounded-lg border shadow-2xl backdrop-blur-sm'} relative overflow-hidden"
+			>
+				<SheetHeader class="{isMobile ? '' : 'border-b p-6'} relative">
 					<SheetTitle>B站凭证设置</SheetTitle>
 					<SheetDescription>配置B站登录凭证信息</SheetDescription>
 					<!-- 自定义关闭按钮 -->
 					<button
-						onclick={() => openSheet = null}
-						class="absolute top-2 right-2 p-1 rounded-sm opacity-70 ring-offset-background transition-opacity hover:opacity-100 focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:pointer-events-none hover:bg-gray-100"
+						onclick={() => (openSheet = null)}
+						class="ring-offset-background focus:ring-ring absolute right-2 top-2 rounded-sm p-1 opacity-70 transition-opacity hover:bg-gray-100 hover:opacity-100 focus:outline-none focus:ring-2 focus:ring-offset-2 disabled:pointer-events-none"
 						type="button"
 					>
 						<svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-							<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+							<path
+								stroke-linecap="round"
+								stroke-linejoin="round"
+								stroke-width="2"
+								d="M6 18L18 6M6 6l12 12"
+							/>
 						</svg>
 						<span class="sr-only">关闭</span>
 					</button>
 				</SheetHeader>
-				<form onsubmit={(e) => { e.preventDefault(); saveCredential(); }} class="flex flex-col {isMobile ? 'h-[calc(100%-5rem)]' : 'h-[calc(100%-8rem)]'}">
-					<div class="flex-1 overflow-y-auto px-6 py-6 space-y-6">
-				<div class="rounded-lg border border-amber-200 bg-amber-50 p-4">
-					<div class="space-y-2 text-sm text-amber-800">
-						<div class="font-medium">🔐 如何获取B站登录凭证：</div>
-						<ol class="ml-4 list-decimal space-y-1">
-							<li>在浏览器中登录B站</li>
-							<li>按F12打开开发者工具</li>
-							<li>切换到"网络"(Network)标签</li>
-							<li>刷新页面，找到任意一个请求</li>
-							<li>在请求头中找到Cookie字段，复制对应的值</li>
-						</ol>
-						<div class="mt-2 text-xs text-amber-600">
-							💡 提示：SESSDATA、bili_jct、buvid3、DedeUserID是必填项，ac_time_value可选
+				<form
+					onsubmit={(e) => {
+						e.preventDefault();
+						saveCredential();
+					}}
+					class="flex flex-col {isMobile ? 'h-[calc(100%-5rem)]' : 'h-[calc(100%-8rem)]'}"
+				>
+					<div class="flex-1 space-y-6 overflow-y-auto px-6 py-6">
+						<div class="rounded-lg border border-amber-200 bg-amber-50 p-4">
+							<div class="space-y-2 text-sm text-amber-800">
+								<div class="font-medium">🔐 如何获取B站登录凭证：</div>
+								<ol class="ml-4 list-decimal space-y-1">
+									<li>在浏览器中登录B站</li>
+									<li>按F12打开开发者工具</li>
+									<li>切换到"网络"(Network)标签</li>
+									<li>刷新页面，找到任意一个请求</li>
+									<li>在请求头中找到Cookie字段，复制对应的值</li>
+								</ol>
+								<div class="mt-2 text-xs text-amber-600">
+									💡 提示：SESSDATA、bili_jct、buvid3、DedeUserID是必填项，ac_time_value可选
+								</div>
+							</div>
+						</div>
+
+						<div class="grid grid-cols-1 gap-4 md:grid-cols-2">
+							<div class="space-y-2">
+								<Label for="sessdata">SESSDATA *</Label>
+								<Input
+									id="sessdata"
+									type="password"
+									bind:value={sessdata}
+									placeholder="请输入SESSDATA"
+								/>
+							</div>
+
+							<div class="space-y-2">
+								<Label for="bili-jct">bili_jct *</Label>
+								<Input
+									id="bili-jct"
+									type="password"
+									bind:value={biliJct}
+									placeholder="请输入bili_jct"
+								/>
+							</div>
+
+							<div class="space-y-2">
+								<Label for="buvid3">buvid3 *</Label>
+								<Input id="buvid3" bind:value={buvid3} placeholder="请输入buvid3" />
+							</div>
+
+							<div class="space-y-2">
+								<Label for="dedeuserid">DedeUserID *</Label>
+								<Input id="dedeuserid" bind:value={dedeUserId} placeholder="请输入DedeUserID" />
+							</div>
+
+							<div class="space-y-2 md:col-span-2">
+								<Label for="ac-time-value">ac_time_value (可选)</Label>
+								<Input
+									id="ac-time-value"
+									bind:value={acTimeValue}
+									placeholder="请输入ac_time_value（可选）"
+								/>
+							</div>
+						</div>
+
+						<div class="rounded-lg border border-green-200 bg-green-50 p-3">
+							<div class="text-sm text-green-800">
+								<div class="mb-1 font-medium">✅ 凭证状态检查：</div>
+								<div class="text-xs">
+									{#if sessdata && biliJct && buvid3 && dedeUserId}
+										<span class="text-green-600">✓ 必填凭证已填写完整</span>
+									{:else}
+										<span class="text-orange-600">⚠ 请填写所有必填凭证项</span>
+									{/if}
+								</div>
+							</div>
 						</div>
 					</div>
-				</div>
-
-				<div class="grid grid-cols-1 gap-4 md:grid-cols-2">
-					<div class="space-y-2">
-						<Label for="sessdata">SESSDATA *</Label>
-						<Input
-							id="sessdata"
-							type="password"
-							bind:value={sessdata}
-							placeholder="请输入SESSDATA"
-						/>
-					</div>
-
-					<div class="space-y-2">
-						<Label for="bili-jct">bili_jct *</Label>
-						<Input
-							id="bili-jct"
-							type="password"
-							bind:value={biliJct}
-							placeholder="请输入bili_jct"
-						/>
-					</div>
-
-					<div class="space-y-2">
-						<Label for="buvid3">buvid3 *</Label>
-						<Input
-							id="buvid3"
-							bind:value={buvid3}
-							placeholder="请输入buvid3"
-						/>
-					</div>
-
-					<div class="space-y-2">
-						<Label for="dedeuserid">DedeUserID *</Label>
-						<Input
-							id="dedeuserid"
-							bind:value={dedeUserId}
-							placeholder="请输入DedeUserID"
-						/>
-					</div>
-
-					<div class="space-y-2 md:col-span-2">
-						<Label for="ac-time-value">ac_time_value (可选)</Label>
-						<Input
-							id="ac-time-value"
-							bind:value={acTimeValue}
-							placeholder="请输入ac_time_value（可选）"
-						/>
-					</div>
-				</div>
-
-				<div class="rounded-lg border border-green-200 bg-green-50 p-3">
-					<div class="text-sm text-green-800">
-						<div class="font-medium mb-1">✅ 凭证状态检查：</div>
-						<div class="text-xs">
-							{#if sessdata && biliJct && buvid3 && dedeUserId}
-								<span class="text-green-600">✓ 必填凭证已填写完整</span>
-							{:else}
-								<span class="text-orange-600">⚠ 请填写所有必填凭证项</span>
-							{/if}
-						</div>
-					</div>
-				</div>
-					</div>
-					<SheetFooter class="border-t pt-4 pb-safe">
+					<SheetFooter class="pb-safe border-t pt-4">
 						<Button type="submit" disabled={credentialSaving} class="w-full">
 							{credentialSaving ? '保存中...' : '保存凭证'}
 						</Button>
@@ -1436,246 +1854,282 @@
 </Sheet>
 
 <!-- 风控配置抽屉 -->
-<Sheet open={openSheet === 'risk'} onOpenChange={(open) => { if (!open) openSheet = null; }}>
-	<SheetContent side={isMobile ? 'bottom' : 'right'} class="{isMobile ? 'h-[85vh] max-h-[85vh]' : '!w-screen !h-screen !max-w-none !inset-y-0 !right-0'} [&>button]:hidden">
+<Sheet
+	open={openSheet === 'risk'}
+	onOpenChange={(open) => {
+		if (!open) openSheet = null;
+	}}
+>
+	<SheetContent
+		side={isMobile ? 'bottom' : 'right'}
+		class="{isMobile
+			? 'h-[85vh] max-h-[85vh]'
+			: '!inset-y-0 !right-0 !h-screen !w-screen !max-w-none'} [&>button]:hidden"
+	>
 		{#if !isMobile && randomCovers.length > 0}
 			<!-- 电脑端背景图 -->
 			<div class="absolute inset-0 z-0 overflow-hidden">
-				<img 
-					src={randomCovers[(currentBackgroundIndex + 5) % randomCovers.length]} 
+				<img
+					src={randomCovers[(currentBackgroundIndex + 5) % randomCovers.length]}
 					alt="背景"
-					class="w-full h-full object-cover"
+					class="h-full w-full object-cover"
 					style="opacity: 0.6; filter: contrast(1.1) brightness(0.9);"
 					loading="lazy"
 				/>
-				<div class="absolute inset-0" style="background: linear-gradient(to bottom right, rgba(255,255,255,0.85), rgba(255,255,255,0.5));"></div>
+				<div
+					class="absolute inset-0"
+					style="background: linear-gradient(to bottom right, rgba(255,255,255,0.85), rgba(255,255,255,0.5));"
+				></div>
 			</div>
 		{/if}
-		<div class="h-full flex items-center justify-center {isMobile ? '' : 'p-8'} relative z-10">
-			<div class="{isMobile ? 'w-full h-full bg-background' : 'max-w-4xl w-full bg-card/95 backdrop-blur-sm rounded-lg shadow-2xl border'} overflow-hidden relative">
-				<SheetHeader class="{isMobile ? '' : 'p-6 border-b'} relative">
+		<div class="flex h-full items-center justify-center {isMobile ? '' : 'p-8'} relative z-10">
+			<div
+				class="{isMobile
+					? 'bg-background h-full w-full'
+					: 'bg-card/95 w-full max-w-4xl rounded-lg border shadow-2xl backdrop-blur-sm'} relative overflow-hidden"
+			>
+				<SheetHeader class="{isMobile ? '' : 'border-b p-6'} relative">
 					<SheetTitle>风控配置</SheetTitle>
 					<SheetDescription>UP主投稿获取风控策略，用于优化大量视频UP主的获取</SheetDescription>
 					<!-- 自定义关闭按钮 -->
 					<button
-						onclick={() => openSheet = null}
-						class="absolute top-2 right-2 p-1 rounded-sm opacity-70 ring-offset-background transition-opacity hover:opacity-100 focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:pointer-events-none hover:bg-gray-100"
+						onclick={() => (openSheet = null)}
+						class="ring-offset-background focus:ring-ring absolute right-2 top-2 rounded-sm p-1 opacity-70 transition-opacity hover:bg-gray-100 hover:opacity-100 focus:outline-none focus:ring-2 focus:ring-offset-2 disabled:pointer-events-none"
 						type="button"
 					>
 						<svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-							<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+							<path
+								stroke-linecap="round"
+								stroke-linejoin="round"
+								stroke-width="2"
+								d="M6 18L18 6M6 6l12 12"
+							/>
 						</svg>
 						<span class="sr-only">关闭</span>
 					</button>
 				</SheetHeader>
-				<form onsubmit={(e) => { e.preventDefault(); saveConfig(); }} class="flex flex-col {isMobile ? 'h-[calc(100%-5rem)]' : 'h-[calc(100%-8rem)]'}">
-					<div class="flex-1 overflow-y-auto px-6 py-6 space-y-6">
-				<!-- 基础优化配置 -->
-				<div class="rounded-lg border border-blue-200 bg-blue-50 p-4">
-					<h3 class="mb-3 text-sm font-medium text-blue-800">🎯 基础优化配置</h3>
-					<div class="grid grid-cols-1 gap-4 md:grid-cols-2">
-						<div class="space-y-2">
-							<Label for="large-submission-threshold">大量视频UP主阈值</Label>
-							<Input
-								id="large-submission-threshold"
-								type="number"
-								bind:value={largeSubmissionThreshold}
-								min="10"
-								max="1000"
-								placeholder="100"
-							/>
-							<p class="text-muted-foreground text-xs">超过此视频数量的UP主将启用风控策略</p>
-						</div>
-
-						<div class="space-y-2">
-							<Label for="base-request-delay">基础请求间隔（毫秒）</Label>
-							<Input
-								id="base-request-delay"
-								type="number"
-								bind:value={baseRequestDelay}
-								min="50"
-								max="2000"
-								placeholder="200"
-							/>
-							<p class="text-muted-foreground text-xs">每个请求之间的基础延迟时间</p>
-						</div>
-
-						<div class="space-y-2">
-							<Label for="large-submission-delay-multiplier">大量视频延迟倍数</Label>
-							<Input
-								id="large-submission-delay-multiplier"
-								type="number"
-								bind:value={largeSubmissionDelayMultiplier}
-								min="1"
-								max="10"
-								step="0.5"
-								placeholder="2"
-							/>
-							<p class="text-muted-foreground text-xs">大量视频UP主的延迟倍数</p>
-						</div>
-
-						<div class="space-y-2">
-							<Label for="max-delay-multiplier">最大延迟倍数</Label>
-							<Input
-								id="max-delay-multiplier"
-								type="number"
-								bind:value={maxDelayMultiplier}
-								min="1"
-								max="20"
-								step="0.5"
-								placeholder="4"
-							/>
-							<p class="text-muted-foreground text-xs">渐进式延迟的最大倍数限制</p>
-						</div>
-					</div>
-
-					<div class="mt-4 flex items-center space-x-2">
-						<input
-							type="checkbox"
-							id="enable-progressive-delay"
-							bind:checked={enableProgressiveDelay}
-							class="text-primary focus:ring-primary h-4 w-4 rounded border-gray-300"
-						/>
-						<Label for="enable-progressive-delay" class="text-sm">启用渐进式延迟</Label>
-						<p class="text-muted-foreground ml-2 text-xs">随着请求次数增加逐步延长延迟时间</p>
-					</div>
-				</div>
-
-				<!-- 增量获取配置 -->
-				<div class="rounded-lg border border-green-200 bg-green-50 p-4">
-					<h3 class="mb-3 text-sm font-medium text-green-800">📈 增量获取配置</h3>
-					<div class="space-y-4">
-						<div class="flex items-center space-x-2">
-							<input
-								type="checkbox"
-								id="enable-incremental-fetch"
-								bind:checked={enableIncrementalFetch}
-								class="text-primary focus:ring-primary h-4 w-4 rounded border-gray-300"
-							/>
-							<Label for="enable-incremental-fetch" class="text-sm">启用增量获取</Label>
-							<p class="text-muted-foreground ml-2 text-xs">优先获取最新视频，减少不必要的请求</p>
-						</div>
-
-						<div class="flex items-center space-x-2">
-							<input
-								type="checkbox"
-								id="incremental-fallback-to-full"
-								bind:checked={incrementalFallbackToFull}
-								class="text-primary focus:ring-primary h-4 w-4 rounded border-gray-300"
-							/>
-							<Label for="incremental-fallback-to-full" class="text-sm">增量获取失败时回退到全量获取</Label>
-							<p class="text-muted-foreground ml-2 text-xs">确保数据完整性</p>
-						</div>
-					</div>
-				</div>
-
-				<!-- 分批处理配置 -->
-				<div class="rounded-lg border border-purple-200 bg-purple-50 p-4">
-					<h3 class="mb-3 text-sm font-medium text-purple-800">📦 分批处理配置</h3>
-					<div class="space-y-4">
-						<div class="flex items-center space-x-2">
-							<input
-								type="checkbox"
-								id="enable-batch-processing"
-								bind:checked={enableBatchProcessing}
-								class="text-primary focus:ring-primary h-4 w-4 rounded border-gray-300"
-							/>
-							<Label for="enable-batch-processing" class="text-sm">启用分批处理</Label>
-							<p class="text-muted-foreground ml-2 text-xs">将大量请求分批处理，降低服务器压力</p>
-						</div>
-
-						{#if enableBatchProcessing}
+				<form
+					onsubmit={(e) => {
+						e.preventDefault();
+						saveConfig();
+					}}
+					class="flex flex-col {isMobile ? 'h-[calc(100%-5rem)]' : 'h-[calc(100%-8rem)]'}"
+				>
+					<div class="flex-1 space-y-6 overflow-y-auto px-6 py-6">
+						<!-- 基础优化配置 -->
+						<div class="rounded-lg border border-blue-200 bg-blue-50 p-4">
+							<h3 class="mb-3 text-sm font-medium text-blue-800">🎯 基础优化配置</h3>
 							<div class="grid grid-cols-1 gap-4 md:grid-cols-2">
 								<div class="space-y-2">
-									<Label for="batch-size">分批大小（页数）</Label>
+									<Label for="large-submission-threshold">大量视频UP主阈值</Label>
 									<Input
-										id="batch-size"
+										id="large-submission-threshold"
 										type="number"
-										bind:value={batchSize}
-										min="1"
-										max="20"
-										placeholder="5"
+										bind:value={largeSubmissionThreshold}
+										min="10"
+										max="1000"
+										placeholder="100"
 									/>
-									<p class="text-muted-foreground text-xs">每批处理的页数</p>
+									<p class="text-muted-foreground text-xs">超过此视频数量的UP主将启用风控策略</p>
 								</div>
 
 								<div class="space-y-2">
-									<Label for="batch-delay-seconds">批次间延迟（秒）</Label>
+									<Label for="base-request-delay">基础请求间隔（毫秒）</Label>
 									<Input
-										id="batch-delay-seconds"
+										id="base-request-delay"
 										type="number"
-										bind:value={batchDelaySeconds}
+										bind:value={baseRequestDelay}
+										min="50"
+										max="2000"
+										placeholder="200"
+									/>
+									<p class="text-muted-foreground text-xs">每个请求之间的基础延迟时间</p>
+								</div>
+
+								<div class="space-y-2">
+									<Label for="large-submission-delay-multiplier">大量视频延迟倍数</Label>
+									<Input
+										id="large-submission-delay-multiplier"
+										type="number"
+										bind:value={largeSubmissionDelayMultiplier}
 										min="1"
-										max="60"
+										max="10"
+										step="0.5"
 										placeholder="2"
 									/>
-									<p class="text-muted-foreground text-xs">每批之间的等待时间</p>
-								</div>
-							</div>
-						{/if}
-					</div>
-				</div>
-
-				<!-- 自动退避配置 -->
-				<div class="rounded-lg border border-orange-200 bg-orange-50 p-4">
-					<h3 class="mb-3 text-sm font-medium text-orange-800">🔄 自动退避配置</h3>
-					<div class="space-y-4">
-						<div class="flex items-center space-x-2">
-							<input
-								type="checkbox"
-								id="enable-auto-backoff"
-								bind:checked={enableAutoBackoff}
-								class="text-primary focus:ring-primary h-4 w-4 rounded border-gray-300"
-							/>
-							<Label for="enable-auto-backoff" class="text-sm">启用自动退避</Label>
-							<p class="text-muted-foreground ml-2 text-xs">遇到错误时自动增加延迟时间</p>
-						</div>
-
-						{#if enableAutoBackoff}
-							<div class="grid grid-cols-1 gap-4 md:grid-cols-2">
-								<div class="space-y-2">
-									<Label for="auto-backoff-base-seconds">自动退避基础时间（秒）</Label>
-									<Input
-										id="auto-backoff-base-seconds"
-										type="number"
-										bind:value={autoBackoffBaseSeconds}
-										min="1"
-										max="300"
-										placeholder="10"
-									/>
-									<p class="text-muted-foreground text-xs">遇到错误时的基础等待时间</p>
+									<p class="text-muted-foreground text-xs">大量视频UP主的延迟倍数</p>
 								</div>
 
 								<div class="space-y-2">
-									<Label for="auto-backoff-max-multiplier">自动退避最大倍数</Label>
+									<Label for="max-delay-multiplier">最大延迟倍数</Label>
 									<Input
-										id="auto-backoff-max-multiplier"
+										id="max-delay-multiplier"
 										type="number"
-										bind:value={autoBackoffMaxMultiplier}
+										bind:value={maxDelayMultiplier}
 										min="1"
 										max="20"
-										placeholder="5"
+										step="0.5"
+										placeholder="4"
 									/>
-									<p class="text-muted-foreground text-xs">退避时间的最大倍数限制</p>
+									<p class="text-muted-foreground text-xs">渐进式延迟的最大倍数限制</p>
 								</div>
 							</div>
-						{/if}
-					</div>
-				</div>
 
-				<!-- 使用建议 -->
-				<div class="rounded-lg border border-gray-200 bg-gray-50 p-4">
-					<h3 class="mb-3 text-sm font-medium text-gray-800">💡 使用建议</h3>
-					<div class="space-y-2 text-xs text-gray-600">
-						<p><strong>小型UP主（&lt;100视频）：</strong> 使用默认设置即可</p>
-						<p><strong>中型UP主（100-500视频）：</strong> 启用渐进式延迟和增量获取</p>
-						<p><strong>大型UP主（500-1000视频）：</strong> 启用分批处理，设置较大的延迟倍数</p>
-						<p><strong>超大型UP主（&gt;1000视频）：</strong> 启用所有风控策略，适当增加各项延迟参数</p>
-						<p><strong>频繁遇到412错误：</strong> 增加基础请求间隔和延迟倍数</p>
+							<div class="mt-4 flex items-center space-x-2">
+								<input
+									type="checkbox"
+									id="enable-progressive-delay"
+									bind:checked={enableProgressiveDelay}
+									class="text-primary focus:ring-primary h-4 w-4 rounded border-gray-300"
+								/>
+								<Label for="enable-progressive-delay" class="text-sm">启用渐进式延迟</Label>
+								<p class="text-muted-foreground ml-2 text-xs">随着请求次数增加逐步延长延迟时间</p>
+							</div>
+						</div>
+
+						<!-- 增量获取配置 -->
+						<div class="rounded-lg border border-green-200 bg-green-50 p-4">
+							<h3 class="mb-3 text-sm font-medium text-green-800">📈 增量获取配置</h3>
+							<div class="space-y-4">
+								<div class="flex items-center space-x-2">
+									<input
+										type="checkbox"
+										id="enable-incremental-fetch"
+										bind:checked={enableIncrementalFetch}
+										class="text-primary focus:ring-primary h-4 w-4 rounded border-gray-300"
+									/>
+									<Label for="enable-incremental-fetch" class="text-sm">启用增量获取</Label>
+									<p class="text-muted-foreground ml-2 text-xs">
+										优先获取最新视频，减少不必要的请求
+									</p>
+								</div>
+
+								<div class="flex items-center space-x-2">
+									<input
+										type="checkbox"
+										id="incremental-fallback-to-full"
+										bind:checked={incrementalFallbackToFull}
+										class="text-primary focus:ring-primary h-4 w-4 rounded border-gray-300"
+									/>
+									<Label for="incremental-fallback-to-full" class="text-sm"
+										>增量获取失败时回退到全量获取</Label
+									>
+									<p class="text-muted-foreground ml-2 text-xs">确保数据完整性</p>
+								</div>
+							</div>
+						</div>
+
+						<!-- 分批处理配置 -->
+						<div class="rounded-lg border border-purple-200 bg-purple-50 p-4">
+							<h3 class="mb-3 text-sm font-medium text-purple-800">📦 分批处理配置</h3>
+							<div class="space-y-4">
+								<div class="flex items-center space-x-2">
+									<input
+										type="checkbox"
+										id="enable-batch-processing"
+										bind:checked={enableBatchProcessing}
+										class="text-primary focus:ring-primary h-4 w-4 rounded border-gray-300"
+									/>
+									<Label for="enable-batch-processing" class="text-sm">启用分批处理</Label>
+									<p class="text-muted-foreground ml-2 text-xs">
+										将大量请求分批处理，降低服务器压力
+									</p>
+								</div>
+
+								{#if enableBatchProcessing}
+									<div class="grid grid-cols-1 gap-4 md:grid-cols-2">
+										<div class="space-y-2">
+											<Label for="batch-size">分批大小（页数）</Label>
+											<Input
+												id="batch-size"
+												type="number"
+												bind:value={batchSize}
+												min="1"
+												max="20"
+												placeholder="5"
+											/>
+											<p class="text-muted-foreground text-xs">每批处理的页数</p>
+										</div>
+
+										<div class="space-y-2">
+											<Label for="batch-delay-seconds">批次间延迟（秒）</Label>
+											<Input
+												id="batch-delay-seconds"
+												type="number"
+												bind:value={batchDelaySeconds}
+												min="1"
+												max="60"
+												placeholder="2"
+											/>
+											<p class="text-muted-foreground text-xs">每批之间的等待时间</p>
+										</div>
+									</div>
+								{/if}
+							</div>
+						</div>
+
+						<!-- 自动退避配置 -->
+						<div class="rounded-lg border border-orange-200 bg-orange-50 p-4">
+							<h3 class="mb-3 text-sm font-medium text-orange-800">🔄 自动退避配置</h3>
+							<div class="space-y-4">
+								<div class="flex items-center space-x-2">
+									<input
+										type="checkbox"
+										id="enable-auto-backoff"
+										bind:checked={enableAutoBackoff}
+										class="text-primary focus:ring-primary h-4 w-4 rounded border-gray-300"
+									/>
+									<Label for="enable-auto-backoff" class="text-sm">启用自动退避</Label>
+									<p class="text-muted-foreground ml-2 text-xs">遇到错误时自动增加延迟时间</p>
+								</div>
+
+								{#if enableAutoBackoff}
+									<div class="grid grid-cols-1 gap-4 md:grid-cols-2">
+										<div class="space-y-2">
+											<Label for="auto-backoff-base-seconds">自动退避基础时间（秒）</Label>
+											<Input
+												id="auto-backoff-base-seconds"
+												type="number"
+												bind:value={autoBackoffBaseSeconds}
+												min="1"
+												max="300"
+												placeholder="10"
+											/>
+											<p class="text-muted-foreground text-xs">遇到错误时的基础等待时间</p>
+										</div>
+
+										<div class="space-y-2">
+											<Label for="auto-backoff-max-multiplier">自动退避最大倍数</Label>
+											<Input
+												id="auto-backoff-max-multiplier"
+												type="number"
+												bind:value={autoBackoffMaxMultiplier}
+												min="1"
+												max="20"
+												placeholder="5"
+											/>
+											<p class="text-muted-foreground text-xs">退避时间的最大倍数限制</p>
+										</div>
+									</div>
+								{/if}
+							</div>
+						</div>
+
+						<!-- 使用建议 -->
+						<div class="rounded-lg border border-gray-200 bg-gray-50 p-4">
+							<h3 class="mb-3 text-sm font-medium text-gray-800">💡 使用建议</h3>
+							<div class="space-y-2 text-xs text-gray-600">
+								<p><strong>小型UP主（&lt;100视频）：</strong> 使用默认设置即可</p>
+								<p><strong>中型UP主（100-500视频）：</strong> 启用渐进式延迟和增量获取</p>
+								<p><strong>大型UP主（500-1000视频）：</strong> 启用分批处理，设置较大的延迟倍数</p>
+								<p>
+									<strong>超大型UP主（&gt;1000视频）：</strong> 启用所有风控策略，适当增加各项延迟参数
+								</p>
+								<p><strong>频繁遇到412错误：</strong> 增加基础请求间隔和延迟倍数</p>
+							</div>
+						</div>
 					</div>
-				</div>
-					</div>
-					<SheetFooter class="border-t pt-4 pb-safe">
+					<SheetFooter class="pb-safe border-t pt-4">
 						<Button type="submit" disabled={saving} class="w-full">
 							{saving ? '保存中...' : '保存设置'}
 						</Button>
@@ -1687,45 +2141,72 @@
 </Sheet>
 
 <!-- 系统设置抽屉 -->
-<Sheet open={openSheet === 'system'} onOpenChange={(open) => { if (!open) openSheet = null; }}>
-	<SheetContent side={isMobile ? 'bottom' : 'right'} class="{isMobile ? 'h-[85vh] max-h-[85vh]' : '!w-screen !h-screen !max-w-none !inset-y-0 !right-0'} [&>button]:hidden">
+<Sheet
+	open={openSheet === 'system'}
+	onOpenChange={(open) => {
+		if (!open) openSheet = null;
+	}}
+>
+	<SheetContent
+		side={isMobile ? 'bottom' : 'right'}
+		class="{isMobile
+			? 'h-[85vh] max-h-[85vh]'
+			: '!inset-y-0 !right-0 !h-screen !w-screen !max-w-none'} [&>button]:hidden"
+	>
 		{#if !isMobile && randomCovers.length > 0}
 			<!-- 电脑端背景图 -->
 			<div class="absolute inset-0 z-0 overflow-hidden">
-				<img 
-					src={randomCovers[(currentBackgroundIndex + 6) % randomCovers.length]} 
+				<img
+					src={randomCovers[(currentBackgroundIndex + 6) % randomCovers.length]}
 					alt="背景"
-					class="w-full h-full object-cover"
+					class="h-full w-full object-cover"
 					style="opacity: 0.6; filter: contrast(1.1) brightness(0.9);"
 					loading="lazy"
 				/>
-				<div class="absolute inset-0" style="background: linear-gradient(to bottom right, rgba(255,255,255,0.85), rgba(255,255,255,0.5));"></div>
+				<div
+					class="absolute inset-0"
+					style="background: linear-gradient(to bottom right, rgba(255,255,255,0.85), rgba(255,255,255,0.5));"
+				></div>
 			</div>
 		{/if}
-		<div class="h-full flex items-center justify-center {isMobile ? '' : 'p-8'} relative z-10">
-			<div class="{isMobile ? 'w-full h-full bg-background' : 'max-w-4xl w-full bg-card/95 backdrop-blur-sm rounded-lg shadow-2xl border'} overflow-hidden relative">
-				<SheetHeader class="{isMobile ? '' : 'p-6 border-b'} relative">
+		<div class="flex h-full items-center justify-center {isMobile ? '' : 'p-8'} relative z-10">
+			<div
+				class="{isMobile
+					? 'bg-background h-full w-full'
+					: 'bg-card/95 w-full max-w-4xl rounded-lg border shadow-2xl backdrop-blur-sm'} relative overflow-hidden"
+			>
+				<SheetHeader class="{isMobile ? '' : 'border-b p-6'} relative">
 					<SheetTitle>系统设置</SheetTitle>
 					<SheetDescription>时区、扫描间隔等其他设置</SheetDescription>
 					<!-- 自定义关闭按钮 -->
 					<button
-						onclick={() => openSheet = null}
-						class="absolute top-2 right-2 p-1 rounded-sm opacity-70 ring-offset-background transition-opacity hover:opacity-100 focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:pointer-events-none hover:bg-gray-100"
+						onclick={() => (openSheet = null)}
+						class="ring-offset-background focus:ring-ring absolute right-2 top-2 rounded-sm p-1 opacity-70 transition-opacity hover:bg-gray-100 hover:opacity-100 focus:outline-none focus:ring-2 focus:ring-offset-2 disabled:pointer-events-none"
 						type="button"
 					>
 						<svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-							<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+							<path
+								stroke-linecap="round"
+								stroke-linejoin="round"
+								stroke-width="2"
+								d="M6 18L18 6M6 6l12 12"
+							/>
 						</svg>
 						<span class="sr-only">关闭</span>
 					</button>
 				</SheetHeader>
-				<form onsubmit={(e) => { e.preventDefault(); saveConfig(); }} class="flex flex-col {isMobile ? 'h-[calc(100%-5rem)]' : 'h-[calc(100%-8rem)]'}">
-					<div class="flex-1 overflow-y-auto px-6 py-6 space-y-6">
-						
+				<form
+					onsubmit={(e) => {
+						e.preventDefault();
+						saveConfig();
+					}}
+					class="flex flex-col {isMobile ? 'h-[calc(100%-5rem)]' : 'h-[calc(100%-8rem)]'}"
+				>
+					<div class="flex-1 space-y-6 overflow-y-auto px-6 py-6">
 						<!-- Basic System Settings -->
 						<div class="mt-6 space-y-6">
 							<h3 class="text-base font-semibold">基本系统设置</h3>
-							
+
 							<div class="space-y-2">
 								<Label for="interval">扫描间隔（秒）</Label>
 								<Input
@@ -1768,7 +2249,7 @@
 
 							<div class="rounded-lg border border-orange-200 bg-orange-50 p-3">
 								<h5 class="mb-2 font-medium text-orange-800">其他设置说明</h5>
-								<div class="space-y-1 text-orange-700 text-sm">
+								<div class="space-y-1 text-sm text-orange-700">
 									<p><strong>扫描间隔：</strong>每次扫描下载的时间间隔（秒）</p>
 									<p><strong>时间格式：</strong>控制时间变量在文件名中的显示格式</p>
 									<p><strong>CDN排序：</strong>启用后优先使用质量更高的CDN，可能提升下载速度</p>
@@ -1776,7 +2257,7 @@
 							</div>
 						</div>
 					</div>
-					<SheetFooter class="border-t pt-4 pb-safe">
+					<SheetFooter class="pb-safe border-t pt-4">
 						<Button type="submit" disabled={saving} class="w-full">
 							{saving ? '保存中...' : '保存设置'}
 						</Button>

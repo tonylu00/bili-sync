@@ -205,7 +205,11 @@ pub trait PathSafeTemplate {
 /// 通过将模板字符串中的分隔符替换为自定义的字符串，使得模板字符串中的分隔符得以保留
 impl PathSafeTemplate for handlebars::Handlebars<'_> {
     fn path_safe_register(&mut self, name: &'static str, template: &'static str) -> Result<()> {
-        Ok(self.register_template_string(name, template.replace(std::path::MAIN_SEPARATOR_STR, "__SEP__"))?)
+        // 同时处理正斜杠和反斜杠，确保跨平台兼容性
+        let safe_template = template
+            .replace('/', "__SEP__")
+            .replace('\\', "__SEP__");
+        Ok(self.register_template_string(name, safe_template)?)
     }
 
     fn path_safe_render(&self, name: &'static str, data: &serde_json::Value) -> Result<String> {
