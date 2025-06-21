@@ -14,7 +14,7 @@ pub use favorite_list::FavoriteList;
 use favorite_list::Upper;
 use once_cell::sync::Lazy;
 pub use submission::Submission;
-pub use video::{Dimension, PageInfo, Video, bvid_to_aid};
+pub use video::{bvid_to_aid, Dimension, PageInfo, Video};
 pub use watch_later::WatchLater;
 pub mod bangumi;
 

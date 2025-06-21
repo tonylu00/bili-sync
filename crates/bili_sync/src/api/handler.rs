@@ -5218,11 +5218,12 @@ pub async fn get_video_play_info(
     Path(video_id): Path<String>,
     Extension(db): Extension<Arc<DatabaseConnection>>,
 ) -> Result<ApiResponse<crate::api::response::VideoPlayInfoResponse>, ApiError> {
-    use crate::api::response::{VideoPlayInfoResponse, VideoStreamInfo, AudioStreamInfo, SubtitleStreamInfo};
-    use crate::bilibili::{BiliClient, Video, FilterOption, BestStream, Stream, PageInfo};
+    use crate::api::response::{AudioStreamInfo, SubtitleStreamInfo, VideoPlayInfoResponse, VideoStreamInfo};
+    use crate::bilibili::{BestStream, BiliClient, FilterOption, PageInfo, Stream, Video};
 
     // 查找视频信息
-    let (bvid, aid, cid, title) = find_video_info(&video_id, &db).await
+    let (bvid, aid, cid, title) = find_video_info(&video_id, &db)
+        .await
         .map_err(|e| ApiError::from(anyhow!("获取视频信息失败: {}", e)))?;
 
     debug!("获取视频播放信息: bvid={}, aid={}, cid={}", bvid, aid, cid);
@@ -5230,9 +5231,14 @@ pub async fn get_video_play_info(
     // 创建B站客户端
     let config = crate::config::reload_config();
     let credential = config.credential.load();
-    let cookie_string = credential.as_ref()
-        .map(|cred| format!("SESSDATA={};bili_jct={};buvid3={};DedeUserID={};ac_time_value={}", 
-            cred.sessdata, cred.bili_jct, cred.buvid3, cred.dedeuserid, cred.ac_time_value))
+    let cookie_string = credential
+        .as_ref()
+        .map(|cred| {
+            format!(
+                "SESSDATA={};bili_jct={};buvid3={};DedeUserID={};ac_time_value={}",
+                cred.sessdata, cred.bili_jct, cred.buvid3, cred.dedeuserid, cred.ac_time_value
+            )
+        })
         .unwrap_or_default();
     let bili_client = BiliClient::new(cookie_string);
 
@@ -5250,27 +5256,36 @@ pub async fn get_video_play_info(
     };
 
     // 获取视频播放链接
-    let mut page_analyzer = video.get_page_analyzer(&page_info).await
+    let mut page_analyzer = video
+        .get_page_analyzer(&page_info)
+        .await
         .map_err(|e| ApiError::from(anyhow!("获取视频分析器失败: {}", e)))?;
 
     // 使用默认的筛选选项
     let filter_option = FilterOption::default();
-    let best_stream = page_analyzer.best_stream(&filter_option)
+    let best_stream = page_analyzer
+        .best_stream(&filter_option)
         .map_err(|e| ApiError::from(anyhow!("获取最佳视频流失败: {}", e)))?;
-    
-    debug!("获取到的流类型: {:?}", match &best_stream {
-        BestStream::VideoAudio { .. } => "DASH视频+音频分离流",
-        BestStream::Mixed(_) => "混合流（包含音频）",
-    });
+
+    debug!(
+        "获取到的流类型: {:?}",
+        match &best_stream {
+            BestStream::VideoAudio { .. } => "DASH视频+音频分离流",
+            BestStream::Mixed(_) => "混合流（包含音频）",
+        }
+    );
 
     let mut video_streams = Vec::new();
     let mut audio_streams = Vec::new();
 
     match best_stream {
-        BestStream::VideoAudio { video: video_stream, audio: audio_stream } => {
+        BestStream::VideoAudio {
+            video: video_stream,
+            audio: audio_stream,
+        } => {
             // 使用与下载流程相同的方式获取URL
             let video_urls = video_stream.urls();
-            
+
             // 处理视频流 - 使用第一个可用URL作为主URL，其余作为备用
             if let Some((main_url, backup_urls)) = video_urls.split_first() {
                 if let Stream::DashVideo { quality, codecs, .. } = &video_stream {
@@ -5300,7 +5315,7 @@ pub async fn get_video_play_info(
                     }
                 }
             }
-        },
+        }
         BestStream::Mixed(stream) => {
             // 处理混合流（FLV或MP4）- 使用与下载流程相同的方式
             let urls = stream.urls();
@@ -5321,12 +5336,15 @@ pub async fn get_video_play_info(
     // 获取字幕信息
     let subtitle_streams = match video.get_subtitles(&page_info).await {
         Ok(subtitles) => {
-            subtitles.into_iter().map(|subtitle| SubtitleStreamInfo {
-                language: subtitle.lan.clone(),
-                language_doc: subtitle.lan.clone(), // 暂时使用language作为language_doc
-                url: format!("/api/videos/{}/subtitles/{}", video_id, subtitle.lan),
-            }).collect()
-        },
+            subtitles
+                .into_iter()
+                .map(|subtitle| SubtitleStreamInfo {
+                    language: subtitle.lan.clone(),
+                    language_doc: subtitle.lan.clone(), // 暂时使用language作为language_doc
+                    url: format!("/api/videos/{}/subtitles/{}", video_id, subtitle.lan),
+                })
+                .collect()
+        }
         Err(e) => {
             warn!("获取字幕失败: {}", e);
             Vec::new()
@@ -5352,8 +5370,8 @@ pub async fn get_video_play_info(
 
 /// 查找视频信息
 async fn find_video_info(video_id: &str, db: &DatabaseConnection) -> Result<(String, String, String, String)> {
-    use sea_orm::{ColumnTrait, EntityTrait, QueryFilter};
     use crate::bilibili::bvid_to_aid;
+    use sea_orm::{ColumnTrait, EntityTrait, QueryFilter};
 
     // 首先尝试作为分页ID查找
     if let Ok(page_id) = video_id.parse::<i32>() {
@@ -5372,7 +5390,7 @@ async fn find_video_info(video_id: &str, db: &DatabaseConnection) -> Result<(Str
                     video_record.bvid.clone(),
                     bvid_to_aid(&video_record.bvid).to_string(),
                     page_record.cid.to_string(),
-                    format!("{} - {}", video_record.name, page_record.name)
+                    format!("{} - {}", video_record.name, page_record.name),
                 ));
             }
         }
@@ -5407,7 +5425,7 @@ async fn find_video_info(video_id: &str, db: &DatabaseConnection) -> Result<(Str
         video.bvid.clone(),
         bvid_to_aid(&video.bvid).to_string(),
         first_page.cid.to_string(),
-        video.name
+        video.name,
     ))
 }
 
@@ -5468,8 +5486,8 @@ pub async fn proxy_video_stream(
     Query(params): Query<std::collections::HashMap<String, String>>,
     headers: axum::http::HeaderMap,
 ) -> impl axum::response::IntoResponse {
-    use axum::response::{Response, IntoResponse};
-    use axum::http::{header, StatusCode, HeaderValue};
+    use axum::http::{header, HeaderValue, StatusCode};
+    use axum::response::{IntoResponse, Response};
 
     let stream_url = match params.get("url") {
         Some(url) => url,
@@ -5479,14 +5497,18 @@ pub async fn proxy_video_stream(
     };
 
     debug!("代理视频流请求: {}", stream_url);
-    
+
     // 检查认证信息
     let config = crate::config::reload_config();
     let credential = config.credential.load();
     debug!("当前认证信息是否存在: {}", credential.is_some());
     if let Some(cred) = credential.as_ref() {
-        debug!("认证信息详情: SESSDATA={}, bili_jct={}, DedeUserID={}", 
-            &cred.sessdata[..10], &cred.bili_jct[..10], cred.dedeuserid);
+        debug!(
+            "认证信息详情: SESSDATA={}, bili_jct={}, DedeUserID={}",
+            &cred.sessdata[..10],
+            &cred.bili_jct[..10],
+            cred.dedeuserid
+        );
     }
 
     // 使用与下载器相同的方式：只需要正确的默认头，不需要cookie认证
@@ -5515,10 +5537,10 @@ pub async fn proxy_video_stream(
 
     let status = response.status();
     let response_headers = response.headers().clone();
-    
+
     debug!("B站视频流响应状态: {}", status);
     debug!("B站视频流响应头: {:?}", response_headers);
-    
+
     // 如果是401错误，记录更多详细信息
     if status == reqwest::StatusCode::UNAUTHORIZED {
         error!("B站视频流返回401未授权错误");
@@ -5526,17 +5548,21 @@ pub async fn proxy_video_stream(
         error!("使用下载器模式: 无cookie认证");
         return (StatusCode::UNAUTHORIZED, "B站视频流未授权").into_response();
     }
-    
+
     // 如果是其他错误，也记录
     if !status.is_success() {
         error!("B站视频流返回错误状态: {}", status);
-        return (StatusCode::from_u16(status.as_u16()).unwrap_or(StatusCode::INTERNAL_SERVER_ERROR), "B站视频流请求失败").into_response();
+        return (
+            StatusCode::from_u16(status.as_u16()).unwrap_or(StatusCode::INTERNAL_SERVER_ERROR),
+            "B站视频流请求失败",
+        )
+            .into_response();
     }
 
     // 获取响应体
     // 获取响应流而不是一次性读取所有字节
     let body_stream = response.bytes_stream();
-    
+
     // 构建流式响应
     let mut proxy_response = Response::new(axum::body::Body::from_stream(body_stream));
     *proxy_response.status_mut() = status;
@@ -5555,7 +5581,10 @@ pub async fn proxy_video_stream(
 
     // 添加CORS头
     proxy_headers.insert(header::ACCESS_CONTROL_ALLOW_ORIGIN, HeaderValue::from_static("*"));
-    proxy_headers.insert(header::ACCESS_CONTROL_ALLOW_METHODS, HeaderValue::from_static("GET, HEAD, OPTIONS"));
+    proxy_headers.insert(
+        header::ACCESS_CONTROL_ALLOW_METHODS,
+        HeaderValue::from_static("GET, HEAD, OPTIONS"),
+    );
     proxy_headers.insert(header::ACCESS_CONTROL_ALLOW_HEADERS, HeaderValue::from_static("Range"));
 
     // 设置缓存控制

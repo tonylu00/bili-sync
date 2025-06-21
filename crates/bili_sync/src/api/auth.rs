@@ -12,12 +12,12 @@ pub async fn auth(headers: HeaderMap, request: Request, next: Next) -> Result<Re
     // 排除不需要认证的路径
     let path = request.uri().path();
     let excluded_paths = [
-        "/api/search",           // 搜索API不需要认证
-        "/api/proxy/image",      // 图片代理不需要认证
-        "/api/setup/check",      // 初始设置检查不需要认证
-        "/api/setup/auth-token", // 设置auth token不需要认证
-        "/api/credential",       // 更新凭证在初始设置时不需要认证
-        "/api/videos/stream",    // 视频流API不需要认证（供播放器使用）
+        "/api/search",              // 搜索API不需要认证
+        "/api/proxy/image",         // 图片代理不需要认证
+        "/api/setup/check",         // 初始设置检查不需要认证
+        "/api/setup/auth-token",    // 设置auth token不需要认证
+        "/api/credential",          // 更新凭证在初始设置时不需要认证
+        "/api/videos/stream",       // 视频流API不需要认证（供播放器使用）
         "/api/videos/proxy-stream", // 视频流代理API不需要认证（供在线播放器使用）
     ];
 
