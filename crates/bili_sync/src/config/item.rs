@@ -207,8 +207,7 @@ impl PathSafeTemplate for handlebars::Handlebars<'_> {
     fn path_safe_register(&mut self, name: &'static str, template: &'static str) -> Result<()> {
         // 同时处理正斜杠和反斜杠，确保跨平台兼容性
         let safe_template = template
-            .replace('/', "__SEP__")
-            .replace('\\', "__SEP__");
+            .replace(['/', '\\'], "__SEP__");
         Ok(self.register_template_string(name, safe_template)?)
     }
 

@@ -152,6 +152,7 @@ impl ConfigBundle {
     }
 
     /// 渲染番剧名称模板的便捷方法
+    #[allow(dead_code)]
     pub fn render_bangumi_template(&self, data: &serde_json::Value) -> Result<String> {
         use crate::utils::filenamify::filenamify;
 

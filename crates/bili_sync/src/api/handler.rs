@@ -3,10 +3,10 @@ use std::sync::Arc;
 
 use anyhow::{anyhow, Context, Result};
 use axum::extract::{Extension, Path, Query};
-use axum::http::{HeaderMap, HeaderValue};
+
 use bili_sync_entity::*;
 use bili_sync_migration::Expr;
-use chrono::{Local, Utc};
+use chrono::Utc;
 use sea_orm::{
     ColumnTrait, DatabaseConnection, EntityTrait, PaginatorTrait, QueryFilter, QueryOrder, QuerySelect, Set,
     TransactionTrait, Unchanged,
@@ -2984,11 +2984,9 @@ async fn rename_existing_files(
     // 使用register_template_string而不是path_safe_register来避免生命周期问题
     // 同时处理正斜杠和反斜杠，确保跨平台兼容性
     let video_template = config.video_name
-        .replace('/', "__SEP__")
-        .replace('\\', "__SEP__");
+        .replace(['/', '\\'], "__SEP__");
     let page_template = config.page_name
-        .replace('/', "__SEP__")
-        .replace('\\', "__SEP__");
+        .replace(['/', '\\'], "__SEP__");
 
     handlebars.register_template_string("video", video_template)?;
     handlebars.register_template_string("page", page_template)?;
@@ -5761,8 +5759,6 @@ fn generate_unique_folder_name(parent_dir: &std::path::Path, base_name: &str, bv
 
 /// 智能重组视频文件夹
 /// 处理从共享文件夹（如按UP主分类）到独立文件夹（如按视频标题分类）的重组
-
-
 // 从数据库查询并移动特定视频的所有文件到目标文件夹
 async fn extract_video_files_by_database(
     db: &DatabaseConnection,
@@ -5786,8 +5782,7 @@ async fn extract_video_files_by_database(
     {
         Ok(pages) => pages,
         Err(e) => {
-            return Err(std::io::Error::new(
-                std::io::ErrorKind::Other,
+            return Err(std::io::Error::other(
                 format!("数据库查询失败: {}", e)
             ));
         }
@@ -5973,16 +5968,12 @@ async fn generate_unique_filename_with_video_info(
     let parent_dir = target_file.parent().unwrap_or(std::path::Path::new(""));
 
     // 尝试从数据库获取视频信息来生成更有意义的后缀
-    let suffix = if let Ok(video_info) = video::Entity::find_by_id(video_id)
+    let suffix = if let Ok(Some(video)) = video::Entity::find_by_id(video_id)
         .one(db)
         .await
     {
-        if let Some(video) = video_info {
-            // 优先使用发布时间
-            format!("{}", video.pubtime.format("%Y-%m-%d"))
-        } else {
-            format!("vid{}", video_id)
-        }
+        // 优先使用发布时间
+        format!("{}", video.pubtime.format("%Y-%m-%d"))
     } else {
         format!("vid{}", video_id)
     };
@@ -6009,6 +6000,7 @@ async fn generate_unique_filename_with_video_info(
 }
 
 // 生成唯一文件名避免覆盖（简化版本，用于不需要数据库查询的场景）
+#[allow(dead_code)]
 fn generate_unique_filename(target_file: &std::path::Path) -> std::path::PathBuf {
     let file_stem = target_file.file_stem().unwrap_or_default().to_string_lossy();
     let file_extension = target_file.extension().unwrap_or_default().to_string_lossy();
@@ -6025,6 +6017,7 @@ fn generate_unique_filename(target_file: &std::path::Path) -> std::path::PathBuf
     parent_dir.join(new_name)
 }
 
+#[allow(dead_code)]
 async fn reorganize_video_folder(
     source_path: &std::path::Path,
     target_path: &std::path::Path,
@@ -6146,6 +6139,7 @@ async fn reorganize_video_folder(
     Ok(())
 }
 
+#[allow(dead_code)]
 async fn safe_rename_directory(old_path: &std::path::Path, new_path: &std::path::Path) -> Result<(), std::io::Error> {
     // 步骤1：记录现有模板路径
     debug!("开始四步法重命名: {:?} -> {:?}", old_path, new_path);
@@ -6216,8 +6210,7 @@ async fn safe_rename_directory(old_path: &std::path::Path, new_path: &std::path:
             warn!("移动文件失败，尝试回退: {}", e);
             if let Err(rollback_err) = std::fs::rename(&final_temp_path, old_path) {
                 error!("回退失败: {}, 原始错误: {}", rollback_err, e);
-                Err(std::io::Error::new(
-                    std::io::ErrorKind::Other,
+                Err(std::io::Error::other(
                     format!("移动失败且回退失败: 移动错误={}, 回退错误={}", e, rollback_err),
                 ))
             } else {
@@ -6229,6 +6222,7 @@ async fn safe_rename_directory(old_path: &std::path::Path, new_path: &std::path:
 }
 
 /// 移动目录内容从源目录到目标目录
+#[allow(dead_code)]
 async fn move_directory_contents(
     source_dir: &std::path::Path,
     target_dir: &std::path::Path,
