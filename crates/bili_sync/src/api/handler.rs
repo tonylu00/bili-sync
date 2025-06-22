@@ -3243,15 +3243,51 @@ async fn rename_existing_files(
                     let new_file_path = final_video_path.join(&new_file_name);
 
                     if old_file_path.exists() && old_file_path != new_file_path {
-                        match std::fs::rename(&old_file_path, &new_file_path) {
+                        // **关键修复：检查目标文件是否已存在，避免覆盖**
+                        let final_new_file_path = if new_file_path.exists() {
+                            // 目标文件已存在，生成唯一文件名避免覆盖
+                            let file_stem = new_file_path.file_stem().unwrap_or_default().to_string_lossy();
+                            let file_extension = new_file_path.extension().unwrap_or_default().to_string_lossy();
+                            let parent_dir = new_file_path.parent().unwrap_or(&final_video_path);
+
+                            // 尝试添加BV号后缀避免冲突
+                            let bvid_suffix = &video.bvid;
+                            let unique_name = if file_extension.is_empty() {
+                                format!("{}-{}", file_stem, bvid_suffix)
+                            } else {
+                                format!("{}-{}.{}", file_stem, bvid_suffix, file_extension)
+                            };
+                            let unique_path = parent_dir.join(unique_name);
+
+                            // 如果BV号后缀仍然冲突，使用时间戳
+                            if unique_path.exists() {
+                                let timestamp = chrono::Local::now().format("%H%M%S").to_string();
+                                let final_name = if file_extension.is_empty() {
+                                    format!("{}-{}-{}", file_stem, bvid_suffix, timestamp)
+                                } else {
+                                    format!("{}-{}-{}.{}", file_stem, bvid_suffix, timestamp, file_extension)
+                                };
+                                parent_dir.join(final_name)
+                            } else {
+                                unique_path
+                            }
+                        } else {
+                            new_file_path.clone()
+                        };
+
+                        match std::fs::rename(&old_file_path, &final_new_file_path) {
                             Ok(_) => {
-                                debug!("重命名视频级别文件成功: {:?} -> {:?}", old_file_path, new_file_path);
+                                if final_new_file_path != new_file_path {
+                                    warn!("检测到视频级别文件名冲突，已重命名避免覆盖: {:?} -> {:?}", old_file_path, final_new_file_path);
+                                } else {
+                                    debug!("重命名视频级别文件成功: {:?} -> {:?}", old_file_path, final_new_file_path);
+                                }
                                 updated_count += 1;
                             }
                             Err(e) => {
                                 warn!(
                                     "重命名视频级别文件失败: {:?} -> {:?}, 错误: {}",
-                                    old_file_path, new_file_path, e
+                                    old_file_path, final_new_file_path, e
                                 );
                             }
                         }
@@ -3397,28 +3433,64 @@ async fn rename_existing_files(
 
                                 // 只有当新旧路径不同时才进行重命名
                                 if file_path != new_file_path {
-                                    match std::fs::rename(&file_path, &new_file_path) {
+                                    // **关键修复：检查目标文件是否已存在，避免覆盖**
+                                    let final_new_file_path = if new_file_path.exists() {
+                                        // 目标文件已存在，生成唯一文件名避免覆盖
+                                        let file_stem = new_file_path.file_stem().unwrap_or_default().to_string_lossy();
+                                        let file_extension = new_file_path.extension().unwrap_or_default().to_string_lossy();
+                                        let parent_dir = new_file_path.parent().unwrap_or(&final_video_path);
+
+                                        // 尝试添加BV号后缀避免冲突
+                                        let bvid_suffix = &video.bvid;
+                                        let unique_name = if file_extension.is_empty() {
+                                            format!("{}-{}", file_stem, bvid_suffix)
+                                        } else {
+                                            format!("{}-{}.{}", file_stem, bvid_suffix, file_extension)
+                                        };
+                                        let unique_path = parent_dir.join(unique_name);
+
+                                        // 如果BV号后缀仍然冲突，使用时间戳
+                                        if unique_path.exists() {
+                                            let timestamp = chrono::Local::now().format("%H%M%S").to_string();
+                                            let final_name = if file_extension.is_empty() {
+                                                format!("{}-{}-{}", file_stem, bvid_suffix, timestamp)
+                                            } else {
+                                                format!("{}-{}-{}.{}", file_stem, bvid_suffix, timestamp, file_extension)
+                                            };
+                                            parent_dir.join(final_name)
+                                        } else {
+                                            unique_path
+                                        }
+                                    } else {
+                                        new_file_path.clone()
+                                    };
+
+                                    match std::fs::rename(&file_path, &final_new_file_path) {
                                         Ok(_) => {
-                                            debug!("重命名分页相关文件成功: {:?} -> {:?}", file_path, new_file_path);
+                                            if final_new_file_path != new_file_path {
+                                                warn!("检测到文件名冲突，已重命名避免覆盖: {:?} -> {:?}", file_path, final_new_file_path);
+                                            } else {
+                                                debug!("重命名分页相关文件成功: {:?} -> {:?}", file_path, final_new_file_path);
+                                            }
                                             updated_count += 1;
 
                                             // 如果这是主文件（MP4），更新数据库中的路径记录
                                             if file_name.ends_with(".mp4") {
-                                                let new_path_str = new_file_path.to_string_lossy().to_string();
+                                                let new_path_str = final_new_file_path.to_string_lossy().to_string();
                                                 let mut page_update: bili_sync_entity::page::ActiveModel =
                                                     page.clone().into();
                                                 page_update.path = Set(Some(new_path_str));
                                                 if let Err(e) = page_update.update(db.as_ref()).await {
                                                     warn!("更新数据库中的分页路径失败: {}", e);
                                                 } else {
-                                                    debug!("更新数据库分页路径成功: {:?}", new_file_path);
+                                                    debug!("更新数据库分页路径成功: {:?}", final_new_file_path);
                                                 }
                                             }
                                         }
                                         Err(e) => {
                                             warn!(
                                                 "重命名分页相关文件失败: {:?} -> {:?}, 错误: {}",
-                                                file_path, new_file_path, e
+                                                file_path, final_new_file_path, e
                                             );
                                         }
                                     }

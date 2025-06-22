@@ -106,11 +106,11 @@ fn default_bind_address() -> String {
 // }
 
 fn default_multi_page_name() -> Cow<'static, str> {
-    Cow::Borrowed("{{title}}-P{{pid_pad}}")
+    Cow::Borrowed("{{title}}/P{{pid_pad}}.{{ptitle}}")
 }
 
 fn default_bangumi_name() -> Cow<'static, str> {
-    Cow::Borrowed("S{{season_pad}}E{{pid_pad}}-{{pid_pad}}")
+    Cow::Borrowed("第{{pid_pad}}集")
 }
 
 fn default_folder_structure() -> Cow<'static, str> {
@@ -118,7 +118,7 @@ fn default_folder_structure() -> Cow<'static, str> {
 }
 
 fn default_collection_folder_mode() -> Cow<'static, str> {
-    Cow::Borrowed("separate") // 默认为分离模式（向后兼容）
+    Cow::Borrowed("unified") // 默认为统一模式
 }
 
 #[derive(Serialize, Deserialize)]
@@ -214,12 +214,12 @@ impl Default for Config {
             credential: ArcSwapOption::from(Some(Arc::new(Credential::default()))),
             filter_option: FilterOption::default(),
             danmaku_option: DanmakuOption::default(),
-            video_name: Cow::Borrowed("{{title}}"),
-            page_name: Cow::Borrowed("{{title}}"),
-            multi_page_name: Cow::Borrowed("{{title}}-P{{pid_pad}}"),
-            bangumi_name: Cow::Borrowed("S{{season_pad}}E{{pid_pad}}-{{pid_pad}}"),
+            video_name: Cow::Borrowed("{{upper_name}}"),
+            page_name: Cow::Borrowed("{{pubtime}}-{{bvid}}-{{truncate title 20}}"),
+            multi_page_name: Cow::Borrowed("{{title}}/P{{pid_pad}}.{{ptitle}}"),
+            bangumi_name: Cow::Borrowed("第{{pid_pad}}集"),
             folder_structure: Cow::Borrowed("Season 1"),
-            collection_folder_mode: Cow::Borrowed("separate"),
+            collection_folder_mode: Cow::Borrowed("unified"),
             interval: 1200,
             upper_path: CONFIG_DIR.join("upper_face"),
             nfo_time_type: NFOTimeType::FavTime,

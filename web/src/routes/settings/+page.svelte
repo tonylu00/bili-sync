@@ -97,13 +97,13 @@
 	];
 
 	// 表单数据
-	let videoName = '';
-	let pageName = '';
-	let multiPageName = '';
-	let bangumiName = '';
-	let folderStructure = '';
-	let collectionFolderMode = 'separate';
-	let timeFormat = '';
+	let videoName = '{{upper_name}}';
+	let pageName = '{{pubtime}}-{{bvid}}-{{truncate title 20}}';
+	let multiPageName = '{{title}}/P{{pid_pad}}.{{ptitle}}';
+	let bangumiName = '第{{pid_pad}}集';
+	let folderStructure = 'Season 1';
+	let collectionFolderMode = 'unified';
+	let timeFormat = '%Y-%m-%d';
 	let interval = 1200;
 	let nfoTimeType = 'favtime';
 	let parallelDownloadEnabled = false;
@@ -172,22 +172,35 @@
 	let showNamingHelp = false;
 	let showVariableHelp = false;
 
+	// 验证相关状态
+	let pageNameError = '';
+	let pageNameValid = true;
+
+	// 互斥逻辑：视频文件名模板 vs 多P视频文件名模板
+	let videoNameHasPath = false;
+	let multiPageNameHasPath = false;
+
 	// 变量说明
 	const variableHelp = {
 		video: [
 			{ name: '{{title}}', desc: '视频标题' },
+			{ name: '{{show_title}}', desc: '节目标题（与title相同）' },
 			{ name: '{{bvid}}', desc: 'BV号（视频编号）' },
-			{ name: '{{avid}}', desc: 'AV号（视频编号）' },
 			{ name: '{{upper_name}}', desc: 'UP主名称' },
 			{ name: '{{upper_mid}}', desc: 'UP主ID' },
 			{ name: '{{pubtime}}', desc: '视频发布时间' },
-			{ name: '{{fav_time}}', desc: '视频收藏时间（仅收藏夹视频有效）' }
+			{ name: '{{fav_time}}', desc: '视频收藏时间' },
+			{ name: '{{ctime}}', desc: '视频创建时间' }
 		],
 		page: [
-			{ name: '{{ptitle}}', desc: '分页标题' },
+			{ name: '{{ptitle}}', desc: '分页标题（页面名称）' },
 			{ name: '{{pid}}', desc: '分页页号' },
 			{ name: '{{pid_pad}}', desc: '补零的分页页号（如001、002）' },
-			{ name: '{{season_pad}}', desc: '补零的季度号（多P视频默认为01）' }
+			{ name: '{{season}}', desc: '季度号' },
+			{ name: '{{season_pad}}', desc: '补零的季度号（如01、02）' },
+			{ name: '{{duration}}', desc: '视频时长（秒）' },
+			{ name: '{{width}}', desc: '视频宽度' },
+			{ name: '{{height}}', desc: '视频高度' }
 		],
 		common: [
 			{ name: '{{truncate title 10}}', desc: '截取函数示例：截取标题前10个字符' },
@@ -399,9 +412,73 @@
 		}
 	}
 
+	// 检查模板是否包含路径
+	function hasPathSeparator(value: string) {
+		return value.includes('/') || value.includes('\\');
+	}
+
+	// 验证单P视频文件名模板
+	function validatePageName(value: string) {
+		if (value.includes('/') || value.includes('\\')) {
+			pageNameError = '单P视频文件名模板不应包含路径分隔符 / 或 \\';
+			pageNameValid = false;
+			return false;
+		}
+		pageNameError = '';
+		pageNameValid = true;
+		return true;
+	}
+
+	// 互斥逻辑处理
+	function handleVideoNameChange(value: string) {
+		videoNameHasPath = hasPathSeparator(value);
+		if (videoNameHasPath && multiPageNameHasPath) {
+			// 如果视频文件名模板设置了路径，清空多P模板中的路径
+			if (multiPageName.includes('/') || multiPageName.includes('\\')) {
+				// 提取文件名部分，移除路径部分
+				const parts = multiPageName.split(/[/\\]/);
+				multiPageName = parts[parts.length - 1] || '{{title}}-P{{pid_pad}}';
+				toast.info('已自动调整多P模板', {
+					description: '移除了多P模板中的路径设置，避免冲突'
+				});
+			}
+		}
+	}
+
+	function handleMultiPageNameChange(value: string) {
+		multiPageNameHasPath = hasPathSeparator(value);
+		if (multiPageNameHasPath && videoNameHasPath) {
+			// 如果多P模板设置了路径，清空视频文件名模板中的路径
+			if (videoName.includes('/') || videoName.includes('\\')) {
+				// 提取最后一个路径组件
+				const parts = videoName.split(/[/\\]/);
+				videoName = parts[parts.length - 1] || '{{title}}';
+				toast.info('已自动调整视频模板', {
+					description: '移除了视频模板中的路径设置，避免冲突'
+				});
+			}
+		}
+	}
+
+	// 监听变化，实时验证和处理互斥
+	$: {
+		if (pageName) {
+			validatePageName(pageName);
+		}
+		videoNameHasPath = hasPathSeparator(videoName);
+		multiPageNameHasPath = hasPathSeparator(multiPageName);
+	}
+
 	async function saveConfig() {
 		saving = true;
 		try {
+			// 保存前验证
+			if (!validatePageName(pageName)) {
+				toast.error('配置验证失败', { description: pageNameError });
+				saving = false;
+				return;
+			}
+
 			const params = {
 				video_name: videoName,
 				page_name: pageName,
@@ -709,6 +786,28 @@
 							</Button>
 						</div>
 
+						<!-- 互斥提示面板 -->
+						{#if videoNameHasPath && multiPageNameHasPath}
+							<div class="mb-4 rounded-lg border border-red-200 bg-red-50 p-4">
+								<h5 class="mb-2 font-medium text-red-800">🚨 路径冲突检测</h5>
+								<p class="text-sm text-red-700">
+									检测到视频文件名模板和多P视频文件名模板都设置了路径分隔符，这会导致文件夹嵌套混乱。<br
+									/>
+									<strong>建议：</strong>只在其中一个模板中设置路径，另一个模板只控制文件名。
+								</p>
+							</div>
+						{/if}
+
+						<!-- 互斥规则说明 -->
+						<div class="mb-4 rounded-lg border border-yellow-200 bg-yellow-50 p-4">
+							<h5 class="mb-2 font-medium text-yellow-800">💡 智能路径管理</h5>
+							<p class="text-sm text-yellow-700">
+								为避免文件夹嵌套混乱，系统会自动处理路径冲突：<br />
+								• 当您在一个模板中设置路径时，另一个模板会自动移除路径设置<br />
+								• 推荐在"视频文件名模板"中设置UP主分类，在"多P模板"中只设置文件名
+							</p>
+						</div>
+
 						{#if showNamingHelp}
 							<div class="mb-4 rounded-lg border border-blue-200 bg-blue-50 p-4">
 								<h5 class="mb-3 font-medium text-blue-800">📝 文件命名模板详细说明</h5>
@@ -721,7 +820,11 @@
 													>要实现按UP主分类的文件夹结构，请在"视频文件名模板"中设置路径！</strong
 												>
 											</p>
-											<p>• "单P视频文件名模板"主要控制最终的文件名，不建议设置路径分隔符</p>
+											<p>
+												• <strong class="text-red-700"
+													>"单P视频文件名模板"严禁使用路径分隔符 / 或 \</strong
+												>，仅控制最终文件名
+											</p>
 											<p>• 路径分隔符 <code>/</code> 会自动创建对应的文件夹层级结构</p>
 											<p>
 												• 非法字符（如 <code>:</code> <code>*</code> <code>?</code>
@@ -747,30 +850,38 @@
 											</p>
 											<p class="mt-1 text-xs text-blue-600">👆 这样设置会按UP主名称创建文件夹</p>
 										</div>
-										<div class="rounded-md border border-blue-300 bg-white p-3">
-											<p class="mb-2 font-medium text-blue-900">
+										<div class="rounded-md border border-red-300 bg-red-50 p-3">
+											<p class="mb-2 font-medium text-red-900">
 												🎬 <strong>单P视频文件名模板</strong>
 											</p>
 											<p>• <strong>主要作用</strong>：控制最终的视频文件名</p>
-											<p>• <strong>注意事项</strong>：不建议使用路径分隔符 <code>/</code></p>
+											<p>
+												• <strong class="text-red-700">严格限制</strong>：严禁使用路径分隔符
+												<code>/</code>
+												或 <code>\</code>
+											</p>
 											<p>
 												• <strong>推荐设置</strong>：<code>{`{{title}}`}</code> 或
 												<code>{`{{bvid}}-{{title}}`}</code>
 											</p>
-											<p class="mt-1 text-xs text-blue-600">👆 这样设置会生成简洁的文件名</p>
+											<p class="mt-1 text-xs text-red-600">⚠️ 使用路径分隔符会导致文件夹嵌套混乱</p>
 										</div>
 										<div class="rounded-md border border-blue-300 bg-white p-3">
 											<p class="mb-2 font-medium text-blue-900">
 												📺 <strong>多P视频文件名模板</strong>
 											</p>
 											<p>• <strong>主要作用</strong>：控制多分P视频的组织方式</p>
-											<p>• <strong>支持功能</strong>：自动为每个分P创建对应文件</p>
 											<p>
-												• <strong>推荐设置</strong>：<code
-													>{`{{bvid}}/P{{pid_pad}}.{{ptitle}}`}</code
+												• <strong>重要提醒</strong>：<span class="text-orange-600"
+													>不要重复使用UP主路径，避免嵌套</span
 												>
 											</p>
-											<p class="mt-1 text-xs text-blue-600">👆 这样会在BV号文件夹下创建分P文件</p>
+											<p>
+												• <strong>推荐设置</strong>：<code
+													>{`{{title}}/P{{pid_pad}}.{{ptitle}}`}</code
+												>
+											</p>
+											<p class="mt-1 text-xs text-blue-600">👆 这样会在视频文件夹下创建分P文件</p>
 										</div>
 										<div class="rounded-md border border-blue-300 bg-white p-3">
 											<p class="mb-2 font-medium text-blue-900">
@@ -821,42 +932,55 @@
 										<p class="mb-2 font-semibold text-green-800">✅ 推荐配置方案</p>
 										<div class="space-y-3 text-sm">
 											<div class="rounded border border-green-200 bg-white p-2">
-												<p class="font-medium text-green-800">方案一：按UP主分类 + 日期</p>
+												<p class="font-medium text-green-800">方案一：视频模板控制路径 🎯 推荐</p>
 												<p>
-													<strong>视频文件名模板</strong>：<code
-														>{`{{upper_name}}/{{pubdate}}-{{truncate title 20}}`}</code
-													>
+													<strong>视频文件名模板</strong>：<code>{`{{upper_name}}`}</code>
 												</p>
-												<p><strong>单P视频文件名模板</strong>：<code>{`{{title}}`}</code></p>
-												<p class="mt-1 text-xs text-green-600">
-													📂 结果：庄心妍/2025-04-29-没想到吧～这些歌原来是我唱的！/标题.mp4
-												</p>
-											</div>
-											<div class="rounded border border-green-200 bg-white p-2">
-												<p class="font-medium text-green-800">方案二：按UP主分类 + BV号</p>
-												<p>
-													<strong>视频文件名模板</strong>：<code
-														>{`{{upper_name}}/{{bvid}}-{{truncate title 15}}`}</code
-													>
-												</p>
-												<p>
-													<strong>单P视频文件名模板</strong>：<code>{`{{pubdate}}-{{title}}`}</code>
-												</p>
-												<p class="mt-1 text-xs text-green-600">
-													📂
-													结果：庄心妍/BV1m9GCzEEG3-没想到吧～这些歌原来是我唱的/2025-04-29-标题.mp4
-												</p>
-											</div>
-											<div class="rounded border border-green-200 bg-white p-2">
-												<p class="font-medium text-green-800">方案三：极简分类</p>
-												<p><strong>视频文件名模板</strong>：<code>{`{{upper_name}}`}</code></p>
 												<p>
 													<strong>单P视频文件名模板</strong>：<code
-														>{`{{pubdate}}-{{bvid}}-{{truncate title 20}}`}</code
+														>{`{{pubtime}}-{{bvid}}-{{truncate title 20}}`}</code
+													>
+												</p>
+												<p>
+													<strong>多P视频文件名模板</strong>：<code
+														>{`{{title}}/P{{pid_pad}}.{{ptitle}}`}</code
 													>
 												</p>
 												<p class="mt-1 text-xs text-green-600">
-													📂 结果：庄心妍/2025-04-29-BV1m9GCzEEG3-没想到吧～这些歌原来是我唱的！.mp4
+													📂 结果：庄心妍/视频标题/P01.分集标题.mp4
+												</p>
+											</div>
+											<div class="rounded border border-blue-200 bg-blue-50 p-2">
+												<p class="font-medium text-blue-800">方案二：多P模板控制路径</p>
+												<p>
+													<strong>视频文件名模板</strong>：<code>{`{{title}}`}</code>
+												</p>
+												<p>
+													<strong>单P视频文件名模板</strong>：<code
+														>{`{{pubtime}}-{{bvid}}-{{truncate title 20}}`}</code
+													>
+												</p>
+												<p>
+													<strong>多P视频文件名模板</strong>：<code
+														>{`{{upper_name}}/{{title}}/P{{pid_pad}}.{{ptitle}}`}</code
+													>
+												</p>
+												<p class="mt-1 text-xs text-blue-600">
+													📂 结果：庄心妍/视频标题/P01.分集标题.mp4
+												</p>
+											</div>
+											<div class="rounded border border-red-200 bg-red-50 p-2">
+												<p class="font-medium text-red-800">❌ 错误示例：双重路径</p>
+												<p>
+													<strong>视频文件名模板</strong>：<code>{`{{upper_name}}/{{title}}`}</code>
+												</p>
+												<p>
+													<strong>多P视频文件名模板</strong>：<code
+														>{`{{upper_name}}/{{title}}/P{{pid_pad}}`}</code
+													>
+												</p>
+												<p class="mt-1 text-xs text-red-600">
+													📂 错误结果：庄心妍/视频标题/庄心妍/视频标题/P01.mp4 （重复嵌套）
 												</p>
 											</div>
 										</div>
@@ -868,7 +992,19 @@
 						<div class="grid grid-cols-1 gap-4 md:grid-cols-2">
 							<div class="space-y-2">
 								<Label for="video-name">视频文件名模板</Label>
-								<Input id="video-name" bind:value={videoName} placeholder={`{{title}}`} />
+								<Input
+									id="video-name"
+									bind:value={videoName}
+									placeholder={`{{upper_name}}`}
+									class={multiPageNameHasPath ? 'border-orange-400 bg-orange-50' : ''}
+									oninput={(e) =>
+										handleVideoNameChange((e.target as HTMLInputElement)?.value || '')}
+								/>
+								{#if multiPageNameHasPath && videoNameHasPath}
+									<p class="text-xs text-orange-600">
+										⚠️ 多P模板已设置路径，此模板将自动移除路径设置避免冲突
+									</p>
+								{/if}
 								<p class="text-muted-foreground text-xs">
 									控制主要文件夹结构，支持使用 / 创建子目录
 								</p>
@@ -876,9 +1012,17 @@
 
 							<div class="space-y-2">
 								<Label for="page-name">单P视频文件名模板</Label>
-								<Input id="page-name" bind:value={pageName} placeholder={`{{bvid}}`} />
+								<Input
+									id="page-name"
+									bind:value={pageName}
+									placeholder={`{{pubtime}}-{{bvid}}-{{truncate title 20}}`}
+									class={pageNameValid ? '' : 'border-red-500 focus:border-red-500'}
+								/>
+								{#if pageNameError}
+									<p class="text-xs text-red-500">{pageNameError}</p>
+								{/if}
 								<p class="text-muted-foreground text-xs">
-									控制单P视频的具体文件名，不建议使用路径分隔符
+									控制单P视频的具体文件名，<strong>不允许使用路径分隔符 / 或 \</strong>
 								</p>
 							</div>
 
@@ -887,29 +1031,31 @@
 								<Input
 									id="multi-page-name"
 									bind:value={multiPageName}
-									placeholder={`{{bvid}}/{{bvid}}.P{{pid_pad}}.{{ptitle}}`}
+									placeholder={`{{title}}/P{{pid_pad}}.{{ptitle}}`}
+									class={videoNameHasPath ? 'border-orange-400 bg-orange-50' : ''}
+									oninput={(e) =>
+										handleMultiPageNameChange((e.target as HTMLInputElement)?.value || '')}
 								/>
-								<p class="text-muted-foreground text-xs">控制多P视频的文件夹和文件名结构</p>
+								{#if videoNameHasPath && multiPageNameHasPath}
+									<p class="text-xs text-orange-600">
+										⚠️ 视频模板已设置路径，此模板将自动移除路径设置避免冲突
+									</p>
+								{/if}
+								<p class="text-muted-foreground text-xs">
+									控制多P视频的文件夹和文件名结构，<strong>不要重复使用UP主路径</strong>
+								</p>
 							</div>
 
 							<div class="space-y-2">
 								<Label for="bangumi-name">番剧文件名模板</Label>
-								<Input
-									id="bangumi-name"
-									bind:value={bangumiName}
-									placeholder={`{{title}}/Season {{season_pad}}/{{title}} - S{{season_pad}}E{{pid_pad}}`}
-								/>
+								<Input id="bangumi-name" bind:value={bangumiName} placeholder={`第{{pid_pad}}集`} />
 								<p class="text-muted-foreground text-xs">控制番剧的季度文件夹和集数文件名</p>
 							</div>
 						</div>
 
 						<div class="space-y-2">
 							<Label for="folder-structure">文件夹结构模板</Label>
-							<Input
-								id="folder-structure"
-								bind:value={folderStructure}
-								placeholder={`{{upper_name}}/{{title}}`}
-							/>
+							<Input id="folder-structure" bind:value={folderStructure} placeholder={`Season 1`} />
 							<p class="text-muted-foreground text-sm">定义视频文件的文件夹层级结构</p>
 						</div>
 
@@ -922,7 +1068,7 @@
 									class="border-input bg-background ring-offset-background focus-visible:ring-ring flex h-10 w-full rounded-md border px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2"
 								>
 									<option value="separate">分离模式</option>
-									<option value="unified">统一模式</option>
+									<option value="unified" selected>统一模式</option>
 								</select>
 								<p class="text-muted-foreground text-sm">
 									分离模式·：每个视频独立文件夹<br />
@@ -932,7 +1078,7 @@
 
 							<div class="space-y-2">
 								<Label for="time-format">时间格式</Label>
-								<Input id="time-format" bind:value={timeFormat} placeholder="%Y-%m-%d %H-%M-%S" />
+								<Input id="time-format" bind:value={timeFormat} placeholder="%Y-%m-%d" />
 								<p class="text-muted-foreground text-sm">控制时间变量的显示格式</p>
 							</div>
 						</div>
@@ -986,22 +1132,18 @@
 										<p class="mb-2 font-medium">📊 基础变量</p>
 										<div class="space-y-1 pl-2">
 											<p>• <code>{`{{title}}`}</code> - 视频标题</p>
+											<p>• <code>{`{{show_title}}`}</code> - 节目标题</p>
 											<p>• <code>{`{{bvid}}`}</code> - 视频BV号</p>
 											<p>• <code>{`{{upper_name}}`}</code> - UP主名称</p>
 											<p>• <code>{`{{upper_mid}}`}</code> - UP主ID</p>
-											<p>• <code>{`{{view}}`}</code> - 播放量</p>
-											<p>• <code>{`{{like}}`}</code> - 点赞数</p>
-											<p>• <code>{`{{coin}}`}</code> - 投币数</p>
-											<p>• <code>{`{{favorite}}`}</code> - 收藏数</p>
 										</div>
 									</div>
 									<div>
 										<p class="mb-2 font-medium">⏰ 时间变量</p>
 										<div class="space-y-1 pl-2">
 											<p>• <code>{`{{pubtime}}`}</code> - 发布时间</p>
-											<p>• <code>{`{{pubdate}}`}</code> - 发布日期</p>
+											<p>• <code>{`{{fav_time}}`}</code> - 收藏时间</p>
 											<p>• <code>{`{{ctime}}`}</code> - 创建时间</p>
-											<p>• <code>{`{{now}}`}</code> - 当前时间</p>
 										</div>
 									</div>
 									<div>
@@ -1012,6 +1154,9 @@
 											<p>• <code>{`{{ptitle}}`}</code> - 分P标题</p>
 											<p>• <code>{`{{season}}`}</code> - 季度编号</p>
 											<p>• <code>{`{{season_pad}}`}</code> - 季度编号(补零)</p>
+											<p>• <code>{`{{duration}}`}</code> - 视频时长</p>
+											<p>• <code>{`{{width}}`}</code> - 视频宽度</p>
+											<p>• <code>{`{{height}}`}</code> - 视频高度</p>
 										</div>
 									</div>
 									<div>
@@ -1027,20 +1172,21 @@
 								<div class="mt-4 rounded-md bg-orange-100 p-3">
 									<p class="mb-1 font-medium text-orange-800">💡 配置建议</p>
 									<p class="text-sm text-orange-700">
-										• 要按UP主分类，在"视频文件名模板"中使用：<code
-											>{`{{upper_name}}/{{pubdate}}-{{title}}`}</code
-										><br />
-										• "单P视频文件名模板"建议简单命名：<code>{`{{title}}`}</code> 或
-										<code>{`{{bvid}}-{{title}}`}</code>
+										• 要按UP主分类，在"视频文件名模板"中使用：<code>{`{{upper_name}}`}</code><br />
+										• "单P视频文件名模板"<strong class="text-red-700">严禁使用路径分隔符</strong
+										>，推荐：<code>{`{{pubtime}}-{{bvid}}-{{truncate title 20}}`}</code>
 									</p>
 								</div>
 							{/if}
 						</div>
 					</div>
 					<SheetFooter class="pb-safe border-t pt-4">
-						<Button type="submit" disabled={saving} class="w-full">
+						<Button type="submit" disabled={saving || !pageNameValid} class="w-full">
 							{saving ? '保存中...' : '保存设置'}
 						</Button>
+						{#if !pageNameValid}
+							<p class="text-center text-xs text-red-500">请修复配置错误后再保存</p>
+						{/if}
 					</SheetFooter>
 				</form>
 			</div>
@@ -1572,7 +1718,7 @@
 									type="number"
 									bind:value={danmakuFontSize}
 									min="10"
-									max="100"
+									max="200"
 									placeholder="25"
 								/>
 							</div>
@@ -1597,7 +1743,7 @@
 									type="number"
 									bind:value={danmakuHorizontalGap}
 									min="0"
-									max="100"
+									max="500"
 									step="1"
 									placeholder="20.0"
 								/>
@@ -1610,7 +1756,7 @@
 									type="number"
 									bind:value={danmakuLaneSize}
 									min="10"
-									max="100"
+									max="200"
 									placeholder="32"
 								/>
 							</div>
@@ -1642,13 +1788,13 @@
 							</div>
 
 							<div class="space-y-2">
-								<Label for="danmaku-opacity">不透明度</Label>
+								<Label for="danmaku-opacity">不透明度（0-255）</Label>
 								<Input
 									id="danmaku-opacity"
 									type="number"
 									bind:value={danmakuOpacity}
 									min="0"
-									max="100"
+									max="255"
 									placeholder="76"
 								/>
 							</div>
@@ -1694,6 +1840,7 @@
 								<p><strong>持续时间：</strong>弹幕在屏幕上显示的时间（秒）</p>
 								<p><strong>字体样式：</strong>字体、大小、加粗、描边等外观设置</p>
 								<p><strong>布局设置：</strong>轨道高度、间距、占比等位置控制</p>
+								<p><strong>不透明度：</strong>0-255，0完全透明，255完全不透明</p>
 								<p><strong>时间偏移：</strong>正值延后弹幕，负值提前弹幕</p>
 							</div>
 						</div>
