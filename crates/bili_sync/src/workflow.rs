@@ -616,8 +616,10 @@ pub async fn download_video_pages(
                     .map_err(|e| anyhow::anyhow!("模板渲染失败: {}", e))?;
 
                     // **智能判断：根据模板内容决定是否需要去重**
-                    let video_template = crate::config::with_config(|bundle| bundle.config.video_name.as_ref().to_string());
-                    let needs_deduplication = video_template.contains("title") || (video_template.contains("name") && !video_template.contains("upper_name"));
+                    let video_template =
+                        crate::config::with_config(|bundle| bundle.config.video_name.as_ref().to_string());
+                    let needs_deduplication = video_template.contains("title")
+                        || (video_template.contains("name") && !video_template.contains("upper_name"));
 
                     if needs_deduplication {
                         // 智能去重：检查文件夹名是否已存在，如果存在则追加唯一标识符
@@ -636,14 +638,14 @@ pub async fn download_video_pages(
             }
         } else {
             // 其他类型的视频源使用原来的逻辑
-            let base_folder_name = crate::config::with_config(|bundle| {
-                bundle.render_video_template(&video_format_args(&video_model))
-            })
-            .map_err(|e| anyhow::anyhow!("模板渲染失败: {}", e))?;
+            let base_folder_name =
+                crate::config::with_config(|bundle| bundle.render_video_template(&video_format_args(&video_model)))
+                    .map_err(|e| anyhow::anyhow!("模板渲染失败: {}", e))?;
 
             // **智能判断：根据模板内容决定是否需要去重**
             let video_template = crate::config::with_config(|bundle| bundle.config.video_name.as_ref().to_string());
-            let needs_deduplication = video_template.contains("title") || (video_template.contains("name") && !video_template.contains("upper_name"));
+            let needs_deduplication = video_template.contains("title")
+                || (video_template.contains("name") && !video_template.contains("upper_name"));
 
             if needs_deduplication {
                 // 智能去重：检查文件夹名是否已存在，如果存在则追加唯一标识符
@@ -973,10 +975,8 @@ pub async fn download_page(
         }
     } else {
         // 单P视频使用最新配置的page_name模板
-        crate::config::with_config(|bundle| {
-            bundle.render_page_template(&page_format_args(video_model, &page_model))
-        })
-        .map_err(|e| anyhow::anyhow!("模板渲染失败: {}", e))?
+        crate::config::with_config(|bundle| bundle.render_page_template(&page_format_args(video_model, &page_model)))
+            .map_err(|e| anyhow::anyhow!("模板渲染失败: {}", e))?
     };
 
     let (poster_path, video_path, nfo_path, danmaku_path, fanart_path, subtitle_path) = if is_single_page {
@@ -2079,7 +2079,10 @@ pub fn generate_unique_folder_name(parent_dir: &std::path::Path, base_name: &str
         unique_name = format!("{}-{}", base_name, counter);
         let numbered_path = parent_dir.join(&unique_name);
         if !numbered_path.exists() {
-            warn!("检测到严重下载文件夹名冲突，使用数字后缀: {} -> {}", base_name, unique_name);
+            warn!(
+                "检测到严重下载文件夹名冲突，使用数字后缀: {} -> {}",
+                base_name, unique_name
+            );
             return unique_name;
         }
 

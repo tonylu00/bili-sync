@@ -36,8 +36,6 @@ use crate::api::wrapper::{ApiError, ApiResponse};
 use crate::utils::nfo::NFO;
 use crate::utils::status::{PageStatus, VideoStatus};
 
-
-
 #[derive(OpenApi)]
 #[openapi(
     paths(get_video_sources, get_videos, get_video, reset_video, reset_all_videos, reset_specific_tasks, update_video_status, add_video_source, update_video_source_enabled, delete_video_source, reload_config, get_config, update_config, get_bangumi_seasons, search_bilibili, get_user_favorites, get_user_collections, get_user_followings, get_subscribed_collections, get_logs, get_queue_status, proxy_image, get_config_item, get_config_history, validate_config, get_hot_reload_status, check_initial_setup, setup_auth_token, update_credential, pause_scanning_endpoint, resume_scanning_endpoint, get_task_control_status, get_video_play_info, proxy_video_stream),
@@ -2960,7 +2958,7 @@ async fn rename_existing_files(
     rename_bangumi: bool,
     rename_folder_structure: bool,
 ) -> Result<u32> {
-    use handlebars::{Handlebars, handlebars_helper};
+    use handlebars::{handlebars_helper, Handlebars};
     use sea_orm::*;
     use std::path::Path;
 
@@ -2983,10 +2981,8 @@ async fn rename_existing_files(
 
     // 使用register_template_string而不是path_safe_register来避免生命周期问题
     // 同时处理正斜杠和反斜杠，确保跨平台兼容性
-    let video_template = config.video_name
-        .replace(['/', '\\'], "__SEP__");
-    let page_template = config.page_name
-        .replace(['/', '\\'], "__SEP__");
+    let video_template = config.video_name.replace(['/', '\\'], "__SEP__");
+    let page_template = config.page_name.replace(['/', '\\'], "__SEP__");
 
     handlebars.register_template_string("video", video_template)?;
     handlebars.register_template_string("page", page_template)?;
@@ -3063,7 +3059,10 @@ async fn rename_existing_files(
 
         // 格式化时间
         let formatted_pubtime = video.pubtime.format(&config.time_format).to_string();
-        template_data.insert("pubtime".to_string(), serde_json::Value::String(formatted_pubtime.clone()));
+        template_data.insert(
+            "pubtime".to_string(),
+            serde_json::Value::String(formatted_pubtime.clone()),
+        );
 
         let formatted_favtime = video.favtime.format(&config.time_format).to_string();
         template_data.insert("fav_time".to_string(), serde_json::Value::String(formatted_favtime));
@@ -3118,18 +3117,20 @@ async fn rename_existing_files(
                 // 如果模板包含会产生相同名称的变量（如upper_name），则不使用智能去重
                 // 如果模板包含会产生不同名称的变量（如title），则使用智能去重避免冲突
                 let video_template = config.video_name.as_ref();
-                let needs_deduplication = video_template.contains("title") || video_template.contains("name") && !video_template.contains("upper_name");
+                let needs_deduplication = video_template.contains("title")
+                    || video_template.contains("name") && !video_template.contains("upper_name");
 
                 let expected_new_path = if needs_deduplication {
                     // 使用智能去重生成唯一文件夹名
-                    let unique_folder_name = generate_unique_folder_name(parent_dir, &base_video_name, &video.bvid, &formatted_pubtime);
+                    let unique_folder_name =
+                        generate_unique_folder_name(parent_dir, &base_video_name, &video.bvid, &formatted_pubtime);
                     parent_dir.join(&unique_folder_name)
                 } else {
                     // 不使用去重，允许多个视频共享同一文件夹
                     parent_dir.join(&base_video_name)
                 };
 
-                                // **修复分离逻辑：从合并文件夹中提取单个视频的文件**
+                // **修复分离逻辑：从合并文件夹中提取单个视频的文件**
                 // 智能查找包含此视频文件的文件夹
                 let source_folder_with_files = if video_path.exists() {
                     Some(video_path.to_path_buf())
@@ -3169,12 +3170,18 @@ async fn rename_existing_files(
                         // 需要从源文件夹中提取属于此视频的文件
                         match extract_video_files_by_database(db.as_ref(), video.id, &expected_new_path).await {
                             Ok(_) => {
-                                info!("从共享文件夹提取视频文件成功: {:?} -> {:?} (bvid: {})", source_path, expected_new_path, video.bvid);
+                                info!(
+                                    "从共享文件夹提取视频文件成功: {:?} -> {:?} (bvid: {})",
+                                    source_path, expected_new_path, video.bvid
+                                );
                                 updated_count += 1;
                                 expected_new_path.clone()
                             }
                             Err(e) => {
-                                warn!("从共享文件夹提取视频文件失败: {:?} -> {:?}, 错误: {}", source_path, expected_new_path, e);
+                                warn!(
+                                    "从共享文件夹提取视频文件失败: {:?} -> {:?}, 错误: {}",
+                                    source_path, expected_new_path, e
+                                );
                                 source_path.clone()
                             }
                         }
@@ -3276,9 +3283,15 @@ async fn rename_existing_files(
                         match std::fs::rename(&old_file_path, &final_new_file_path) {
                             Ok(_) => {
                                 if final_new_file_path != new_file_path {
-                                    warn!("检测到视频级别文件名冲突，已重命名避免覆盖: {:?} -> {:?}", old_file_path, final_new_file_path);
+                                    warn!(
+                                        "检测到视频级别文件名冲突，已重命名避免覆盖: {:?} -> {:?}",
+                                        old_file_path, final_new_file_path
+                                    );
                                 } else {
-                                    debug!("重命名视频级别文件成功: {:?} -> {:?}", old_file_path, final_new_file_path);
+                                    debug!(
+                                        "重命名视频级别文件成功: {:?} -> {:?}",
+                                        old_file_path, final_new_file_path
+                                    );
                                 }
                                 updated_count += 1;
                             }
@@ -3373,7 +3386,10 @@ async fn rename_existing_files(
                         rendered
                     }
                     Err(e) => {
-                        warn!("单P视频模板渲染失败: '{}', 错误: {}, 使用默认名称: '{}'", config.page_name, e, page.name);
+                        warn!(
+                            "单P视频模板渲染失败: '{}', 错误: {}, 使用默认名称: '{}'",
+                            config.page_name, e, page.name
+                        );
                         page.name.clone()
                     }
                 }
@@ -3435,7 +3451,8 @@ async fn rename_existing_files(
                                     let final_new_file_path = if new_file_path.exists() {
                                         // 目标文件已存在，生成唯一文件名避免覆盖
                                         let file_stem = new_file_path.file_stem().unwrap_or_default().to_string_lossy();
-                                        let file_extension = new_file_path.extension().unwrap_or_default().to_string_lossy();
+                                        let file_extension =
+                                            new_file_path.extension().unwrap_or_default().to_string_lossy();
                                         let parent_dir = new_file_path.parent().unwrap_or(&final_video_path);
 
                                         // 尝试添加BV号后缀避免冲突
@@ -3453,7 +3470,10 @@ async fn rename_existing_files(
                                             let final_name = if file_extension.is_empty() {
                                                 format!("{}-{}-{}", file_stem, bvid_suffix, timestamp)
                                             } else {
-                                                format!("{}-{}-{}.{}", file_stem, bvid_suffix, timestamp, file_extension)
+                                                format!(
+                                                    "{}-{}-{}.{}",
+                                                    file_stem, bvid_suffix, timestamp, file_extension
+                                                )
                                             };
                                             parent_dir.join(final_name)
                                         } else {
@@ -3466,9 +3486,15 @@ async fn rename_existing_files(
                                     match std::fs::rename(&file_path, &final_new_file_path) {
                                         Ok(_) => {
                                             if final_new_file_path != new_file_path {
-                                                warn!("检测到文件名冲突，已重命名避免覆盖: {:?} -> {:?}", file_path, final_new_file_path);
+                                                warn!(
+                                                    "检测到文件名冲突，已重命名避免覆盖: {:?} -> {:?}",
+                                                    file_path, final_new_file_path
+                                                );
                                             } else {
-                                                debug!("重命名分页相关文件成功: {:?} -> {:?}", file_path, final_new_file_path);
+                                                debug!(
+                                                    "重命名分页相关文件成功: {:?} -> {:?}",
+                                                    file_path, final_new_file_path
+                                                );
                                             }
                                             updated_count += 1;
 
@@ -5751,7 +5777,11 @@ fn generate_unique_folder_name(parent_dir: &std::path::Path, base_name: &str, bv
         // 防止无限循环
         if counter > 1000 {
             warn!("文件夹名冲突解决失败，使用随机后缀");
-            unique_name = format!("{}-{}", base_name, uuid::Uuid::new_v4().to_string().split('-').next().unwrap_or("random"));
+            unique_name = format!(
+                "{}-{}",
+                base_name,
+                uuid::Uuid::new_v4().to_string().split('-').next().unwrap_or("random")
+            );
             return unique_name;
         }
     }
@@ -5768,7 +5798,10 @@ async fn extract_video_files_by_database(
     use bili_sync_entity::prelude::*;
     use sea_orm::*;
 
-    info!("开始通过数据库查询移动视频文件到: {:?} (video_id: {})", target_path, video_id);
+    info!(
+        "开始通过数据库查询移动视频文件到: {:?} (video_id: {})",
+        target_path, video_id
+    );
 
     // 创建目标文件夹
     std::fs::create_dir_all(target_path)?;
@@ -5782,9 +5815,7 @@ async fn extract_video_files_by_database(
     {
         Ok(pages) => pages,
         Err(e) => {
-            return Err(std::io::Error::other(
-                format!("数据库查询失败: {}", e)
-            ));
+            return Err(std::io::Error::other(format!("数据库查询失败: {}", e)));
         }
     };
 
@@ -5793,7 +5824,7 @@ async fn extract_video_files_by_database(
         return Ok(());
     }
 
-        let mut moved_files = 0;
+    let mut moved_files = 0;
     let mut total_files = 0;
     let mut pages_to_update = Vec::new(); // 记录需要更新路径的页面
     let mut source_dirs_to_check = std::collections::HashSet::new(); // 记录需要检查是否为空的源目录
@@ -5823,9 +5854,7 @@ async fn extract_video_files_by_database(
                     // 检查文件是否属于当前页面
                     if let Some(file_name) = file_path.file_name() {
                         let file_name_str = file_name.to_string_lossy();
-                        let page_base_name = page_file_path.file_stem()
-                            .unwrap_or_default()
-                            .to_string_lossy();
+                        let page_base_name = page_file_path.file_stem().unwrap_or_default().to_string_lossy();
 
                         // 获取原始基础名称（去除数字后缀）
                         let original_base_name = if let Some(index) = page_base_name.rfind('-') {
@@ -5869,20 +5898,27 @@ async fn extract_video_files_by_database(
                                     // 检查是否为主文件：mp4或nfo文件，且文件名匹配原始基础名称
                                     let is_main_file = if let Some(extension) = file_path.extension() {
                                         let ext_str = extension.to_string_lossy().to_lowercase();
-                                        (ext_str == "mp4" || ext_str == "nfo") &&
-                                        file_name_str.starts_with(original_base_name) &&
-                                        !file_name_str.contains("-fanart") &&
-                                        !file_name_str.contains("-poster") &&
-                                        !file_name_str.contains(".zh-CN.default")
+                                        (ext_str == "mp4" || ext_str == "nfo")
+                                            && file_name_str.starts_with(original_base_name)
+                                            && !file_name_str.contains("-fanart")
+                                            && !file_name_str.contains("-poster")
+                                            && !file_name_str.contains(".zh-CN.default")
                                     } else {
                                         false
                                     };
 
                                     if is_main_file {
-                                        pages_to_update.push((page.id, final_target_file.to_string_lossy().to_string()));
-                                        info!("页面主文件移动成功，将更新数据库路径: {:?} -> {:?}", file_path, final_target_file);
+                                        pages_to_update
+                                            .push((page.id, final_target_file.to_string_lossy().to_string()));
+                                        info!(
+                                            "页面主文件移动成功，将更新数据库路径: {:?} -> {:?}",
+                                            file_path, final_target_file
+                                        );
                                     } else if final_target_file != target_file {
-                                        info!("移动文件成功（重命名避免覆盖）: {:?} -> {:?}", file_path, final_target_file);
+                                        info!(
+                                            "移动文件成功（重命名避免覆盖）: {:?} -> {:?}",
+                                            file_path, final_target_file
+                                        );
                                     } else {
                                         debug!("移动文件成功: {:?} -> {:?}", file_path, final_target_file);
                                     }
@@ -5953,7 +5989,10 @@ async fn extract_video_files_by_database(
         info!("清理完成：删除了 {} 个空文件夹", cleaned_dirs);
     }
 
-    info!("视频 {} 文件移动完成: 成功移动 {}/{} 个文件到 {:?}", video_id, moved_files, total_files, target_path);
+    info!(
+        "视频 {} 文件移动完成: 成功移动 {}/{} 个文件到 {:?}",
+        video_id, moved_files, total_files, target_path
+    );
     Ok(())
 }
 
@@ -5968,10 +6007,7 @@ async fn generate_unique_filename_with_video_info(
     let parent_dir = target_file.parent().unwrap_or(std::path::Path::new(""));
 
     // 尝试从数据库获取视频信息来生成更有意义的后缀
-    let suffix = if let Ok(Some(video)) = video::Entity::find_by_id(video_id)
-        .one(db)
-        .await
-    {
+    let suffix = if let Ok(Some(video)) = video::Entity::find_by_id(video_id).one(db).await {
         // 优先使用发布时间
         format!("{}", video.pubtime.format("%Y-%m-%d"))
     } else {
@@ -6023,7 +6059,10 @@ async fn reorganize_video_folder(
     target_path: &std::path::Path,
     video_bvid: &str,
 ) -> Result<(), std::io::Error> {
-        info!("开始重组视频文件夹: {:?} -> {:?} (bvid: {})", source_path, target_path, video_bvid);
+    info!(
+        "开始重组视频文件夹: {:?} -> {:?} (bvid: {})",
+        source_path, target_path, video_bvid
+    );
 
     // 检查源路径是否存在
     if !source_path.exists() {
@@ -6105,7 +6144,10 @@ async fn reorganize_video_folder(
             match std::fs::rename(&file_path, &final_target_file) {
                 Ok(_) => {
                     if final_target_file != target_file {
-                        info!("移动文件成功（重命名避免覆盖）: {:?} -> {:?}", file_path, final_target_file);
+                        info!(
+                            "移动文件成功（重命名避免覆盖）: {:?} -> {:?}",
+                            file_path, final_target_file
+                        );
                     } else {
                         debug!("移动文件成功: {:?} -> {:?}", file_path, final_target_file);
                     }
@@ -6131,7 +6173,10 @@ async fn reorganize_video_folder(
                 }
             }
         } else {
-            debug!("源文件夹仍有 {} 个其他文件，保留文件夹: {:?}", remaining_count, source_path);
+            debug!(
+                "源文件夹仍有 {} 个其他文件，保留文件夹: {:?}",
+                remaining_count, source_path
+            );
         }
     }
 
@@ -6145,10 +6190,7 @@ async fn safe_rename_directory(old_path: &std::path::Path, new_path: &std::path:
     debug!("开始四步法重命名: {:?} -> {:?}", old_path, new_path);
 
     if !old_path.exists() {
-        return Err(std::io::Error::new(
-            std::io::ErrorKind::NotFound,
-            "源目录不存在",
-        ));
+        return Err(std::io::Error::new(std::io::ErrorKind::NotFound, "源目录不存在"));
     }
 
     // 步骤2：使用时间戳重命名现有目录到临时名称，完全避免路径冲突
@@ -6156,9 +6198,9 @@ async fn safe_rename_directory(old_path: &std::path::Path, new_path: &std::path:
     let timestamp = now.format("%Y%m%d_%H%M%S_%3f").to_string(); // 包含毫秒的时间戳
 
     let temp_name = format!("temp_rename_{}", timestamp);
-    let parent_dir = old_path.parent().ok_or_else(|| {
-        std::io::Error::new(std::io::ErrorKind::InvalidInput, "无法获取父目录")
-    })?;
+    let parent_dir = old_path
+        .parent()
+        .ok_or_else(|| std::io::Error::new(std::io::ErrorKind::InvalidInput, "无法获取父目录"))?;
     let temp_path = parent_dir.join(&temp_name);
 
     // 确保临时目录名不存在
@@ -6210,9 +6252,10 @@ async fn safe_rename_directory(old_path: &std::path::Path, new_path: &std::path:
             warn!("移动文件失败，尝试回退: {}", e);
             if let Err(rollback_err) = std::fs::rename(&final_temp_path, old_path) {
                 error!("回退失败: {}, 原始错误: {}", rollback_err, e);
-                Err(std::io::Error::other(
-                    format!("移动失败且回退失败: 移动错误={}, 回退错误={}", e, rollback_err),
-                ))
+                Err(std::io::Error::other(format!(
+                    "移动失败且回退失败: 移动错误={}, 回退错误={}",
+                    e, rollback_err
+                )))
             } else {
                 debug!("成功回退到原始状态");
                 Err(e)

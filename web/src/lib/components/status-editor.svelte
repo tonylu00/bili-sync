@@ -26,8 +26,10 @@
 
 	// 重置单个视频任务到原始状态
 	function resetVideoTask(taskIndex: number) {
-		videoStatuses[taskIndex] = originalVideoStatuses[taskIndex];
+		const originalValue = originalVideoStatuses[taskIndex];
+		videoStatuses[taskIndex] = originalValue;
 		videoStatuses = [...videoStatuses];
+		updateTrigger++; // 触发更新检测
 	}
 
 	// 重置单个分页任务到原始状态
@@ -35,8 +37,30 @@
 		if (!pageStatuses[pageId]) {
 			pageStatuses[pageId] = [];
 		}
-		pageStatuses[pageId][taskIndex] = originalPageStatuses[pageId]?.[taskIndex] ?? 0;
+		const originalValue = originalPageStatuses[pageId]?.[taskIndex] ?? 0;
+		pageStatuses[pageId][taskIndex] = originalValue;
 		pageStatuses = { ...pageStatuses };
+		
+		// 重置后触发互锁逻辑
+		if (originalValue === 0 && videoStatuses[4] !== 0) {
+			// 重置为未开始 → "分P下载"变为未开始
+			videoStatuses[4] = 0;
+			videoStatuses = [...videoStatuses];
+		} else if (originalValue === 7) {
+			// 重置为已完成时，检查是否所有分页任务都已完成
+			const allPagesCompleted = pages.every(page => {
+				const currentStatuses = pageStatuses[page.id] || [];
+				return currentStatuses.every(status => status === 7);
+			});
+			
+			// 如果所有分页都已完成，且"分P下载"不是已完成，则自动设为已完成
+			if (allPagesCompleted && videoStatuses[4] !== 7) {
+				videoStatuses[4] = 7;
+				videoStatuses = [...videoStatuses];
+			}
+		}
+		
+		updateTrigger++; // 触发更新检测
 	}
 
 	// 编辑状态
@@ -75,9 +99,13 @@
 		}
 	}
 
+	// 强制响应式更新的触发器
+	let updateTrigger = 0;
+
 	function handleVideoStatusChange(taskIndex: number, newValue: number) {
 		videoStatuses[taskIndex] = newValue;
 		videoStatuses = [...videoStatuses];
+		updateTrigger++; // 强制触发响应式更新
 	}
 
 	function handlePageStatusChange(pageId: number, taskIndex: number, newValue: number) {
@@ -86,11 +114,37 @@
 		}
 		pageStatuses[pageId][taskIndex] = newValue;
 		pageStatuses = { ...pageStatuses };
+		
+		// 互锁逻辑：分页状态变化时，自动更新"分P下载"状态
+		if (newValue === 0 && videoStatuses[4] !== 0) {
+			// 任何分页变为未开始 → "分P下载"变为未开始
+			videoStatuses[4] = 0;
+			videoStatuses = [...videoStatuses];
+		} else if (newValue === 7) {
+			// 分页变为已完成时，检查是否所有分页任务都已完成
+			const allPagesCompleted = pages.every(page => {
+				const currentStatuses = pageStatuses[page.id] || [];
+				return currentStatuses.every(status => status === 7);
+			});
+			
+			// 如果所有分页都已完成，且"分P下载"不是已完成，则自动设为已完成
+			if (allPagesCompleted && videoStatuses[4] !== 7) {
+				videoStatuses[4] = 7;
+				videoStatuses = [...videoStatuses];
+			}
+		}
+		
+		updateTrigger++; // 强制触发响应式更新
 	}
 
 	function resetAllStatuses() {
 		videoStatuses = [...originalVideoStatuses];
-		pageStatuses = { ...originalPageStatuses };
+		// 深拷贝页面状态，确保每个页面的状态数组也被复制
+		pageStatuses = {};
+		Object.keys(originalPageStatuses).forEach(pageId => {
+			pageStatuses[parseInt(pageId)] = [...originalPageStatuses[parseInt(pageId)]];
+		});
+		updateTrigger++; // 重置后也触发更新
 	}
 
 	function hasVideoChanges(): boolean {
@@ -108,6 +162,9 @@
 	function hasAnyChanges(): boolean {
 		return hasVideoChanges() || hasPageChanges();
 	}
+
+	// 响应式计算，每次 updateTrigger 变化时重新计算
+	$: buttonEnabled = updateTrigger >= 0 && hasAnyChanges();
 
 	function buildRequest(): UpdateVideoStatusRequest {
 		const request: UpdateVideoStatusRequest = {};
@@ -245,14 +302,14 @@
 			<Button
 				variant="outline"
 				onclick={resetAllStatuses}
-				disabled={!hasAnyChanges()}
+				disabled={!buttonEnabled}
 				class="flex-1 cursor-pointer"
 			>
 				重置所有状态
 			</Button>
 			<Button
 				onclick={handleSubmit}
-				disabled={loading || !hasAnyChanges()}
+				disabled={loading || !buttonEnabled}
 				class="flex-1 cursor-pointer"
 			>
 				{loading ? '提交中...' : '提交更改'}
