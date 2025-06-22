@@ -1,18 +1,17 @@
 <script lang="ts">
-	import { page } from '$app/stores';
 	import { goto } from '$app/navigation';
-	import { onMount } from 'svelte';
-	import { Button } from '$lib/components/ui/button/index.js';
+	import { page } from '$app/stores';
 	import api from '$lib/api';
-	import type { ApiError, VideoResponse, UpdateVideoStatusRequest } from '$lib/types';
-	import RotateCcwIcon from '@lucide/svelte/icons/rotate-ccw';
+	import StatusEditor from '$lib/components/status-editor.svelte';
+	import { Button } from '$lib/components/ui/button/index.js';
+	import VideoCard from '$lib/components/video-card.svelte';
+	import { setBreadcrumb } from '$lib/stores/breadcrumb';
+	import { appStateStore, ToQuery } from '$lib/stores/filter';
+	import type { ApiError, UpdateVideoStatusRequest, VideoResponse } from '$lib/types';
 	import EditIcon from '@lucide/svelte/icons/edit';
 	import PlayIcon from '@lucide/svelte/icons/play';
 	import XIcon from '@lucide/svelte/icons/x';
-	import { setBreadcrumb } from '$lib/stores/breadcrumb';
-	import { appStateStore, ToQuery } from '$lib/stores/filter';
-	import VideoCard from '$lib/components/video-card.svelte';
-	import StatusEditor from '$lib/components/status-editor.svelte';
+	import { onMount } from 'svelte';
 	import { toast } from 'svelte-sonner';
 
 	let videoData: VideoResponse | null = null;
@@ -37,7 +36,7 @@
 		}
 		return false;
 	}
-	
+
 	// 获取播放的视频ID（分页ID或视频ID）
 	function getPlayVideoId(): number {
 		if (videoData && videoData.pages && videoData.pages.length > 0) {
@@ -123,7 +122,7 @@
 	// 获取在线播放信息
 	async function loadOnlinePlayInfo(videoId: string | number) {
 		if (loadingPlayInfo) return;
-		
+
 		loadingPlayInfo = true;
 		try {
 			const result = await api.getVideoPlayInfo(videoId);
@@ -163,23 +162,32 @@
 		}
 		return '';
 	}
-	
+
 	// 获取音频播放源
 	function getAudioSource() {
-		if (onlinePlayMode && onlinePlayInfo && onlinePlayInfo.audio_streams && onlinePlayInfo.audio_streams.length > 0) {
+		if (
+			onlinePlayMode &&
+			onlinePlayInfo &&
+			onlinePlayInfo.audio_streams &&
+			onlinePlayInfo.audio_streams.length > 0
+		) {
 			const audioStream = onlinePlayInfo.audio_streams[0];
 			return api.getProxyStreamUrl(audioStream.url);
 		}
 		return '';
 	}
-	
+
 	// 检查是否是DASH分离流
 	function isDashSeparatedStream() {
-		return onlinePlayMode && onlinePlayInfo && 
-			onlinePlayInfo.audio_streams && onlinePlayInfo.audio_streams.length > 0 && 
-			onlinePlayInfo.video_streams && onlinePlayInfo.video_streams.length > 0;
+		return (
+			onlinePlayMode &&
+			onlinePlayInfo &&
+			onlinePlayInfo.audio_streams &&
+			onlinePlayInfo.audio_streams.length > 0 &&
+			onlinePlayInfo.video_streams &&
+			onlinePlayInfo.video_streams.length > 0
+		);
 	}
-	
 
 	// 初始化音频同步
 	function initAudioSync() {
@@ -196,7 +204,11 @@
 
 	// 监听全屏变化事件
 	function handleFullscreenChange() {
-		isFullscreen = !!(document.fullscreenElement || (document as any).webkitFullscreenElement || (document as any).mozFullScreenElement);
+		isFullscreen = !!(
+			document.fullscreenElement ||
+			(document as any).webkitFullscreenElement ||
+			(document as any).mozFullScreenElement
+		);
 	}
 
 	// 组件挂载时添加全屏事件监听
@@ -204,7 +216,7 @@
 		document.addEventListener('fullscreenchange', handleFullscreenChange);
 		document.addEventListener('webkitfullscreenchange', handleFullscreenChange);
 		document.addEventListener('mozfullscreenchange', handleFullscreenChange);
-		
+
 		return () => {
 			document.removeEventListener('fullscreenchange', handleFullscreenChange);
 			document.removeEventListener('webkitfullscreenchange', handleFullscreenChange);
@@ -216,26 +228,6 @@
 <svelte:head>
 	<title>{videoData?.video.name || '视频详情'} - Bili Sync</title>
 </svelte:head>
-
-<style>
-	/* 在线播放时隐藏原生音量控制 */
-	.video-container.online-mode video::-webkit-media-controls-volume-control-container {
-		display: none !important;
-	}
-	
-	.video-container.online-mode video::-webkit-media-controls-mute-button {
-		display: none !important;
-	}
-	
-	.video-container.online-mode video::-moz-volume-control {
-		display: none !important;
-	}
-	
-	/* 视频容器 */
-	.video-container {
-		position: relative;
-	}
-</style>
 
 {#if loading}
 	<div class="flex items-center justify-center py-12">
@@ -308,6 +300,7 @@
 					upper_name: videoData.video.upper_name,
 					path: videoData.video.path,
 					category: videoData.video.category,
+					cover: videoData.video.cover || '',
 					download_status: videoData.video.download_status
 				}}
 				mode="detail"
@@ -322,7 +315,7 @@
 		{#if videoData.pages && videoData.pages.length > 0 && videoData.pages[0].path}
 			<div class="mb-4 rounded-lg border bg-gray-50 p-4">
 				<h3 class="mb-2 text-sm font-medium text-gray-700">📁 下载保存路径</h3>
-				<div class="rounded border bg-white px-3 py-2 font-mono text-sm break-all">
+				<div class="break-all rounded border bg-white px-3 py-2 font-mono text-sm">
 					{videoData.pages[0].path}
 				</div>
 				<p class="mt-1 text-xs text-gray-500">视频文件将保存到此路径下</p>
@@ -340,15 +333,15 @@
 			</div>
 
 			<!-- 响应式布局：大屏幕左右布局，小屏幕上下布局 -->
-			<div class="flex flex-col xl:flex-row gap-6">
+			<div class="flex flex-col gap-6 xl:flex-row">
 				<!-- 左侧/上方：分页列表 -->
-				<div class="flex-1 min-w-0">
+				<div class="min-w-0 flex-1">
 					<div
 						class="grid gap-4"
 						style="grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));"
 					>
 						{#each videoData.pages as pageInfo, index (pageInfo.id)}
-							<div class="relative">
+							<div class="space-y-3">
 								<VideoCard
 									video={{
 										id: pageInfo.id,
@@ -356,6 +349,7 @@
 										upper_name: '',
 										path: '',
 										category: 0,
+										cover: '',
 										download_status: pageInfo.download_status
 									}}
 									mode="page"
@@ -363,13 +357,16 @@
 									customTitle="P{pageInfo.pid}: {pageInfo.name}"
 									customSubtitle=""
 									taskNames={['视频封面', '视频内容', '视频信息', '视频弹幕', '视频字幕']}
+									showProgress={false}
 								/>
-								<div class="absolute top-2 right-2 flex gap-1">
+
+								<!-- 播放按钮区域 -->
+								<div class="flex justify-center gap-2">
 									{#if pageInfo.download_status[1] === 7}
 										<Button
 											size="sm"
-											variant="ghost"
-											class="h-8 w-8 p-0"
+											variant="default"
+											class="flex-1"
 											title="本地播放"
 											onclick={() => {
 												currentPlayingPageIndex = index;
@@ -377,13 +374,14 @@
 												showVideoPlayer = true;
 											}}
 										>
-											<PlayIcon class="h-4 w-4" />
+											<PlayIcon class="mr-2 h-4 w-4" />
+											本地播放
 										</Button>
 									{/if}
 									<Button
 										size="sm"
-										variant="ghost" 
-										class="h-8 w-8 p-0"
+										variant="outline"
+										class="flex-1"
 										title="在线播放"
 										onclick={() => {
 											currentPlayingPageIndex = index;
@@ -393,9 +391,34 @@
 											loadOnlinePlayInfo(videoId);
 										}}
 									>
-										<PlayIcon class="h-3 w-3" />
-										<span class="text-xs">在线</span>
+										<PlayIcon class="mr-2 h-4 w-4" />
+										在线播放
 									</Button>
+								</div>
+
+								<!-- 下载进度条 -->
+								<div class="space-y-2 px-1">
+									<div class="text-muted-foreground flex justify-between text-xs">
+										<span class="truncate">下载进度</span>
+										<span class="shrink-0"
+											>{pageInfo.download_status.filter((s) => s === 7).length}/{pageInfo
+												.download_status.length}</span
+										>
+									</div>
+									<div class="flex w-full gap-1">
+										{#each pageInfo.download_status as status, taskIndex (taskIndex)}
+											<div
+												class="h-2 w-full cursor-help rounded-sm transition-all {status === 7
+													? 'bg-green-500'
+													: status === 0
+														? 'bg-yellow-500'
+														: 'bg-red-500'}"
+												title="{['视频封面', '视频内容', '视频信息', '视频弹幕', '视频字幕'][
+													taskIndex
+												]}: {status === 7 ? '已完成' : status === 0 ? '未开始' : `失败${status}次`}"
+											></div>
+										{/each}
+									</div>
 								</div>
 							</div>
 						{/each}
@@ -404,12 +427,16 @@
 
 				<!-- 右侧/下方：视频播放器 -->
 				{#if showVideoPlayer && videoData}
-					<div class="w-full xl:w-[45%] 2xl:w-[40%] shrink-0">
+					<div class="w-full shrink-0 xl:w-[45%] 2xl:w-[40%]">
 						<div class="sticky top-4">
 							<div class="mb-4 flex items-center justify-between">
 								<div class="flex items-center gap-2">
 									<h3 class="text-lg font-semibold">视频播放</h3>
-									<span class="text-sm px-2 py-1 rounded {onlinePlayMode ? 'bg-blue-100 text-blue-700' : 'bg-gray-100 text-gray-700'}">
+									<span
+										class="rounded px-2 py-1 text-sm {onlinePlayMode
+											? 'bg-blue-100 text-blue-700'
+											: 'bg-gray-100 text-gray-700'}"
+									>
 										{onlinePlayMode ? '在线播放' : '本地播放'}
 									</span>
 									{#if onlinePlayMode && onlinePlayInfo}
@@ -417,9 +444,7 @@
 											{onlinePlayInfo.video_quality_description}
 										</span>
 										{#if isDashSeparatedStream()}
-											<span class="text-xs text-green-600">
-												视频+音频同步播放
-											</span>
+											<span class="text-xs text-green-600"> 视频+音频同步播放 </span>
 										{/if}
 									{/if}
 								</div>
@@ -432,38 +457,37 @@
 									>
 										{onlinePlayMode ? '切换到本地' : '切换到在线'}
 									</Button>
-									<Button
-										size="sm"
-										variant="outline"
-										onclick={() => showVideoPlayer = false}
-									>
+									<Button size="sm" variant="outline" onclick={() => (showVideoPlayer = false)}>
 										<XIcon class="mr-2 h-4 w-4" />
 										关闭
 									</Button>
 								</div>
 							</div>
-							
+
 							<!-- 当前播放的分页信息 -->
 							{#if videoData.pages.length > 1}
 								<div class="mb-2 text-sm text-gray-600">
-									正在播放: P{videoData.pages[currentPlayingPageIndex].pid} - {videoData.pages[currentPlayingPageIndex].name}
+									正在播放: P{videoData.pages[currentPlayingPageIndex].pid} - {videoData.pages[
+										currentPlayingPageIndex
+									].name}
 								</div>
 							{/if}
-							
-							<div class="bg-black rounded-lg overflow-hidden">
+
+							<div class="overflow-hidden rounded-lg bg-black">
 								{#if loadingPlayInfo && onlinePlayMode}
-									<div class="flex items-center justify-center h-64 text-white">
+									<div class="flex h-64 items-center justify-center text-white">
 										<div>加载播放信息中...</div>
 									</div>
 								{:else}
 									{#key `${currentPlayingPageIndex}-${onlinePlayMode}`}
-										<div class="relative video-container {onlinePlayMode ? 'online-mode' : ''}"
+										<div
+											class="video-container relative {onlinePlayMode ? 'online-mode' : ''}"
 											role="group"
 										>
-											<video 
-												controls 
+											<video
+												controls
 												autoplay
-												class="w-full h-auto"
+												class="h-auto w-full"
 												style="aspect-ratio: 16/9; max-height: 70vh;"
 												src={getVideoSource()}
 												crossorigin="anonymous"
@@ -524,8 +548,8 @@
 												<track kind="captions" srclang="zh" label="无字幕" default />
 												{#if onlinePlayMode && onlinePlayInfo && onlinePlayInfo.subtitle_streams}
 													{#each onlinePlayInfo.subtitle_streams as subtitle}
-														<track 
-															kind="subtitles" 
+														<track
+															kind="subtitles"
 															srclang={subtitle.language}
 															label={subtitle.language_doc}
 															src={subtitle.url}
@@ -534,12 +558,10 @@
 												{/if}
 												您的浏览器不支持视频播放。
 											</video>
-											
-											
 
 											<!-- 隐藏的音频元素用于DASH分离流 -->
 											{#if isDashSeparatedStream()}
-												<audio 
+												<audio
 													id="sync-audio"
 													src={getAudioSource()}
 													crossorigin="anonymous"
@@ -549,20 +571,19 @@
 										</div>
 									{/key}
 								{/if}
-								
 							</div>
-							
+
 							<!-- 分页选择按钮 -->
 							{#if videoData.pages.length > 1}
 								<div class="mt-4 space-y-2">
 									<div class="text-sm font-medium text-gray-700">选择分页:</div>
-									<div class="grid grid-cols-2 gap-2 max-h-60 overflow-y-auto">
+									<div class="grid max-h-60 grid-cols-2 gap-2 overflow-y-auto">
 										{#each videoData.pages as page, index}
 											{#if page.download_status[1] === 7}
 												<Button
 													size="sm"
-													variant={currentPlayingPageIndex === index ? "default" : "outline"}
-													class="text-left justify-start"
+													variant={currentPlayingPageIndex === index ? 'default' : 'outline'}
+													class="justify-start text-left"
 													onclick={() => {
 														currentPlayingPageIndex = index;
 														// 如果是在线播放模式，需要重新获取播放信息
@@ -615,5 +636,24 @@
 			onsubmit={handleStatusEditorSubmit}
 		/>
 	{/if}
-
 {/if}
+
+<style>
+	/* 在线播放时隐藏原生音量控制 */
+	.video-container.online-mode video::-webkit-media-controls-volume-control-container {
+		display: none !important;
+	}
+
+	.video-container.online-mode video::-webkit-media-controls-mute-button {
+		display: none !important;
+	}
+
+	.video-container.online-mode video::-moz-volume-control {
+		display: none !important;
+	}
+
+	/* 视频容器 */
+	.video-container {
+		position: relative;
+	}
+</style>
