@@ -2372,12 +2372,13 @@ pub async fn reset_video_source_path_internal(
                     .await?;
 
                 for video in &videos {
-                    // 移动视频文件到新路径结构
-                    match move_video_files_to_new_path(
+                    // 使用番剧专用的文件移动函数
+                    match move_bangumi_files_to_new_path(
                         &video,
                         &old_path,
                         &request.new_path,
                         request.clean_empty_folders,
+                        &txn,
                     )
                     .await
                     {
@@ -2385,12 +2386,7 @@ pub async fn reset_video_source_path_internal(
                             moved_files_count += moved;
                             cleaned_folders_count += cleaned;
                         }
-                        Err(e) => warn!("移动视频 {} 文件失败: {}", video.id, e),
-                    }
-
-                    // 重新生成视频和分页的路径
-                    if let Err(e) = regenerate_video_and_page_paths_correctly(&txn, video.id, &request.new_path).await {
-                        warn!("更新视频 {} 路径失败: {:?}", video.id, e);
+                        Err(e) => warn!("移动番剧 {} 文件失败: {}", video.id, e),
                     }
                 }
                 updated_videos_count = videos.len();
@@ -6856,6 +6852,231 @@ async fn move_directory_contents(
         } else {
             // 移动文件
             std::fs::rename(&source_path, &target_path)?;
+        }
+    }
+
+    Ok(())
+}
+
+/// 番剧专用的文件移动函数，避免BVID后缀污染
+async fn move_bangumi_files_to_new_path(
+    video: &video::Model,
+    _old_base_path: &str,
+    new_base_path: &str,
+    clean_empty_folders: bool,
+    txn: &sea_orm::DatabaseTransaction,
+) -> Result<(usize, usize), std::io::Error> {
+    use std::path::Path;
+
+    let mut moved_count = 0;
+    let mut cleaned_count = 0;
+
+    // 获取当前视频的存储路径
+    let current_video_path = Path::new(&video.path);
+    if !current_video_path.exists() {
+        return Ok((0, 0)); // 如果视频文件夹不存在，跳过
+    }
+
+    // 使用模板重新生成视频在新基础路径下的目标路径
+    let new_video_dir = Path::new(new_base_path);
+
+    // 基于视频模型重新生成路径结构
+    let new_video_path = crate::config::with_config(|bundle| {
+        let video_args = crate::utils::format_arg::video_format_args(video);
+        bundle.render_video_template(&video_args)
+    })
+    .map_err(|e| std::io::Error::other(format!("模板渲染失败: {}", e)))?;
+
+    let target_video_dir = new_video_dir.join(&new_video_path);
+
+    // 如果目标路径和当前路径相同，无需移动
+    if current_video_path == target_video_dir {
+        return Ok((0, 0));
+    }
+
+    // 使用四步重命名原则移动整个视频文件夹
+    if let Ok(_) = move_files_with_four_step_rename(
+        &current_video_path.to_string_lossy(),
+        &target_video_dir.to_string_lossy(),
+    )
+    .await
+    {
+        moved_count = 1;
+
+        // 移动成功后，执行番剧专用的文件重命名
+        if let Err(e) = rename_bangumi_files_in_directory(&target_video_dir, video, txn).await {
+            warn!("番剧文件重命名失败: {}", e);
+        }
+
+        // 移动成功后，检查并清理原来的父目录（如果启用了清理且为空）
+        if clean_empty_folders {
+            if let Some(parent_dir) = current_video_path.parent() {
+                if let Ok(count) = cleanup_empty_directory(parent_dir).await {
+                    cleaned_count = count;
+                }
+            }
+        }
+    }
+
+    Ok((moved_count, cleaned_count))
+}
+
+/// 番剧文件重命名：只重命名集数部分，保留版本和后缀
+async fn rename_bangumi_files_in_directory(
+    video_dir: &std::path::Path,
+    video: &video::Model,
+    txn: &sea_orm::DatabaseTransaction,
+) -> Result<(), Box<dyn std::error::Error>> {
+    use std::fs;
+
+    // 读取视频文件夹中的所有文件
+    let entries = fs::read_dir(video_dir)?;
+
+    // 获取相关分页信息
+    let pages = page::Entity::find()
+        .filter(page::Column::VideoId.eq(video.id))
+        .all(txn)
+        .await?;
+
+    for entry in entries {
+        let entry = entry?;
+        let file_path = entry.path();
+        
+        if !file_path.is_file() {
+            continue;
+        }
+
+        let old_file_name = file_path.file_name()
+            .and_then(|n| n.to_str())
+            .unwrap_or("")
+            .to_string();
+
+        // 解析并重命名番剧文件
+        if let Some(new_file_name) = parse_and_rename_bangumi_file(&old_file_name, video, &pages) {
+            if new_file_name != old_file_name {
+                let new_file_path = video_dir.join(&new_file_name);
+                
+                match fs::rename(&file_path, &new_file_path) {
+                    Ok(_) => {
+                        debug!("番剧文件重命名成功: {} -> {}", old_file_name, new_file_name);
+                        
+                        // 如果是MP4文件，更新数据库中的分页路径
+                        if new_file_name.ends_with(".mp4") {
+                            update_page_path_in_database(txn, &pages, &new_file_name, &new_file_path).await?;
+                        }
+                    }
+                    Err(e) => {
+                        warn!("番剧文件重命名失败: {} -> {}, 错误: {}", old_file_name, new_file_name, e);
+                    }
+                }
+            }
+        }
+    }
+
+    // 更新视频路径在数据库中的记录
+    let video_path_str = video_dir.to_string_lossy().to_string();
+    video::Entity::update_many()
+        .filter(video::Column::Id.eq(video.id))
+        .col_expr(video::Column::Path, Expr::value(video_path_str))
+        .exec(txn)
+        .await?;
+
+    Ok(())
+}
+
+/// 解析番剧文件名并重新组合
+fn parse_and_rename_bangumi_file(
+    old_file_name: &str,
+    video: &video::Model,
+    pages: &[page::Model],
+) -> Option<String> {
+    // 尝试匹配各种番剧文件名模式
+    
+    // 1. 视频级文件 (tvshow.nfo, poster.jpg, fanart.jpg)
+    if matches!(old_file_name, "tvshow.nfo" | "poster.jpg" | "fanart.jpg") {
+        return Some(old_file_name.to_string()); // 这些文件不需要重命名
+    }
+
+    // 2. 分页相关文件模式匹配
+    // 支持的格式：S01E01-中配.mp4, S01E01-中配-poster.jpg, 第1集-日配-fanart.jpg 等
+    if let Some((episode_part, suffix)) = parse_episode_file_name(old_file_name) {
+        // 重新生成集数格式
+        if let Some(new_episode_format) = generate_new_episode_format(video, pages, &episode_part) {
+            return Some(format!("{}{}", new_episode_format, suffix));
+        }
+    }
+
+    None
+}
+
+/// 解析文件名中的集数部分和后缀
+fn parse_episode_file_name(file_name: &str) -> Option<(String, String)> {
+    // 匹配模式：S01E01-版本-类型.扩展名 或 第X集-版本-类型.扩展名
+    
+    // 匹配 SxxExx 格式
+    if let Some(captures) = regex::Regex::new(r"^(S\d{2}E\d{2})(.*)$").ok()?.captures(file_name) {
+        let episode_part = captures.get(1)?.as_str().to_string();
+        let suffix = captures.get(2)?.as_str().to_string();
+        return Some((episode_part, suffix));
+    }
+    
+    // 匹配 第X集 格式
+    if let Some(captures) = regex::Regex::new(r"^(第\d+集)(.*)$").ok()?.captures(file_name) {
+        let episode_part = captures.get(1)?.as_str().to_string();
+        let suffix = captures.get(2)?.as_str().to_string();
+        return Some((episode_part, suffix));
+    }
+
+    None
+}
+
+/// 生成新的集数格式
+fn generate_new_episode_format(
+    video: &video::Model,
+    pages: &[page::Model],
+    _old_episode_part: &str,
+) -> Option<String> {
+    // 如果是多P视频，使用第一个分页的信息生成新格式
+    if let Some(first_page) = pages.first() {
+        // 使用配置中的分页模板生成新的集数格式
+        if let Ok(new_format) = crate::config::with_config(|bundle| {
+            let page_args = crate::utils::format_arg::page_format_args(video, first_page);
+            bundle.render_page_template(&page_args)
+        }) {
+            return Some(new_format);
+        }
+    }
+    
+    // 后备方案：使用集数信息生成
+    if let Some(episode_number) = video.episode_number {
+        return Some(format!("第{:02}集", episode_number));
+    }
+
+    None
+}
+
+/// 更新数据库中的分页路径
+async fn update_page_path_in_database(
+    txn: &sea_orm::DatabaseTransaction,
+    pages: &[page::Model],
+    new_file_name: &str,
+    new_file_path: &std::path::Path,
+) -> Result<(), Box<dyn std::error::Error>> {
+    // 查找匹配的分页记录并更新其路径
+    for page_model in pages {
+        // 简单匹配：如果新文件名包含分页标题或PID信息，则更新该分页的路径
+        if new_file_name.contains(&page_model.name) || 
+           new_file_name.contains(&page_model.pid.to_string()) {
+            
+            page::Entity::update_many()
+                .filter(page::Column::Id.eq(page_model.id))
+                .col_expr(
+                    page::Column::Path,
+                    Expr::value(Some(new_file_path.to_string_lossy().to_string())),
+                )
+                .exec(txn)
+                .await?;
+            break;
         }
     }
 
