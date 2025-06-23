@@ -76,11 +76,25 @@ pub struct UpdateVideoSourceEnabledResponse {
     pub message: String,
 }
 
+#[derive(Serialize, ToSchema)]
+pub struct ResetVideoSourcePathResponse {
+    pub success: bool,
+    pub source_id: i32,
+    pub source_type: String,
+    pub old_path: String,
+    pub new_path: String,
+    pub moved_files_count: usize,
+    pub updated_videos_count: usize,
+    pub cleaned_folders_count: usize,
+    pub message: String,
+}
+
 #[derive(FromQueryResult, Serialize, ToSchema, Debug)]
 pub struct VideoSource {
     pub id: i32,
     pub name: String,
     pub enabled: bool,
+    pub path: String,
 }
 
 #[derive(Serialize, ToSchema)]

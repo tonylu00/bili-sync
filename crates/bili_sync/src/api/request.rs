@@ -50,6 +50,27 @@ pub struct UpdateVideoSourceEnabledRequest {
     pub enabled: bool,
 }
 
+// 重设视频源路径的请求结构体
+#[derive(Debug, Deserialize, ToSchema)]
+pub struct ResetVideoSourcePathRequest {
+    /// 新的基础路径
+    pub new_path: String,
+    /// 是否应用四步重命名原则移动文件
+    #[serde(default = "default_apply_rename_rules")]
+    pub apply_rename_rules: bool,
+    /// 是否删除空的原始文件夹
+    #[serde(default = "default_clean_empty_folders")]
+    pub clean_empty_folders: bool,
+}
+
+fn default_apply_rename_rules() -> bool {
+    true
+}
+
+fn default_clean_empty_folders() -> bool {
+    true
+}
+
 // 更新配置的请求结构体
 #[derive(Deserialize, IntoParams, ToSchema)]
 pub struct UpdateConfigRequest {

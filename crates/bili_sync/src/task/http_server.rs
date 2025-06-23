@@ -43,6 +43,7 @@ use crate::api::handler::{
     reset_all_videos,
     reset_specific_tasks,
     reset_video,
+    reset_video_source_path,
     resume_scanning_endpoint,
     search_bilibili,
     setup_auth_token,
@@ -70,6 +71,10 @@ pub async fn http_server(database_connection: Arc<DatabaseConnection>) -> Result
         .route(
             "/api/video-sources/{source_type}/{id}/enabled",
             put(update_video_source_enabled),
+        )
+        .route(
+            "/api/video-sources/{source_type}/{id}/reset-path",
+            post(reset_video_source_path),
         )
         .route("/api/video-sources/{source_type}/{id}", delete(delete_video_source))
         .route("/api/videos", get(get_videos))

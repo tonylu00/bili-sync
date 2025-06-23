@@ -22,15 +22,15 @@ use crate::api::auth::OpenAPIAuth;
 use crate::api::error::InnerApiError;
 use crate::api::request::{
     AddVideoSourceRequest, BatchUpdateConfigRequest, ConfigHistoryRequest, ResetSpecificTasksRequest,
-    SetupAuthTokenRequest, UpdateConfigItemRequest, UpdateConfigRequest, UpdateCredentialRequest,
-    UpdateVideoStatusRequest, VideosRequest,
+    ResetVideoSourcePathRequest, SetupAuthTokenRequest, UpdateConfigItemRequest, UpdateConfigRequest, 
+    UpdateCredentialRequest, UpdateVideoStatusRequest, VideosRequest,
 };
 use crate::api::response::{
     AddVideoSourceResponse, BangumiSeasonInfo, ConfigChangeInfo, ConfigHistoryResponse, ConfigItemResponse,
     ConfigReloadResponse, ConfigResponse, ConfigValidationResponse, DeleteVideoSourceResponse, HotReloadStatusResponse,
-    InitialSetupCheckResponse, PageInfo, ResetAllVideosResponse, ResetVideoResponse, SetupAuthTokenResponse,
-    UpdateConfigResponse, UpdateCredentialResponse, UpdateVideoStatusResponse, VideoInfo, VideoResponse, VideoSource,
-    VideoSourcesResponse, VideosResponse,
+    InitialSetupCheckResponse, PageInfo, ResetAllVideosResponse, ResetVideoResponse, ResetVideoSourcePathResponse,
+    SetupAuthTokenResponse, UpdateConfigResponse, UpdateCredentialResponse, UpdateVideoStatusResponse, VideoInfo, 
+    VideoResponse, VideoSource, VideoSourcesResponse, VideosResponse,
 };
 use crate::api::wrapper::{ApiError, ApiResponse};
 use crate::utils::nfo::NFO;
@@ -38,7 +38,7 @@ use crate::utils::status::{PageStatus, VideoStatus};
 
 #[derive(OpenApi)]
 #[openapi(
-    paths(get_video_sources, get_videos, get_video, reset_video, reset_all_videos, reset_specific_tasks, update_video_status, add_video_source, update_video_source_enabled, delete_video_source, reload_config, get_config, update_config, get_bangumi_seasons, search_bilibili, get_user_favorites, get_user_collections, get_user_followings, get_subscribed_collections, get_logs, get_queue_status, proxy_image, get_config_item, get_config_history, validate_config, get_hot_reload_status, check_initial_setup, setup_auth_token, update_credential, pause_scanning_endpoint, resume_scanning_endpoint, get_task_control_status, get_video_play_info, proxy_video_stream),
+    paths(get_video_sources, get_videos, get_video, reset_video, reset_all_videos, reset_specific_tasks, update_video_status, add_video_source, update_video_source_enabled, reset_video_source_path, delete_video_source, reload_config, get_config, update_config, get_bangumi_seasons, search_bilibili, get_user_favorites, get_user_collections, get_user_followings, get_subscribed_collections, get_logs, get_queue_status, proxy_image, get_config_item, get_config_history, validate_config, get_hot_reload_status, check_initial_setup, setup_auth_token, update_credential, pause_scanning_endpoint, resume_scanning_endpoint, get_task_control_status, get_video_play_info, proxy_video_stream),
     modifiers(&OpenAPIAuth),
     security(
         ("Token" = []),
@@ -73,6 +73,7 @@ pub async fn get_video_sources(
             collection::Column::Id,
             collection::Column::Name,
             collection::Column::Enabled,
+            collection::Column::Path,
         ])
         .into_model::<VideoSource>()
         .all(db.as_ref())
@@ -80,14 +81,14 @@ pub async fn get_video_sources(
 
     let favorite_sources = favorite::Entity::find()
         .select_only()
-        .columns([favorite::Column::Id, favorite::Column::Name, favorite::Column::Enabled])
+        .columns([favorite::Column::Id, favorite::Column::Name, favorite::Column::Enabled, favorite::Column::Path])
         .into_model::<VideoSource>()
         .all(db.as_ref())
         .await?;
 
     let submission_sources = submission::Entity::find()
         .select_only()
-        .columns([submission::Column::Id, submission::Column::Enabled])
+        .columns([submission::Column::Id, submission::Column::Enabled, submission::Column::Path])
         .column_as(submission::Column::UpperName, "name")
         .into_model::<VideoSource>()
         .all(db.as_ref())
@@ -95,7 +96,7 @@ pub async fn get_video_sources(
 
     let watch_later_sources = watch_later::Entity::find()
         .select_only()
-        .columns([watch_later::Column::Id, watch_later::Column::Enabled])
+        .columns([watch_later::Column::Id, watch_later::Column::Enabled, watch_later::Column::Path])
         .column_as(Expr::value("稍后再看"), "name")
         .into_model::<VideoSource>()
         .all(db.as_ref())
@@ -109,6 +110,7 @@ pub async fn get_video_sources(
             video_source::Column::Id,
             video_source::Column::Name,
             video_source::Column::Enabled,
+            video_source::Column::Path,
         ])
         .into_model::<VideoSource>()
         .all(db.as_ref())
@@ -2076,6 +2078,521 @@ pub async fn delete_video_source_internal(
 
     txn.commit().await?;
     Ok(result)
+}
+
+/// 重设视频源路径
+#[utoipa::path(
+    post,
+    path = "/api/video-sources/{source_type}/{id}/reset-path",
+    request_body = ResetVideoSourcePathRequest,
+    responses(
+        (status = 200, body = ApiResponse<ResetVideoSourcePathResponse>),
+    )
+)]
+pub async fn reset_video_source_path(
+    Path((source_type, id)): Path<(String, i32)>,
+    Extension(db): Extension<Arc<DatabaseConnection>>,
+    axum::Json(request): axum::Json<ResetVideoSourcePathRequest>,
+) -> Result<ApiResponse<ResetVideoSourcePathResponse>, ApiError> {
+    match reset_video_source_path_internal(db, source_type, id, request).await {
+        Ok(response) => Ok(ApiResponse::ok(response)),
+        Err(e) => Err(e),
+    }
+}
+
+/// 内部路径重设函数（用于队列处理和直接调用）
+pub async fn reset_video_source_path_internal(
+    db: Arc<DatabaseConnection>,
+    source_type: String,
+    id: i32,
+    request: ResetVideoSourcePathRequest,
+) -> Result<ResetVideoSourcePathResponse, ApiError> {
+    let txn = db.begin().await?;
+    let mut moved_files_count = 0;
+    let mut updated_videos_count = 0;
+    let mut cleaned_folders_count = 0;
+
+    // 根据不同类型的视频源执行不同的路径重设操作
+    let result = match source_type.as_str() {
+        "collection" => {
+            let collection = collection::Entity::find_by_id(id)
+                .one(&txn)
+                .await?
+                .ok_or_else(|| anyhow!("未找到指定的合集"))?;
+            let old_path = collection.path.clone();
+            
+            if request.apply_rename_rules {
+                // 获取所有相关视频，按新路径规则移动文件
+                let videos = video::Entity::find()
+                    .filter(video::Column::CollectionId.eq(id))
+                    .all(&txn)
+                    .await?;
+                
+                for video in &videos {
+                    // 移动视频文件到新路径结构
+                    match move_video_files_to_new_path(&video, &old_path, &request.new_path, request.clean_empty_folders).await {
+                        Ok((moved, cleaned)) => {
+                            moved_files_count += moved;
+                            cleaned_folders_count += cleaned;
+                        },
+                        Err(e) => warn!("移动视频 {} 文件失败: {}", video.id, e),
+                    }
+                    
+                    // 重新生成视频和分页的路径
+                    if let Err(e) = regenerate_video_and_page_paths_correctly(&txn, video.id, &request.new_path).await {
+                        warn!("更新视频 {} 路径失败: {:?}", video.id, e);
+                    }
+                }
+                updated_videos_count = videos.len();
+            }
+            
+            // 更新数据库中的路径
+            collection::Entity::update_many()
+                .filter(collection::Column::Id.eq(id))
+                .col_expr(collection::Column::Path, Expr::value(request.new_path.clone()))
+                .exec(&txn)
+                .await?;
+
+            ResetVideoSourcePathResponse {
+                success: true,
+                source_id: id,
+                source_type: "collection".to_string(),
+                old_path,
+                new_path: request.new_path,
+                moved_files_count,
+                updated_videos_count,
+                cleaned_folders_count,
+                message: format!("合集 {} 路径重设完成", collection.name),
+            }
+        }
+        "favorite" => {
+            let favorite = favorite::Entity::find_by_id(id)
+                .one(&txn)
+                .await?
+                .ok_or_else(|| anyhow!("未找到指定的收藏夹"))?;
+            let old_path = favorite.path.clone();
+            
+            if request.apply_rename_rules {
+                // 获取所有相关视频，按新路径规则移动文件
+                let videos = video::Entity::find()
+                    .filter(video::Column::FavoriteId.eq(id))
+                    .all(&txn)
+                    .await?;
+                
+                for video in &videos {
+                    // 移动视频文件到新路径结构
+                    match move_video_files_to_new_path(&video, &old_path, &request.new_path, request.clean_empty_folders).await {
+                        Ok((moved, cleaned)) => {
+                            moved_files_count += moved;
+                            cleaned_folders_count += cleaned;
+                        },
+                        Err(e) => warn!("移动视频 {} 文件失败: {}", video.id, e),
+                    }
+                    
+                    // 重新生成视频和分页的路径
+                    if let Err(e) = regenerate_video_and_page_paths_correctly(&txn, video.id, &request.new_path).await {
+                        warn!("更新视频 {} 路径失败: {:?}", video.id, e);
+                    }
+                }
+                updated_videos_count = videos.len();
+            }
+            
+            favorite::Entity::update_many()
+                .filter(favorite::Column::Id.eq(id))
+                .col_expr(favorite::Column::Path, Expr::value(request.new_path.clone()))
+                .exec(&txn)
+                .await?;
+
+            ResetVideoSourcePathResponse {
+                success: true,
+                source_id: id,
+                source_type: "favorite".to_string(),
+                old_path,
+                new_path: request.new_path,
+                moved_files_count,
+                updated_videos_count,
+                cleaned_folders_count,
+                message: format!("收藏夹 {} 路径重设完成", favorite.name),
+            }
+        }
+        "submission" => {
+            let submission = submission::Entity::find_by_id(id)
+                .one(&txn)
+                .await?
+                .ok_or_else(|| anyhow!("未找到指定的UP主投稿"))?;
+            let old_path = submission.path.clone();
+            
+            if request.apply_rename_rules {
+                // 获取所有相关视频，按新路径规则移动文件
+                let videos = video::Entity::find()
+                    .filter(video::Column::SubmissionId.eq(id))
+                    .all(&txn)
+                    .await?;
+                
+                for video in &videos {
+                    // 移动视频文件到新路径结构
+                    match move_video_files_to_new_path(&video, &old_path, &request.new_path, request.clean_empty_folders).await {
+                        Ok((moved, cleaned)) => {
+                            moved_files_count += moved;
+                            cleaned_folders_count += cleaned;
+                        },
+                        Err(e) => warn!("移动视频 {} 文件失败: {}", video.id, e),
+                    }
+                    
+                    // 重新生成视频和分页的路径
+                    if let Err(e) = regenerate_video_and_page_paths_correctly(&txn, video.id, &request.new_path).await {
+                        warn!("更新视频 {} 路径失败: {:?}", video.id, e);
+                    }
+                }
+                updated_videos_count = videos.len();
+            }
+            
+            submission::Entity::update_many()
+                .filter(submission::Column::Id.eq(id))
+                .col_expr(submission::Column::Path, Expr::value(request.new_path.clone()))
+                .exec(&txn)
+                .await?;
+
+            ResetVideoSourcePathResponse {
+                success: true,
+                source_id: id,
+                source_type: "submission".to_string(),
+                old_path,
+                new_path: request.new_path,
+                moved_files_count,
+                updated_videos_count,
+                cleaned_folders_count,
+                message: format!("UP主投稿 {} 路径重设完成", submission.upper_name),
+            }
+        }
+        "watch_later" => {
+            let watch_later = watch_later::Entity::find_by_id(id)
+                .one(&txn)
+                .await?
+                .ok_or_else(|| anyhow!("未找到指定的稍后再看"))?;
+            let old_path = watch_later.path.clone();
+            
+            if request.apply_rename_rules {
+                // 获取所有相关视频，按新路径规则移动文件
+                let videos = video::Entity::find()
+                    .filter(video::Column::WatchLaterId.eq(id))
+                    .all(&txn)
+                    .await?;
+                
+                for video in &videos {
+                    // 移动视频文件到新路径结构
+                    match move_video_files_to_new_path(&video, &old_path, &request.new_path, request.clean_empty_folders).await {
+                        Ok((moved, cleaned)) => {
+                            moved_files_count += moved;
+                            cleaned_folders_count += cleaned;
+                        },
+                        Err(e) => warn!("移动视频 {} 文件失败: {}", video.id, e),
+                    }
+                    
+                    // 重新生成视频和分页的路径
+                    if let Err(e) = regenerate_video_and_page_paths_correctly(&txn, video.id, &request.new_path).await {
+                        warn!("更新视频 {} 路径失败: {:?}", video.id, e);
+                    }
+                }
+                updated_videos_count = videos.len();
+            }
+            
+            watch_later::Entity::update_many()
+                .filter(watch_later::Column::Id.eq(id))
+                .col_expr(watch_later::Column::Path, Expr::value(request.new_path.clone()))
+                .exec(&txn)
+                .await?;
+
+            ResetVideoSourcePathResponse {
+                success: true,
+                source_id: id,
+                source_type: "watch_later".to_string(),
+                old_path,
+                new_path: request.new_path,
+                moved_files_count,
+                updated_videos_count,
+                cleaned_folders_count,
+                message: "稍后再看路径重设完成".to_string(),
+            }
+        }
+        "bangumi" => {
+            let bangumi = video_source::Entity::find_by_id(id)
+                .one(&txn)
+                .await?
+                .ok_or_else(|| anyhow!("未找到指定的番剧"))?;
+            let old_path = bangumi.path.clone();
+            
+            if request.apply_rename_rules {
+                // 获取所有相关视频，按新路径规则移动文件
+                let videos = video::Entity::find()
+                    .filter(video::Column::SourceId.eq(id))
+                    .filter(video::Column::SourceType.eq(1)) // 番剧类型
+                    .all(&txn)
+                    .await?;
+                
+                for video in &videos {
+                    // 移动视频文件到新路径结构
+                    match move_video_files_to_new_path(&video, &old_path, &request.new_path, request.clean_empty_folders).await {
+                        Ok((moved, cleaned)) => {
+                            moved_files_count += moved;
+                            cleaned_folders_count += cleaned;
+                        },
+                        Err(e) => warn!("移动视频 {} 文件失败: {}", video.id, e),
+                    }
+                    
+                    // 重新生成视频和分页的路径
+                    if let Err(e) = regenerate_video_and_page_paths_correctly(&txn, video.id, &request.new_path).await {
+                        warn!("更新视频 {} 路径失败: {:?}", video.id, e);
+                    }
+                }
+                updated_videos_count = videos.len();
+            }
+            
+            video_source::Entity::update_many()
+                .filter(video_source::Column::Id.eq(id))
+                .col_expr(video_source::Column::Path, Expr::value(request.new_path.clone()))
+                .exec(&txn)
+                .await?;
+
+            ResetVideoSourcePathResponse {
+                success: true,
+                source_id: id,
+                source_type: "bangumi".to_string(),
+                old_path,
+                new_path: request.new_path,
+                moved_files_count,
+                updated_videos_count,
+                cleaned_folders_count,
+                message: format!("番剧 {} 路径重设完成", bangumi.name),
+            }
+        }
+        _ => return Err(anyhow!("不支持的视频源类型: {}", source_type).into()),
+    };
+
+    txn.commit().await?;
+    Ok(result)
+}
+
+
+/// 使用四步重命名原则移动文件夹（直接移动到指定目标路径）
+async fn move_files_with_four_step_rename(
+    old_path: &str,
+    target_path: &str,
+) -> Result<String, std::io::Error> {
+    use std::path::Path;
+    
+    let old_path = Path::new(old_path);
+    let target_path = Path::new(target_path);
+    
+    if !old_path.exists() {
+        return Ok(target_path.to_string_lossy().to_string()); // 如果原路径不存在，返回目标路径
+    }
+    
+    // 如果目标路径已存在且和源路径相同，无需移动
+    if old_path == target_path {
+        return Ok(target_path.to_string_lossy().to_string());
+    }
+    
+    // 确保目标目录的父目录存在
+    if let Some(parent) = target_path.parent() {
+        std::fs::create_dir_all(parent)?;
+    }
+    
+    // 四步重命名原则：
+    // 1. 重命名到临时名称（在源目录下）
+    let temp_name = format!(".temp_{}", chrono::Utc::now().timestamp_millis());
+    let temp_path = old_path.parent()
+        .ok_or_else(|| std::io::Error::other("无法获取父目录"))?
+        .join(&temp_name);
+    
+    // 2. 移动到目标父目录（使用临时名称）
+    let temp_target_path = target_path.parent()
+        .ok_or_else(|| std::io::Error::other("无法获取目标父目录"))?
+        .join(&temp_name);
+    
+    // 步骤1: 重命名到临时名称
+    std::fs::rename(old_path, &temp_path)?;
+    
+    // 步骤2: 移动到目标目录
+    std::fs::rename(&temp_path, &temp_target_path)?;
+    
+    // 步骤3: 重命名为最终名称
+    let final_path = if target_path.exists() {
+        // 如果目标已存在，使用冲突解决策略
+        let mut counter = 1;
+        let target_parent = target_path.parent().unwrap();
+        let target_name = target_path.file_name().unwrap();
+        
+        loop {
+            let conflict_name = format!("{}_{}", 
+                target_name.to_string_lossy(), counter);
+            let conflict_path = target_parent.join(&conflict_name);
+            if !conflict_path.exists() {
+                std::fs::rename(&temp_target_path, &conflict_path)?;
+                break conflict_path;
+            }
+            counter += 1;
+        }
+    } else {
+        std::fs::rename(&temp_target_path, target_path)?;
+        target_path.to_path_buf()
+    };
+    
+    Ok(final_path.to_string_lossy().to_string())
+}
+
+/// 移动视频文件到新路径结构，返回(移动的文件数量, 清理的文件夹数量)
+async fn move_video_files_to_new_path(
+    video: &video::Model,
+    _old_base_path: &str,
+    new_base_path: &str,
+    clean_empty_folders: bool,
+) -> Result<(usize, usize), std::io::Error> {
+    use std::path::Path;
+    
+    let mut moved_count = 0;
+    let mut cleaned_count = 0;
+    
+    // 获取当前视频的存储路径
+    let current_video_path = Path::new(&video.path);
+    if !current_video_path.exists() {
+        return Ok((0, 0)); // 如果视频文件夹不存在，跳过
+    }
+    
+    // 使用模板重新生成视频在新基础路径下的目标路径
+    let new_video_dir = Path::new(new_base_path);
+    
+    // 基于视频模型重新生成路径结构
+    let new_video_path = crate::config::with_config(|bundle| {
+        let video_args = crate::utils::format_arg::video_format_args(video);
+        bundle.render_video_template(&video_args)
+    })
+    .map_err(|e| std::io::Error::other(format!("模板渲染失败: {}", e)))?;
+    
+    let target_video_dir = new_video_dir.join(&new_video_path);
+    
+    // 如果目标路径和当前路径相同，无需移动
+    if current_video_path == target_video_dir {
+        return Ok((0, 0));
+    }
+    
+    // 使用四步重命名原则移动整个视频文件夹
+    if let Ok(_) = move_files_with_four_step_rename(
+        &current_video_path.to_string_lossy(),
+        &target_video_dir.to_string_lossy()
+    ).await {
+        moved_count = 1;
+        
+        // 移动成功后，检查并清理原来的父目录（如果启用了清理且为空）
+        if clean_empty_folders {
+            if let Some(parent_dir) = current_video_path.parent() {
+                if let Ok(count) = cleanup_empty_directory(parent_dir).await {
+                    cleaned_count = count;
+                }
+            }
+        }
+    }
+    
+    Ok((moved_count, cleaned_count))
+}
+
+/// 正确重新生成视频和分页路径（基于新的基础路径重新计算完整路径）
+async fn regenerate_video_and_page_paths_correctly(
+    txn: &sea_orm::DatabaseTransaction,
+    video_id: i32,
+    new_base_path: &str,
+) -> Result<(), ApiError> {
+    use std::path::Path;
+    
+    // 获取视频信息
+    let video = video::Entity::find_by_id(video_id)
+        .one(txn)
+        .await?
+        .ok_or_else(|| anyhow!("未找到视频记录"))?;
+    
+    // 重新生成视频路径
+    let new_video_path = crate::config::with_config(|bundle| {
+        let video_args = crate::utils::format_arg::video_format_args(&video);
+        bundle.render_video_template(&video_args)
+    })
+    .map_err(|e| anyhow!("视频路径模板渲染失败: {}", e))?;
+    
+    let full_new_video_path = Path::new(new_base_path).join(&new_video_path);
+    
+    // 更新视频路径
+    video::Entity::update_many()
+        .filter(video::Column::Id.eq(video_id))
+        .col_expr(video::Column::Path, Expr::value(full_new_video_path.to_string_lossy().to_string()))
+        .exec(txn)
+        .await?;
+    
+    // 更新相关分页路径
+    let pages = page::Entity::find()
+        .filter(page::Column::VideoId.eq(video_id))
+        .all(txn)
+        .await?;
+    
+    for page_model in pages {
+        // 重新生成分页路径
+        let new_page_path = crate::config::with_config(|bundle| {
+            let page_args = crate::utils::format_arg::page_format_args(&video, &page_model);
+            bundle.render_page_template(&page_args)
+        })
+        .map_err(|e| anyhow!("分页路径模板渲染失败: {}", e))?;
+        
+        let full_new_page_path = full_new_video_path.join(format!("{}.mp4", new_page_path));
+        
+        page::Entity::update_many()
+            .filter(page::Column::Id.eq(page_model.id))
+            .col_expr(page::Column::Path, Expr::value(Some(full_new_page_path.to_string_lossy().to_string())))
+            .exec(txn)
+            .await?;
+    }
+    
+    Ok(())
+}
+
+/// 递归清理空目录（从指定目录开始向上清理）
+async fn cleanup_empty_directory(dir_path: &std::path::Path) -> Result<usize, std::io::Error> {
+    use tokio::fs;
+    
+    let mut cleaned_count = 0;
+    let mut current_dir = dir_path;
+    
+    // 从当前目录开始，向上递归检查并清理空目录
+    loop {
+        if !current_dir.exists() {
+            break;
+        }
+        
+        // 检查目录是否为空
+        let mut entries = fs::read_dir(current_dir).await?;
+        if entries.next_entry().await?.is_none() {
+            // 目录为空，可以删除
+            match fs::remove_dir(current_dir).await {
+                Ok(_) => {
+                    cleaned_count += 1;
+                    debug!("清理空目录: {}", current_dir.display());
+                    
+                    // 继续检查父目录
+                    if let Some(parent) = current_dir.parent() {
+                        current_dir = parent;
+                    } else {
+                        break;
+                    }
+                }
+                Err(e) => {
+                    debug!("清理目录失败 {}: {}", current_dir.display(), e);
+                    break;
+                }
+            }
+        } else {
+            // 目录不为空，停止清理
+            break;
+        }
+    }
+    
+    Ok(cleaned_count)
 }
 
 /// 更新配置文件的辅助函数

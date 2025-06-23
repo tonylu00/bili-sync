@@ -21,6 +21,7 @@ export interface VideoSource {
 	id: number;
 	name: string;
 	enabled: boolean;
+	path: string;
 }
 
 // 视频来源响应类型
@@ -473,6 +474,26 @@ export interface UpdateVideoSourceEnabledResponse {
 	source_id: number;
 	source_type: string;
 	enabled: boolean;
+	message: string;
+}
+
+// 重设视频源路径请求类型
+export interface ResetVideoSourcePathRequest {
+	new_path: string;
+	apply_rename_rules?: boolean;
+	clean_empty_folders?: boolean;
+}
+
+// 重设视频源路径响应类型
+export interface ResetVideoSourcePathResponse {
+	success: boolean;
+	source_id: number;
+	source_type: string;
+	old_path: string;
+	new_path: string;
+	moved_files_count: number;
+	updated_videos_count: number;
+	cleaned_folders_count: number;
 	message: string;
 }
 

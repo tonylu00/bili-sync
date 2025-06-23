@@ -3,12 +3,17 @@
 	import SettingsIcon from '@lucide/svelte/icons/settings';
 	import TrashIcon from '@lucide/svelte/icons/trash-2';
 	import PowerIcon from '@lucide/svelte/icons/power';
+	import FolderOpenIcon from '@lucide/svelte/icons/folder-open';
+	import ChevronDownIcon from '@lucide/svelte/icons/chevron-down';
+	import ChevronUpIcon from '@lucide/svelte/icons/chevron-up';
+	import MoreVerticalIcon from '@lucide/svelte/icons/more-vertical';
 	import { FileText, ListTodo } from '@lucide/svelte';
 	import * as Sidebar from '$lib/components/ui/sidebar/index.js';
 	import { useSidebar } from '$lib/components/ui/sidebar/context.svelte.js';
 	import { appStateStore, setVideoSourceFilter, clearAll, ToQuery } from '$lib/stores/filter';
 	import { toast } from 'svelte-sonner';
 	import DeleteVideoSourceDialog from './delete-video-source-dialog.svelte';
+	import ResetPathDialog from './reset-path-dialog.svelte';
 
 	import { type VideoSourcesResponse } from '$lib/types';
 	import { VIDEO_SOURCES } from '$lib/consts';
@@ -28,12 +33,44 @@
 		name: ''
 	};
 
+	// 路径重设对话框状态
+	let showResetPathDialog = false;
+	let resetPathSourceInfo = {
+		type: '',
+		id: 0,
+		name: '',
+		currentPath: ''
+	};
+
+	// 展开的操作菜单状态 - 记录哪个视频源的操作菜单是展开的
+	let expandedActionMenuKey = '';
+
+	// 生成视频源的唯一key
+	function getSourceKey(type: string, id: number) {
+		return `${type}-${id}`;
+	}
+
 	function handleSourceClick(sourceType: string, sourceId: number) {
 		setVideoSourceFilter(sourceType, sourceId.toString());
 		goto(`/${ToQuery($appStateStore)}`);
 		if (sidebar.isMobile) {
 			sidebar.setOpenMobile(false);
 		}
+	}
+
+	// 切换操作菜单的展开状态
+	function toggleActionMenu(event: Event, type: string, id: number) {
+		event.preventDefault();
+		event.stopPropagation();
+		const sourceKey = getSourceKey(type, id);
+		expandedActionMenuKey = expandedActionMenuKey === sourceKey ? '' : sourceKey;
+	}
+
+	// 处理显示操作菜单（与MoreVerticalIcon的点击事件对应）
+	function handleShowActions(event: Event, type: string, id: number, name: string, path: string, enabled: boolean) {
+		event.preventDefault();
+		event.stopPropagation();
+		toggleActionMenu(event, type, id);
 	}
 
 	function handleLogoClick() {
@@ -60,6 +97,25 @@
 			name: sourceName
 		};
 		showDeleteDialog = true;
+	}
+
+	// 打开路径重设对话框
+	function handleResetPath(
+		event: Event,
+		sourceType: string,
+		sourceId: number,
+		sourceName: string,
+		currentPath: string
+	) {
+		event.stopPropagation(); // 阻止触发父级的点击事件
+
+		resetPathSourceInfo = {
+			type: sourceType,
+			id: sourceId,
+			name: sourceName,
+			currentPath: currentPath
+		};
+		showResetPathDialog = true;
 	}
 
 	// 切换视频源启用状态
@@ -120,6 +176,39 @@
 	// 取消删除
 	function handleCancelDelete() {
 		showDeleteDialog = false;
+	}
+
+	// 确认路径重设
+	async function handleConfirmResetPath(event: CustomEvent<{ new_path: string; apply_rename_rules?: boolean; clean_empty_folders?: boolean }>) {
+		const request = event.detail;
+
+		try {
+			const result = await api.resetVideoSourcePath(
+				resetPathSourceInfo.type,
+				resetPathSourceInfo.id,
+				request
+			);
+			if (result.data.success) {
+				toast.success('路径重设成功', {
+					description: result.data.message + 
+						(request.apply_rename_rules ? `，已移动 ${result.data.moved_files_count} 个文件` : '')
+				});
+
+				// 刷新视频源列表
+				const response = await api.getVideoSources();
+				setVideoSources(response.data);
+			} else {
+				toast.error('路径重设失败', { description: result.data.message });
+			}
+		} catch (error: any) {
+			console.error('路径重设失败:', error);
+			toast.error('路径重设失败', { description: error.message });
+		}
+	}
+
+	// 取消路径重设
+	function handleCancelResetPath() {
+		showResetPathDialog = false;
 	}
 </script>
 
@@ -186,25 +275,52 @@
 																		{/if}
 																	</div>
 																</button>
-																<div class="flex flex-col gap-1 pt-2">
+																<div class="pt-2">
 																	<button
-																		class="text-muted-foreground hover:text-blue-600 hover:bg-blue-50 rounded p-1.5 opacity-0 transition-all duration-200 group-hover/item:opacity-100 {source.enabled ? 'text-green-600' : 'text-gray-400'}"
-																		on:click={(e) =>
-																			handleToggleEnabled(e, item.type, source.id, source.enabled, source.name)}
-																		title={source.enabled ? '禁用视频源' : '启用视频源'}
+																		class="text-muted-foreground hover:text-foreground hover:bg-accent rounded p-1.5 opacity-0 transition-all duration-200 group-hover/item:opacity-100"
+																		on:click={(e) => handleShowActions(e, item.type, source.id, source.name, source.path, source.enabled)}
+																		title="更多操作"
 																	>
-																		<PowerIcon class="h-3.5 w-3.5" />
-																	</button>
-																	<button
-																		class="text-muted-foreground hover:text-destructive hover:bg-destructive/10 rounded p-1.5 opacity-0 transition-all duration-200 group-hover/item:opacity-100"
-																		on:click={(e) =>
-																			handleDeleteSource(e, item.type, source.id, source.name)}
-																		title="删除视频源"
-																	>
-																		<TrashIcon class="h-3.5 w-3.5" />
+																		{#if expandedActionMenuKey === getSourceKey(item.type, source.id)}
+																			<ChevronUpIcon class="h-3.5 w-3.5" />
+																		{:else}
+																			<MoreVerticalIcon class="h-3.5 w-3.5" />
+																		{/if}
 																	</button>
 																</div>
 															</div>
+															
+															<!-- 展开的操作菜单 -->
+															{#if expandedActionMenuKey === getSourceKey(item.type, source.id)}
+																<div class="ml-4 mt-2 space-y-1 border-l border-border pl-3">
+																	<!-- 启用/禁用 -->
+																	<button
+																		class="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-xs transition-colors hover:bg-accent/50"
+																		on:click={(e) => handleToggleEnabled(e, item.type, source.id, source.enabled, source.name)}
+																	>
+																		<PowerIcon class="h-3 w-3 {source.enabled ? 'text-green-600' : 'text-gray-400'}" />
+																		<span>{source.enabled ? '禁用' : '启用'}</span>
+																	</button>
+																	
+																	<!-- 重设路径 -->
+																	<button
+																		class="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-xs transition-colors hover:bg-accent/50"
+																		on:click={(e) => handleResetPath(e, item.type, source.id, source.name, source.path)}
+																	>
+																		<FolderOpenIcon class="h-3 w-3 text-orange-600" />
+																		<span>重设路径</span>
+																	</button>
+																	
+																	<!-- 删除视频源 -->
+																	<button
+																		class="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-xs transition-colors hover:bg-destructive/10 text-destructive"
+																		on:click={(e) => handleDeleteSource(e, item.type, source.id, source.name)}
+																	>
+																		<TrashIcon class="h-3 w-3" />
+																		<span>删除</span>
+																	</button>
+																</div>
+															{/if}
 														</Sidebar.MenuItem>
 													{/each}
 												{:else}
@@ -278,3 +394,14 @@
 	on:confirm={handleConfirmDelete}
 	on:cancel={handleCancelDelete}
 />
+
+<!-- 路径重设对话框 -->
+<ResetPathDialog
+	bind:isOpen={showResetPathDialog}
+	sourceName={resetPathSourceInfo.name}
+	sourceType={resetPathSourceInfo.type}
+	currentPath={resetPathSourceInfo.currentPath}
+	on:confirm={handleConfirmResetPath}
+	on:cancel={handleCancelResetPath}
+/>
+

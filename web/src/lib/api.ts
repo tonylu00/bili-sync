@@ -23,6 +23,8 @@ import type {
 	UserCollectionInfo,
 	QueueStatusResponse,
 	UpdateVideoSourceEnabledResponse,
+	ResetVideoSourcePathRequest,
+	ResetVideoSourcePathResponse,
 	UpdateCredentialRequest,
 	UpdateCredentialResponse,
 	InitialSetupCheckResponse,
@@ -241,6 +243,23 @@ class ApiClient {
 		return this.put<UpdateVideoSourceEnabledResponse>(
 			`/video-sources/${sourceType}/${id}/enabled`,
 			{ enabled }
+		);
+	}
+
+	/**
+	 * 重设视频源路径
+	 * @param sourceType 视频源类型
+	 * @param id 视频源ID
+	 * @param params 路径重设参数
+	 */
+	async resetVideoSourcePath(
+		sourceType: string,
+		id: number,
+		params: ResetVideoSourcePathRequest
+	): Promise<ApiResponse<ResetVideoSourcePathResponse>> {
+		return this.post<ResetVideoSourcePathResponse>(
+			`/video-sources/${sourceType}/${id}/reset-path`,
+			params
 		);
 	}
 
@@ -501,6 +520,12 @@ export const api = {
 	 */
 	updateVideoSourceEnabled: (sourceType: string, id: number, enabled: boolean) =>
 		apiClient.updateVideoSourceEnabled(sourceType, id, enabled),
+
+	/**
+	 * 重设视频源路径
+	 */
+	resetVideoSourcePath: (sourceType: string, id: number, params: ResetVideoSourcePathRequest) =>
+		apiClient.resetVideoSourcePath(sourceType, id, params),
 
 	/**
 	 * 检查是否需要初始设置
