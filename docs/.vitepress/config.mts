@@ -1,5 +1,5 @@
-import { defineConfig } from "vitepress";
 import taskLists from "markdown-it-task-lists";
+import { defineConfig } from "vitepress";
 
 // https://vitepress.dev/reference/site-config
 export default defineConfig({
@@ -50,7 +50,7 @@ export default defineConfig({
 				collapsed: false,
 				items: [
 					{ text: "程序配置", link: "/configuration" },
-					{ 
+					{
 						text: "视频源管理",
 						collapsed: true,
 						items: [
@@ -89,6 +89,8 @@ export default defineConfig({
 				text: "更新日志",
 				collapsed: true,
 				items: [
+					{ text: "v2.7.3.1 (2025-06-23)", link: "/update-log-v2.7.3.1" },
+					{ text: "v2.7.3 (2025-06-23)", link: "/update-log-v2.7.3" },
 					{ text: "v2.7.2 Final (2025-06-14)", link: "/update-log-2025-06-14-comprehensive" },
 					{ text: "v2.7.2+ (2025-06-14)", link: "/update-log-2025-06-14" },
 					{ text: "v2.7.1 (2025-06-08)", link: "/update-log-v2.7.1" },
