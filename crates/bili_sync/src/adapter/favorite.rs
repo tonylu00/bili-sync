@@ -70,6 +70,10 @@ impl VideoSource for favorite::Model {
     fn log_download_video_end(&self) {
         debug!("下载收藏夹「{}」视频完成", self.name);
     }
+
+    fn scan_deleted_videos(&self) -> bool {
+        self.scan_deleted_videos
+    }
 }
 
 #[allow(dead_code)]
@@ -105,6 +109,7 @@ pub async fn init_favorite_sources(
                         created_at: Set(chrono::Local::now().to_string()),
                         latest_row_at: Set(chrono::NaiveDateTime::default()),
                         enabled: Set(true),
+                        scan_deleted_videos: Set(false),
                     };
 
                     let result = favorite::Entity::insert(model)
@@ -128,6 +133,7 @@ pub async fn init_favorite_sources(
                         created_at: Set(chrono::Local::now().to_string()),
                         latest_row_at: Set(chrono::NaiveDateTime::default()),
                         enabled: Set(true),
+                        scan_deleted_videos: Set(false),
                     };
 
                     let result = favorite::Entity::insert(model)

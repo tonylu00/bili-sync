@@ -80,6 +80,10 @@ impl VideoSource for collection::Model {
     fn log_download_video_end(&self) {
         debug!("下载{}「{}」视频完成", CollectionType::from(self.r#type), self.name);
     }
+
+    fn scan_deleted_videos(&self) -> bool {
+        self.scan_deleted_videos
+    }
 }
 
 // 修改初始化合集源的方法中的类型转换问题

@@ -38,4 +38,7 @@ pub trait VideoSourceTrait {
 
     /// 结束下载视频
     fn log_download_video_end(&self);
+
+    /// 获取是否扫描已删除视频的设置
+    fn scan_deleted_videos(&self) -> bool;
 }

@@ -50,6 +50,12 @@ pub struct UpdateVideoSourceEnabledRequest {
     pub enabled: bool,
 }
 
+// 更新视频源扫描已删除视频设置的请求结构体
+#[derive(Debug, Deserialize, ToSchema)]
+pub struct UpdateVideoSourceScanDeletedRequest {
+    pub scan_deleted_videos: bool,
+}
+
 // 重设视频源路径的请求结构体
 #[derive(Debug, Deserialize, ToSchema)]
 pub struct ResetVideoSourcePathRequest {

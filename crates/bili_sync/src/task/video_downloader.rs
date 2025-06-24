@@ -348,6 +348,11 @@ pub async fn video_downloader(connection: Arc<DatabaseConnection>) {
                 error!("处理删除任务队列失败: {:#}", e);
             }
 
+            // 处理暂存的视频删除任务
+            if let Err(e) = crate::task::process_video_delete_tasks(connection.clone()).await {
+                error!("处理视频删除任务队列失败: {:#}", e);
+            }
+
             // 处理暂存的添加任务
             if let Err(e) = crate::task::process_add_tasks(connection.clone()).await {
                 error!("处理添加任务队列失败: {:#}", e);

@@ -143,6 +143,7 @@
 	// 其他设置
 	let cdnSorting = false;
 	let timezone = DEFAULT_TIMEZONE;
+	let scanDeletedVideos = false;
 
 	// B站凭证设置
 	let sessdata = '';
@@ -382,6 +383,7 @@
 			// 其他设置
 			cdnSorting = config.cdn_sorting || false;
 			timezone = config.timezone || getCurrentTimezone();
+			scanDeletedVideos = config.scan_deleted_videos || false;
 
 			// B站凭证设置
 			sessdata = config.credential?.sessdata || '';
@@ -522,6 +524,7 @@
 				// 其他设置
 				cdn_sorting: cdnSorting,
 				timezone: timezone,
+				scan_deleted_videos: scanDeletedVideos,
 				// UP主投稿风控配置
 				large_submission_threshold: largeSubmissionThreshold,
 				base_request_delay: baseRequestDelay,
@@ -2392,6 +2395,17 @@
 								/>
 								<Label for="cdn-sorting" class="text-sm">启用CDN排序</Label>
 								<p class="text-muted-foreground ml-2 text-sm">优化下载节点选择</p>
+							</div>
+
+							<div class="flex items-center space-x-2">
+								<input
+									type="checkbox"
+									id="scan-deleted-videos"
+									bind:checked={scanDeletedVideos}
+									class="text-primary focus:ring-primary h-4 w-4 rounded border-gray-300"
+								/>
+								<Label for="scan-deleted-videos" class="text-sm">扫描已删除视频</Label>
+								<p class="text-muted-foreground ml-2 text-sm">在视频列表中显示已删除的视频</p>
 							</div>
 
 							<div class="rounded-lg border border-orange-200 bg-orange-50 p-3">

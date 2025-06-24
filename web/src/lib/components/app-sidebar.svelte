@@ -7,6 +7,7 @@
 	import ChevronDownIcon from '@lucide/svelte/icons/chevron-down';
 	import ChevronUpIcon from '@lucide/svelte/icons/chevron-up';
 	import MoreVerticalIcon from '@lucide/svelte/icons/more-vertical';
+	import RotateCcwIcon from '@lucide/svelte/icons/rotate-ccw';
 	import { FileText, ListTodo } from '@lucide/svelte';
 	import * as Sidebar from '$lib/components/ui/sidebar/index.js';
 	import { useSidebar } from '$lib/components/ui/sidebar/context.svelte.js';
@@ -210,6 +211,40 @@
 	function handleCancelResetPath() {
 		showResetPathDialog = false;
 	}
+
+	// 切换扫描已删除视频设置
+	async function handleToggleScanDeleted(
+		event: Event,
+		sourceType: string,
+		sourceId: number,
+		currentScanDeleted: boolean,
+		sourceName: string
+	) {
+		event.stopPropagation(); // 阻止触发父级的点击事件
+
+		try {
+			const newScanDeleted = !currentScanDeleted;
+			const result = await api.updateVideoSourceScanDeleted(sourceType, sourceId, newScanDeleted);
+			
+			if (result.data.success) {
+				toast.success('设置更新成功', {
+					description: result.data.message
+				});
+
+				// 刷新视频源列表
+				const response = await api.getVideoSources();
+				setVideoSources(response.data);
+
+				// 关闭操作菜单
+				expandedActionMenuKey = '';
+			} else {
+				toast.error('设置更新失败', { description: result.data.message });
+			}
+		} catch (error: any) {
+			console.error('设置更新失败:', error);
+			toast.error('设置更新失败', { description: error.message });
+		}
+	}
 </script>
 
 <Sidebar.Root class="border-border bg-background border-r">
@@ -309,6 +344,15 @@
 																	>
 																		<FolderOpenIcon class="h-3 w-3 text-orange-600" />
 																		<span>重设路径</span>
+																	</button>
+																	
+																	<!-- 扫描已删除视频设置 -->
+																	<button
+																		class="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-xs transition-colors hover:bg-accent/50"
+																		on:click={(e) => handleToggleScanDeleted(e, item.type, source.id, source.scan_deleted_videos, source.name)}
+																	>
+																		<RotateCcwIcon class="h-3 w-3 {source.scan_deleted_videos ? 'text-blue-600' : 'text-gray-400'}" />
+																		<span>{source.scan_deleted_videos ? '禁用扫描已删除' : '启用扫描已删除'}</span>
 																	</button>
 																	
 																	<!-- 删除视频源 -->

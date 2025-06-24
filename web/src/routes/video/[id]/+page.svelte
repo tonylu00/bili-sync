@@ -10,6 +10,7 @@
 	import type { ApiError, UpdateVideoStatusRequest, VideoResponse } from '$lib/types';
 	import EditIcon from '@lucide/svelte/icons/edit';
 	import PlayIcon from '@lucide/svelte/icons/play';
+	import TrashIcon from '@lucide/svelte/icons/trash-2';
 	import XIcon from '@lucide/svelte/icons/x';
 	import { onMount } from 'svelte';
 	import { toast } from 'svelte-sonner';
@@ -27,6 +28,8 @@
 	let onlinePlayInfo: any = null;
 	let loadingPlayInfo = false;
 	let isFullscreen = false; // 是否全屏模式
+	let deleteDialogOpen = false;
+	let deleting = false;
 
 	// 检查视频是否可播放（分P下载任务已完成）
 	function isVideoPlayable(video: any): boolean {
@@ -223,6 +226,37 @@
 			document.removeEventListener('mozfullscreenchange', handleFullscreenChange);
 		};
 	});
+
+	// 删除视频
+	async function handleDeleteVideo() {
+		if (!videoData) return;
+
+		deleting = true;
+		try {
+			const result = await api.deleteVideo(videoData.video.id);
+			const data = result.data;
+
+			if (data.success) {
+				toast.success('视频删除成功', {
+					description: '视频已被标记为删除状态'
+				});
+				deleteDialogOpen = false;
+				// 返回首页
+				goto('/');
+			} else {
+				toast.error('视频删除失败', {
+					description: data.message
+				});
+			}
+		} catch (error) {
+			console.error('删除视频失败:', error);
+			toast.error('删除视频失败', {
+				description: (error as ApiError).message
+			});
+		} finally {
+			deleting = false;
+		}
+	}
 </script>
 
 <svelte:head>
@@ -288,6 +322,16 @@
 				>
 					<EditIcon class="mr-2 h-4 w-4" />
 					编辑状态
+				</Button>
+				<Button
+					size="sm"
+					variant="destructive"
+					class="shrink-0 cursor-pointer"
+					onclick={() => (deleteDialogOpen = true)}
+					disabled={deleting}
+				>
+					<TrashIcon class="mr-2 h-4 w-4" />
+					删除视频
 				</Button>
 			</div>
 		</div>
@@ -635,6 +679,41 @@
 			loading={statusEditorLoading}
 			onsubmit={handleStatusEditorSubmit}
 		/>
+	{/if}
+
+	<!-- 删除确认对话框 -->
+	{#if deleteDialogOpen}
+		<div class="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+			<div class="bg-background border rounded-lg shadow-lg p-6 max-w-md w-full mx-4">
+				<div class="space-y-4">
+					<div class="space-y-2">
+						<h3 class="text-lg font-semibold">确认删除视频</h3>
+						<p class="text-muted-foreground">
+							确定要删除视频 "<span class="font-medium">{videoData?.video.name}</span>" 吗？
+						</p>
+						<p class="text-sm text-muted-foreground">
+							此操作将把视频标记为已删除状态，不会删除实际文件。在视频源设置中开启"扫描已删除视频"后可重新下载。
+						</p>
+					</div>
+					<div class="flex gap-2 justify-end">
+						<Button
+							variant="outline"
+							onclick={() => (deleteDialogOpen = false)}
+							disabled={deleting}
+						>
+							取消
+						</Button>
+						<Button
+							variant="destructive"
+							onclick={handleDeleteVideo}
+							disabled={deleting}
+						>
+							{deleting ? '删除中...' : '确认删除'}
+						</Button>
+					</div>
+				</div>
+			</div>
+		</div>
 	{/if}
 {/if}
 

@@ -27,7 +27,7 @@ use crate::api::request::{
 };
 use crate::api::response::{
     AddVideoSourceResponse, BangumiSeasonInfo, ConfigChangeInfo, ConfigHistoryResponse, ConfigItemResponse,
-    ConfigReloadResponse, ConfigResponse, ConfigValidationResponse, DeleteVideoSourceResponse, HotReloadStatusResponse,
+    ConfigReloadResponse, ConfigResponse, ConfigValidationResponse, DeleteVideoResponse, DeleteVideoSourceResponse, HotReloadStatusResponse,
     InitialSetupCheckResponse, PageInfo, ResetAllVideosResponse, ResetVideoResponse, ResetVideoSourcePathResponse,
     SetupAuthTokenResponse, UpdateConfigResponse, UpdateCredentialResponse, UpdateVideoStatusResponse, VideoInfo,
     VideoResponse, VideoSource, VideoSourcesResponse, VideosResponse,
@@ -36,9 +36,16 @@ use crate::api::wrapper::{ApiError, ApiResponse};
 use crate::utils::nfo::NFO;
 use crate::utils::status::{PageStatus, VideoStatus};
 
+/// 标准化文件路径格式
+fn normalize_file_path(path: &str) -> String {
+    // 将所有反斜杠转换为正斜杠，保持路径一致性
+    path.replace('\\', "/")
+}
+
+
 #[derive(OpenApi)]
 #[openapi(
-    paths(get_video_sources, get_videos, get_video, reset_video, reset_all_videos, reset_specific_tasks, update_video_status, add_video_source, update_video_source_enabled, reset_video_source_path, delete_video_source, reload_config, get_config, update_config, get_bangumi_seasons, search_bilibili, get_user_favorites, get_user_collections, get_user_followings, get_subscribed_collections, get_logs, get_queue_status, proxy_image, get_config_item, get_config_history, validate_config, get_hot_reload_status, check_initial_setup, setup_auth_token, update_credential, pause_scanning_endpoint, resume_scanning_endpoint, get_task_control_status, get_video_play_info, proxy_video_stream),
+    paths(get_video_sources, get_videos, get_video, reset_video, reset_all_videos, reset_specific_tasks, update_video_status, add_video_source, update_video_source_enabled, update_video_source_scan_deleted, reset_video_source_path, delete_video_source, reload_config, get_config, update_config, get_bangumi_seasons, search_bilibili, get_user_favorites, get_user_collections, get_user_followings, get_subscribed_collections, get_logs, get_queue_status, proxy_image, get_config_item, get_config_history, validate_config, get_hot_reload_status, check_initial_setup, setup_auth_token, update_credential, pause_scanning_endpoint, resume_scanning_endpoint, get_task_control_status, get_video_play_info, proxy_video_stream),
     modifiers(&OpenAPIAuth),
     security(
         ("Token" = []),
@@ -74,6 +81,7 @@ pub async fn get_video_sources(
             collection::Column::Name,
             collection::Column::Enabled,
             collection::Column::Path,
+            collection::Column::ScanDeletedVideos,
         ])
         .into_model::<VideoSource>()
         .all(db.as_ref())
@@ -86,6 +94,7 @@ pub async fn get_video_sources(
             favorite::Column::Name,
             favorite::Column::Enabled,
             favorite::Column::Path,
+            favorite::Column::ScanDeletedVideos,
         ])
         .into_model::<VideoSource>()
         .all(db.as_ref())
@@ -97,6 +106,7 @@ pub async fn get_video_sources(
             submission::Column::Id,
             submission::Column::Enabled,
             submission::Column::Path,
+            submission::Column::ScanDeletedVideos,
         ])
         .column_as(submission::Column::UpperName, "name")
         .into_model::<VideoSource>()
@@ -109,6 +119,7 @@ pub async fn get_video_sources(
             watch_later::Column::Id,
             watch_later::Column::Enabled,
             watch_later::Column::Path,
+            watch_later::Column::ScanDeletedVideos,
         ])
         .column_as(Expr::value("稍后再看"), "name")
         .into_model::<VideoSource>()
@@ -124,6 +135,7 @@ pub async fn get_video_sources(
             video_source::Column::Name,
             video_source::Column::Enabled,
             video_source::Column::Path,
+            video_source::Column::ScanDeletedVideos,
         ])
         .into_model::<VideoSource>()
         .all(db.as_ref())
@@ -155,6 +167,12 @@ pub async fn get_videos(
     Query(params): Query<VideosRequest>,
 ) -> Result<ApiResponse<VideosResponse>, ApiError> {
     let mut query = video::Entity::find();
+
+    // 根据配置决定是否过滤已删除的视频
+    let scan_deleted = crate::config::with_config(|bundle| bundle.config.scan_deleted_videos);
+    if !scan_deleted {
+        query = query.filter(video::Column::Deleted.eq(0));
+    }
 
     // 直接检查是否存在bangumi参数，单独处理
     if let Some(id) = params.bangumi {
@@ -922,6 +940,7 @@ pub async fn add_video_source_internal(
                 created_at: sea_orm::Set(chrono::Local::now().to_string()),
                 latest_row_at: sea_orm::Set(chrono::NaiveDateTime::default()),
                 enabled: sea_orm::Set(true),
+                scan_deleted_videos: sea_orm::Set(false),
             };
 
             let insert_result = collection::Entity::insert(collection).exec(&txn).await?;
@@ -960,6 +979,7 @@ pub async fn add_video_source_internal(
                 created_at: sea_orm::Set(chrono::Local::now().to_string()),
                 latest_row_at: sea_orm::Set(chrono::NaiveDateTime::default()),
                 enabled: sea_orm::Set(true),
+                scan_deleted_videos: sea_orm::Set(false),
             };
 
             let insert_result = favorite::Entity::insert(favorite).exec(&txn).await?;
@@ -998,6 +1018,7 @@ pub async fn add_video_source_internal(
                 created_at: sea_orm::Set(chrono::Local::now().to_string()),
                 latest_row_at: sea_orm::Set(chrono::NaiveDateTime::default()),
                 enabled: sea_orm::Set(true),
+                scan_deleted_videos: sea_orm::Set(false),
             };
 
             let insert_result = submission::Entity::insert(submission).exec(&txn).await?;
@@ -1598,6 +1619,261 @@ pub async fn delete_video_source(
     }
 }
 
+/// 删除单个视频（软删除）
+#[utoipa::path(
+    delete,
+    path = "/api/videos/{id}",
+    params(
+        ("id" = i32, description = "视频ID")
+    ),
+    responses(
+        (status = 200, body = ApiResponse<DeleteVideoResponse>),
+    )
+)]
+pub async fn delete_video(
+    Extension(db): Extension<Arc<DatabaseConnection>>,
+    Path(id): Path<i32>,
+) -> Result<ApiResponse<crate::api::response::DeleteVideoResponse>, ApiError> {
+    // 检查是否正在扫描
+    if crate::task::is_scanning() {
+        // 正在扫描，将删除任务加入队列
+        let task_id = uuid::Uuid::new_v4().to_string();
+        let delete_task = crate::task::DeleteVideoTask {
+            video_id: id,
+            task_id: task_id.clone(),
+        };
+
+        crate::task::enqueue_video_delete_task(delete_task).await;
+
+        info!("检测到正在扫描，视频删除任务已加入队列等待处理: 视频ID={}", id);
+
+        return Ok(ApiResponse::ok(crate::api::response::DeleteVideoResponse {
+            success: true,
+            video_id: id,
+            message: "正在扫描中，视频删除任务已加入队列，将在扫描完成后自动处理".to_string(),
+        }));
+    }
+
+    // 没有扫描，直接执行删除
+    match delete_video_internal(db, id).await {
+        Ok(_) => Ok(ApiResponse::ok(crate::api::response::DeleteVideoResponse {
+            success: true,
+            video_id: id,
+            message: "视频已成功删除".to_string(),
+        })),
+        Err(e) => Err(e),
+    }
+}
+
+/// 内部删除视频函数（用于队列处理和直接调用）
+pub async fn delete_video_internal(
+    db: Arc<DatabaseConnection>,
+    video_id: i32,
+) -> Result<(), ApiError> {
+    use bili_sync_entity::video;
+    use sea_orm::*;
+
+    // 检查视频是否存在
+    let video = video::Entity::find_by_id(video_id)
+        .one(db.as_ref())
+        .await?;
+
+    let video = match video {
+        Some(v) => v,
+        None => {
+            return Err(crate::api::error::InnerApiError::NotFound(video_id).into());
+        }
+    };
+
+    // 检查是否已经删除
+    if video.deleted == 1 {
+        return Err(crate::api::error::InnerApiError::BadRequest("视频已经被删除".to_string()).into());
+    }
+
+    // 删除本地文件 - 根据page表中的路径精确删除
+    let deleted_files = delete_video_files_from_pages(db.clone(), video_id).await?;
+    
+    if deleted_files > 0 {
+        info!("已删除 {} 个视频文件", deleted_files);
+        
+        // 检查视频文件夹是否为空，如果为空则删除文件夹
+        let normalized_video_path = normalize_file_path(&video.path);
+        let video_path = std::path::Path::new(&normalized_video_path);
+        if video_path.exists() {
+            match tokio::fs::read_dir(&normalized_video_path).await {
+                Ok(mut entries) => {
+                    if entries.next_entry().await.unwrap_or(None).is_none() {
+                        // 文件夹为空，删除它
+                        if let Err(e) = std::fs::remove_dir(&normalized_video_path) {
+                            warn!("删除空文件夹失败: {} - {}", normalized_video_path, e);
+                        } else {
+                            info!("已删除空文件夹: {}", normalized_video_path);
+                        }
+                    }
+                }
+                Err(e) => {
+                    warn!("读取文件夹失败: {} - {}", normalized_video_path, e);
+                }
+            }
+        }
+    } else {
+        debug!("未找到需要删除的文件，视频ID: {}", video_id);
+    }
+
+    // 执行软删除：将deleted字段设为1
+    video::Entity::update_many()
+        .col_expr(video::Column::Deleted, sea_orm::prelude::Expr::value(1))
+        .filter(video::Column::Id.eq(video_id))
+        .exec(db.as_ref())
+        .await?;
+
+    info!("视频已成功删除: ID={}, 名称={}", video_id, video.name);
+
+    Ok(())
+}
+
+/// 根据page表精确删除视频文件
+async fn delete_video_files_from_pages(
+    db: Arc<DatabaseConnection>, 
+    video_id: i32
+) -> Result<usize, ApiError> {
+    use tokio::fs;
+    
+    // 获取该视频的所有页面（分P）
+    let pages = page::Entity::find()
+        .filter(page::Column::VideoId.eq(video_id))
+        .all(db.as_ref())
+        .await?;
+    
+    let mut deleted_count = 0;
+    
+    for page in pages {
+        if let Some(file_path) = &page.path {
+            let path = std::path::Path::new(file_path);
+            info!("尝试删除视频文件: {}", file_path);
+            if path.exists() {
+                match fs::remove_file(path).await {
+                    Ok(_) => {
+                        debug!("已删除视频文件: {}", file_path);
+                        deleted_count += 1;
+                    }
+                    Err(e) => {
+                        warn!("删除视频文件失败: {} - {}", file_path, e);
+                    }
+                }
+            } else {
+                debug!("文件不存在，跳过删除: {}", file_path);
+            }
+        }
+        
+        // 同时删除封面图片（如果存在且是本地文件）
+        if let Some(image_path) = &page.image {
+            // 跳过HTTP URL，只处理本地文件路径
+            if !image_path.starts_with("http://") && !image_path.starts_with("https://") {
+                let path = std::path::Path::new(image_path);
+                info!("尝试删除封面图片: {}", image_path);
+                if path.exists() {
+                    match fs::remove_file(path).await {
+                        Ok(_) => {
+                            info!("已删除封面图片: {}", image_path);
+                            deleted_count += 1;
+                        }
+                        Err(e) => {
+                            warn!("删除封面图片失败: {} - {}", image_path, e);
+                        }
+                    }
+                } else {
+                    debug!("封面图片文件不存在，跳过删除: {}", image_path);
+                }
+            } else {
+                debug!("跳过远程封面图片URL: {}", image_path);
+            }
+        }
+    }
+    
+    // 还要删除视频的NFO文件和其他可能的相关文件
+    let video = video::Entity::find_by_id(video_id)
+        .one(db.as_ref())
+        .await?;
+        
+    if let Some(_video) = video {
+        
+        // 获取页面信息来删除基于视频文件名的相关文件
+        let pages = page::Entity::find()
+            .filter(page::Column::VideoId.eq(video_id))
+            .all(db.as_ref())
+            .await?;
+        
+        for page in pages {
+            if let Some(file_path) = &page.path {
+                let video_file = std::path::Path::new(file_path);
+                if let Some(parent_dir) = video_file.parent() {
+                    if let Some(file_stem) = video_file.file_stem() {
+                        let file_stem_str = file_stem.to_string_lossy();
+                        
+                        // 删除同名的NFO文件
+                        let nfo_path = parent_dir.join(format!("{}.nfo", file_stem_str));
+                        if nfo_path.exists() {
+                            match fs::remove_file(&nfo_path).await {
+                                Ok(_) => {
+                                    debug!("已删除NFO文件: {:?}", nfo_path);
+                                    deleted_count += 1;
+                                }
+                                Err(e) => {
+                                    warn!("删除NFO文件失败: {:?} - {}", nfo_path, e);
+                                }
+                            }
+                        }
+                        
+                        // 删除封面文件 (-fanart.jpg, -poster.jpg等)
+                        for suffix in &["fanart", "poster"] {
+                            for ext in &["jpg", "jpeg", "png", "webp"] {
+                                let cover_path = parent_dir.join(format!("{}-{}.{}", file_stem_str, suffix, ext));
+                                if cover_path.exists() {
+                                    match fs::remove_file(&cover_path).await {
+                                        Ok(_) => {
+                                            debug!("已删除封面文件: {:?}", cover_path);
+                                            deleted_count += 1;
+                                        }
+                                        Err(e) => {
+                                            warn!("删除封面文件失败: {:?} - {}", cover_path, e);
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        
+                        // 删除弹幕文件 (.zh-CN.default.ass等)
+                        let danmaku_patterns = [
+                            format!("{}.zh-CN.default.ass", file_stem_str),
+                            format!("{}.ass", file_stem_str),
+                            format!("{}.srt", file_stem_str),
+                            format!("{}.xml", file_stem_str),
+                        ];
+                        
+                        for pattern in &danmaku_patterns {
+                            let danmaku_path = parent_dir.join(pattern);
+                            if danmaku_path.exists() {
+                                match fs::remove_file(&danmaku_path).await {
+                                    Ok(_) => {
+                                        debug!("已删除弹幕文件: {:?}", danmaku_path);
+                                        deleted_count += 1;
+                                    }
+                                    Err(e) => {
+                                        warn!("删除弹幕文件失败: {:?} - {}", danmaku_path, e);
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    
+    Ok(deleted_count)
+}
+
 /// 内部删除视频源函数（用于队列处理和直接调用）
 pub async fn delete_video_source_internal(
     db: Arc<DatabaseConnection>,
@@ -2093,6 +2369,157 @@ pub async fn delete_video_source_internal(
     Ok(result)
 }
 
+/// 更新视频源扫描已删除视频设置
+#[utoipa::path(
+    put,
+    path = "/api/video-sources/{source_type}/{id}/scan-deleted",
+    params(
+        ("source_type" = String, Path, description = "视频源类型"),
+        ("id" = i32, Path, description = "视频源ID"),
+    ),
+    request_body = crate::api::request::UpdateVideoSourceScanDeletedRequest,
+    responses(
+        (status = 200, body = ApiResponse<crate::api::response::UpdateVideoSourceScanDeletedResponse>),
+    )
+)]
+pub async fn update_video_source_scan_deleted(
+    Extension(db): Extension<Arc<DatabaseConnection>>,
+    Path((source_type, id)): Path<(String, i32)>,
+    axum::Json(params): axum::Json<crate::api::request::UpdateVideoSourceScanDeletedRequest>,
+) -> Result<ApiResponse<crate::api::response::UpdateVideoSourceScanDeletedResponse>, ApiError> {
+    update_video_source_scan_deleted_internal(db, source_type, id, params.scan_deleted_videos)
+        .await
+        .map(ApiResponse::ok)
+}
+
+/// 内部更新视频源扫描已删除视频设置函数
+pub async fn update_video_source_scan_deleted_internal(
+    db: Arc<DatabaseConnection>,
+    source_type: String,
+    id: i32,
+    scan_deleted_videos: bool,
+) -> Result<crate::api::response::UpdateVideoSourceScanDeletedResponse, ApiError> {
+    let txn = db.begin().await?;
+
+    let result = match source_type.as_str() {
+        "collection" => {
+            let collection = collection::Entity::find_by_id(id)
+                .one(&txn)
+                .await?
+                .ok_or_else(|| anyhow!("未找到指定的合集"))?;
+
+            collection::Entity::update(collection::ActiveModel {
+                id: sea_orm::ActiveValue::Unchanged(id),
+                scan_deleted_videos: sea_orm::Set(scan_deleted_videos),
+                ..Default::default()
+            })
+            .exec(&txn)
+            .await?;
+
+            crate::api::response::UpdateVideoSourceScanDeletedResponse {
+                success: true,
+                source_id: id,
+                source_type: "collection".to_string(),
+                scan_deleted_videos,
+                message: format!("合集 {} 的扫描已删除视频设置已{}", collection.name, if scan_deleted_videos { "启用" } else { "禁用" }),
+            }
+        }
+        "favorite" => {
+            let favorite = favorite::Entity::find_by_id(id)
+                .one(&txn)
+                .await?
+                .ok_or_else(|| anyhow!("未找到指定的收藏夹"))?;
+
+            favorite::Entity::update(favorite::ActiveModel {
+                id: sea_orm::ActiveValue::Unchanged(id),
+                scan_deleted_videos: sea_orm::Set(scan_deleted_videos),
+                ..Default::default()
+            })
+            .exec(&txn)
+            .await?;
+
+            crate::api::response::UpdateVideoSourceScanDeletedResponse {
+                success: true,
+                source_id: id,
+                source_type: "favorite".to_string(),
+                scan_deleted_videos,
+                message: format!("收藏夹 {} 的扫描已删除视频设置已{}", favorite.name, if scan_deleted_videos { "启用" } else { "禁用" }),
+            }
+        }
+        "submission" => {
+            let submission = submission::Entity::find_by_id(id)
+                .one(&txn)
+                .await?
+                .ok_or_else(|| anyhow!("未找到指定的UP主投稿"))?;
+
+            submission::Entity::update(submission::ActiveModel {
+                id: sea_orm::ActiveValue::Unchanged(id),
+                scan_deleted_videos: sea_orm::Set(scan_deleted_videos),
+                ..Default::default()
+            })
+            .exec(&txn)
+            .await?;
+
+            crate::api::response::UpdateVideoSourceScanDeletedResponse {
+                success: true,
+                source_id: id,
+                source_type: "submission".to_string(),
+                scan_deleted_videos,
+                message: format!("UP主投稿 {} 的扫描已删除视频设置已{}", submission.upper_name, if scan_deleted_videos { "启用" } else { "禁用" }),
+            }
+        }
+        "watch_later" => {
+            let _watch_later = watch_later::Entity::find_by_id(id)
+                .one(&txn)
+                .await?
+                .ok_or_else(|| anyhow!("未找到指定的稍后观看"))?;
+
+            watch_later::Entity::update(watch_later::ActiveModel {
+                id: sea_orm::ActiveValue::Unchanged(id),
+                scan_deleted_videos: sea_orm::Set(scan_deleted_videos),
+                ..Default::default()
+            })
+            .exec(&txn)
+            .await?;
+
+            crate::api::response::UpdateVideoSourceScanDeletedResponse {
+                success: true,
+                source_id: id,
+                source_type: "watch_later".to_string(),
+                scan_deleted_videos,
+                message: format!("稍后观看的扫描已删除视频设置已{}", if scan_deleted_videos { "启用" } else { "禁用" }),
+            }
+        }
+        "bangumi" => {
+            let video_source = video_source::Entity::find_by_id(id)
+                .one(&txn)
+                .await?
+                .ok_or_else(|| anyhow!("未找到指定的番剧"))?;
+
+            video_source::Entity::update(video_source::ActiveModel {
+                id: sea_orm::ActiveValue::Unchanged(id),
+                scan_deleted_videos: sea_orm::Set(scan_deleted_videos),
+                ..Default::default()
+            })
+            .exec(&txn)
+            .await?;
+
+            crate::api::response::UpdateVideoSourceScanDeletedResponse {
+                success: true,
+                source_id: id,
+                source_type: "bangumi".to_string(),
+                scan_deleted_videos,
+                message: format!("番剧 {} 的扫描已删除视频设置已{}", video_source.name, if scan_deleted_videos { "启用" } else { "禁用" }),
+            }
+        }
+        _ => return Err(anyhow!("不支持的视频源类型: {}", source_type).into()),
+    };
+
+    txn.commit().await?;
+    Ok(result)
+}
+
+/// 删除视频（软删除）
 /// 重设视频源路径
 #[utoipa::path(
     post,
@@ -5038,6 +5465,7 @@ pub struct QueueTaskInfo {
 pub struct QueueStatusResponse {
     pub is_scanning: bool,
     pub delete_queue: QueueInfo,
+    pub video_delete_queue: QueueInfo,
     pub add_queue: QueueInfo,
     pub config_queue: ConfigQueueInfo,
 }
@@ -5070,7 +5498,7 @@ pub struct ConfigQueueInfo {
     )
 )]
 pub async fn get_queue_status() -> Result<ApiResponse<QueueStatusResponse>, ApiError> {
-    use crate::task::{ADD_TASK_QUEUE, CONFIG_TASK_QUEUE, DELETE_TASK_QUEUE, TASK_CONTROLLER};
+    use crate::task::{ADD_TASK_QUEUE, CONFIG_TASK_QUEUE, DELETE_TASK_QUEUE, VIDEO_DELETE_TASK_QUEUE, TASK_CONTROLLER};
 
     // 获取扫描状态
     let is_scanning = TASK_CONTROLLER.is_scanning();
@@ -5085,6 +5513,19 @@ pub async fn get_queue_status() -> Result<ApiResponse<QueueStatusResponse>, ApiE
             task_id: format!("delete_{}", i + 1),
             task_type: "delete_video_source".to_string(),
             description: "删除视频源任务".to_string(),
+            created_at: chrono::Utc::now().to_rfc3339(),
+        })
+        .collect();
+
+    // 获取视频删除队列状态
+    let video_delete_queue_length = VIDEO_DELETE_TASK_QUEUE.queue_length().await;
+    let video_delete_is_processing = VIDEO_DELETE_TASK_QUEUE.is_processing();
+
+    let video_delete_tasks = (0..video_delete_queue_length)
+        .map(|i| QueueTaskInfo {
+            task_id: format!("video_delete_{}", i + 1),
+            task_type: "delete_video".to_string(),
+            description: "删除视频任务".to_string(),
             created_at: chrono::Utc::now().to_rfc3339(),
         })
         .collect();
@@ -5131,6 +5572,11 @@ pub async fn get_queue_status() -> Result<ApiResponse<QueueStatusResponse>, ApiE
             length: delete_queue_length,
             is_processing: delete_is_processing,
             tasks: delete_tasks,
+        },
+        video_delete_queue: QueueInfo {
+            length: video_delete_queue_length,
+            is_processing: video_delete_is_processing,
+            tasks: video_delete_tasks,
         },
         add_queue: QueueInfo {
             length: add_queue_length,

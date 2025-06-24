@@ -29,6 +29,7 @@ pub struct BangumiSource {
     pub download_all_seasons: bool,
     pub page_name_template: Option<String>,
     pub selected_seasons: Option<Vec<String>>,
+    pub scan_deleted_videos: bool,
 }
 
 impl BangumiSource {
@@ -206,6 +207,10 @@ impl VideoSourceTrait for BangumiSource {
         debug!("番剧 {} 的视频下载完毕", self.name);
     }
 
+    fn scan_deleted_videos(&self) -> bool {
+        self.scan_deleted_videos
+    }
+
     fn filter_expr(&self) -> SimpleExpr {
         bili_sync_entity::video::Column::SourceId
             .eq(self.id)
@@ -287,5 +292,9 @@ impl VideoSource for BangumiSource {
 
     fn log_download_video_end(&self) {
         debug!("番剧 {} 的视频下载完毕", self.name);
+    }
+
+    fn scan_deleted_videos(&self) -> bool {
+        self.scan_deleted_videos
     }
 }

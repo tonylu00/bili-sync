@@ -70,6 +70,10 @@ impl VideoSource for watch_later::Model {
     fn log_download_video_end(&self) {
         debug!("下载稍后再看视频完成");
     }
+
+    fn scan_deleted_videos(&self) -> bool {
+        self.scan_deleted_videos
+    }
 }
 
 // 稍后观看源的初始化现在通过Web API完成，不再需要这个函数

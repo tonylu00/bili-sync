@@ -34,6 +34,7 @@ pub struct Model {
     pub ep_id: Option<String>,
     pub season_number: Option<i32>,
     pub episode_number: Option<i32>,
+    pub deleted: i32,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]

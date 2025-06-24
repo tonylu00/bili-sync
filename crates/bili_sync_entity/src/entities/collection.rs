@@ -15,6 +15,7 @@ pub struct Model {
     pub created_at: String,
     pub latest_row_at: DateTime,
     pub enabled: bool,
+    pub scan_deleted_videos: bool,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
