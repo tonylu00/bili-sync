@@ -216,8 +216,9 @@ pub async fn video_downloader(connection: Arc<DatabaseConnection>) {
                 break 'inner;
             }
 
-            // 标记扫描开始
+            // 标记扫描开始并重置取消令牌
             TASK_CONTROLLER.set_scanning(true);
+            TASK_CONTROLLER.reset_cancellation_token().await;
 
             match bili_client.wbi_img().await.map(|wbi_img| wbi_img.into()) {
                 Ok(Some(mixin_key)) => bilibili::set_global_mixin_key(mixin_key),
@@ -294,6 +295,11 @@ pub async fn video_downloader(connection: Arc<DatabaseConnection>) {
                         }
                     }
                     Err(e) => {
+                        // 检查是否为风控错误，如果是则停止所有后续扫描
+                        if e.downcast_ref::<crate::error::DownloadAbortError>().is_some() {
+                            error!("检测到风控，停止所有后续视频源的扫描");
+                            break; // 跳出循环，停止处理剩余的视频源
+                        }
                         error!("处理过程遇到错误：{:#}", e);
                     }
                 }
@@ -340,6 +346,11 @@ pub async fn video_downloader(connection: Arc<DatabaseConnection>) {
             // 安全时机：扫描任务已完成，处理暂存的删除任务
             if let Err(e) = crate::task::process_delete_tasks(connection.clone()).await {
                 error!("处理删除任务队列失败: {:#}", e);
+            }
+
+            // 处理暂存的视频删除任务
+            if let Err(e) = crate::task::process_video_delete_tasks(connection.clone()).await {
+                error!("处理视频删除任务队列失败: {:#}", e);
             }
 
             // 处理暂存的添加任务

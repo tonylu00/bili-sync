@@ -12,6 +12,7 @@ import type {
 	AddVideoSourceRequest,
 	AddVideoSourceResponse,
 	DeleteVideoSourceResponse,
+	DeleteVideoResponse,
 	ConfigResponse,
 	UpdateConfigRequest,
 	UpdateConfigResponse,
@@ -196,6 +197,14 @@ class ApiClient {
 	}
 
 	/**
+	 * 删除视频（软删除）
+	 * @param id 视频 ID
+	 */
+	async deleteVideo(id: number): Promise<ApiResponse<DeleteVideoResponse>> {
+		return this.delete<DeleteVideoResponse>(`/videos/${id}`);
+	}
+
+	/**
 	 * 选择性重置特定任务
 	 * @param taskIndexes 要重置的任务索引列表
 	 */
@@ -243,6 +252,23 @@ class ApiClient {
 		return this.put<UpdateVideoSourceEnabledResponse>(
 			`/video-sources/${sourceType}/${id}/enabled`,
 			{ enabled }
+		);
+	}
+
+	/**
+	 * 更新视频源扫描已删除视频设置
+	 * @param sourceType 视频源类型
+	 * @param id 视频源ID
+	 * @param scanDeleted 是否扫描已删除视频
+	 */
+	async updateVideoSourceScanDeleted(
+		sourceType: string,
+		id: number,
+		scanDeleted: boolean
+	): Promise<ApiResponse<UpdateVideoSourceScanDeletedResponse>> {
+		return this.put<UpdateVideoSourceScanDeletedResponse>(
+			`/video-sources/${sourceType}/${id}/scan-deleted`,
+			{ scan_deleted_videos: scanDeleted }
 		);
 	}
 
@@ -443,6 +469,11 @@ export const api = {
 	resetAllVideos: () => apiClient.resetAllVideos(),
 
 	/**
+	 * 删除视频（软删除）
+	 */
+	deleteVideo: (id: number) => apiClient.deleteVideo(id),
+
+	/**
 	 * 选择性重置特定任务
 	 */
 	resetSpecificTasks: (taskIndexes: number[]) => apiClient.resetSpecificTasks(taskIndexes),
@@ -520,6 +551,12 @@ export const api = {
 	 */
 	updateVideoSourceEnabled: (sourceType: string, id: number, enabled: boolean) =>
 		apiClient.updateVideoSourceEnabled(sourceType, id, enabled),
+
+	/**
+	 * 更新视频源扫描已删除视频设置
+	 */
+	updateVideoSourceScanDeleted: (sourceType: string, id: number, scanDeleted: boolean) =>
+		apiClient.updateVideoSourceScanDeleted(sourceType, id, scanDeleted),
 
 	/**
 	 * 重设视频源路径

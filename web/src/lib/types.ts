@@ -22,6 +22,7 @@ export interface VideoSource {
 	name: string;
 	enabled: boolean;
 	path: string;
+	scan_deleted_videos: boolean;
 }
 
 // 视频来源响应类型
@@ -159,6 +160,13 @@ export interface DeleteVideoSourceResponse {
 	message: string;
 }
 
+// 删除视频响应类型
+export interface DeleteVideoResponse {
+	success: boolean;
+	video_id: number;
+	message: string;
+}
+
 // 配置响应类型
 export interface ConfigResponse {
 	video_name: string;
@@ -218,6 +226,8 @@ export interface ConfigResponse {
 	enable_auto_backoff?: boolean;
 	auto_backoff_base_seconds?: number;
 	auto_backoff_max_multiplier?: number;
+	// 扫描已删除视频设置
+	scan_deleted_videos?: boolean;
 	// B站凭证信息
 	credential?: {
 		sessdata: string;
@@ -287,6 +297,8 @@ export interface UpdateConfigRequest {
 	enable_auto_backoff?: boolean;
 	auto_backoff_base_seconds?: number;
 	auto_backoff_max_multiplier?: number;
+	// 扫描已删除视频设置
+	scan_deleted_videos?: boolean;
 }
 
 // 更新配置响应类型
@@ -474,6 +486,20 @@ export interface UpdateVideoSourceEnabledResponse {
 	source_id: number;
 	source_type: string;
 	enabled: boolean;
+	message: string;
+}
+
+// 更新视频源扫描已删除视频设置请求类型
+export interface UpdateVideoSourceScanDeletedRequest {
+	scan_deleted_videos: boolean;
+}
+
+// 更新视频源扫描已删除视频设置响应类型
+export interface UpdateVideoSourceScanDeletedResponse {
+	success: boolean;
+	source_id: number;
+	source_type: string;
+	scan_deleted_videos: boolean;
 	message: string;
 }
 

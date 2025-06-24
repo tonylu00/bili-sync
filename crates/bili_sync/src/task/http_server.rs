@@ -17,6 +17,7 @@ use crate::api::handler::{
     add_video_source,
     batch_update_config_internal,
     check_initial_setup,
+    delete_video,
     delete_video_source,
     get_bangumi_seasons,
     get_config,
@@ -51,6 +52,7 @@ use crate::api::handler::{
     update_config_item_internal,
     update_credential,
     update_video_source_enabled,
+    update_video_source_scan_deleted,
     update_video_status,
     validate_config,
     ApiDoc,
@@ -73,12 +75,17 @@ pub async fn http_server(database_connection: Arc<DatabaseConnection>) -> Result
             put(update_video_source_enabled),
         )
         .route(
+            "/api/video-sources/{source_type}/{id}/scan-deleted",
+            put(update_video_source_scan_deleted),
+        )
+        .route(
             "/api/video-sources/{source_type}/{id}/reset-path",
             post(reset_video_source_path),
         )
         .route("/api/video-sources/{source_type}/{id}", delete(delete_video_source))
         .route("/api/videos", get(get_videos))
         .route("/api/videos/{id}", get(get_video))
+        .route("/api/videos/{id}", delete(delete_video))
         .route("/api/videos/{id}/reset", post(reset_video))
         .route("/api/videos/{id}/update-status", post(update_video_status))
         .route("/api/videos/reset-all", post(reset_all_videos))

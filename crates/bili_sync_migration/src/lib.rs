@@ -15,6 +15,8 @@ mod m20250601_000001_fix_compatibility;
 mod m20250613_000001_add_performance_indexes;
 mod m20250613_000002_add_enabled_field;
 mod m20250616_000001_create_config_tables;
+mod m20250624_000001_add_deleted_field;
+mod m20250624_000002_add_scan_deleted_videos_field;
 
 pub struct Migrator;
 
@@ -37,6 +39,8 @@ impl MigratorTrait for Migrator {
             Box::new(m20250613_000001_add_performance_indexes::Migration),
             Box::new(m20250613_000002_add_enabled_field::Migration),
             Box::new(m20250616_000001_create_config_tables::Migration),
+            Box::new(m20250624_000001_add_deleted_field::Migration),
+            Box::new(m20250624_000002_add_scan_deleted_videos_field::Migration),
         ]
     }
 }

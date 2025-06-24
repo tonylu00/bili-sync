@@ -85,6 +85,9 @@ pub trait VideoSource {
 
     /// 结束下载视频
     fn log_download_video_end(&self);
+
+    /// 获取是否扫描已删除视频的设置
+    fn scan_deleted_videos(&self) -> bool;
 }
 
 #[derive(Clone, Debug)]
@@ -210,6 +213,7 @@ pub async fn bangumi_from<'a>(
             download_all_seasons: model.download_all_seasons.unwrap_or(false),
             page_name_template: model.page_name_template,
             selected_seasons,
+            scan_deleted_videos: model.scan_deleted_videos,
         }
     } else {
         // 如果数据库中不存在，使用默认值并发出警告
@@ -232,6 +236,7 @@ pub async fn bangumi_from<'a>(
             download_all_seasons: false,
             page_name_template: None,
             selected_seasons: None,
+            scan_deleted_videos: false,
         }
     };
 

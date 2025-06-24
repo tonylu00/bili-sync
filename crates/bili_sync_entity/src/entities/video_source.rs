@@ -29,6 +29,7 @@ pub struct Model {
     pub page_name_template: Option<String>,
     pub selected_seasons: Option<String>,
     pub enabled: bool,
+    pub scan_deleted_videos: bool,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]

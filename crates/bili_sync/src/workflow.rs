@@ -127,11 +127,9 @@ pub async fn process_video_source(
     if let Err(e) = fetch_video_details(bili_client, &video_source, connection, token.clone()).await {
         // 新增：检查是否为风控导致的下载中止
         if e.downcast_ref::<DownloadAbortError>().is_some() {
-            error!("获取视频详情时触发风控，已终止当前视频源的处理，等待下一轮执行");
-
-            // 中止当前源的处理，但不返回错误，以便任务调度器可以继续处理下一个视频源。
-            // 返回 Ok 意味着这个源的处理（虽然被中止了）从调度器的角度看是"完成"的。
-            return Ok(new_video_count);
+            error!("获取视频详情时触发风控，已终止当前视频源的处理，停止所有后续扫描");
+            // 风控时应该返回错误，中断整个扫描循环，而不是继续处理下一个视频源
+            return Err(e);
         }
 
         let error_msg = format!("{:#}", e);
@@ -515,12 +513,16 @@ pub async fn download_unprocessed_videos(
     }
 
     if download_aborted {
-        error!("下载触发风控，已终止所有任务，等待下一轮执行");
+        error!("下载触发风控，已终止所有任务，停止所有后续扫描");
 
         // 自动重置风控导致的失败任务
         if let Err(reset_err) = auto_reset_risk_control_failures(connection).await {
             error!("自动重置风控失败任务时出错: {:#}", reset_err);
         }
+        
+        video_source.log_download_video_end();
+        // 风控时返回错误，中断整个扫描循环
+        bail!(DownloadAbortError());
     }
     video_source.log_download_video_end();
     Ok(())

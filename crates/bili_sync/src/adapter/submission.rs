@@ -102,6 +102,10 @@ impl VideoSource for submission::Model {
     fn log_download_video_end(&self) {
         debug!("下载「{}」投稿视频完成", self.upper_name);
     }
+
+    fn scan_deleted_videos(&self) -> bool {
+        self.scan_deleted_videos
+    }
 }
 
 #[allow(dead_code)]
@@ -145,6 +149,7 @@ pub async fn init_submission_sources(
                         created_at: Set(chrono::Local::now().to_string()),
                         latest_row_at: Set(chrono::NaiveDateTime::default()),
                         enabled: Set(true),
+                        scan_deleted_videos: Set(false),
                     };
 
                     // 插入数据库
@@ -166,6 +171,7 @@ pub async fn init_submission_sources(
                         created_at: Set(chrono::Local::now().to_string()),
                         latest_row_at: Set(chrono::NaiveDateTime::default()),
                         enabled: Set(true),
+                        scan_deleted_videos: Set(false),
                     };
 
                     let result = submission::Entity::insert(model)

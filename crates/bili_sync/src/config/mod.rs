@@ -155,6 +155,8 @@ pub struct Config {
     pub timezone: String,
     #[serde(default)]
     pub submission_risk_control: crate::config::item::SubmissionRiskControlConfig,
+    #[serde(default)]
+    pub scan_deleted_videos: bool,
 }
 
 impl Clone for Config {
@@ -202,6 +204,7 @@ impl Clone for Config {
             cdn_sorting: self.cdn_sorting,
             timezone: self.timezone.clone(),
             submission_risk_control: self.submission_risk_control.clone(),
+            scan_deleted_videos: self.scan_deleted_videos,
         }
     }
 }
@@ -228,6 +231,7 @@ impl Default for Config {
             cdn_sorting: true,
             timezone: default_timezone(),
             submission_risk_control: crate::config::item::SubmissionRiskControlConfig::default(),
+            scan_deleted_videos: false,
         }
     }
 }
