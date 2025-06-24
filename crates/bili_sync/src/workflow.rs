@@ -513,12 +513,16 @@ pub async fn download_unprocessed_videos(
     }
 
     if download_aborted {
-        error!("下载触发风控，已终止所有任务，等待下一轮执行");
+        error!("下载触发风控，已终止所有任务，停止所有后续扫描");
 
         // 自动重置风控导致的失败任务
         if let Err(reset_err) = auto_reset_risk_control_failures(connection).await {
             error!("自动重置风控失败任务时出错: {:#}", reset_err);
         }
+        
+        video_source.log_download_video_end();
+        // 风控时返回错误，中断整个扫描循环
+        bail!(DownloadAbortError());
     }
     video_source.log_download_video_end();
     Ok(())
