@@ -644,6 +644,12 @@ impl TaskController {
         let token = self.cancellation_token.lock().await;
         token.clone()
     }
+
+    /// 重置取消令牌（用于新一轮扫描）
+    pub async fn reset_cancellation_token(&self) {
+        let mut token = self.cancellation_token.lock().await;
+        *token = CancellationToken::new();
+    }
 }
 
 impl Default for TaskController {

@@ -216,8 +216,9 @@ pub async fn video_downloader(connection: Arc<DatabaseConnection>) {
                 break 'inner;
             }
 
-            // 标记扫描开始
+            // 标记扫描开始并重置取消令牌
             TASK_CONTROLLER.set_scanning(true);
+            TASK_CONTROLLER.reset_cancellation_token().await;
 
             match bili_client.wbi_img().await.map(|wbi_img| wbi_img.into()) {
                 Ok(Some(mixin_key)) => bilibili::set_global_mixin_key(mixin_key),
