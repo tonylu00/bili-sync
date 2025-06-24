@@ -294,6 +294,11 @@ pub async fn video_downloader(connection: Arc<DatabaseConnection>) {
                         }
                     }
                     Err(e) => {
+                        // 检查是否为风控错误，如果是则停止所有后续扫描
+                        if e.downcast_ref::<crate::error::DownloadAbortError>().is_some() {
+                            error!("检测到风控，停止所有后续视频源的扫描");
+                            break; // 跳出循环，停止处理剩余的视频源
+                        }
                         error!("处理过程遇到错误：{:#}", e);
                     }
                 }
