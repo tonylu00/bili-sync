@@ -519,7 +519,7 @@ pub async fn download_unprocessed_videos(
         if let Err(reset_err) = auto_reset_risk_control_failures(connection).await {
             error!("自动重置风控失败任务时出错: {:#}", reset_err);
         }
-        
+
         video_source.log_download_video_end();
         // 风控时返回错误，中断整个扫描循环
         bail!(DownloadAbortError());

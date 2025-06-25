@@ -290,7 +290,10 @@ impl VideoDeleteTaskQueue {
         self.set_processing(true);
         let mut processed_count = 0u32;
 
-        info!("开始处理暂存的视频删除任务，当前队列长度: {}", self.queue_length().await);
+        info!(
+            "开始处理暂存的视频删除任务，当前队列长度: {}",
+            self.queue_length().await
+        );
 
         while let Some(task) = self.dequeue_task().await {
             info!("正在处理视频删除任务: 视频ID={}", task.video_id);
@@ -302,10 +305,7 @@ impl VideoDeleteTaskQueue {
                     processed_count += 1;
                 }
                 Err(e) => {
-                    error!(
-                        "视频删除任务执行失败: 视频ID={}, 错误: {:#?}",
-                        task.video_id, e
-                    );
+                    error!("视频删除任务执行失败: 视频ID={}, 错误: {:#?}", task.video_id, e);
                 }
             }
 
@@ -350,10 +350,10 @@ async fn delete_video_internal(db: Arc<DatabaseConnection>, video_id: i32) -> Re
 
     // 删除本地文件 - 根据page表中的路径精确删除
     let deleted_files = delete_video_files_from_pages_task(db.clone(), video_id).await?;
-    
+
     if deleted_files > 0 {
         info!("已删除 {} 个视频文件", deleted_files);
-        
+
         // 检查视频文件夹是否为空，如果为空则删除文件夹
         let normalized_video_path = normalize_file_path_task(&video.path);
         let video_path = std::path::Path::new(&normalized_video_path);
@@ -391,7 +391,6 @@ async fn delete_video_internal(db: Arc<DatabaseConnection>, video_id: i32) -> Re
     Ok(())
 }
 
-
 /// 标准化文件路径格式
 fn normalize_file_path_task(path: &str) -> String {
     // 将所有反斜杠转换为正斜杠，保持路径一致性
@@ -400,22 +399,22 @@ fn normalize_file_path_task(path: &str) -> String {
 
 /// 根据page表精确删除视频文件（任务队列版本）
 async fn delete_video_files_from_pages_task(
-    db: Arc<DatabaseConnection>, 
-    video_id: i32
+    db: Arc<DatabaseConnection>,
+    video_id: i32,
 ) -> Result<usize, anyhow::Error> {
-    use tokio::fs;
-    use bili_sync_entity::{video, page};
+    use bili_sync_entity::{page, video};
     use sea_orm::*;
-    
+    use tokio::fs;
+
     // 获取该视频的所有页面（分P）
     let pages = page::Entity::find()
         .filter(page::Column::VideoId.eq(video_id))
         .all(db.as_ref())
         .await
         .map_err(|e| anyhow::anyhow!("查询页面信息失败: {}", e))?;
-    
+
     let mut deleted_count = 0;
-    
+
     for page in pages {
         // 删除视频文件
         if let Some(file_path) = &page.path {
@@ -435,7 +434,7 @@ async fn delete_video_files_from_pages_task(
                 debug!("文件不存在，跳过删除: {}", file_path);
             }
         }
-        
+
         // 同时删除封面图片（如果存在且是本地文件）
         if let Some(image_path) = &page.image {
             // 跳过HTTP URL，只处理本地文件路径
@@ -460,13 +459,13 @@ async fn delete_video_files_from_pages_task(
             }
         }
     }
-    
+
     // 还要删除视频的NFO文件和其他可能的相关文件
     let video = video::Entity::find_by_id(video_id)
         .one(db.as_ref())
         .await
         .map_err(|e| anyhow::anyhow!("查询视频信息失败: {}", e))?;
-        
+
     if let Some(_video) = video {
         // 重新获取页面信息来删除基于视频文件名的相关文件
         let pages_for_cleanup = page::Entity::find()
@@ -474,14 +473,14 @@ async fn delete_video_files_from_pages_task(
             .all(db.as_ref())
             .await
             .map_err(|e| anyhow::anyhow!("查询页面信息失败: {}", e))?;
-        
+
         for page in pages_for_cleanup {
             if let Some(file_path) = &page.path {
                 let video_file = std::path::Path::new(file_path);
                 if let Some(parent_dir) = video_file.parent() {
                     if let Some(file_stem) = video_file.file_stem() {
                         let file_stem_str = file_stem.to_string_lossy();
-                        
+
                         // 删除同名的NFO文件
                         let nfo_path = parent_dir.join(format!("{}.nfo", file_stem_str));
                         if nfo_path.exists() {
@@ -495,7 +494,7 @@ async fn delete_video_files_from_pages_task(
                                 }
                             }
                         }
-                        
+
                         // 删除封面文件 (-fanart.jpg, -poster.jpg等)
                         for suffix in &["fanart", "poster"] {
                             for ext in &["jpg", "jpeg", "png", "webp"] {
@@ -513,7 +512,7 @@ async fn delete_video_files_from_pages_task(
                                 }
                             }
                         }
-                        
+
                         // 删除弹幕文件 (.zh-CN.default.ass等)
                         let danmaku_patterns = [
                             format!("{}.zh-CN.default.ass", file_stem_str),
@@ -521,7 +520,7 @@ async fn delete_video_files_from_pages_task(
                             format!("{}.srt", file_stem_str),
                             format!("{}.xml", file_stem_str),
                         ];
-                        
+
                         for pattern in &danmaku_patterns {
                             let danmaku_path = parent_dir.join(pattern);
                             if danmaku_path.exists() {
@@ -541,7 +540,7 @@ async fn delete_video_files_from_pages_task(
             }
         }
     }
-    
+
     Ok(deleted_count)
 }
 

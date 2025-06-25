@@ -27,10 +27,10 @@ use crate::api::request::{
 };
 use crate::api::response::{
     AddVideoSourceResponse, BangumiSeasonInfo, ConfigChangeInfo, ConfigHistoryResponse, ConfigItemResponse,
-    ConfigReloadResponse, ConfigResponse, ConfigValidationResponse, DeleteVideoResponse, DeleteVideoSourceResponse, HotReloadStatusResponse,
-    InitialSetupCheckResponse, PageInfo, ResetAllVideosResponse, ResetVideoResponse, ResetVideoSourcePathResponse,
-    SetupAuthTokenResponse, UpdateConfigResponse, UpdateCredentialResponse, UpdateVideoStatusResponse, VideoInfo,
-    VideoResponse, VideoSource, VideoSourcesResponse, VideosResponse,
+    ConfigReloadResponse, ConfigResponse, ConfigValidationResponse, DeleteVideoResponse, DeleteVideoSourceResponse,
+    HotReloadStatusResponse, InitialSetupCheckResponse, PageInfo, ResetAllVideosResponse, ResetVideoResponse,
+    ResetVideoSourcePathResponse, SetupAuthTokenResponse, UpdateConfigResponse, UpdateCredentialResponse,
+    UpdateVideoStatusResponse, VideoInfo, VideoResponse, VideoSource, VideoSourcesResponse, VideosResponse,
 };
 use crate::api::wrapper::{ApiError, ApiResponse};
 use crate::utils::nfo::NFO;
@@ -41,7 +41,6 @@ fn normalize_file_path(path: &str) -> String {
     // 将所有反斜杠转换为正斜杠，保持路径一致性
     path.replace('\\', "/")
 }
-
 
 #[derive(OpenApi)]
 #[openapi(
@@ -1666,17 +1665,12 @@ pub async fn delete_video(
 }
 
 /// 内部删除视频函数（用于队列处理和直接调用）
-pub async fn delete_video_internal(
-    db: Arc<DatabaseConnection>,
-    video_id: i32,
-) -> Result<(), ApiError> {
+pub async fn delete_video_internal(db: Arc<DatabaseConnection>, video_id: i32) -> Result<(), ApiError> {
     use bili_sync_entity::video;
     use sea_orm::*;
 
     // 检查视频是否存在
-    let video = video::Entity::find_by_id(video_id)
-        .one(db.as_ref())
-        .await?;
+    let video = video::Entity::find_by_id(video_id).one(db.as_ref()).await?;
 
     let video = match video {
         Some(v) => v,
@@ -1692,10 +1686,10 @@ pub async fn delete_video_internal(
 
     // 删除本地文件 - 根据page表中的路径精确删除
     let deleted_files = delete_video_files_from_pages(db.clone(), video_id).await?;
-    
+
     if deleted_files > 0 {
         info!("已删除 {} 个视频文件", deleted_files);
-        
+
         // 检查视频文件夹是否为空，如果为空则删除文件夹
         let normalized_video_path = normalize_file_path(&video.path);
         let video_path = std::path::Path::new(&normalized_video_path);
@@ -1733,20 +1727,17 @@ pub async fn delete_video_internal(
 }
 
 /// 根据page表精确删除视频文件
-async fn delete_video_files_from_pages(
-    db: Arc<DatabaseConnection>, 
-    video_id: i32
-) -> Result<usize, ApiError> {
+async fn delete_video_files_from_pages(db: Arc<DatabaseConnection>, video_id: i32) -> Result<usize, ApiError> {
     use tokio::fs;
-    
+
     // 获取该视频的所有页面（分P）
     let pages = page::Entity::find()
         .filter(page::Column::VideoId.eq(video_id))
         .all(db.as_ref())
         .await?;
-    
+
     let mut deleted_count = 0;
-    
+
     for page in pages {
         if let Some(file_path) = &page.path {
             let path = std::path::Path::new(file_path);
@@ -1765,7 +1756,7 @@ async fn delete_video_files_from_pages(
                 debug!("文件不存在，跳过删除: {}", file_path);
             }
         }
-        
+
         // 同时删除封面图片（如果存在且是本地文件）
         if let Some(image_path) = &page.image {
             // 跳过HTTP URL，只处理本地文件路径
@@ -1790,27 +1781,24 @@ async fn delete_video_files_from_pages(
             }
         }
     }
-    
+
     // 还要删除视频的NFO文件和其他可能的相关文件
-    let video = video::Entity::find_by_id(video_id)
-        .one(db.as_ref())
-        .await?;
-        
+    let video = video::Entity::find_by_id(video_id).one(db.as_ref()).await?;
+
     if let Some(_video) = video {
-        
         // 获取页面信息来删除基于视频文件名的相关文件
         let pages = page::Entity::find()
             .filter(page::Column::VideoId.eq(video_id))
             .all(db.as_ref())
             .await?;
-        
+
         for page in pages {
             if let Some(file_path) = &page.path {
                 let video_file = std::path::Path::new(file_path);
                 if let Some(parent_dir) = video_file.parent() {
                     if let Some(file_stem) = video_file.file_stem() {
                         let file_stem_str = file_stem.to_string_lossy();
-                        
+
                         // 删除同名的NFO文件
                         let nfo_path = parent_dir.join(format!("{}.nfo", file_stem_str));
                         if nfo_path.exists() {
@@ -1824,7 +1812,7 @@ async fn delete_video_files_from_pages(
                                 }
                             }
                         }
-                        
+
                         // 删除封面文件 (-fanart.jpg, -poster.jpg等)
                         for suffix in &["fanart", "poster"] {
                             for ext in &["jpg", "jpeg", "png", "webp"] {
@@ -1842,7 +1830,7 @@ async fn delete_video_files_from_pages(
                                 }
                             }
                         }
-                        
+
                         // 删除弹幕文件 (.zh-CN.default.ass等)
                         let danmaku_patterns = [
                             format!("{}.zh-CN.default.ass", file_stem_str),
@@ -1850,7 +1838,7 @@ async fn delete_video_files_from_pages(
                             format!("{}.srt", file_stem_str),
                             format!("{}.xml", file_stem_str),
                         ];
-                        
+
                         for pattern in &danmaku_patterns {
                             let danmaku_path = parent_dir.join(pattern);
                             if danmaku_path.exists() {
@@ -1870,7 +1858,7 @@ async fn delete_video_files_from_pages(
             }
         }
     }
-    
+
     Ok(deleted_count)
 }
 
@@ -2421,7 +2409,11 @@ pub async fn update_video_source_scan_deleted_internal(
                 source_id: id,
                 source_type: "collection".to_string(),
                 scan_deleted_videos,
-                message: format!("合集 {} 的扫描已删除视频设置已{}", collection.name, if scan_deleted_videos { "启用" } else { "禁用" }),
+                message: format!(
+                    "合集 {} 的扫描已删除视频设置已{}",
+                    collection.name,
+                    if scan_deleted_videos { "启用" } else { "禁用" }
+                ),
             }
         }
         "favorite" => {
@@ -2443,7 +2435,11 @@ pub async fn update_video_source_scan_deleted_internal(
                 source_id: id,
                 source_type: "favorite".to_string(),
                 scan_deleted_videos,
-                message: format!("收藏夹 {} 的扫描已删除视频设置已{}", favorite.name, if scan_deleted_videos { "启用" } else { "禁用" }),
+                message: format!(
+                    "收藏夹 {} 的扫描已删除视频设置已{}",
+                    favorite.name,
+                    if scan_deleted_videos { "启用" } else { "禁用" }
+                ),
             }
         }
         "submission" => {
@@ -2465,7 +2461,11 @@ pub async fn update_video_source_scan_deleted_internal(
                 source_id: id,
                 source_type: "submission".to_string(),
                 scan_deleted_videos,
-                message: format!("UP主投稿 {} 的扫描已删除视频设置已{}", submission.upper_name, if scan_deleted_videos { "启用" } else { "禁用" }),
+                message: format!(
+                    "UP主投稿 {} 的扫描已删除视频设置已{}",
+                    submission.upper_name,
+                    if scan_deleted_videos { "启用" } else { "禁用" }
+                ),
             }
         }
         "watch_later" => {
@@ -2487,7 +2487,10 @@ pub async fn update_video_source_scan_deleted_internal(
                 source_id: id,
                 source_type: "watch_later".to_string(),
                 scan_deleted_videos,
-                message: format!("稍后观看的扫描已删除视频设置已{}", if scan_deleted_videos { "启用" } else { "禁用" }),
+                message: format!(
+                    "稍后观看的扫描已删除视频设置已{}",
+                    if scan_deleted_videos { "启用" } else { "禁用" }
+                ),
             }
         }
         "bangumi" => {
@@ -2509,7 +2512,11 @@ pub async fn update_video_source_scan_deleted_internal(
                 source_id: id,
                 source_type: "bangumi".to_string(),
                 scan_deleted_videos,
-                message: format!("番剧 {} 的扫描已删除视频设置已{}", video_source.name, if scan_deleted_videos { "启用" } else { "禁用" }),
+                message: format!(
+                    "番剧 {} 的扫描已删除视频设置已{}",
+                    video_source.name,
+                    if scan_deleted_videos { "启用" } else { "禁用" }
+                ),
             }
         }
         _ => return Err(anyhow!("不支持的视频源类型: {}", source_type).into()),
@@ -5498,7 +5505,7 @@ pub struct ConfigQueueInfo {
     )
 )]
 pub async fn get_queue_status() -> Result<ApiResponse<QueueStatusResponse>, ApiError> {
-    use crate::task::{ADD_TASK_QUEUE, CONFIG_TASK_QUEUE, DELETE_TASK_QUEUE, VIDEO_DELETE_TASK_QUEUE, TASK_CONTROLLER};
+    use crate::task::{ADD_TASK_QUEUE, CONFIG_TASK_QUEUE, DELETE_TASK_QUEUE, TASK_CONTROLLER, VIDEO_DELETE_TASK_QUEUE};
 
     // 获取扫描状态
     let is_scanning = TASK_CONTROLLER.is_scanning();
@@ -7387,32 +7394,32 @@ async fn rename_bangumi_files_in_directory(
     for entry in entries {
         let entry = entry?;
         let file_path = entry.path();
-        
+
         if !file_path.is_file() {
             continue;
         }
 
-        let old_file_name = file_path.file_name()
-            .and_then(|n| n.to_str())
-            .unwrap_or("")
-            .to_string();
+        let old_file_name = file_path.file_name().and_then(|n| n.to_str()).unwrap_or("").to_string();
 
         // 解析并重命名番剧文件
         if let Some(new_file_name) = parse_and_rename_bangumi_file(&old_file_name, video, &pages) {
             if new_file_name != old_file_name {
                 let new_file_path = video_dir.join(&new_file_name);
-                
+
                 match fs::rename(&file_path, &new_file_path) {
                     Ok(_) => {
                         debug!("番剧文件重命名成功: {} -> {}", old_file_name, new_file_name);
-                        
+
                         // 如果是MP4文件，更新数据库中的分页路径
                         if new_file_name.ends_with(".mp4") {
                             update_page_path_in_database(txn, &pages, &new_file_name, &new_file_path).await?;
                         }
                     }
                     Err(e) => {
-                        warn!("番剧文件重命名失败: {} -> {}, 错误: {}", old_file_name, new_file_name, e);
+                        warn!(
+                            "番剧文件重命名失败: {} -> {}, 错误: {}",
+                            old_file_name, new_file_name, e
+                        );
                     }
                 }
             }
@@ -7431,13 +7438,9 @@ async fn rename_bangumi_files_in_directory(
 }
 
 /// 解析番剧文件名并重新组合
-fn parse_and_rename_bangumi_file(
-    old_file_name: &str,
-    video: &video::Model,
-    pages: &[page::Model],
-) -> Option<String> {
+fn parse_and_rename_bangumi_file(old_file_name: &str, video: &video::Model, pages: &[page::Model]) -> Option<String> {
     // 尝试匹配各种番剧文件名模式
-    
+
     // 1. 视频级文件 (tvshow.nfo, poster.jpg, fanart.jpg)
     if matches!(old_file_name, "tvshow.nfo" | "poster.jpg" | "fanart.jpg") {
         return Some(old_file_name.to_string()); // 这些文件不需要重命名
@@ -7458,14 +7461,14 @@ fn parse_and_rename_bangumi_file(
 /// 解析文件名中的集数部分和后缀
 fn parse_episode_file_name(file_name: &str) -> Option<(String, String)> {
     // 匹配模式：S01E01-版本-类型.扩展名 或 第X集-版本-类型.扩展名
-    
+
     // 匹配 SxxExx 格式
     if let Some(captures) = regex::Regex::new(r"^(S\d{2}E\d{2})(.*)$").ok()?.captures(file_name) {
         let episode_part = captures.get(1)?.as_str().to_string();
         let suffix = captures.get(2)?.as_str().to_string();
         return Some((episode_part, suffix));
     }
-    
+
     // 匹配 第X集 格式
     if let Some(captures) = regex::Regex::new(r"^(第\d+集)(.*)$").ok()?.captures(file_name) {
         let episode_part = captures.get(1)?.as_str().to_string();
@@ -7477,11 +7480,7 @@ fn parse_episode_file_name(file_name: &str) -> Option<(String, String)> {
 }
 
 /// 生成新的集数格式
-fn generate_new_episode_format(
-    video: &video::Model,
-    pages: &[page::Model],
-    _old_episode_part: &str,
-) -> Option<String> {
+fn generate_new_episode_format(video: &video::Model, pages: &[page::Model], _old_episode_part: &str) -> Option<String> {
     // 如果是多P视频，使用第一个分页的信息生成新格式
     if let Some(first_page) = pages.first() {
         // 使用配置中的分页模板生成新的集数格式
@@ -7492,7 +7491,7 @@ fn generate_new_episode_format(
             return Some(new_format);
         }
     }
-    
+
     // 后备方案：使用集数信息生成
     if let Some(episode_number) = video.episode_number {
         return Some(format!("第{:02}集", episode_number));
@@ -7511,9 +7510,7 @@ async fn update_page_path_in_database(
     // 查找匹配的分页记录并更新其路径
     for page_model in pages {
         // 简单匹配：如果新文件名包含分页标题或PID信息，则更新该分页的路径
-        if new_file_name.contains(&page_model.name) || 
-           new_file_name.contains(&page_model.pid.to_string()) {
-            
+        if new_file_name.contains(&page_model.name) || new_file_name.contains(&page_model.pid.to_string()) {
             page::Entity::update_many()
                 .filter(page::Column::Id.eq(page_model.id))
                 .col_expr(

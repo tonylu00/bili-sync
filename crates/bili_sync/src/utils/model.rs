@@ -56,30 +56,30 @@ pub async fn create_videos(
     connection: &DatabaseConnection,
 ) -> Result<()> {
     use sea_orm::{Set, Unchanged};
-    
+
     // 检查是否启用了扫描已删除视频
     let scan_deleted = video_source.scan_deleted_videos();
-    
+
     if scan_deleted {
         // 启用扫描已删除视频：需要特别处理已删除的视频
         for video_info in videos_info {
             let mut model = video_info.into_simple_model();
             video_source.set_relation_id(&mut model);
-            
+
             // 查找是否存在已删除的同一视频
             let existing_video = video::Entity::find()
                 .filter(video::Column::Bvid.eq(model.bvid.as_ref()))
                 .filter(video_source.filter_expr())
                 .one(connection)
                 .await?;
-            
+
             if let Some(existing) = existing_video {
                 if existing.deleted == 1 {
                     // 存在已删除的视频，恢复它并重置下载状态以强制重新下载
                     let update_model = video::ActiveModel {
                         id: Unchanged(existing.id),
                         deleted: Set(0),
-                        download_status: Set(0), // 重置下载状态为未开始，强制重新下载
+                        download_status: Set(0),   // 重置下载状态为未开始，强制重新下载
                         path: Set("".to_string()), // 清空原有路径，因为文件可能已经不存在
                         // 更新其他可能变化的字段
                         name: model.name.clone(),
@@ -89,7 +89,7 @@ pub async fn create_videos(
                         ..Default::default()
                     };
                     update_model.save(connection).await?;
-                    
+
                     // 同时重置该视频的所有页面状态，强制重新下载
                     page::Entity::update_many()
                         .col_expr(page::Column::DownloadStatus, sea_orm::prelude::Expr::value(0)) // 重置为未开始状态
@@ -97,7 +97,7 @@ pub async fn create_videos(
                         .filter(page::Column::VideoId.eq(existing.id))
                         .exec(connection)
                         .await?;
-                    
+
                     info!("恢复已删除的视频并重置下载状态: {}", existing.name);
                 } else {
                     // 视频存在且未删除，跳过

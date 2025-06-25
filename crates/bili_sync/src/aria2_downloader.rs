@@ -3,8 +3,8 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::Mutex;
-use tokio::time::sleep;
-use tracing::{debug, info, warn};
+use tokio::time::{sleep, timeout};
+use tracing::{debug, error, info, warn};
 
 use crate::bilibili::Client;
 use crate::config::CONFIG_DIR;
@@ -96,6 +96,27 @@ impl Aria2Downloader {
 
         // 启动所有aria2进程实例
         downloader.start_all_instances().await?;
+
+        // 简化版本：直接启动后台监控任务
+        let instances = Arc::clone(&downloader.aria2_instances);
+        let instance_count = downloader.instance_count;
+
+        tokio::spawn(async move {
+            let mut interval = tokio::time::interval(Duration::from_secs(30));
+            loop {
+                interval.tick().await;
+                let instances_guard = instances.lock().await;
+                let current_count = instances_guard.len();
+                if current_count < instance_count {
+                    warn!(
+                        "检测到aria2实例数量不足: {}/{}，请手动执行重启或检查系统状态",
+                        current_count, instance_count
+                    );
+                }
+            }
+        });
+
+        info!("aria2实例监控任务已启动");
         Ok(downloader)
     }
 
@@ -241,25 +262,35 @@ impl Aria2Downloader {
         std::cmp::max(smart_threads, 1) // 至少1个线程
     }
 
-    /// 尝试获取文件大小（用于智能线程调整）
+    /// 尝试获取文件大小（用于智能线程调整），带超时控制
     async fn try_get_file_size(&self, url: &str) -> Option<u64> {
-        match self
-            .client
-            .head(url)
-            .header(
-                "User-Agent",
-                "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36",
-            )
-            .header("Referer", "https://www.bilibili.com")
-            .send()
-            .await
-        {
-            Ok(response) => response
+        let result = timeout(Duration::from_secs(5), async {
+            self.client
+                .head(url)
+                .header(
+                    "User-Agent",
+                    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36",
+                )
+                .header("Referer", "https://www.bilibili.com")
+                .send()
+                .await
+        })
+        .await;
+
+        match result {
+            Ok(Ok(response)) => response
                 .headers()
                 .get("content-length")
                 .and_then(|v| v.to_str().ok())
                 .and_then(|s| s.parse::<u64>().ok()),
-            Err(_) => None,
+            Ok(Err(e)) => {
+                debug!("获取文件大小失败: {:#}", e);
+                None
+            }
+            Err(_) => {
+                debug!("获取文件大小超时");
+                None
+            }
         }
     }
 
@@ -276,7 +307,7 @@ impl Aria2Downloader {
             let process = self.start_single_instance(rpc_port, &rpc_secret).await?;
             let instance = Aria2Instance::new(process, rpc_port, rpc_secret);
 
-            // 验证连接
+            // 验证连接（带重试）
             if let Err(e) = self.test_instance_connection(rpc_port, &instance.rpc_secret).await {
                 warn!("aria2实例 {} 连接测试失败: {:#}", i + 1, e);
                 continue;
@@ -599,7 +630,7 @@ impl Aria2Downloader {
         Ok(child)
     }
 
-    /// 测试单个实例的连接
+    /// 测试单个实例的连接（带重试机制）
     async fn test_instance_connection(&self, rpc_port: u16, rpc_secret: &str) -> Result<()> {
         let url = format!("http://127.0.0.1:{}/jsonrpc", rpc_port);
         let payload = serde_json::json!({
@@ -609,21 +640,25 @@ impl Aria2Downloader {
             "params": [format!("token:{}", rpc_secret)]
         });
 
-        // 等待aria2启动
-        for _ in 0..10 {
-            tokio::time::sleep(Duration::from_millis(500)).await;
-
-            if let Ok(response) = self.client.post(&url).json(&payload).send().await {
+        // 使用重试机制测试连接
+        self.retry_with_backoff(
+            "连接测试",
+            10,
+            Duration::from_millis(500),
+            Duration::from_secs(5),
+            || async {
+                let response = self.client.post(&url).json(&payload).send().await?;
                 if response.status().is_success() {
-                    return Ok(());
+                    Ok(())
+                } else {
+                    bail!("连接测试返回错误状态: {}", response.status())
                 }
-            }
-        }
-
-        bail!("aria2 instance connection test failed after retries")
+            },
+        )
+        .await
     }
 
-    /// 选择最佳aria2实例（负载均衡）
+    /// 选择最佳aria2实例（负载均衡+健康检查）
     async fn select_best_instance(&self) -> Result<(usize, u16, String)> {
         let instances = self.aria2_instances.lock().await;
 
@@ -631,15 +666,33 @@ impl Aria2Downloader {
             bail!("没有可用的aria2实例");
         }
 
-        // 找到负载最低的实例
-        let (best_index, _) = instances
+        // 先过滤出健康的实例，再选择负载最低的
+        let mut healthy_instances = Vec::new();
+        for (index, instance) in instances.iter().enumerate() {
+            // 检查RPC健康状态
+            if self
+                .check_instance_rpc_health(instance.rpc_port, &instance.rpc_secret)
+                .await
+            {
+                healthy_instances.push((index, instance));
+            } else {
+                warn!("实例 {} (端口: {}) RPC连接不健康，跳过", index + 1, instance.rpc_port);
+            }
+        }
+
+        if healthy_instances.is_empty() {
+            warn!("所有aria2实例都不健康，尝试使用第一个实例");
+            let instance = &instances[0];
+            return Ok((0, instance.rpc_port, instance.rpc_secret.clone()));
+        }
+
+        // 找到负载最低的健康实例
+        let (best_index, best_instance) = healthy_instances
             .iter()
-            .enumerate()
             .min_by_key(|(_, instance)| instance.get_load())
             .ok_or_else(|| anyhow::anyhow!("无法找到可用实例"))?;
 
-        let instance = &instances[best_index];
-        Ok((best_index, instance.rpc_port, instance.rpc_secret.clone()))
+        Ok((*best_index, best_instance.rpc_port, best_instance.rpc_secret.clone()))
     }
 
     /// 使用aria2下载文件，支持多个URL备选和多进程
@@ -706,7 +759,7 @@ impl Aria2Downloader {
         Ok(())
     }
 
-    /// 添加下载任务到指定实例
+    /// 添加下载任务到指定实例（带重试机制）
     async fn add_download_task_to_instance(
         &self,
         urls: &[&str],
@@ -752,7 +805,6 @@ impl Aria2Downloader {
 
         // 添加SSL/TLS相关配置
         if cfg!(target_os = "linux") {
-            // 对于Linux系统，尝试使用系统CA证书
             let ca_paths = [
                 "/etc/ssl/certs/ca-certificates.crt", // Debian/Ubuntu
                 "/etc/pki/tls/certs/ca-bundle.crt",   // RHEL/CentOS
@@ -787,31 +839,40 @@ impl Aria2Downloader {
             ]
         });
 
-        let response = self
-            .client
-            .post(&url)
-            .json(&payload)
-            .send()
-            .await
-            .context("Failed to add download task")?;
+        // 使用重试机制添加下载任务
+        let gid = self
+            .retry_with_backoff(
+                "添加下载任务",
+                3,
+                Duration::from_millis(1000),
+                Duration::from_secs(10),
+                || async {
+                    let response = self
+                        .client
+                        .post(&url)
+                        .json(&payload)
+                        .send()
+                        .await
+                        .context("发送添加下载任务请求失败")?;
 
-        let json: serde_json::Value = response.json().await?;
+                    let json: serde_json::Value = response.json().await?;
 
-        if let Some(error) = json.get("error") {
-            bail!("aria2 error: {}", error);
-        }
+                    if let Some(error) = json.get("error") {
+                        bail!("aria2 API错误: {}", error);
+                    }
 
-        let gid = json["result"]
-            .as_str()
-            .context("Invalid response from aria2")?
-            .to_string();
+                    let gid = json["result"].as_str().context("aria2返回无效的GID")?;
 
-        info!("开始aria2下载: {} (线程数: {})", file_name, threads);
-        debug!("添加下载任务成功，GID: {}", gid);
+                    Ok(gid.to_string())
+                },
+            )
+            .await?;
+
+        info!("开始aria2下载: {} (线程数: {}, GID: {})", file_name, threads, gid);
         Ok(gid)
     }
 
-    /// 在指定实例上等待下载完成
+    /// 在指定实例上等待下载完成（带重试和超时机制）
     async fn wait_for_download_on_instance(
         &self,
         gid: &str,
@@ -820,6 +881,8 @@ impl Aria2Downloader {
         _instance_index: usize,
     ) -> Result<()> {
         let url = format!("http://127.0.0.1:{}/jsonrpc", rpc_port);
+        let mut consecutive_failures = 0;
+        const MAX_CONSECUTIVE_FAILURES: u32 = 5;
 
         loop {
             let payload = serde_json::json!({
@@ -832,19 +895,53 @@ impl Aria2Downloader {
                 ]
             });
 
-            let response = self
-                .client
-                .post(&url)
-                .json(&payload)
-                .send()
-                .await
-                .context("Failed to check download status")?;
+            // 单次状态检查带超时和重试
+            let check_result = self
+                .retry_with_backoff(
+                    "状态检查",
+                    3,
+                    Duration::from_millis(500),
+                    Duration::from_secs(3),
+                    || async {
+                        let response = self
+                            .client
+                            .post(&url)
+                            .json(&payload)
+                            .send()
+                            .await
+                            .context("发送状态检查请求失败")?;
 
-            let json: serde_json::Value = response.json().await?;
+                        let json: serde_json::Value = response.json().await?;
 
-            if let Some(error) = json.get("error") {
-                bail!("aria2 status check error: {}", error);
-            }
+                        if let Some(error) = json.get("error") {
+                            bail!("aria2状态检查错误: {}", error);
+                        }
+
+                        Ok(json)
+                    },
+                )
+                .await;
+
+            let json = match check_result {
+                Ok(json) => {
+                    consecutive_failures = 0;
+                    json
+                }
+                Err(e) => {
+                    consecutive_failures += 1;
+                    warn!(
+                        "状态检查失败 ({}/{}): {:#}",
+                        consecutive_failures, MAX_CONSECUTIVE_FAILURES, e
+                    );
+
+                    if consecutive_failures >= MAX_CONSECUTIVE_FAILURES {
+                        return Err(e.context("连续状态检查失败次数过多，放弃下载"));
+                    }
+
+                    sleep(Duration::from_millis(2000)).await;
+                    continue;
+                }
+            };
 
             let result = &json["result"];
             let status = result["status"].as_str().unwrap_or("unknown");
@@ -869,17 +966,17 @@ impl Aria2Downloader {
                 }
                 "error" => {
                     let error_msg = result["errorMessage"].as_str().unwrap_or("Unknown error");
-                    bail!("Download failed: {}", error_msg);
+                    bail!("下载失败: {}", error_msg);
                 }
                 "removed" => {
-                    bail!("Download was removed");
+                    bail!("下载被移除");
                 }
                 "active" | "waiting" | "paused" => {
                     // 继续等待
                     sleep(Duration::from_millis(1000)).await;
                 }
                 _ => {
-                    warn!("Unknown download status: {}", status);
+                    warn!("未知下载状态: {}", status);
                     sleep(Duration::from_millis(1000)).await;
                 }
             }
@@ -901,17 +998,25 @@ impl Aria2Downloader {
         temp_downloader.merge(video_path, audio_path, output_path).await
     }
 
-    /// 重新启动所有aria2进程
+    /// 重新启动所有aria2进程（增强版）
     pub async fn restart(&mut self) -> Result<()> {
         info!("重新启动所有aria2实例...");
 
         // 关闭现有实例
         self.shutdown().await?;
 
+        // 等待一段时间确保进程完全退出
+        tokio::time::sleep(Duration::from_millis(3000)).await;
+
         // 重新启动实例
         self.start_all_instances().await?;
 
-        info!("所有aria2实例已重新启动");
+        // 执行一次健康检查确保所有实例正常
+        if let Err(e) = self.health_check().await {
+            warn!("重启后健康检查失败: {:#}", e);
+        }
+
+        info!("所有aria2实例已重新启动并完成健康检查");
         Ok(())
     }
 
@@ -998,23 +1103,34 @@ impl Aria2Downloader {
         Ok(())
     }
 
-    /// 健康检查：移除不健康的实例并重新启动
-    #[allow(dead_code)]
+    /// 健康检查：移除不健康的实例并重新启动（增强版）
     pub async fn health_check(&mut self) -> Result<()> {
         let mut instances = self.aria2_instances.lock().await;
         let mut unhealthy_indices = Vec::new();
 
         // 检查每个实例的健康状态
         for (i, instance) in instances.iter_mut().enumerate() {
+            // 基础进程检查
             if !instance.is_healthy() {
-                warn!("aria2实例 {} 不健康，准备重启", i + 1);
+                warn!("aria2实例 {} 进程不健康，准备重启", i + 1);
+                unhealthy_indices.push(i);
+                continue;
+            }
+
+            // 进阶RPC连接检查
+            let rpc_healthy = self
+                .check_instance_rpc_health(instance.rpc_port, &instance.rpc_secret)
+                .await;
+            if !rpc_healthy {
+                warn!("aria2实例 {} RPC连接不健康，准备重启", i + 1);
                 unhealthy_indices.push(i);
             }
         }
 
         // 移除不健康的实例
         for &index in unhealthy_indices.iter().rev() {
-            instances.remove(index);
+            let removed_instance = instances.remove(index);
+            info!("移除不健康的aria2实例，端口: {}", removed_instance.rpc_port);
         }
 
         let unhealthy_count = unhealthy_indices.len();
@@ -1022,26 +1138,16 @@ impl Aria2Downloader {
 
         // 重新启动不健康的实例
         if unhealthy_count > 0 {
-            info!("重新启动 {} 个不健康的aria2实例", unhealthy_count);
+            info!("重新启动 {} 个aria2实例", unhealthy_count);
 
-            for _ in 0..unhealthy_count {
-                let rpc_port = Self::find_available_port().await?;
-                let rpc_secret = Self::generate_secret();
-
-                match self.start_single_instance(rpc_port, &rpc_secret).await {
-                    Ok(process) => {
-                        let instance = Aria2Instance::new(process, rpc_port, rpc_secret.clone());
-
-                        // 验证连接
-                        if self.test_instance_connection(rpc_port, &rpc_secret).await.is_ok() {
-                            self.aria2_instances.lock().await.push(instance);
-                            info!("成功重启aria2实例，端口: {}", rpc_port);
-                        } else {
-                            warn!("重启的aria2实例连接测试失败，端口: {}", rpc_port);
-                        }
+            for i in 0..unhealthy_count {
+                match self.create_new_instance().await {
+                    Ok(instance) => {
+                        self.aria2_instances.lock().await.push(instance);
+                        info!("成功重启第{}个aria2实例", i + 1);
                     }
                     Err(e) => {
-                        warn!("重启aria2实例失败: {:#}", e);
+                        error!("重启第{}个aria2实例失败: {:#}", i + 1, e);
                     }
                 }
             }
@@ -1052,8 +1158,116 @@ impl Aria2Downloader {
             bail!("所有aria2实例都不可用");
         }
 
-        info!("健康检查完成，当前可用实例数: {}", current_count);
+        info!(
+            "健康检查完成，当前可用实例数: {}/{}",
+            current_count, self.instance_count
+        );
         Ok(())
+    }
+
+    /// 检查实例的RPC健康状态
+    async fn check_instance_rpc_health(&self, rpc_port: u16, rpc_secret: &str) -> bool {
+        let result = self
+            .retry_with_backoff(
+                "RPC健康检查",
+                2, // 只重试2次
+                Duration::from_millis(200),
+                Duration::from_secs(2),
+                || async {
+                    let url = format!("http://127.0.0.1:{}/jsonrpc", rpc_port);
+                    let payload = serde_json::json!({
+                        "jsonrpc": "2.0",
+                        "method": "aria2.getVersion",
+                        "id": "health_check",
+                        "params": [format!("token:{}", rpc_secret)]
+                    });
+
+                    let response = self.client.post(&url).json(&payload).send().await?;
+                    if response.status().is_success() {
+                        Ok(())
+                    } else {
+                        bail!("RPC返回错误状态: {}", response.status())
+                    }
+                },
+            )
+            .await;
+
+        result.is_ok()
+    }
+
+    /// 创建新实例（用于健康检查重启）
+    async fn create_new_instance(&self) -> Result<Aria2Instance> {
+        let rpc_port = Self::find_available_port().await?;
+        let rpc_secret = Self::generate_secret();
+
+        debug!("创建新aria2实例，端口: {}", rpc_port);
+
+        let process = self.start_single_instance(rpc_port, &rpc_secret).await?;
+        let instance = Aria2Instance::new(process, rpc_port, rpc_secret.clone());
+
+        // 验证连接
+        self.test_instance_connection(rpc_port, &rpc_secret).await?;
+
+        info!("新aria2实例创建成功，端口: {}", rpc_port);
+        Ok(instance)
+    }
+
+    /// 通用的重试机制，支持指数退避
+    async fn retry_with_backoff<F, Fut, T>(
+        &self,
+        operation_name: &str,
+        max_retries: u32,
+        initial_delay: Duration,
+        timeout_duration: Duration,
+        operation: F,
+    ) -> Result<T>
+    where
+        F: Fn() -> Fut,
+        Fut: std::future::Future<Output = Result<T>>,
+    {
+        let mut delay = initial_delay;
+
+        for attempt in 1..=max_retries {
+            match timeout(timeout_duration, operation()).await {
+                Ok(Ok(result)) => {
+                    if attempt > 1 {
+                        info!("{}在第{}次尝试后成功", operation_name, attempt);
+                    }
+                    return Ok(result);
+                }
+                Ok(Err(e)) => {
+                    if attempt == max_retries {
+                        error!("{}在{}次尝试后最终失败: {:#}", operation_name, max_retries, e);
+                        return Err(e);
+                    }
+                    warn!(
+                        "{}第{}次尝试失败: {:#}，{}ms后重试",
+                        operation_name,
+                        attempt,
+                        e,
+                        delay.as_millis()
+                    );
+                }
+                Err(_) => {
+                    let timeout_err = anyhow::anyhow!("{}超时({:?})", operation_name, timeout_duration);
+                    if attempt == max_retries {
+                        error!("{}在{}次尝试后最终超时", operation_name, max_retries);
+                        return Err(timeout_err);
+                    }
+                    warn!(
+                        "{}第{}次尝试超时，{}ms后重试",
+                        operation_name,
+                        attempt,
+                        delay.as_millis()
+                    );
+                }
+            }
+
+            sleep(delay).await;
+            delay = std::cmp::min(delay * 2, Duration::from_secs(30)); // 最大延迟30秒
+        }
+
+        unreachable!()
     }
 
     /// 获取所有实例的状态信息
