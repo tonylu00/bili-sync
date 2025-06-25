@@ -226,11 +226,12 @@
 	// 视频质量选项
 	const videoQualityOptions = [
 		{ value: 'Quality8k', label: '8K超高清' },
+		{ value: 'QualityDolby', label: '杜比视界' },
+		{ value: 'QualityHdr', label: 'HDR真彩' },
 		{ value: 'Quality4k', label: '4K超高清' },
-		{ value: 'Quality1080pplus', label: '1080P+高码率' },
 		{ value: 'Quality1080p60', label: '1080P 60fps' },
+		{ value: 'Quality1080pPLUS', label: '1080P+高码率' },
 		{ value: 'Quality1080p', label: '1080P高清' },
-		{ value: 'Quality720p60', label: '720P 60fps' },
 		{ value: 'Quality720p', label: '720P高清' },
 		{ value: 'Quality480p', label: '480P清晰' },
 		{ value: 'Quality360p', label: '360P流畅' }
@@ -239,9 +240,10 @@
 	// 音频质量选项
 	const audioQualityOptions = [
 		{ value: 'QualityHiRES', label: 'Hi-Res无损' },
-		{ value: 'Quality320k', label: '320k高品质' },
-		{ value: 'Quality128k', label: '128k标准' },
-		{ value: 'Quality64k', label: '64k省流' }
+		{ value: 'Quality192k', label: '192K高品质' },
+		{ value: 'QualityDolby', label: '杜比全景声' },
+		{ value: 'Quality132k', label: '132K标准' },
+		{ value: 'Quality64k', label: '64K省流' }
 	];
 
 	// 编解码器选项

@@ -6482,11 +6482,14 @@ pub async fn get_video_play_info(
     use crate::bilibili::{BestStream, BiliClient, FilterOption, PageInfo, Stream, Video};
 
     // 查找视频信息
-    let (bvid, aid, cid, title) = find_video_info(&video_id, &db)
+    let video_info = find_video_info(&video_id, &db)
         .await
         .map_err(|e| ApiError::from(anyhow!("获取视频信息失败: {}", e)))?;
 
-    debug!("获取视频播放信息: bvid={}, aid={}, cid={}", bvid, aid, cid);
+    debug!(
+        "获取视频播放信息: bvid={}, aid={}, cid={}, source_type={:?}, ep_id={:?}",
+        video_info.bvid, video_info.aid, video_info.cid, video_info.source_type, video_info.ep_id
+    );
 
     // 创建B站客户端
     let config = crate::config::reload_config();
@@ -6503,23 +6506,37 @@ pub async fn get_video_play_info(
     let bili_client = BiliClient::new(cookie_string);
 
     // 创建Video实例
-    let video = Video::new_with_aid(&bili_client, bvid.clone(), aid.clone());
+    let video = Video::new_with_aid(&bili_client, video_info.bvid.clone(), video_info.aid.clone());
 
     // 获取分页信息
     let page_info = PageInfo {
-        cid: cid.parse().map_err(|_| ApiError::from(anyhow!("无效的CID")))?,
+        cid: video_info
+            .cid
+            .parse()
+            .map_err(|_| ApiError::from(anyhow!("无效的CID")))?,
         page: 1,
-        name: title.clone(),
+        name: video_info.title.clone(),
         duration: 0,
         first_frame: None,
         dimension: None,
     };
 
-    // 获取视频播放链接
-    let mut page_analyzer = video
-        .get_page_analyzer(&page_info)
-        .await
-        .map_err(|e| ApiError::from(anyhow!("获取视频分析器失败: {}", e)))?;
+    // 获取视频播放链接 - 根据视频类型选择不同的API
+    let mut page_analyzer = if video_info.source_type == Some(1) && video_info.ep_id.is_some() {
+        // 使用番剧专用API
+        let ep_id = video_info.ep_id.as_ref().unwrap();
+        debug!("API播放使用番剧专用API: ep_id={}", ep_id);
+        video
+            .get_bangumi_page_analyzer(&page_info, ep_id)
+            .await
+            .map_err(|e| ApiError::from(anyhow!("获取番剧视频分析器失败: {}", e)))?
+    } else {
+        // 使用普通视频API
+        video
+            .get_page_analyzer(&page_info)
+            .await
+            .map_err(|e| ApiError::from(anyhow!("获取视频分析器失败: {}", e)))?
+    };
 
     // 使用默认的筛选选项
     let filter_option = FilterOption::default();
@@ -6622,14 +6639,24 @@ pub async fn get_video_play_info(
         video_streams,
         audio_streams,
         subtitle_streams,
-        video_title: title,
+        video_title: video_info.title,
         video_duration: Some(page_info.duration),
         video_quality_description: quality_desc,
     }))
 }
 
 /// 查找视频信息
-async fn find_video_info(video_id: &str, db: &DatabaseConnection) -> Result<(String, String, String, String)> {
+#[derive(Debug)]
+struct VideoPlayInfo {
+    bvid: String,
+    aid: String,
+    cid: String,
+    title: String,
+    source_type: Option<i32>,
+    ep_id: Option<String>,
+}
+
+async fn find_video_info(video_id: &str, db: &DatabaseConnection) -> Result<VideoPlayInfo> {
     use crate::bilibili::bvid_to_aid;
     use sea_orm::{ColumnTrait, EntityTrait, QueryFilter};
 
@@ -6646,12 +6673,14 @@ async fn find_video_info(video_id: &str, db: &DatabaseConnection) -> Result<(Str
                 .await
                 .context("查询视频记录失败")?
             {
-                return Ok((
-                    video_record.bvid.clone(),
-                    bvid_to_aid(&video_record.bvid).to_string(),
-                    page_record.cid.to_string(),
-                    format!("{} - {}", video_record.name, page_record.name),
-                ));
+                return Ok(VideoPlayInfo {
+                    bvid: video_record.bvid.clone(),
+                    aid: bvid_to_aid(&video_record.bvid).to_string(),
+                    cid: page_record.cid.to_string(),
+                    title: format!("{} - {}", video_record.name, page_record.name),
+                    source_type: video_record.source_type,
+                    ep_id: video_record.ep_id,
+                });
             }
         }
     }
@@ -6681,12 +6710,14 @@ async fn find_video_info(video_id: &str, db: &DatabaseConnection) -> Result<(Str
         .context("查询视频分页失败")?
         .ok_or_else(|| anyhow::anyhow!("视频没有分页信息"))?;
 
-    Ok((
-        video.bvid.clone(),
-        bvid_to_aid(&video.bvid).to_string(),
-        first_page.cid.to_string(),
-        video.name,
-    ))
+    Ok(VideoPlayInfo {
+        bvid: video.bvid.clone(),
+        aid: bvid_to_aid(&video.bvid).to_string(),
+        cid: first_page.cid.to_string(),
+        title: video.name,
+        source_type: video.source_type,
+        ep_id: video.ep_id,
+    })
 }
 
 /// 获取视频质量描述
@@ -7642,20 +7673,18 @@ pub async fn validate_favorite(
 ) -> Result<ApiResponse<crate::api::response::ValidateFavoriteResponse>, ApiError> {
     // 创建B站客户端
     let client = crate::bilibili::BiliClient::new(String::new());
-    
+
     // 创建收藏夹对象
     let favorite_list = crate::bilibili::FavoriteList::new(&client, fid.clone());
-    
+
     // 尝试获取收藏夹信息
     match favorite_list.get_info().await {
-        Ok(info) => {
-            Ok(ApiResponse::ok(crate::api::response::ValidateFavoriteResponse {
-                valid: true,
-                fid: info.id,
-                title: info.title,
-                message: "收藏夹验证成功".to_string(),
-            }))
-        }
+        Ok(info) => Ok(ApiResponse::ok(crate::api::response::ValidateFavoriteResponse {
+            valid: true,
+            fid: info.id,
+            title: info.title,
+            message: "收藏夹验证成功".to_string(),
+        })),
         Err(e) => {
             warn!("验证收藏夹 {} 失败: {}", fid, e);
             Ok(ApiResponse::ok(crate::api::response::ValidateFavoriteResponse {
@@ -7684,7 +7713,7 @@ pub async fn get_user_favorites_by_uid(
 ) -> Result<ApiResponse<Vec<crate::api::response::UserFavoriteFolder>>, ApiError> {
     // 创建B站客户端
     let client = crate::bilibili::BiliClient::new(String::new());
-    
+
     // 获取指定UP主的收藏夹列表
     match client.get_user_favorite_folders(Some(uid)).await {
         Ok(folders) => {
@@ -7697,14 +7726,16 @@ pub async fn get_user_favorites_by_uid(
                     media_count: f.media_count,
                 })
                 .collect();
-            
+
             Ok(ApiResponse::ok(response_folders))
         }
         Err(e) => {
             warn!("获取UP主 {} 的收藏夹失败: {}", uid, e);
             Err(crate::api::error::InnerApiError::BadRequest(format!(
-                "获取UP主收藏夹失败: 可能是UP主不存在或收藏夹不公开。错误详情: {}", e
-            )).into())
+                "获取UP主收藏夹失败: 可能是UP主不存在或收藏夹不公开。错误详情: {}",
+                e
+            ))
+            .into())
         }
     }
 }

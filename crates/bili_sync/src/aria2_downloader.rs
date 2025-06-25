@@ -591,10 +591,10 @@ impl Aria2Downloader {
             "--max-concurrent-downloads=6".to_string(), // 每个实例最多6个文件
             "--disable-ipv6=true".to_string(),
             // 增强的网络容错配置
-            "--max-tries=8".to_string(),              // 增加重试次数
-            "--retry-wait=5".to_string(),             // 增加重试间隔
-            "--timeout=60".to_string(),               // 增加整体超时
-            "--connect-timeout=20".to_string(),       // 增加连接超时
+            "--max-tries=8".to_string(),        // 增加重试次数
+            "--retry-wait=5".to_string(),       // 增加重试间隔
+            "--timeout=60".to_string(),         // 增加整体超时
+            "--connect-timeout=20".to_string(), // 增加连接超时
             "--auto-file-renaming=false".to_string(),
             "--allow-overwrite=true".to_string(),
             // DNS优化配置
@@ -813,7 +813,7 @@ impl Aria2Downloader {
             "min-split-size": "1M",
             // 增强的网络容错配置
             "max-tries": "8",
-            "retry-wait": "5", 
+            "retry-wait": "5",
             "timeout": "60",
             "connect-timeout": "20",
             "auto-file-renaming": "false",

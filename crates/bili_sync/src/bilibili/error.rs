@@ -6,14 +6,17 @@ pub enum BiliError {
     RiskControlOccurred,
     #[error("request failed, status code: {0}, message: {1}")]
     RequestFailed(i64, String),
+    #[allow(dead_code)]
     #[error("network timeout or DNS resolution failed")]
     NetworkTimeout,
+    #[allow(dead_code)]
     #[error("video stream access denied, code: {0}")]
     VideoStreamDenied(i64),
 }
 
 impl BiliError {
     /// 根据错误码创建相应的错误类型
+    #[allow(dead_code)]
     pub fn from_code_and_message(code: i64, message: String) -> Self {
         match code {
             // 常见的风控相关错误码
@@ -26,6 +29,7 @@ impl BiliError {
     }
 
     /// 判断是否为可重试的错误
+    #[allow(dead_code)]
     pub fn is_retryable(&self) -> bool {
         match self {
             Self::NetworkTimeout => true,
@@ -39,6 +43,7 @@ impl BiliError {
     }
 
     /// 获取推荐的等待时间（秒）
+    #[allow(dead_code)]
     pub fn get_retry_delay(&self) -> Option<u64> {
         match self {
             Self::NetworkTimeout => Some(10),

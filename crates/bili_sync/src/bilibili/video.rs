@@ -240,9 +240,17 @@ impl<'a> Video<'a> {
                     ("otype", "json"),
                     ("fnval", "4048"),
                     ("fourk", "1"),
+                    // DRM绕过参数 - 添加会员相关参数
+                    ("try_look", "1"),         // 试看模式
+                    ("platform", "html5"),     // 平台类型
+                    ("high_quality", "1"),     // 高质量
+                    ("session", ""),           // 会话ID
                 ],
                 MIXIN_KEY.load().as_deref(),
             ))
+            .header("Referer", "https://www.bilibili.com/")
+            .header("Origin", "https://www.bilibili.com")
+            .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36")
             .send()
             .await?
             .error_for_status()?
@@ -250,6 +258,36 @@ impl<'a> Video<'a> {
             .await?
             .validate()?;
         Ok(PageAnalyzer::new(res["data"].take()))
+    }
+
+    /// 专门为番剧获取播放地址分析器
+    pub async fn get_bangumi_page_analyzer(&self, page: &PageInfo, ep_id: &str) -> Result<PageAnalyzer> {
+        let mut res = self
+            .client
+            .request(Method::GET, "https://api.bilibili.com/pgc/player/web/playurl")
+            .await
+            .query(&[
+                ("ep_id", ep_id),
+                ("cid", &page.cid.to_string()),
+                ("qn", "127"),
+                ("otype", "json"),
+                ("fnval", "4048"),
+                ("fourk", "1"),
+                // 番剧特有参数
+                ("fnver", "0"),
+                ("platform", "html5"),
+                ("high_quality", "1"),
+            ])
+            .header("Referer", "https://www.bilibili.com/")
+            .header("Origin", "https://www.bilibili.com")
+            .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36")
+            .send()
+            .await?
+            .error_for_status()?
+            .json::<serde_json::Value>()
+            .await?
+            .validate()?;
+        Ok(PageAnalyzer::new(res["result"].take()))
     }
 
     pub async fn get_subtitles(&self, page: &PageInfo) -> Result<Vec<SubTitle>> {

@@ -1248,11 +1248,22 @@ pub async fn fetch_page_video(
 
     let bili_video = Video::new(bili_client, video_model.bvid.clone());
 
-    // 获取视频流信息
+    // 获取视频流信息 - 根据视频类型选择不同的API
     let mut streams = tokio::select! {
         biased;
         _ = token.cancelled() => return Err(anyhow!("Download cancelled")),
-        res = bili_video.get_page_analyzer(page_info) => res
+        res = async {
+            // 检查是否为番剧视频
+            if video_model.source_type == Some(1) && video_model.ep_id.is_some() {
+                // 使用番剧专用API
+                let ep_id = video_model.ep_id.as_ref().unwrap();
+                debug!("使用番剧专用API获取播放地址: ep_id={}", ep_id);
+                bili_video.get_bangumi_page_analyzer(page_info, ep_id).await
+            } else {
+                // 使用普通视频API
+                bili_video.get_page_analyzer(page_info).await
+            }
+        } => res
     }?;
 
     // 创建保存目录

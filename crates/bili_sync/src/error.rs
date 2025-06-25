@@ -196,15 +196,14 @@ impl ErrorClassifier {
                     -500..=-400 => ErrorType::ServerError,
                     _ => ErrorType::ClientError,
                 };
-                
+
                 let should_retry = match *code {
                     87008 | -352 | -412 => false, // 风控不重试
-                    -500..=-400 | -1 => true, // 服务器错误或网络错误可重试
+                    -500..=-400 | -1 => true,     // 服务器错误或网络错误可重试
                     _ => false,
                 };
-                
-                ClassifiedError::new(error_type, format!("B站API错误: {}", msg))
-                    .with_retry_policy(should_retry, false)
+
+                ClassifiedError::new(error_type, format!("B站API错误: {}", msg)).with_retry_policy(should_retry, false)
             }
         }
     }

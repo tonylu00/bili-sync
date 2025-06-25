@@ -31,6 +31,7 @@ use crate::api::handler::{
     get_task_control_status,
     get_user_collections,
     get_user_favorites,
+    get_user_favorites_by_uid,
     get_user_followings,
     get_video,
     get_video_play_info,
@@ -56,7 +57,6 @@ use crate::api::handler::{
     update_video_status,
     validate_config,
     validate_favorite,
-    get_user_favorites_by_uid,
     ApiDoc,
 };
 use crate::api::request::{BatchUpdateConfigRequest, UpdateConfigItemRequest};
