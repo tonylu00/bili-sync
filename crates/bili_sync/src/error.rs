@@ -177,16 +177,34 @@ impl ErrorClassifier {
         match err {
             crate::bilibili::BiliError::RiskControlOccurred => {
                 ClassifiedError::new(ErrorType::RiskControl, "触发B站风控，请稍后重试".to_string())
+                    .with_retry_policy(false, false) // 风控不重试，不忽略
+            }
+            crate::bilibili::BiliError::NetworkTimeout => {
+                ClassifiedError::new(ErrorType::Timeout, "网络超时或DNS解析失败".to_string())
+                    .with_retry_policy(true, false) // 网络超时可重试
+            }
+            crate::bilibili::BiliError::VideoStreamDenied(code) => {
+                ClassifiedError::new(ErrorType::NotFound, format!("视频流访问被拒绝: {}", code))
+                    .with_retry_policy(false, true) // 不重试，可忽略
             }
             crate::bilibili::BiliError::RequestFailed(code, msg) => {
                 let error_type = match *code {
+                    87008 | -352 | -412 => ErrorType::RiskControl, // 特定风控错误码
                     -401 | -403 => ErrorType::Authentication,
                     -404 => ErrorType::NotFound,
                     -429 => ErrorType::RateLimit,
                     -500..=-400 => ErrorType::ServerError,
                     _ => ErrorType::ClientError,
                 };
+                
+                let should_retry = match *code {
+                    87008 | -352 | -412 => false, // 风控不重试
+                    -500..=-400 | -1 => true, // 服务器错误或网络错误可重试
+                    _ => false,
+                };
+                
                 ClassifiedError::new(error_type, format!("B站API错误: {}", msg))
+                    .with_retry_policy(should_retry, false)
             }
         }
     }

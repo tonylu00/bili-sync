@@ -590,6 +590,22 @@ impl Aria2Downloader {
             format!("--split={}", threads),
             "--max-concurrent-downloads=6".to_string(), // 每个实例最多6个文件
             "--disable-ipv6=true".to_string(),
+            // 增强的网络容错配置
+            "--max-tries=8".to_string(),              // 增加重试次数
+            "--retry-wait=5".to_string(),             // 增加重试间隔
+            "--timeout=60".to_string(),               // 增加整体超时
+            "--connect-timeout=20".to_string(),       // 增加连接超时
+            "--auto-file-renaming=false".to_string(),
+            "--allow-overwrite=true".to_string(),
+            // DNS优化配置
+            "--async-dns=true".to_string(),
+            "--async-dns-server=8.8.8.8,1.1.1.1,223.5.5.5,114.114.114.114".to_string(),
+            "--enable-async-dns6=false".to_string(),
+            // 网络优化配置
+            "--lowest-speed-limit=1K".to_string(),
+            "--max-overall-download-limit=0".to_string(),
+            "--stream-piece-selector=geom".to_string(),
+            "--piece-length=1M".to_string(),
             "--summary-interval=0".to_string(),
             "--quiet=true".to_string(),
         ];
@@ -751,10 +767,8 @@ impl Aria2Downloader {
         // 检查下载结果
         result?;
 
-        // 验证文件是否存在
-        if !path.exists() {
-            bail!("Download completed but file not found: {}", path.display());
-        }
+        // 增强的文件验证逻辑
+        self.verify_downloaded_file(path).await?;
 
         Ok(())
     }
@@ -789,7 +803,7 @@ impl Aria2Downloader {
             base_threads
         };
 
-        // 构建基础选项
+        // 构建基础选项 - 增强网络容错
         let mut options = serde_json::json!({
             "dir": dir,
             "out": file_name,
@@ -797,9 +811,27 @@ impl Aria2Downloader {
             "max-connection-per-server": threads.to_string(),
             "split": threads.to_string(),
             "min-split-size": "1M",
+            // 增强的网络容错配置
+            "max-tries": "8",
+            "retry-wait": "5", 
+            "timeout": "60",
+            "connect-timeout": "20",
+            "auto-file-renaming": "false",
+            "allow-overwrite": "true",
+            // DNS优化配置
+            "async-dns": "true",
+            "async-dns-server": ["8.8.8.8", "1.1.1.1", "223.5.5.5", "114.114.114.114"],
+            "enable-async-dns6": "false",
+            // 网络优化配置
+            "lowest-speed-limit": "1K",
+            "stream-piece-selector": "geom",
+            "piece-length": "1M",
             "header": [
                 "User-Agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36",
-                "Referer: https://www.bilibili.com"
+                "Referer: https://www.bilibili.com",
+                "Accept: */*",
+                "Accept-Language: zh-CN,zh;q=0.9,en;q=0.8",
+                "Cache-Control: no-cache"
             ]
         });
 
@@ -1286,6 +1318,34 @@ impl Aria2Downloader {
         }
 
         status_list
+    }
+
+    /// 增强的文件验证逻辑
+    async fn verify_downloaded_file(&self, path: &Path) -> Result<()> {
+        // 基本存在性检查
+        if !path.exists() {
+            bail!("Download completed but file not found: {}", path.display());
+        }
+
+        // 等待文件系统同步
+        tokio::time::sleep(Duration::from_millis(500)).await;
+
+        // 文件大小检查
+        match tokio::fs::metadata(path).await {
+            Ok(metadata) => {
+                let file_size = metadata.len();
+                if file_size == 0 {
+                    warn!("下载的文件大小为0: {}", path.display());
+                    bail!("Downloaded file is empty: {}", path.display());
+                }
+                debug!("文件下载验证成功: {} (大小: {} 字节)", path.display(), file_size);
+                Ok(())
+            }
+            Err(e) => {
+                error!("无法读取下载文件的元数据: {} - {}", path.display(), e);
+                bail!("Cannot read downloaded file metadata: {} - {}", path.display(), e);
+            }
+        }
     }
 }
 

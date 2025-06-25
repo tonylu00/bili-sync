@@ -6,4 +6,48 @@ pub enum BiliError {
     RiskControlOccurred,
     #[error("request failed, status code: {0}, message: {1}")]
     RequestFailed(i64, String),
+    #[error("network timeout or DNS resolution failed")]
+    NetworkTimeout,
+    #[error("video stream access denied, code: {0}")]
+    VideoStreamDenied(i64),
+}
+
+impl BiliError {
+    /// 根据错误码创建相应的错误类型
+    pub fn from_code_and_message(code: i64, message: String) -> Self {
+        match code {
+            // 常见的风控相关错误码
+            -352 | -412 | 87008 => Self::RiskControlOccurred,
+            // 视频流访问被拒绝
+            -404 => Self::VideoStreamDenied(code),
+            // 其他错误
+            _ => Self::RequestFailed(code, message),
+        }
+    }
+
+    /// 判断是否为可重试的错误
+    pub fn is_retryable(&self) -> bool {
+        match self {
+            Self::NetworkTimeout => true,
+            Self::RiskControlOccurred => false, // 风控不建议立即重试
+            Self::VideoStreamDenied(_) => false,
+            Self::RequestFailed(code, _) => {
+                // 网络相关错误码可重试
+                matches!(*code, -500..=-400 | -1)
+            }
+        }
+    }
+
+    /// 获取推荐的等待时间（秒）
+    pub fn get_retry_delay(&self) -> Option<u64> {
+        match self {
+            Self::NetworkTimeout => Some(10),
+            Self::RiskControlOccurred => Some(300), // 风控建议等待5分钟
+            Self::RequestFailed(code, _) => match *code {
+                -500..=-400 => Some(30), // 服务器错误等待30秒
+                _ => None,
+            },
+            Self::VideoStreamDenied(_) => None,
+        }
+    }
 }
