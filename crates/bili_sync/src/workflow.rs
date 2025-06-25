@@ -1975,6 +1975,56 @@ async fn get_collection_video_episode_number(
     Err(anyhow!("视频 {} 在合集 {} 中未找到", bvid, collection_id))
 }
 
+/// 生成唯一的文件夹名称，避免同名冲突（公共函数）
+pub fn generate_unique_folder_name(parent_dir: &std::path::Path, base_name: &str, bvid: &str, pubtime: &str) -> String {
+    let mut unique_name = base_name.to_string();
+    let mut counter = 0;
+
+    // 检查基础名称是否已存在
+    let base_path = parent_dir.join(&unique_name);
+    if !base_path.exists() {
+        return unique_name;
+    }
+
+    // 如果存在，先尝试追加发布时间
+    unique_name = format!("{}-{}", base_name, pubtime);
+    let time_path = parent_dir.join(&unique_name);
+    if !time_path.exists() {
+        info!("检测到下载文件夹名冲突，追加发布时间: {} -> {}", base_name, unique_name);
+        return unique_name;
+    }
+
+    // 如果发布时间也冲突，追加BVID
+    unique_name = format!("{}-{}", base_name, bvid);
+    let bvid_path = parent_dir.join(&unique_name);
+    if !bvid_path.exists() {
+        info!("检测到下载文件夹名冲突，追加BVID: {} -> {}", base_name, unique_name);
+        return unique_name;
+    }
+
+    // 如果都冲突，使用数字后缀
+    loop {
+        counter += 1;
+        unique_name = format!("{}-{}", base_name, counter);
+        let numbered_path = parent_dir.join(&unique_name);
+        if !numbered_path.exists() {
+            warn!(
+                "检测到严重下载文件夹名冲突，使用数字后缀: {} -> {}",
+                base_name, unique_name
+            );
+            return unique_name;
+        }
+
+        // 防止无限循环，使用随机后缀
+        if counter > 1000 {
+            warn!("下载文件夹名冲突解决失败，使用随机后缀");
+            let random_suffix: u32 = rand::random::<u32>() % 90000 + 10000;
+            unique_name = format!("{}-{}", base_name, random_suffix);
+            return unique_name;
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use handlebars::handlebars_helper;
@@ -2045,55 +2095,5 @@ mod tests {
                 .unwrap(),
             "哈哈，你说得对，但是 Rust 是由 Mozilla 自主研发的一"
         );
-    }
-}
-
-/// 生成唯一的文件夹名称，避免同名冲突（公共函数）
-pub fn generate_unique_folder_name(parent_dir: &std::path::Path, base_name: &str, bvid: &str, pubtime: &str) -> String {
-    let mut unique_name = base_name.to_string();
-    let mut counter = 0;
-
-    // 检查基础名称是否已存在
-    let base_path = parent_dir.join(&unique_name);
-    if !base_path.exists() {
-        return unique_name;
-    }
-
-    // 如果存在，先尝试追加发布时间
-    unique_name = format!("{}-{}", base_name, pubtime);
-    let time_path = parent_dir.join(&unique_name);
-    if !time_path.exists() {
-        info!("检测到下载文件夹名冲突，追加发布时间: {} -> {}", base_name, unique_name);
-        return unique_name;
-    }
-
-    // 如果发布时间也冲突，追加BVID
-    unique_name = format!("{}-{}", base_name, bvid);
-    let bvid_path = parent_dir.join(&unique_name);
-    if !bvid_path.exists() {
-        info!("检测到下载文件夹名冲突，追加BVID: {} -> {}", base_name, unique_name);
-        return unique_name;
-    }
-
-    // 如果都冲突，使用数字后缀
-    loop {
-        counter += 1;
-        unique_name = format!("{}-{}", base_name, counter);
-        let numbered_path = parent_dir.join(&unique_name);
-        if !numbered_path.exists() {
-            warn!(
-                "检测到严重下载文件夹名冲突，使用数字后缀: {} -> {}",
-                base_name, unique_name
-            );
-            return unique_name;
-        }
-
-        // 防止无限循环，使用随机后缀
-        if counter > 1000 {
-            warn!("下载文件夹名冲突解决失败，使用随机后缀");
-            let random_suffix: u32 = rand::random::<u32>() % 90000 + 10000;
-            unique_name = format!("{}-{}", base_name, random_suffix);
-            return unique_name;
-        }
     }
 }

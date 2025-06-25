@@ -2577,13 +2577,8 @@ pub async fn reset_video_source_path_internal(
 
                 for video in &videos {
                     // 移动视频文件到新路径结构
-                    match move_video_files_to_new_path(
-                        &video,
-                        &old_path,
-                        &request.new_path,
-                        request.clean_empty_folders,
-                    )
-                    .await
+                    match move_video_files_to_new_path(video, &old_path, &request.new_path, request.clean_empty_folders)
+                        .await
                     {
                         Ok((moved, cleaned)) => {
                             moved_files_count += moved;
@@ -2635,13 +2630,8 @@ pub async fn reset_video_source_path_internal(
 
                 for video in &videos {
                     // 移动视频文件到新路径结构
-                    match move_video_files_to_new_path(
-                        &video,
-                        &old_path,
-                        &request.new_path,
-                        request.clean_empty_folders,
-                    )
-                    .await
+                    match move_video_files_to_new_path(video, &old_path, &request.new_path, request.clean_empty_folders)
+                        .await
                     {
                         Ok((moved, cleaned)) => {
                             moved_files_count += moved;
@@ -2692,13 +2682,8 @@ pub async fn reset_video_source_path_internal(
 
                 for video in &videos {
                     // 移动视频文件到新路径结构
-                    match move_video_files_to_new_path(
-                        &video,
-                        &old_path,
-                        &request.new_path,
-                        request.clean_empty_folders,
-                    )
-                    .await
+                    match move_video_files_to_new_path(video, &old_path, &request.new_path, request.clean_empty_folders)
+                        .await
                     {
                         Ok((moved, cleaned)) => {
                             moved_files_count += moved;
@@ -2749,13 +2734,8 @@ pub async fn reset_video_source_path_internal(
 
                 for video in &videos {
                     // 移动视频文件到新路径结构
-                    match move_video_files_to_new_path(
-                        &video,
-                        &old_path,
-                        &request.new_path,
-                        request.clean_empty_folders,
-                    )
-                    .await
+                    match move_video_files_to_new_path(video, &old_path, &request.new_path, request.clean_empty_folders)
+                        .await
                     {
                         Ok((moved, cleaned)) => {
                             moved_files_count += moved;
@@ -2808,7 +2788,7 @@ pub async fn reset_video_source_path_internal(
                 for video in &videos {
                     // 使用番剧专用的文件移动函数
                     match move_bangumi_files_to_new_path(
-                        &video,
+                        video,
                         &old_path,
                         &request.new_path,
                         request.clean_empty_folders,
@@ -2952,11 +2932,12 @@ async fn move_video_files_to_new_path(
     }
 
     // 使用四步重命名原则移动整个视频文件夹
-    if let Ok(_) = move_files_with_four_step_rename(
+    if (move_files_with_four_step_rename(
         &current_video_path.to_string_lossy(),
         &target_video_dir.to_string_lossy(),
     )
-    .await
+    .await)
+        .is_ok()
     {
         moved_count = 1;
 
@@ -7348,11 +7329,12 @@ async fn move_bangumi_files_to_new_path(
     }
 
     // 使用四步重命名原则移动整个视频文件夹
-    if let Ok(_) = move_files_with_four_step_rename(
+    if (move_files_with_four_step_rename(
         &current_video_path.to_string_lossy(),
         &target_video_dir.to_string_lossy(),
     )
-    .await
+    .await)
+        .is_ok()
     {
         moved_count = 1;
 
