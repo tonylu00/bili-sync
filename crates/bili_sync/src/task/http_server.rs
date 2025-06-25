@@ -55,6 +55,8 @@ use crate::api::handler::{
     update_video_source_scan_deleted,
     update_video_status,
     validate_config,
+    validate_favorite,
+    get_user_favorites_by_uid,
     ApiDoc,
 };
 use crate::api::request::{BatchUpdateConfigRequest, UpdateConfigItemRequest};
@@ -130,6 +132,8 @@ pub async fn http_server(database_connection: Arc<DatabaseConnection>) -> Result
         .route("/api/bangumi/seasons/{season_id}", get(get_bangumi_seasons))
         .route("/api/search", get(search_bilibili))
         .route("/api/user/favorites", get(get_user_favorites))
+        .route("/api/user/{uid}/favorites", get(get_user_favorites_by_uid))
+        .route("/api/favorite/{fid}/validate", get(validate_favorite))
         .route("/api/user/collections/{mid}", get(get_user_collections))
         .route("/api/user/followings", get(get_user_followings))
         .route("/api/user/subscribed-collections", get(get_subscribed_collections))

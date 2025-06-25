@@ -35,6 +35,15 @@
 	// 收藏夹相关
 	let userFavorites: any[] = [];
 	let loadingFavorites = false;
+	let validatingFavorite = false;
+	let favoriteValidationResult: any = null;
+	let favoriteValidationTimeout: any;
+	
+	// UP主收藏夹搜索相关
+	let searchedUserFavorites: any[] = [];
+	let loadingSearchedUserFavorites = false;
+	let selectedUserId: string = '';
+	let selectedUserName: string = '';
 
 	// UP主合集相关
 	let userCollections: any[] = [];
@@ -64,7 +73,7 @@
 	// 源类型选项
 	const sourceTypeOptions = [
 		{ value: 'collection', label: '合集', description: '视频合集，需要UP主ID和合集ID' },
-		{ value: 'favorite', label: '收藏夹', description: '收藏夹ID可在收藏夹页面URL中获取' },
+		{ value: 'favorite', label: '收藏夹', description: '可添加任何公开收藏夹，收藏夹ID可在收藏夹页面URL中获取' },
 		{ value: 'submission', label: 'UP主投稿', description: 'UP主ID可在UP主空间URL中获取' },
 		{ value: 'watch_later', label: '稍后观看', description: '同步稍后观看列表' },
 		{ value: 'bangumi', label: '番剧', description: '番剧season_id可在番剧页面URL中获取' }
@@ -92,28 +101,34 @@
 		clearTimeout(hoverTimeout);
 		clearTimeout(upIdTimeout);
 		clearTimeout(seasonIdTimeout);
+		clearTimeout(favoriteValidationTimeout);
 	});
 
 	// 搜索B站内容
-	async function handleSearch() {
+	async function handleSearch(overrideSearchType?: string) {
 		if (!searchKeyword.trim()) {
 			toast.error('请输入搜索关键词');
 			return;
 		}
 
-		// 根据当前选择的视频源类型确定搜索类型
+		// 根据参数或当前选择的视频源类型确定搜索类型
 		let searchType: 'video' | 'bili_user' | 'media_bangumi';
-		switch (sourceType) {
-			case 'collection':
-			case 'submission':
-				searchType = 'bili_user';
-				break;
-			case 'bangumi':
-				searchType = 'media_bangumi';
-				break;
-			default:
-				searchType = 'video';
-				break;
+		if (overrideSearchType) {
+			searchType = overrideSearchType as 'video' | 'bili_user' | 'media_bangumi';
+		} else {
+			switch (sourceType) {
+				case 'collection':
+				case 'submission':
+				case 'favorite': // 收藏夹类型也搜索UP主
+					searchType = 'bili_user';
+					break;
+				case 'bangumi':
+					searchType = 'media_bangumi';
+					break;
+				default:
+					searchType = 'video';
+					break;
+			}
 		}
 
 		searchLoading = true;
@@ -165,6 +180,12 @@
 				}
 				break;
 			case 'favorite':
+				// 收藏夹类型搜索UP主，调用获取收藏夹函数
+				if (result.mid) {
+					selectUserAndFetchFavorites(result);
+					return; // 直接返回，不执行后续逻辑
+				}
+				break;
 			default:
 				if (result.bvid) {
 					sourceId = result.bvid;
@@ -361,7 +382,113 @@
 	function selectFavorite(favorite: any) {
 		sourceId = favorite.id.toString();
 		name = favorite.name || favorite.title;
+		favoriteValidationResult = {
+			valid: true,
+			fid: favorite.id,
+			title: favorite.name || favorite.title,
+			message: '收藏夹验证成功'
+		};
 		toast.success('已选择收藏夹', { description: name });
+	}
+
+	// 选择搜索到的收藏夹
+	function selectSearchedFavorite(favorite: any) {
+		sourceId = favorite.fid.toString();
+		name = favorite.title;
+		favoriteValidationResult = {
+			valid: true,
+			fid: favorite.fid,
+			title: favorite.title,
+			message: '收藏夹验证成功'
+		};
+		toast.success('已选择收藏夹', { description: name });
+	}
+
+	// 选择UP主并获取其收藏夹
+	async function selectUserAndFetchFavorites(user: any) {
+		selectedUserId = user.mid.toString();
+		selectedUserName = user.title; // 使用搜索结果中的title
+		
+		loadingSearchedUserFavorites = true;
+		searchedUserFavorites = [];
+		
+		// 关闭搜索结果
+		showSearchResults = false;
+		searchResults = [];
+		searchKeyword = '';
+		searchTotalResults = 0;
+		
+		try {
+			const result = await api.getUserFavoritesByUid(selectedUserId);
+			if (result.data && result.data.length > 0) {
+				searchedUserFavorites = result.data;
+				toast.success('获取收藏夹成功', {
+					description: `从 ${selectedUserName} 获取到 ${searchedUserFavorites.length} 个收藏夹`
+				});
+			} else {
+				toast.info('该UP主没有公开收藏夹');
+			}
+		} catch (error) {
+			console.error('获取UP主收藏夹失败:', error);
+			toast.error('获取收藏夹失败', {
+				description: 'UP主可能没有公开收藏夹或网络错误'
+			});
+		} finally {
+			loadingSearchedUserFavorites = false;
+		}
+	}
+
+	// 验证收藏夹ID
+	async function validateFavoriteId(fid: string) {
+		if (!fid.trim()) {
+			favoriteValidationResult = null;
+			return;
+		}
+
+		// 检查是否为纯数字
+		if (!/^\d+$/.test(fid.trim())) {
+			favoriteValidationResult = {
+				valid: false,
+				fid: 0,
+				title: '',
+				message: '收藏夹ID必须为纯数字'
+			};
+			return;
+		}
+
+		validatingFavorite = true;
+		favoriteValidationResult = null;
+
+		try {
+			const result = await api.validateFavorite(fid.trim());
+			favoriteValidationResult = result.data;
+			
+			if (result.data.valid && !name) {
+				// 如果验证成功且用户还没有填写名称，自动填入收藏夹标题
+				name = result.data.title;
+			}
+		} catch (error) {
+			favoriteValidationResult = {
+				valid: false,
+				fid: parseInt(fid) || 0,
+				title: '',
+				message: '验证失败：网络错误或收藏夹不存在'
+			};
+		} finally {
+			validatingFavorite = false;
+		}
+	}
+
+	// 处理收藏夹ID变化
+	function handleFavoriteIdChange() {
+		clearTimeout(favoriteValidationTimeout);
+		if (sourceType === 'favorite' && sourceId.trim()) {
+			favoriteValidationTimeout = setTimeout(() => {
+				validateFavoriteId(sourceId);
+			}, 500);
+		} else {
+			favoriteValidationResult = null;
+		}
 	}
 
 	// 处理UP主ID变化
@@ -488,6 +615,11 @@
 		userCollections = [];
 		userFavorites = [];
 		subscribedCollections = [];
+		// 清空UP主收藏夹搜索状态
+		searchedUserFavorites = [];
+		selectedUserId = '';
+		selectedUserName = '';
+		loadingSearchedUserFavorites = false;
 		// 注意：bangumiSeasons 和 selectedSeasons 在另一个响应式语句中处理
 	}
 
@@ -757,27 +889,79 @@
 
 						<!-- 收藏夹列表（仅收藏夹类型时显示） -->
 						{#if sourceType === 'favorite'}
-							<div class="rounded-lg border border-yellow-200 bg-yellow-50 p-4">
-								<div
-									class="flex {isMobile ? 'flex-col gap-2' : 'items-center justify-between'} mb-2"
-								>
-									<span class="text-sm font-medium text-yellow-800">我的收藏夹</span>
-									<Button
-										size="sm"
-										variant="outline"
-										onclick={fetchUserFavorites}
-										disabled={loadingFavorites}
-										class={isMobile ? 'w-full' : ''}
+							<div class="space-y-4">
+								<!-- 我的收藏夹 -->
+								<div class="rounded-lg border border-yellow-200 bg-yellow-50 p-4">
+									<div
+										class="flex {isMobile ? 'flex-col gap-2' : 'items-center justify-between'} mb-2"
 									>
-										{loadingFavorites ? '加载中...' : '获取收藏夹'}
-									</Button>
+										<span class="text-sm font-medium text-yellow-800">我的收藏夹</span>
+										<Button
+											size="sm"
+											variant="outline"
+											onclick={fetchUserFavorites}
+											disabled={loadingFavorites}
+											class={isMobile ? 'w-full' : ''}
+										>
+											{loadingFavorites ? '加载中...' : '获取收藏夹'}
+										</Button>
+									</div>
+
+									{#if userFavorites.length > 0}
+										<p class="text-xs text-yellow-600">
+											已获取 {userFavorites.length} 个收藏夹，请在{isMobile ? '下方' : '右侧'}选择
+										</p>
+									{:else}
+										<p class="text-xs text-yellow-600">
+											点击右侧按钮获取您的收藏夹列表
+										</p>
+									{/if}
 								</div>
 
-								{#if userFavorites.length > 0}
-									<p class="text-xs text-yellow-600">
-										已获取 {userFavorites.length} 个收藏夹，请在{isMobile ? '下方' : '右侧'}选择
-									</p>
-								{/if}
+								<!-- 他人的公开收藏夹 -->
+								<div class="rounded-lg border border-blue-200 bg-blue-50 p-4">
+									<div class="mb-3">
+										<span class="text-sm font-medium text-blue-800">他人的公开收藏夹</span>
+									</div>
+									
+									<!-- 搜索UP主的收藏夹 -->
+									<div class="mb-4 rounded border border-gray-200 bg-white p-3">
+										<div class="mb-2">
+											<Label class="text-sm font-medium text-gray-700">搜索UP主的收藏夹</Label>
+										</div>
+										<div class="flex {isMobile ? 'flex-col gap-2' : 'gap-2'}">
+											<Input
+												placeholder="搜索UP主名称..."
+												bind:value={searchKeyword}
+												onkeydown={(e) => e.key === 'Enter' && handleSearch()}
+											/>
+											<Button
+												onclick={() => handleSearch()}
+												disabled={searchLoading || !searchKeyword.trim()}
+												size="sm"
+												class={isMobile ? 'w-full' : ''}
+											>
+												{#if searchLoading}搜索中...{:else}搜索{/if}
+											</Button>
+										</div>
+										
+										<p class="mt-2 text-xs text-gray-600">
+											{#if showSearchResults && searchResults.length > 0}
+												找到 {searchResults.length} 个UP主，请在{isMobile ? '下方' : '右侧'}列表中选择
+											{:else}
+												输入UP主名称后点击搜索，结果将在{isMobile ? '下方' : '右侧'}显示
+											{/if}
+										</p>
+									</div>
+									
+									<!-- 手动输入收藏夹ID -->
+									<div class="text-xs text-blue-600">
+										<strong>或者手动输入收藏夹ID：</strong><br>
+										1. 打开想要添加的收藏夹页面<br>
+										2. 复制URL中 "fid=" 后面的数字<br>
+										3. 在下方输入框中填写该数字
+									</div>
+								</div>
 							</div>
 						{/if}
 
@@ -832,10 +1016,12 @@
 								<Input
 									id="source-id"
 									bind:value={sourceId}
-									placeholder={`请输入${sourceType === 'collection' ? '合集' : sourceType === 'favorite' ? '收藏夹' : sourceType === 'submission' ? 'UP主' : sourceType === 'bangumi' ? 'Season' : ''}ID`}
+									placeholder={`请输入${sourceType === 'collection' ? '合集' : sourceType === 'favorite' ? '任意公开收藏夹' : sourceType === 'submission' ? 'UP主' : sourceType === 'bangumi' ? 'Season' : ''}ID`}
 									oninput={() => {
 										if (sourceType === 'collection') {
 											isManualInput = true;
+										} else if (sourceType === 'favorite') {
+											handleFavoriteIdChange();
 										}
 									}}
 									required
@@ -844,7 +1030,15 @@
 									<p class="mt-1 text-xs text-green-600">✓ 已从列表中选择合集，类型已自动识别</p>
 								{/if}
 								{#if sourceType === 'favorite' && sourceId}
-									<p class="mt-1 text-xs text-green-600">✓ 已选择收藏夹</p>
+									{#if validatingFavorite}
+										<p class="mt-1 text-xs text-blue-600">🔍 验证收藏夹中...</p>
+									{:else if favoriteValidationResult}
+										{#if favoriteValidationResult.valid}
+											<p class="mt-1 text-xs text-green-600">✓ 收藏夹验证成功：{favoriteValidationResult.title}</p>
+										{:else}
+											<p class="mt-1 text-xs text-red-600">✗ {favoriteValidationResult.message}</p>
+										{/if}
+									{/if}
 								{/if}
 
 								<!-- 下载所有季度（仅番剧时显示，紧跟在Season ID后面） -->
@@ -1240,6 +1434,79 @@
 										</button>
 									{/each}
 								</div>
+							</div>
+						</div>
+					</div>
+				{/if}
+
+				<!-- UP主收藏夹列表（移动到右侧） -->
+				{#if sourceType === 'favorite' && selectedUserId && (searchedUserFavorites.length > 0 || loadingSearchedUserFavorites)}
+					<div class={isMobile ? 'mt-6 w-full' : 'flex-1'}>
+						<div
+							class="rounded-lg border bg-white {isMobile
+								? ''
+								: 'h-full'} flex flex-col overflow-hidden {isMobile
+								? ''
+								: 'sticky top-6'} max-h-[calc(100vh-200px)]"
+						>
+							<div class="flex items-center justify-between border-b bg-green-50 p-4">
+								<div>
+									<span class="text-base font-medium text-green-800">{selectedUserName} 的收藏夹</span>
+									<span class="text-sm text-green-600 {isMobile ? 'block' : 'ml-2'}">
+										{#if loadingSearchedUserFavorites}
+											正在加载...
+										{:else if searchedUserFavorites.length > 0}
+											共 {searchedUserFavorites.length} 个收藏夹
+										{:else}
+											没有公开收藏夹
+										{/if}
+									</span>
+								</div>
+								<button
+									onclick={() => {
+										selectedUserId = '';
+										selectedUserName = '';
+										searchedUserFavorites = [];
+										loadingSearchedUserFavorites = false;
+									}}
+									class="p-1 text-xl text-green-500 hover:text-green-700"
+								>
+									<X class="h-5 w-5" />
+								</button>
+							</div>
+
+							<div class="flex-1 overflow-y-auto p-3">
+								{#if loadingSearchedUserFavorites}
+									<div class="p-4 text-center">
+										<div class="text-sm text-green-700">正在获取收藏夹列表...</div>
+									</div>
+								{:else if searchedUserFavorites.length > 0}
+									<div class="grid {isMobile ? 'grid-cols-1 gap-3' : 'grid-cols-2 gap-4'}">
+										{#each searchedUserFavorites as favorite}
+											<button
+												onclick={() => selectSearchedFavorite(favorite)}
+												class="rounded-lg border p-4 text-left transition-colors hover:bg-gray-50"
+											>
+												<div class="flex items-start gap-3">
+													<div
+														class="flex h-16 w-24 flex-shrink-0 items-center justify-center rounded bg-gray-200 text-xs text-gray-400"
+													>
+														收藏夹
+													</div>
+													<div class="min-w-0 flex-1">
+														<h4 class="mb-1 truncate text-sm font-medium">{favorite.title}</h4>
+														<p class="mb-1 text-xs text-gray-600">收藏夹ID: {favorite.fid}</p>
+														<p class="text-xs text-gray-600">共 {favorite.media_count} 个视频</p>
+													</div>
+												</div>
+											</button>
+										{/each}
+									</div>
+								{:else}
+									<div class="p-4 text-center">
+										<div class="text-sm text-gray-500">该UP主没有公开的收藏夹</div>
+									</div>
+								{/if}
 							</div>
 						</div>
 					</div>

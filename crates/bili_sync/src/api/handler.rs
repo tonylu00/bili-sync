@@ -44,7 +44,7 @@ fn normalize_file_path(path: &str) -> String {
 
 #[derive(OpenApi)]
 #[openapi(
-    paths(get_video_sources, get_videos, get_video, reset_video, reset_all_videos, reset_specific_tasks, update_video_status, add_video_source, update_video_source_enabled, update_video_source_scan_deleted, reset_video_source_path, delete_video_source, reload_config, get_config, update_config, get_bangumi_seasons, search_bilibili, get_user_favorites, get_user_collections, get_user_followings, get_subscribed_collections, get_logs, get_queue_status, proxy_image, get_config_item, get_config_history, validate_config, get_hot_reload_status, check_initial_setup, setup_auth_token, update_credential, pause_scanning_endpoint, resume_scanning_endpoint, get_task_control_status, get_video_play_info, proxy_video_stream),
+    paths(get_video_sources, get_videos, get_video, reset_video, reset_all_videos, reset_specific_tasks, update_video_status, add_video_source, update_video_source_enabled, update_video_source_scan_deleted, reset_video_source_path, delete_video_source, reload_config, get_config, update_config, get_bangumi_seasons, search_bilibili, get_user_favorites, get_user_collections, get_user_followings, get_subscribed_collections, get_logs, get_queue_status, proxy_image, get_config_item, get_config_history, validate_config, get_hot_reload_status, check_initial_setup, setup_auth_token, update_credential, pause_scanning_endpoint, resume_scanning_endpoint, get_task_control_status, get_video_play_info, proxy_video_stream, validate_favorite, get_user_favorites_by_uid),
     modifiers(&OpenAPIAuth),
     security(
         ("Token" = []),
@@ -7624,4 +7624,87 @@ async fn update_page_path_in_database(
     }
 
     Ok(())
+}
+
+/// 验证收藏夹ID并获取收藏夹信息
+#[utoipa::path(
+    get,
+    path = "/api/favorite/{fid}/validate",
+    params(
+        ("fid" = String, Path, description = "收藏夹ID"),
+    ),
+    responses(
+        (status = 200, body = ApiResponse<crate::api::response::ValidateFavoriteResponse>),
+    )
+)]
+pub async fn validate_favorite(
+    Path(fid): Path<String>,
+) -> Result<ApiResponse<crate::api::response::ValidateFavoriteResponse>, ApiError> {
+    // 创建B站客户端
+    let client = crate::bilibili::BiliClient::new(String::new());
+    
+    // 创建收藏夹对象
+    let favorite_list = crate::bilibili::FavoriteList::new(&client, fid.clone());
+    
+    // 尝试获取收藏夹信息
+    match favorite_list.get_info().await {
+        Ok(info) => {
+            Ok(ApiResponse::ok(crate::api::response::ValidateFavoriteResponse {
+                valid: true,
+                fid: info.id,
+                title: info.title,
+                message: "收藏夹验证成功".to_string(),
+            }))
+        }
+        Err(e) => {
+            warn!("验证收藏夹 {} 失败: {}", fid, e);
+            Ok(ApiResponse::ok(crate::api::response::ValidateFavoriteResponse {
+                valid: false,
+                fid: fid.parse().unwrap_or(0),
+                title: String::new(),
+                message: format!("收藏夹验证失败: 可能是ID不存在或收藏夹不公开。错误详情: {}", e),
+            }))
+        }
+    }
+}
+
+/// 获取指定UP主的收藏夹列表
+#[utoipa::path(
+    get,
+    path = "/api/user/{uid}/favorites",
+    params(
+        ("uid" = i64, Path, description = "UP主ID"),
+    ),
+    responses(
+        (status = 200, body = ApiResponse<Vec<crate::api::response::UserFavoriteFolder>>),
+    )
+)]
+pub async fn get_user_favorites_by_uid(
+    Path(uid): Path<i64>,
+) -> Result<ApiResponse<Vec<crate::api::response::UserFavoriteFolder>>, ApiError> {
+    // 创建B站客户端
+    let client = crate::bilibili::BiliClient::new(String::new());
+    
+    // 获取指定UP主的收藏夹列表
+    match client.get_user_favorite_folders(Some(uid)).await {
+        Ok(folders) => {
+            let response_folders: Vec<crate::api::response::UserFavoriteFolder> = folders
+                .into_iter()
+                .map(|f| crate::api::response::UserFavoriteFolder {
+                    id: f.id,
+                    fid: f.fid,
+                    title: f.title,
+                    media_count: f.media_count,
+                })
+                .collect();
+            
+            Ok(ApiResponse::ok(response_folders))
+        }
+        Err(e) => {
+            warn!("获取UP主 {} 的收藏夹失败: {}", uid, e);
+            Err(crate::api::error::InnerApiError::BadRequest(format!(
+                "获取UP主收藏夹失败: 可能是UP主不存在或收藏夹不公开。错误详情: {}", e
+            )).into())
+        }
+    }
 }

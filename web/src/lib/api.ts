@@ -31,7 +31,8 @@ import type {
 	InitialSetupCheckResponse,
 	TaskControlStatusResponse,
 	TaskControlResponse,
-	VideoPlayInfoResponse
+	VideoPlayInfoResponse,
+	ValidateFavoriteResponse
 } from './types';
 import { ErrorType } from './types';
 
@@ -351,6 +352,22 @@ class ApiClient {
 	}
 
 	/**
+	 * 验证收藏夹ID并获取收藏夹信息
+	 * @param fid 收藏夹ID
+	 */
+	async validateFavorite(fid: string): Promise<ApiResponse<ValidateFavoriteResponse>> {
+		return this.get<ValidateFavoriteResponse>(`/favorite/${fid}/validate`);
+	}
+
+	/**
+	 * 获取指定UP主的收藏夹列表
+	 * @param uid UP主ID
+	 */
+	async getUserFavoritesByUid(uid: string): Promise<ApiResponse<UserFavoriteFolder[]>> {
+		return this.get<UserFavoriteFolder[]>(`/user/${uid}/favorites`);
+	}
+
+	/**
 	 * 获取UP主的合集和系列列表
 	 * @param mid UP主ID
 	 * @param page 页码
@@ -559,6 +576,16 @@ export const api = {
 	 * 获取用户收藏夹列表
 	 */
 	getUserFavorites: () => apiClient.getUserFavorites(),
+
+	/**
+	 * 验证收藏夹ID
+	 */
+	validateFavorite: (fid: string) => apiClient.validateFavorite(fid),
+
+	/**
+	 * 获取指定UP主的收藏夹列表
+	 */
+	getUserFavoritesByUid: (uid: string) => apiClient.getUserFavoritesByUid(uid),
 
 	/**
 	 * 获取UP主的合集和系列列表

@@ -595,3 +595,11 @@ export interface SubtitleStreamInfo {
 	language_doc: string;
 	url: string;
 }
+
+// 验证收藏夹响应类型
+export interface ValidateFavoriteResponse {
+	valid: boolean;
+	fid: number;
+	title: string;
+	message: string;
+}

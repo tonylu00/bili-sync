@@ -518,3 +518,12 @@ pub struct SubtitleStreamInfo {
     pub language_doc: String,
     pub url: String,
 }
+
+/// 验证收藏夹响应
+#[derive(Serialize, ToSchema)]
+pub struct ValidateFavoriteResponse {
+    pub valid: bool,
+    pub fid: i64,
+    pub title: String,
+    pub message: String,
+}
