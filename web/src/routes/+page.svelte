@@ -344,8 +344,11 @@
 			let result;
 			
 			if (resetOptions.all) {
-				// 重置所有失败任务
-				result = await api.resetAllVideos();
+				// 重置所有失败任务，根据当前过滤器传递参数
+				const filterParams = currentFilter ? {
+					[currentFilter.type]: parseInt(currentFilter.id)
+				} : undefined;
+				result = await api.resetAllVideos(filterParams);
 			} else {
 				// 选择性重置特定任务
 				const taskIndexes = [];
@@ -362,8 +365,11 @@
 					return;
 				}
 				
-				// 调用选择性重置API
-				result = await api.resetSpecificTasks(taskIndexes);
+				// 调用选择性重置API，根据当前过滤器传递参数
+				const filterParams = currentFilter ? {
+					[currentFilter.type]: parseInt(currentFilter.id)
+				} : undefined;
+				result = await api.resetSpecificTasks(taskIndexes, filterParams);
 			}
 			
 			const data = result.data;

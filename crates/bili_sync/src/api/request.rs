@@ -194,6 +194,11 @@ pub struct UpdateVideoStatusRequest {
 #[derive(Deserialize, ToSchema)]
 pub struct ResetSpecificTasksRequest {
     pub task_indexes: Vec<usize>, // 要重置的任务索引列表 (0-4)
+    pub collection: Option<i32>,
+    pub favorite: Option<i32>,
+    pub submission: Option<i32>,
+    pub watch_later: Option<i32>,
+    pub bangumi: Option<i32>,
 }
 
 // 配置管理相关请求结构体

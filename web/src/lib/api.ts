@@ -191,9 +191,26 @@ class ApiClient {
 
 	/**
 	 * 批量重置所有视频下载状态
+	 * @param params 可选的查询参数，用于筛选特定视频源的视频
 	 */
-	async resetAllVideos(): Promise<ApiResponse<ResetAllVideosResponse>> {
-		return this.post<ResetAllVideosResponse>('/videos/reset-all');
+	async resetAllVideos(params?: {
+		collection?: number;
+		favorite?: number;
+		submission?: number;
+		bangumi?: number;
+		watch_later?: number;
+	}): Promise<ApiResponse<ResetAllVideosResponse>> {
+		const searchParams = new URLSearchParams();
+		if (params) {
+			Object.entries(params).forEach(([key, value]) => {
+				if (value !== undefined) {
+					searchParams.append(key, value.toString());
+				}
+			});
+		}
+		const query = searchParams.toString();
+		const endpoint = query ? `/videos/reset-all?${query}` : '/videos/reset-all';
+		return this.post<ResetAllVideosResponse>(endpoint);
 	}
 
 	/**
@@ -207,9 +224,23 @@ class ApiClient {
 	/**
 	 * 选择性重置特定任务
 	 * @param taskIndexes 要重置的任务索引列表
+	 * @param params 可选的查询参数，用于筛选特定视频源的视频
 	 */
-	async resetSpecificTasks(taskIndexes: number[]): Promise<ApiResponse<ResetAllVideosResponse>> {
-		return this.post<ResetAllVideosResponse>('/videos/reset-specific-tasks', { task_indexes: taskIndexes });
+	async resetSpecificTasks(
+		taskIndexes: number[], 
+		params?: {
+			collection?: number;
+			favorite?: number;
+			submission?: number;
+			bangumi?: number;
+			watch_later?: number;
+		}
+	): Promise<ApiResponse<ResetAllVideosResponse>> {
+		const requestBody = {
+			task_indexes: taskIndexes,
+			...params
+		};
+		return this.post<ResetAllVideosResponse>('/videos/reset-specific-tasks', requestBody);
 	}
 
 	/**
@@ -466,7 +497,13 @@ export const api = {
 	/**
 	 * 批量重置所有视频下载状态
 	 */
-	resetAllVideos: () => apiClient.resetAllVideos(),
+	resetAllVideos: (params?: {
+		collection?: number;
+		favorite?: number;
+		submission?: number;
+		bangumi?: number;
+		watch_later?: number;
+	}) => apiClient.resetAllVideos(params),
 
 	/**
 	 * 删除视频（软删除）
@@ -476,7 +513,16 @@ export const api = {
 	/**
 	 * 选择性重置特定任务
 	 */
-	resetSpecificTasks: (taskIndexes: number[]) => apiClient.resetSpecificTasks(taskIndexes),
+	resetSpecificTasks: (
+		taskIndexes: number[], 
+		params?: {
+			collection?: number;
+			favorite?: number;
+			submission?: number;
+			bangumi?: number;
+			watch_later?: number;
+		}
+	) => apiClient.resetSpecificTasks(taskIndexes, params),
 
 	/**
 	 * 设置认证 token

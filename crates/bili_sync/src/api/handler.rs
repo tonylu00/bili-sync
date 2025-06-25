@@ -8,7 +8,7 @@ use bili_sync_entity::*;
 use bili_sync_migration::Expr;
 use chrono::Utc;
 use sea_orm::{
-    ColumnTrait, DatabaseConnection, EntityTrait, PaginatorTrait, QueryFilter, QueryOrder, QuerySelect, Set,
+    ColumnTrait, Condition, DatabaseConnection, EntityTrait, PaginatorTrait, QueryFilter, QueryOrder, QuerySelect, Set,
     TransactionTrait, Unchanged,
 };
 use serde::{Deserialize, Serialize};
@@ -428,18 +428,52 @@ pub async fn reset_video(
 #[utoipa::path(
     post,
     path = "/api/videos/reset-all",
+    params(
+        ("collection" = Option<i32>, Query, description = "合集ID"),
+        ("favorite" = Option<i32>, Query, description = "收藏夹ID"),
+        ("submission" = Option<i32>, Query, description = "UP主投稿ID"),
+        ("bangumi" = Option<i32>, Query, description = "番剧ID"),
+        ("watch_later" = Option<i32>, Query, description = "稍后观看ID"),
+    ),
     responses(
         (status = 200, body = ApiResponse<ResetAllVideosResponse>),
     )
 )]
 pub async fn reset_all_videos(
     Extension(db): Extension<Arc<DatabaseConnection>>,
+    Query(params): Query<crate::api::request::VideosRequest>,
 ) -> Result<ApiResponse<ResetAllVideosResponse>, ApiError> {
     use std::collections::HashSet;
 
-    // 先查询所有视频和页面数据
+    // 构建查询条件，与get_videos保持一致
+    let mut video_query = video::Entity::find();
+
+    // 根据配置决定是否过滤已删除的视频
+    let scan_deleted = crate::config::with_config(|bundle| bundle.config.scan_deleted_videos);
+    if !scan_deleted {
+        video_query = video_query.filter(video::Column::Deleted.eq(0));
+    }
+
+    // 直接检查是否存在bangumi参数，单独处理
+    if let Some(id) = params.bangumi {
+        video_query = video_query.filter(video::Column::SourceId.eq(id).and(video::Column::SourceType.eq(1)));
+    } else {
+        // 处理其他常规类型
+        for (field, column) in [
+            (params.collection, video::Column::CollectionId),
+            (params.favorite, video::Column::FavoriteId),
+            (params.submission, video::Column::SubmissionId),
+            (params.watch_later, video::Column::WatchLaterId),
+        ] {
+            if let Some(id) = field {
+                video_query = video_query.filter(column.eq(id));
+            }
+        }
+    }
+
+    // 先查询符合条件的视频和相关页面数据
     let (all_videos, all_pages) = tokio::try_join!(
-        video::Entity::find()
+        video_query
             .select_only()
             .columns([
                 video::Column::Id,
@@ -453,6 +487,35 @@ pub async fn reset_all_videos(
             .into_tuple::<(i32, String, String, String, i32, u32, String)>()
             .all(db.as_ref()),
         page::Entity::find()
+            .inner_join(video::Entity)
+            .filter({
+                let mut page_query_filter = Condition::all();
+
+                // 根据配置决定是否过滤已删除的视频
+                if !scan_deleted {
+                    page_query_filter = page_query_filter.add(video::Column::Deleted.eq(0));
+                }
+
+                // 直接检查是否存在bangumi参数，单独处理
+                if let Some(id) = params.bangumi {
+                    page_query_filter =
+                        page_query_filter.add(video::Column::SourceId.eq(id).and(video::Column::SourceType.eq(1)));
+                } else {
+                    // 处理其他常规类型
+                    for (field, column) in [
+                        (params.collection, video::Column::CollectionId),
+                        (params.favorite, video::Column::FavoriteId),
+                        (params.submission, video::Column::SubmissionId),
+                        (params.watch_later, video::Column::WatchLaterId),
+                    ] {
+                        if let Some(id) = field {
+                            page_query_filter = page_query_filter.add(column.eq(id));
+                        }
+                    }
+                }
+
+                page_query_filter
+            })
             .select_only()
             .columns([
                 page::Column::Id,
@@ -575,9 +638,35 @@ pub async fn reset_specific_tasks(
         }
     }
 
-    // 先查询所有视频和页面数据
+    // 构建查询条件，与get_videos保持一致
+    let mut video_query = video::Entity::find();
+
+    // 根据配置决定是否过滤已删除的视频
+    let scan_deleted = crate::config::with_config(|bundle| bundle.config.scan_deleted_videos);
+    if !scan_deleted {
+        video_query = video_query.filter(video::Column::Deleted.eq(0));
+    }
+
+    // 直接检查是否存在bangumi参数，单独处理
+    if let Some(id) = request.bangumi {
+        video_query = video_query.filter(video::Column::SourceId.eq(id).and(video::Column::SourceType.eq(1)));
+    } else {
+        // 处理其他常规类型
+        for (field, column) in [
+            (request.collection, video::Column::CollectionId),
+            (request.favorite, video::Column::FavoriteId),
+            (request.submission, video::Column::SubmissionId),
+            (request.watch_later, video::Column::WatchLaterId),
+        ] {
+            if let Some(id) = field {
+                video_query = video_query.filter(column.eq(id));
+            }
+        }
+    }
+
+    // 先查询符合条件的视频和相关页面数据
     let (all_videos, all_pages) = tokio::try_join!(
-        video::Entity::find()
+        video_query
             .select_only()
             .columns([
                 video::Column::Id,
@@ -591,6 +680,35 @@ pub async fn reset_specific_tasks(
             .into_tuple::<(i32, String, String, String, i32, u32, String)>()
             .all(db.as_ref()),
         page::Entity::find()
+            .inner_join(video::Entity)
+            .filter({
+                let mut page_query_filter = Condition::all();
+
+                // 根据配置决定是否过滤已删除的视频
+                if !scan_deleted {
+                    page_query_filter = page_query_filter.add(video::Column::Deleted.eq(0));
+                }
+
+                // 直接检查是否存在bangumi参数，单独处理
+                if let Some(id) = request.bangumi {
+                    page_query_filter =
+                        page_query_filter.add(video::Column::SourceId.eq(id).and(video::Column::SourceType.eq(1)));
+                } else {
+                    // 处理其他常规类型
+                    for (field, column) in [
+                        (request.collection, video::Column::CollectionId),
+                        (request.favorite, video::Column::FavoriteId),
+                        (request.submission, video::Column::SubmissionId),
+                        (request.watch_later, video::Column::WatchLaterId),
+                    ] {
+                        if let Some(id) = field {
+                            page_query_filter = page_query_filter.add(column.eq(id));
+                        }
+                    }
+                }
+
+                page_query_filter
+            })
             .select_only()
             .columns([
                 page::Column::Id,
