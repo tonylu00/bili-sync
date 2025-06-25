@@ -7,13 +7,18 @@ pub struct Migration;
 impl MigrationTrait for Migration {
     async fn up(&self, manager: &SchemaManager) -> Result<(), DbErr> {
         // 为各种视频源表添加 scan_deleted_videos 字段
-        
+
         // 合集表
         manager
             .alter_table(
                 Table::alter()
                     .table(Collection::Table)
-                    .add_column(ColumnDef::new(Collection::ScanDeletedVideos).boolean().not_null().default(false))
+                    .add_column(
+                        ColumnDef::new(Collection::ScanDeletedVideos)
+                            .boolean()
+                            .not_null()
+                            .default(false),
+                    )
                     .to_owned(),
             )
             .await?;
@@ -23,7 +28,12 @@ impl MigrationTrait for Migration {
             .alter_table(
                 Table::alter()
                     .table(Favorite::Table)
-                    .add_column(ColumnDef::new(Favorite::ScanDeletedVideos).boolean().not_null().default(false))
+                    .add_column(
+                        ColumnDef::new(Favorite::ScanDeletedVideos)
+                            .boolean()
+                            .not_null()
+                            .default(false),
+                    )
                     .to_owned(),
             )
             .await?;
@@ -33,7 +43,12 @@ impl MigrationTrait for Migration {
             .alter_table(
                 Table::alter()
                     .table(Submission::Table)
-                    .add_column(ColumnDef::new(Submission::ScanDeletedVideos).boolean().not_null().default(false))
+                    .add_column(
+                        ColumnDef::new(Submission::ScanDeletedVideos)
+                            .boolean()
+                            .not_null()
+                            .default(false),
+                    )
                     .to_owned(),
             )
             .await?;
@@ -43,7 +58,12 @@ impl MigrationTrait for Migration {
             .alter_table(
                 Table::alter()
                     .table(WatchLater::Table)
-                    .add_column(ColumnDef::new(WatchLater::ScanDeletedVideos).boolean().not_null().default(false))
+                    .add_column(
+                        ColumnDef::new(WatchLater::ScanDeletedVideos)
+                            .boolean()
+                            .not_null()
+                            .default(false),
+                    )
                     .to_owned(),
             )
             .await?;
@@ -53,7 +73,12 @@ impl MigrationTrait for Migration {
             .alter_table(
                 Table::alter()
                     .table(VideoSource::Table)
-                    .add_column(ColumnDef::new(VideoSource::ScanDeletedVideos).boolean().not_null().default(false))
+                    .add_column(
+                        ColumnDef::new(VideoSource::ScanDeletedVideos)
+                            .boolean()
+                            .not_null()
+                            .default(false),
+                    )
                     .to_owned(),
             )
             .await?;
