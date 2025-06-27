@@ -132,22 +132,77 @@
 		}
 
 		searchLoading = true;
+		searchResults = [];
+		searchTotalResults = 0;
 
 		try {
-			const result = await api.searchBilibili({
+			// 针对番剧搜索，需要更多页面因为每页实际只有25+25=50个结果但分配可能不均
+			const pageSize = searchType === 'media_bangumi' ? 100 : 50;
+			
+			// 第一次请求获取总数
+			const firstResult = await api.searchBilibili({
 				keyword: searchKeyword,
 				search_type: searchType,
 				page: 1,
-				page_size: 50 // 增加页面大小，一次显示更多结果
+				page_size: pageSize
 			});
 
-			if (result.data.success) {
-				searchResults = result.data.results;
-				searchTotalResults = result.data.total;
-				showSearchResults = true;
-			} else {
+			if (!firstResult.data.success) {
 				toast.error('搜索失败');
+				return;
 			}
+
+			const totalResults = firstResult.data.total;
+			searchTotalResults = totalResults;
+			let allResults = [...firstResult.data.results];
+			
+			// 如果总数超过pageSize，继续获取剩余页面
+			if (totalResults > pageSize) {
+				const totalPages = Math.ceil(totalResults / pageSize);
+				const remainingPages = Array.from({ length: totalPages - 1 }, (_, i) => i + 2);
+
+				// 串行获取剩余页面，避免并发请求过多导致失败
+				for (const page of remainingPages) {
+					try {
+						const pageResult = await api.searchBilibili({
+							keyword: searchKeyword,
+							search_type: searchType,
+							page,
+							page_size: pageSize
+						});
+
+						if (pageResult.data.success && pageResult.data.results) {
+							allResults.push(...pageResult.data.results);
+						}
+						
+						// 添加小延迟避免请求过于频繁
+						await new Promise(resolve => setTimeout(resolve, 100));
+					} catch (error) {
+						// 静默处理失败，继续获取下一页
+					}
+				}
+			}
+
+			// 去重处理（基于season_id, bvid, mid等唯一标识）
+			const uniqueResults = allResults.filter((result, index, arr) => {
+				const id = result.season_id || result.bvid || result.mid || `${result.title}_${index}`;
+				return arr.findIndex(r => {
+					const rid = r.season_id || r.bvid || r.mid || `${r.title}_${arr.indexOf(r)}`;
+					return rid === id;
+				}) === index;
+			});
+
+			searchResults = uniqueResults;
+			showSearchResults = true;
+			
+			// 优化提示信息
+			const successRate = ((uniqueResults.length / totalResults) * 100).toFixed(1);
+			if (uniqueResults.length < totalResults) {
+				toast.success(`搜索完成，获取到 ${uniqueResults.length}/${totalResults} 个结果 (${successRate}%)`);
+			} else {
+				toast.success(`搜索完成，共获取到 ${uniqueResults.length} 个结果`);
+			}
+
 		} catch (error: any) {
 			console.error('搜索失败:', error);
 			toast.error('搜索失败', { description: error.message });
