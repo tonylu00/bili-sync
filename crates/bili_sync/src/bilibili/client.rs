@@ -463,7 +463,15 @@ impl BiliClient {
             .await?
             .validate()?;
 
-        let folders: Vec<crate::api::UserFavoriteFolder> = serde_json::from_value(response["data"]["list"].clone())?;
+        // 检查list字段是否存在且不为null
+        let list_value = &response["data"]["list"];
+        if list_value.is_null() {
+            // 如果list为null，返回空列表
+            return Ok(Vec::new());
+        }
+        
+        let folders: Vec<crate::api::UserFavoriteFolder> = serde_json::from_value(list_value.clone())
+            .context("解析收藏夹列表失败")?;
 
         Ok(folders)
     }
@@ -480,48 +488,105 @@ impl BiliClient {
         // 同时获取合集(seasons)和系列(series)
         let mut all_collections = Vec::new();
 
-        // 获取合集（seasons）
+        // 获取合集（seasons）- 添加重试机制
         let seasons_url = "https://api.bilibili.com/x/polymer/web-space/seasons_series_list";
-        let seasons_response = self
-            .request(Method::GET, seasons_url)
-            .await
-            .query(&[
-                ("mid", &mid.to_string()),
-                ("page_num", &page.to_string()),
-                ("page_size", &page_size.to_string()),
-            ])
-            .send()
-            .await?
-            .error_for_status()?
-            .json::<Value>()
-            .await?
-            .validate()?;
+        
+        let mut retry_count = 0;
+        let max_retries = 2;
+        let seasons_response = loop {
+            match self
+                .request(Method::GET, seasons_url)
+                .await
+                .query(&[
+                    ("mid", &mid.to_string()),
+                    ("page_num", &page.to_string()),
+                    ("page_size", &page_size.to_string()),
+                ])
+                .send()
+                .await
+            {
+                Ok(response) => {
+                    match response.error_for_status() {
+                        Ok(response) => {
+                            match response.json::<Value>().await {
+                                Ok(json) => {
+                                    match json.validate() {
+                                        Ok(validated) => break validated,
+                                        Err(e) => {
+                                            warn!("UP主 {} 合集响应验证失败: {}", mid, e);
+                                            if retry_count >= max_retries {
+                                                return Err(e.context("合集响应验证失败"));
+                                            }
+                                        }
+                                    }
+                                }
+                                Err(e) => {
+                                    warn!("UP主 {} 合集JSON解析失败: {}", mid, e);
+                                    if retry_count >= max_retries {
+                                        return Err(anyhow!("解析合集响应JSON失败: {}", e));
+                                    }
+                                }
+                            }
+                        }
+                        Err(e) => {
+                            warn!("UP主 {} 合集请求状态错误: {}", mid, e);
+                            if retry_count >= max_retries {
+                                return Err(anyhow!("合集请求返回错误状态: {}", e));
+                            }
+                        }
+                    }
+                }
+                Err(e) => {
+                    warn!("UP主 {} 合集请求失败 (重试 {}/{}): {}", mid, retry_count + 1, max_retries + 1, e);
+                    if retry_count >= max_retries {
+                        return Err(anyhow!("发送合集请求失败: {}", e));
+                    }
+                }
+            }
+            
+            retry_count += 1;
+            // 重试前等待
+            tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
+        };
 
-        // 解析合集数据
+        // 检查响应是否包含items_lists字段
+        if seasons_response["data"]["items_lists"].is_null() {
+            warn!("UP主 {} 的合集响应中 items_lists 为 null，可能需要登录权限", mid);
+            return Ok(crate::api::response::UserCollectionsResponse {
+                success: true,
+                collections: Vec::new(),
+                total: 0,
+                page,
+                page_size,
+            });
+        }
+
+        // 解析合集数据 - 处理null情况
         if let Some(seasons_list) = seasons_response["data"]["items_lists"]["seasons_list"].as_array() {
             for season in seasons_list {
                 if let Some(season_obj) = season.as_object() {
                     // 从不同的可能位置尝试获取封面
-                    let cover = season_obj["meta"]["cover"]
-                        .as_str()
-                        .or_else(|| season_obj["cover"].as_str())
-                        .or_else(|| season_obj["meta"]["square_cover"].as_str())
-                        .or_else(|| season_obj["meta"]["horizontal_cover"].as_str())
+                    let cover = season_obj.get("meta")
+                        .and_then(|meta| meta.get("cover"))
+                        .and_then(|v| v.as_str())
+                        .or_else(|| season_obj.get("cover").and_then(|v| v.as_str()))
+                        .or_else(|| season_obj.get("meta").and_then(|meta| meta.get("square_cover")).and_then(|v| v.as_str()))
+                        .or_else(|| season_obj.get("meta").and_then(|meta| meta.get("horizontal_cover")).and_then(|v| v.as_str()))
                         .unwrap_or("")
                         .to_string();
 
                     all_collections.push(crate::api::response::UserCollection {
                         collection_type: "season".to_string(),
-                        sid: season_obj["meta"]["season_id"]
-                            .as_i64()
-                            .or_else(|| season_obj["meta"]["season_id"].as_str().and_then(|s| s.parse().ok()))
+                        sid: season_obj.get("meta")
+                            .and_then(|meta| meta.get("season_id"))
+                            .and_then(|v| v.as_i64().or_else(|| v.as_str().and_then(|s| s.parse().ok())))
                             .unwrap_or(0)
                             .to_string(),
-                        name: season_obj["meta"]["name"].as_str().unwrap_or("").to_string(),
+                        name: season_obj.get("meta").and_then(|meta| meta.get("name")).and_then(|v| v.as_str()).unwrap_or("").to_string(),
                         cover,
-                        description: season_obj["meta"]["description"].as_str().unwrap_or("").to_string(),
-                        total: season_obj["meta"]["total"].as_i64().unwrap_or(0),
-                        ptime: season_obj["meta"]["ptime"].as_i64(),
+                        description: season_obj.get("meta").and_then(|meta| meta.get("description")).and_then(|v| v.as_str()).unwrap_or("").to_string(),
+                        total: season_obj.get("meta").and_then(|meta| meta.get("total")).and_then(|v| v.as_i64()).unwrap_or(0),
+                        ptime: season_obj.get("meta").and_then(|meta| meta.get("ptime")).and_then(|v| v.as_i64()),
                         mid,
                     });
                 }
@@ -533,26 +598,27 @@ impl BiliClient {
             for series in series_list {
                 if let Some(series_obj) = series.as_object() {
                     // 从不同的可能位置尝试获取封面
-                    let cover = series_obj["meta"]["cover"]
-                        .as_str()
-                        .or_else(|| series_obj["cover"].as_str())
-                        .or_else(|| series_obj["meta"]["square_cover"].as_str())
-                        .or_else(|| series_obj["meta"]["horizontal_cover"].as_str())
+                    let cover = series_obj.get("meta")
+                        .and_then(|meta| meta.get("cover"))
+                        .and_then(|v| v.as_str())
+                        .or_else(|| series_obj.get("cover").and_then(|v| v.as_str()))
+                        .or_else(|| series_obj.get("meta").and_then(|meta| meta.get("square_cover")).and_then(|v| v.as_str()))
+                        .or_else(|| series_obj.get("meta").and_then(|meta| meta.get("horizontal_cover")).and_then(|v| v.as_str()))
                         .unwrap_or("")
                         .to_string();
 
                     all_collections.push(crate::api::response::UserCollection {
                         collection_type: "series".to_string(),
-                        sid: series_obj["meta"]["series_id"]
-                            .as_i64()
-                            .or_else(|| series_obj["meta"]["series_id"].as_str().and_then(|s| s.parse().ok()))
+                        sid: series_obj.get("meta")
+                            .and_then(|meta| meta.get("series_id"))
+                            .and_then(|v| v.as_i64().or_else(|| v.as_str().and_then(|s| s.parse().ok())))
                             .unwrap_or(0)
                             .to_string(),
-                        name: series_obj["meta"]["name"].as_str().unwrap_or("").to_string(),
+                        name: series_obj.get("meta").and_then(|meta| meta.get("name")).and_then(|v| v.as_str()).unwrap_or("").to_string(),
                         cover,
-                        description: series_obj["meta"]["description"].as_str().unwrap_or("").to_string(),
-                        total: series_obj["meta"]["total"].as_i64().unwrap_or(0),
-                        ptime: series_obj["meta"]["mtime"].as_i64(),
+                        description: series_obj.get("meta").and_then(|meta| meta.get("description")).and_then(|v| v.as_str()).unwrap_or("").to_string(),
+                        total: series_obj.get("meta").and_then(|meta| meta.get("total")).and_then(|v| v.as_i64()).unwrap_or(0),
+                        ptime: series_obj.get("meta").and_then(|meta| meta.get("mtime")).and_then(|v| v.as_i64()),
                         mid,
                     });
                 }

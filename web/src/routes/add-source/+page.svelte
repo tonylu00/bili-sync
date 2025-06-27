@@ -580,7 +580,22 @@
 			}
 		} catch (error: any) {
 			console.error('获取合集列表失败:', error);
-			toast.error('获取合集列表失败', { description: error.message });
+			
+			// 根据错误类型提供更友好的提示
+			let errorMessage = '获取合集列表失败';
+			let errorDescription = '';
+			
+			if (error.message === 'Failed to fetch' || error.message.includes('ERR_EMPTY_RESPONSE')) {
+				errorDescription = '该UP主的合集可能需要登录访问，或暂时无法获取';
+			} else if (error.message.includes('403') || error.message.includes('Forbidden')) {
+				errorDescription = '该UP主的合集为私有，无法访问';
+			} else if (error.message.includes('404') || error.message.includes('Not Found')) {
+				errorDescription = 'UP主不存在或合集已被删除';
+			} else {
+				errorDescription = '网络错误或服务暂时不可用，请稍后重试';
+			}
+			
+			toast.error(errorMessage, { description: errorDescription });
 			userCollections = [];
 		} finally {
 			loadingCollections = false;
