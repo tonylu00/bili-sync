@@ -17,6 +17,7 @@ mod m20250613_000002_add_enabled_field;
 mod m20250616_000001_create_config_tables;
 mod m20250624_000001_add_deleted_field;
 mod m20250624_000002_add_scan_deleted_videos_field;
+mod m20241228_000001_add_video_query_indexes;
 
 pub struct Migrator;
 
@@ -41,6 +42,7 @@ impl MigratorTrait for Migrator {
             Box::new(m20250616_000001_create_config_tables::Migration),
             Box::new(m20250624_000001_add_deleted_field::Migration),
             Box::new(m20250624_000002_add_scan_deleted_videos_field::Migration),
+            Box::new(m20241228_000001_add_video_query_indexes::Migration),
         ]
     }
 }
