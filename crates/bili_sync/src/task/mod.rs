@@ -5,7 +5,7 @@ pub use http_server::http_server;
 pub use video_downloader::video_downloader;
 
 use anyhow::Result;
-use sea_orm::DatabaseConnection;
+use sea_orm::{DatabaseConnection, Set, ActiveModelTrait, EntityTrait, QueryFilter, ColumnTrait, QueryOrder};
 use serde::{Deserialize, Serialize};
 use std::collections::VecDeque;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -13,6 +13,7 @@ use std::sync::Arc;
 use tokio::sync::Mutex;
 use tokio_util::sync::CancellationToken;
 use tracing::{debug, error, info};
+use bili_sync_entity::task_queue::{self, Entity as TaskQueueEntity, TaskType, TaskStatus};
 
 /// 删除视频源任务结构体
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -117,7 +118,7 @@ pub struct ReloadConfigTask {
 
 /// 删除任务队列管理器
 pub struct DeleteTaskQueue {
-    /// 待处理的删除任务队列
+    /// 待处理的删除任务队列（内存缓存）
     queue: Mutex<VecDeque<DeleteVideoSourceTask>>,
     /// 是否正在处理删除任务
     is_processing: AtomicBool,
@@ -131,22 +132,84 @@ impl DeleteTaskQueue {
         }
     }
 
-    /// 添加删除任务到队列
-    pub async fn enqueue_task(&self, task: DeleteVideoSourceTask) {
+    /// 添加删除任务到队列（同时保存到数据库）
+    pub async fn enqueue_task(&self, task: DeleteVideoSourceTask, connection: &DatabaseConnection) -> Result<()> {
+        // 保存到数据库
+        let task_data = serde_json::to_string(&task)?;
+        let active_model = task_queue::ActiveModel {
+            task_type: Set(TaskType::DeleteVideoSource),
+            task_data: Set(task_data),
+            status: Set(TaskStatus::Pending),
+            retry_count: Set(0),
+            created_at: Set(chrono::Utc::now().naive_utc()),
+            updated_at: Set(chrono::Utc::now().naive_utc()),
+            ..Default::default()
+        };
+        
+        let result = active_model.insert(connection).await?;
+        
+        // 添加到内存队列
         let mut queue = self.queue.lock().await;
         info!(
-            "删除任务已加入队列: {} ID={}, 队列长度: {}",
+            "删除任务已加入队列: {} ID={}, 队列长度: {} (数据库ID: {})",
             task.source_type,
             task.source_id,
-            queue.len() + 1
+            queue.len() + 1,
+            result.id
         );
         queue.push_back(task);
+        
+        Ok(())
     }
 
     /// 从队列中取出下一个任务
     pub async fn dequeue_task(&self) -> Option<DeleteVideoSourceTask> {
         let mut queue = self.queue.lock().await;
         queue.pop_front()
+    }
+
+    /// 标记任务为已完成（更新数据库状态）
+    pub async fn mark_task_completed(&self, task: &DeleteVideoSourceTask, connection: &DatabaseConnection) -> Result<()> {
+        let task_data = serde_json::to_string(task)?;
+        
+        // 查找并更新数据库中的任务状态
+        if let Some(db_task) = TaskQueueEntity::find()
+            .filter(task_queue::Column::TaskType.eq(TaskType::DeleteVideoSource))
+            .filter(task_queue::Column::TaskData.eq(&task_data))
+            .filter(task_queue::Column::Status.eq(TaskStatus::Pending))
+            .one(connection)
+            .await?
+        {
+            let mut active_model: task_queue::ActiveModel = db_task.into();
+            active_model.status = Set(TaskStatus::Completed);
+            active_model.updated_at = Set(chrono::Utc::now().naive_utc());
+            active_model.update(connection).await?;
+        }
+        
+        Ok(())
+    }
+
+    /// 标记任务为失败（更新数据库状态）
+    pub async fn mark_task_failed(&self, task: &DeleteVideoSourceTask, connection: &DatabaseConnection) -> Result<()> {
+        let task_data = serde_json::to_string(task)?;
+        
+        // 查找并更新数据库中的任务状态
+        if let Some(db_task) = TaskQueueEntity::find()
+            .filter(task_queue::Column::TaskType.eq(TaskType::DeleteVideoSource))
+            .filter(task_queue::Column::TaskData.eq(&task_data))
+            .filter(task_queue::Column::Status.eq(TaskStatus::Pending))
+            .one(connection)
+            .await?
+        {
+            let retry_count = db_task.retry_count;
+            let mut active_model: task_queue::ActiveModel = db_task.into();
+            active_model.status = Set(TaskStatus::Failed);
+            active_model.retry_count = Set(retry_count + 1);
+            active_model.updated_at = Set(chrono::Utc::now().naive_utc());
+            active_model.update(connection).await?;
+        }
+        
+        Ok(())
     }
 
     /// 获取队列长度
@@ -201,12 +264,22 @@ impl DeleteTaskQueue {
                 Ok(response) => {
                     info!("删除任务执行成功: {}", response.message);
                     processed_count += 1;
+                    
+                    // 标记数据库任务为已完成
+                    if let Err(e) = self.mark_task_completed(&task, &db).await {
+                        error!("更新任务完成状态失败: {:#}", e);
+                    }
                 }
                 Err(e) => {
                     error!(
                         "删除任务执行失败: {} ID={}, 错误: {:#?}",
                         task.source_type, task.source_id, e
                     );
+                    
+                    // 标记数据库任务为失败
+                    if let Err(e) = self.mark_task_failed(&task, &db).await {
+                        error!("更新任务失败状态失败: {:#}", e);
+                    }
                 }
             }
 
@@ -242,21 +315,83 @@ impl VideoDeleteTaskQueue {
         }
     }
 
-    /// 添加视频删除任务到队列
-    pub async fn enqueue_task(&self, task: DeleteVideoTask) {
+    /// 添加视频删除任务到队列（同时保存到数据库）
+    pub async fn enqueue_task(&self, task: DeleteVideoTask, connection: &DatabaseConnection) -> Result<()> {
+        // 保存到数据库
+        let task_data = serde_json::to_string(&task)?;
+        let active_model = task_queue::ActiveModel {
+            task_type: Set(TaskType::DeleteVideo),
+            task_data: Set(task_data),
+            status: Set(TaskStatus::Pending),
+            retry_count: Set(0),
+            created_at: Set(chrono::Utc::now().naive_utc()),
+            updated_at: Set(chrono::Utc::now().naive_utc()),
+            ..Default::default()
+        };
+        
+        let result = active_model.insert(connection).await?;
+        
+        // 添加到内存队列
         let mut queue = self.queue.lock().await;
         info!(
-            "视频删除任务已加入队列: 视频ID={}, 队列长度: {}",
+            "视频删除任务已加入队列: 视频ID={}, 队列长度: {} (数据库ID: {})",
             task.video_id,
-            queue.len() + 1
+            queue.len() + 1,
+            result.id
         );
         queue.push_back(task);
+        
+        Ok(())
     }
 
     /// 从队列中取出下一个任务
     pub async fn dequeue_task(&self) -> Option<DeleteVideoTask> {
         let mut queue = self.queue.lock().await;
         queue.pop_front()
+    }
+
+    /// 标记任务为已完成（更新数据库状态）
+    pub async fn mark_task_completed(&self, task: &DeleteVideoTask, connection: &DatabaseConnection) -> Result<()> {
+        let task_data = serde_json::to_string(task)?;
+        
+        // 查找并更新数据库中的任务状态
+        if let Some(db_task) = TaskQueueEntity::find()
+            .filter(task_queue::Column::TaskType.eq(TaskType::DeleteVideo))
+            .filter(task_queue::Column::TaskData.eq(&task_data))
+            .filter(task_queue::Column::Status.eq(TaskStatus::Pending))
+            .one(connection)
+            .await?
+        {
+            let mut active_model: task_queue::ActiveModel = db_task.into();
+            active_model.status = Set(TaskStatus::Completed);
+            active_model.updated_at = Set(chrono::Utc::now().naive_utc());
+            active_model.update(connection).await?;
+        }
+        
+        Ok(())
+    }
+
+    /// 标记任务为失败（更新数据库状态）
+    pub async fn mark_task_failed(&self, task: &DeleteVideoTask, connection: &DatabaseConnection) -> Result<()> {
+        let task_data = serde_json::to_string(task)?;
+        
+        // 查找并更新数据库中的任务状态
+        if let Some(db_task) = TaskQueueEntity::find()
+            .filter(task_queue::Column::TaskType.eq(TaskType::DeleteVideo))
+            .filter(task_queue::Column::TaskData.eq(&task_data))
+            .filter(task_queue::Column::Status.eq(TaskStatus::Pending))
+            .one(connection)
+            .await?
+        {
+            let retry_count = db_task.retry_count;
+            let mut active_model: task_queue::ActiveModel = db_task.into();
+            active_model.status = Set(TaskStatus::Failed);
+            active_model.retry_count = Set(retry_count + 1);
+            active_model.updated_at = Set(chrono::Utc::now().naive_utc());
+            active_model.update(connection).await?;
+        }
+        
+        Ok(())
     }
 
     /// 获取队列长度
@@ -303,9 +438,19 @@ impl VideoDeleteTaskQueue {
                 Ok(_) => {
                     info!("视频删除任务执行成功: 视频ID={}", task.video_id);
                     processed_count += 1;
+                    
+                    // 标记数据库任务为已完成
+                    if let Err(e) = self.mark_task_completed(&task, &db).await {
+                        error!("更新任务完成状态失败: {:#}", e);
+                    }
                 }
                 Err(e) => {
                     error!("视频删除任务执行失败: 视频ID={}, 错误: {:#?}", task.video_id, e);
+                    
+                    // 标记数据库任务为失败
+                    if let Err(e) = self.mark_task_failed(&task, &db).await {
+                        error!("更新任务失败状态失败: {:#}", e);
+                    }
                 }
             }
 
@@ -560,22 +705,84 @@ impl AddTaskQueue {
         }
     }
 
-    /// 添加添加任务到队列
-    pub async fn enqueue_task(&self, task: AddVideoSourceTask) {
+    /// 添加添加任务到队列（同时保存到数据库）
+    pub async fn enqueue_task(&self, task: AddVideoSourceTask, connection: &DatabaseConnection) -> Result<()> {
+        // 保存到数据库
+        let task_data = serde_json::to_string(&task)?;
+        let active_model = task_queue::ActiveModel {
+            task_type: Set(TaskType::AddVideoSource),
+            task_data: Set(task_data),
+            status: Set(TaskStatus::Pending),
+            retry_count: Set(0),
+            created_at: Set(chrono::Utc::now().naive_utc()),
+            updated_at: Set(chrono::Utc::now().naive_utc()),
+            ..Default::default()
+        };
+        
+        let result = active_model.insert(connection).await?;
+        
+        // 添加到内存队列
         let mut queue = self.queue.lock().await;
         info!(
-            "添加任务已加入队列: {} 名称={}, 队列长度: {}",
+            "添加任务已加入队列: {} 名称={}, 队列长度: {} (数据库ID: {})",
             task.source_type,
             task.name,
-            queue.len() + 1
+            queue.len() + 1,
+            result.id
         );
         queue.push_back(task);
+        
+        Ok(())
     }
 
     /// 从队列中取出下一个任务
     pub async fn dequeue_task(&self) -> Option<AddVideoSourceTask> {
         let mut queue = self.queue.lock().await;
         queue.pop_front()
+    }
+
+    /// 标记任务为已完成（更新数据库状态）
+    pub async fn mark_task_completed(&self, task: &AddVideoSourceTask, connection: &DatabaseConnection) -> Result<()> {
+        let task_data = serde_json::to_string(task)?;
+        
+        // 查找并更新数据库中的任务状态
+        if let Some(db_task) = TaskQueueEntity::find()
+            .filter(task_queue::Column::TaskType.eq(TaskType::AddVideoSource))
+            .filter(task_queue::Column::TaskData.eq(&task_data))
+            .filter(task_queue::Column::Status.eq(TaskStatus::Pending))
+            .one(connection)
+            .await?
+        {
+            let mut active_model: task_queue::ActiveModel = db_task.into();
+            active_model.status = Set(TaskStatus::Completed);
+            active_model.updated_at = Set(chrono::Utc::now().naive_utc());
+            active_model.update(connection).await?;
+        }
+        
+        Ok(())
+    }
+
+    /// 标记任务为失败（更新数据库状态）
+    pub async fn mark_task_failed(&self, task: &AddVideoSourceTask, connection: &DatabaseConnection) -> Result<()> {
+        let task_data = serde_json::to_string(task)?;
+        
+        // 查找并更新数据库中的任务状态
+        if let Some(db_task) = TaskQueueEntity::find()
+            .filter(task_queue::Column::TaskType.eq(TaskType::AddVideoSource))
+            .filter(task_queue::Column::TaskData.eq(&task_data))
+            .filter(task_queue::Column::Status.eq(TaskStatus::Pending))
+            .one(connection)
+            .await?
+        {
+            let retry_count = db_task.retry_count;
+            let mut active_model: task_queue::ActiveModel = db_task.into();
+            active_model.status = Set(TaskStatus::Failed);
+            active_model.retry_count = Set(retry_count + 1);
+            active_model.updated_at = Set(chrono::Utc::now().naive_utc());
+            active_model.update(connection).await?;
+        }
+        
+        Ok(())
     }
 
     /// 获取队列长度
@@ -634,12 +841,22 @@ impl AddTaskQueue {
                 Ok(response) => {
                     info!("添加任务执行成功: {}", response.message);
                     processed_count += 1;
+                    
+                    // 标记数据库任务为已完成
+                    if let Err(e) = self.mark_task_completed(&task, &db).await {
+                        error!("更新任务完成状态失败: {:#}", e);
+                    }
                 }
                 Err(e) => {
                     error!(
                         "添加任务执行失败: {} 名称={}, 错误: {:#?}",
                         task.source_type, task.name, e
                     );
+                    
+                    // 标记数据库任务为失败
+                    if let Err(e) = self.mark_task_failed(&task, &db).await {
+                        error!("更新任务失败状态失败: {:#}", e);
+                    }
                 }
             }
 
@@ -678,18 +895,52 @@ impl ConfigTaskQueue {
         }
     }
 
-    /// 添加更新配置任务到队列
-    pub async fn enqueue_update_task(&self, task: UpdateConfigTask) {
+    /// 添加更新配置任务到队列（同时保存到数据库）
+    pub async fn enqueue_update_task(&self, task: UpdateConfigTask, connection: &DatabaseConnection) -> Result<()> {
+        // 保存到数据库
+        let task_data = serde_json::to_string(&task)?;
+        let active_model = task_queue::ActiveModel {
+            task_type: Set(TaskType::UpdateConfig),
+            task_data: Set(task_data),
+            status: Set(TaskStatus::Pending),
+            retry_count: Set(0),
+            created_at: Set(chrono::Utc::now().naive_utc()),
+            updated_at: Set(chrono::Utc::now().naive_utc()),
+            ..Default::default()
+        };
+        
+        let result = active_model.insert(connection).await?;
+        
+        // 添加到内存队列
         let mut queue = self.update_queue.lock().await;
-        info!("更新配置任务已加入队列, 队列长度: {}", queue.len() + 1);
+        info!("更新配置任务已加入队列, 队列长度: {} (数据库ID: {})", queue.len() + 1, result.id);
         queue.push_back(task);
+        
+        Ok(())
     }
 
-    /// 添加重载配置任务到队列
-    pub async fn enqueue_reload_task(&self, task: ReloadConfigTask) {
+    /// 添加重载配置任务到队列（同时保存到数据库）
+    pub async fn enqueue_reload_task(&self, task: ReloadConfigTask, connection: &DatabaseConnection) -> Result<()> {
+        // 保存到数据库
+        let task_data = serde_json::to_string(&task)?;
+        let active_model = task_queue::ActiveModel {
+            task_type: Set(TaskType::ReloadConfig),
+            task_data: Set(task_data),
+            status: Set(TaskStatus::Pending),
+            retry_count: Set(0),
+            created_at: Set(chrono::Utc::now().naive_utc()),
+            updated_at: Set(chrono::Utc::now().naive_utc()),
+            ..Default::default()
+        };
+        
+        let result = active_model.insert(connection).await?;
+        
+        // 添加到内存队列
         let mut queue = self.reload_queue.lock().await;
-        info!("重载配置任务已加入队列, 队列长度: {}", queue.len() + 1);
+        info!("重载配置任务已加入队列, 队列长度: {} (数据库ID: {})", queue.len() + 1, result.id);
         queue.push_back(task);
+        
+        Ok(())
     }
 
     /// 从更新配置队列中取出下一个任务
@@ -702,6 +953,94 @@ impl ConfigTaskQueue {
     pub async fn dequeue_reload_task(&self) -> Option<ReloadConfigTask> {
         let mut queue = self.reload_queue.lock().await;
         queue.pop_front()
+    }
+
+    /// 标记更新配置任务为已完成（更新数据库状态）
+    pub async fn mark_update_task_completed(&self, task: &UpdateConfigTask, connection: &DatabaseConnection) -> Result<()> {
+        let task_data = serde_json::to_string(task)?;
+        
+        // 查找并更新数据库中的任务状态
+        if let Some(db_task) = TaskQueueEntity::find()
+            .filter(task_queue::Column::TaskType.eq(TaskType::UpdateConfig))
+            .filter(task_queue::Column::TaskData.eq(&task_data))
+            .filter(task_queue::Column::Status.eq(TaskStatus::Pending))
+            .one(connection)
+            .await?
+        {
+            let mut active_model: task_queue::ActiveModel = db_task.into();
+            active_model.status = Set(TaskStatus::Completed);
+            active_model.updated_at = Set(chrono::Utc::now().naive_utc());
+            active_model.update(connection).await?;
+        }
+        
+        Ok(())
+    }
+
+    /// 标记更新配置任务为失败（更新数据库状态）
+    pub async fn mark_update_task_failed(&self, task: &UpdateConfigTask, connection: &DatabaseConnection) -> Result<()> {
+        let task_data = serde_json::to_string(task)?;
+        
+        // 查找并更新数据库中的任务状态
+        if let Some(db_task) = TaskQueueEntity::find()
+            .filter(task_queue::Column::TaskType.eq(TaskType::UpdateConfig))
+            .filter(task_queue::Column::TaskData.eq(&task_data))
+            .filter(task_queue::Column::Status.eq(TaskStatus::Pending))
+            .one(connection)
+            .await?
+        {
+            let retry_count = db_task.retry_count;
+            let mut active_model: task_queue::ActiveModel = db_task.into();
+            active_model.status = Set(TaskStatus::Failed);
+            active_model.retry_count = Set(retry_count + 1);
+            active_model.updated_at = Set(chrono::Utc::now().naive_utc());
+            active_model.update(connection).await?;
+        }
+        
+        Ok(())
+    }
+
+    /// 标记重载配置任务为已完成（更新数据库状态）
+    pub async fn mark_reload_task_completed(&self, task: &ReloadConfigTask, connection: &DatabaseConnection) -> Result<()> {
+        let task_data = serde_json::to_string(task)?;
+        
+        // 查找并更新数据库中的任务状态
+        if let Some(db_task) = TaskQueueEntity::find()
+            .filter(task_queue::Column::TaskType.eq(TaskType::ReloadConfig))
+            .filter(task_queue::Column::TaskData.eq(&task_data))
+            .filter(task_queue::Column::Status.eq(TaskStatus::Pending))
+            .one(connection)
+            .await?
+        {
+            let mut active_model: task_queue::ActiveModel = db_task.into();
+            active_model.status = Set(TaskStatus::Completed);
+            active_model.updated_at = Set(chrono::Utc::now().naive_utc());
+            active_model.update(connection).await?;
+        }
+        
+        Ok(())
+    }
+
+    /// 标记重载配置任务为失败（更新数据库状态）
+    pub async fn mark_reload_task_failed(&self, task: &ReloadConfigTask, connection: &DatabaseConnection) -> Result<()> {
+        let task_data = serde_json::to_string(task)?;
+        
+        // 查找并更新数据库中的任务状态
+        if let Some(db_task) = TaskQueueEntity::find()
+            .filter(task_queue::Column::TaskType.eq(TaskType::ReloadConfig))
+            .filter(task_queue::Column::TaskData.eq(&task_data))
+            .filter(task_queue::Column::Status.eq(TaskStatus::Pending))
+            .one(connection)
+            .await?
+        {
+            let retry_count = db_task.retry_count;
+            let mut active_model: task_queue::ActiveModel = db_task.into();
+            active_model.status = Set(TaskStatus::Failed);
+            active_model.retry_count = Set(retry_count + 1);
+            active_model.updated_at = Set(chrono::Utc::now().naive_utc());
+            active_model.update(connection).await?;
+        }
+        
+        Ok(())
     }
 
     /// 获取更新配置队列长度
@@ -822,9 +1161,19 @@ impl ConfigTaskQueue {
                 Ok(response) => {
                     info!("更新配置任务执行成功: {}", response.message);
                     processed_count += 1;
+                    
+                    // 标记数据库任务为已完成
+                    if let Err(e) = self.mark_update_task_completed(&task, &db).await {
+                        error!("更新任务完成状态失败: {:#}", e);
+                    }
                 }
                 Err(e) => {
                     error!("更新配置任务执行失败, 错误: {:#?}", e);
+                    
+                    // 标记数据库任务为失败
+                    if let Err(e) = self.mark_update_task_failed(&task, &db).await {
+                        error!("更新任务失败状态失败: {:#}", e);
+                    }
                 }
             }
 
@@ -833,16 +1182,26 @@ impl ConfigTaskQueue {
         }
 
         // 再处理重载配置任务
-        while let Some(_task) = self.dequeue_reload_task().await {
+        while let Some(task) = self.dequeue_reload_task().await {
             info!("正在处理重载配置任务");
 
             match reload_config_internal().await {
                 Ok(_) => {
                     info!("重载配置任务执行成功");
                     processed_count += 1;
+                    
+                    // 标记数据库任务为已完成
+                    if let Err(e) = self.mark_reload_task_completed(&task, &db).await {
+                        error!("更新任务完成状态失败: {:#}", e);
+                    }
                 }
                 Err(e) => {
                     error!("重载配置任务执行失败, 错误: {:#?}", e);
+                    
+                    // 标记数据库任务为失败
+                    if let Err(e) = self.mark_reload_task_failed(&task, &db).await {
+                        error!("更新任务失败状态失败: {:#}", e);
+                    }
                 }
             }
 
@@ -1019,8 +1378,8 @@ pub fn is_scanning() -> bool {
 }
 
 /// 添加删除任务到队列的便捷函数
-pub async fn enqueue_delete_task(task: DeleteVideoSourceTask) {
-    DELETE_TASK_QUEUE.enqueue_task(task).await;
+pub async fn enqueue_delete_task(task: DeleteVideoSourceTask, connection: &DatabaseConnection) -> Result<()> {
+    DELETE_TASK_QUEUE.enqueue_task(task, connection).await
 }
 
 /// 处理所有删除任务的便捷函数
@@ -1029,8 +1388,8 @@ pub async fn process_delete_tasks(db: Arc<DatabaseConnection>) -> Result<u32, an
 }
 
 /// 添加添加任务到队列的便捷函数
-pub async fn enqueue_add_task(task: AddVideoSourceTask) {
-    ADD_TASK_QUEUE.enqueue_task(task).await;
+pub async fn enqueue_add_task(task: AddVideoSourceTask, connection: &DatabaseConnection) -> Result<()> {
+    ADD_TASK_QUEUE.enqueue_task(task, connection).await
 }
 
 /// 处理所有添加任务的便捷函数
@@ -1039,13 +1398,13 @@ pub async fn process_add_tasks(db: Arc<DatabaseConnection>) -> Result<u32, anyho
 }
 
 /// 添加更新配置任务到队列的便捷函数
-pub async fn enqueue_update_task(task: UpdateConfigTask) {
-    CONFIG_TASK_QUEUE.enqueue_update_task(task).await;
+pub async fn enqueue_update_task(task: UpdateConfigTask, connection: &DatabaseConnection) -> Result<()> {
+    CONFIG_TASK_QUEUE.enqueue_update_task(task, connection).await
 }
 
 /// 添加重载配置任务到队列的便捷函数
-pub async fn enqueue_reload_task(task: ReloadConfigTask) {
-    CONFIG_TASK_QUEUE.enqueue_reload_task(task).await;
+pub async fn enqueue_reload_task(task: ReloadConfigTask, connection: &DatabaseConnection) -> Result<()> {
+    CONFIG_TASK_QUEUE.enqueue_reload_task(task, connection).await
 }
 
 /// 处理所有配置任务的便捷函数
@@ -1054,11 +1413,101 @@ pub async fn process_config_tasks(db: Arc<DatabaseConnection>) -> Result<u32, an
 }
 
 /// 添加视频删除任务到队列的便捷函数
-pub async fn enqueue_video_delete_task(task: DeleteVideoTask) {
-    VIDEO_DELETE_TASK_QUEUE.enqueue_task(task).await;
+pub async fn enqueue_video_delete_task(task: DeleteVideoTask, connection: &DatabaseConnection) -> Result<()> {
+    VIDEO_DELETE_TASK_QUEUE.enqueue_task(task, connection).await
 }
 
 /// 处理所有视频删除任务的便捷函数
 pub async fn process_video_delete_tasks(db: Arc<DatabaseConnection>) -> Result<u32, anyhow::Error> {
     VIDEO_DELETE_TASK_QUEUE.process_all_tasks(db).await
+}
+
+/// 从数据库恢复待处理的任务到内存队列中
+pub async fn recover_pending_tasks(connection: &DatabaseConnection) -> Result<(), anyhow::Error> {
+    info!("开始恢复数据库中的待处理任务到内存队列");
+
+    // 查询所有待处理状态的任务
+    let pending_tasks = TaskQueueEntity::find()
+        .filter(task_queue::Column::Status.eq(TaskStatus::Pending))
+        .order_by_asc(task_queue::Column::CreatedAt) // 按创建时间排序
+        .all(connection)
+        .await?;
+
+    let mut recovered_count = 0;
+
+    for db_task in pending_tasks {
+        let task_data = &db_task.task_data;
+        
+        match db_task.task_type {
+            TaskType::DeleteVideoSource => {
+                match serde_json::from_str::<DeleteVideoSourceTask>(task_data) {
+                    Ok(task) => {
+                        // 直接添加到内存队列，不再写入数据库
+                        let mut queue = DELETE_TASK_QUEUE.queue.lock().await;
+                        queue.push_back(task);
+                        recovered_count += 1;
+                    }
+                    Err(e) => {
+                        error!("反序列化删除视频源任务失败: {:#}", e);
+                    }
+                }
+            }
+            TaskType::DeleteVideo => {
+                match serde_json::from_str::<DeleteVideoTask>(task_data) {
+                    Ok(task) => {
+                        let mut queue = VIDEO_DELETE_TASK_QUEUE.queue.lock().await;
+                        queue.push_back(task);
+                        recovered_count += 1;
+                    }
+                    Err(e) => {
+                        error!("反序列化删除视频任务失败: {:#}", e);
+                    }
+                }
+            }
+            TaskType::AddVideoSource => {
+                match serde_json::from_str::<AddVideoSourceTask>(task_data) {
+                    Ok(task) => {
+                        let mut queue = ADD_TASK_QUEUE.queue.lock().await;
+                        queue.push_back(task);
+                        recovered_count += 1;
+                    }
+                    Err(e) => {
+                        error!("反序列化添加视频源任务失败: {:#}", e);
+                    }
+                }
+            }
+            TaskType::UpdateConfig => {
+                match serde_json::from_str::<UpdateConfigTask>(task_data) {
+                    Ok(task) => {
+                        let mut queue = CONFIG_TASK_QUEUE.update_queue.lock().await;
+                        queue.push_back(task);
+                        recovered_count += 1;
+                    }
+                    Err(e) => {
+                        error!("反序列化更新配置任务失败: {:#}", e);
+                    }
+                }
+            }
+            TaskType::ReloadConfig => {
+                match serde_json::from_str::<ReloadConfigTask>(task_data) {
+                    Ok(task) => {
+                        let mut queue = CONFIG_TASK_QUEUE.reload_queue.lock().await;
+                        queue.push_back(task);
+                        recovered_count += 1;
+                    }
+                    Err(e) => {
+                        error!("反序列化重载配置任务失败: {:#}", e);
+                    }
+                }
+            }
+        }
+    }
+
+    if recovered_count > 0 {
+        info!("成功恢复 {} 个待处理任务到内存队列", recovered_count);
+    } else {
+        info!("没有需要恢复的待处理任务");
+    }
+
+    Ok(())
 }

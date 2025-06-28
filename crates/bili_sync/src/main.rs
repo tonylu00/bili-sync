@@ -41,6 +41,11 @@ async fn main() -> Result<()> {
         warn!("数据库配置系统初始化失败: {}, 继续使用TOML配置", e);
     }
 
+    // 恢复待处理的任务到内存队列
+    if let Err(e) = crate::task::recover_pending_tasks(connection.as_ref()).await {
+        warn!("恢复待处理任务失败: {:#}", e);
+    }
+
     let token = CancellationToken::new();
     let tracker = TaskTracker::new();
 

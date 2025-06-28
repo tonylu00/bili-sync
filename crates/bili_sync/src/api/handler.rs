@@ -981,7 +981,7 @@ pub async fn add_video_source(
             task_id: task_id.clone(),
         };
 
-        crate::task::enqueue_add_task(add_task).await;
+        crate::task::enqueue_add_task(add_task, &db).await?;
 
         info!(
             "检测到正在扫描，添加任务已加入队列等待处理: {} 名称={}",
@@ -1490,7 +1490,9 @@ pub async fn add_video_source_internal(
         (status = 200, body = ApiResponse<bool>),
     )
 )]
-pub async fn reload_config() -> Result<ApiResponse<bool>, ApiError> {
+pub async fn reload_config(
+    Extension(db): Extension<Arc<DatabaseConnection>>,
+) -> Result<ApiResponse<bool>, ApiError> {
     // 检查是否正在扫描
     if crate::task::is_scanning() {
         // 正在扫描，将重载配置任务加入队列
@@ -1499,7 +1501,7 @@ pub async fn reload_config() -> Result<ApiResponse<bool>, ApiError> {
             task_id: task_id.clone(),
         };
 
-        crate::task::enqueue_reload_task(reload_task).await;
+        crate::task::enqueue_reload_task(reload_task, &db).await?;
 
         info!("检测到正在扫描，重载配置任务已加入队列等待处理");
 
@@ -1717,7 +1719,7 @@ pub async fn delete_video_source(
             task_id: task_id.clone(),
         };
 
-        crate::task::enqueue_delete_task(delete_task).await;
+        crate::task::enqueue_delete_task(delete_task, &db).await?;
 
         info!("检测到正在扫描，删除任务已加入队列等待处理: {} ID={}", source_type, id);
 
@@ -1760,7 +1762,7 @@ pub async fn delete_video(
             task_id: task_id.clone(),
         };
 
-        crate::task::enqueue_video_delete_task(delete_task).await;
+        crate::task::enqueue_video_delete_task(delete_task, &db).await?;
 
         info!("检测到正在扫描，视频删除任务已加入队列等待处理: 视频ID={}", id);
 
@@ -3405,7 +3407,7 @@ pub async fn update_config(
             task_id: task_id.clone(),
         };
 
-        crate::task::enqueue_update_task(update_task).await;
+        crate::task::enqueue_update_task(update_task, &db).await?;
 
         info!("检测到正在扫描，更新配置任务已加入队列等待处理");
 
@@ -6308,7 +6310,7 @@ pub async fn setup_auth_token(
         let reload_task = crate::task::ReloadConfigTask {
             task_id: Uuid::new_v4().to_string(),
         };
-        crate::task::enqueue_reload_task(reload_task).await;
+        crate::task::enqueue_reload_task(reload_task, &db).await?;
         info!("检测到正在扫描，API Token保存任务已加入队列");
     } else {
         // 直接保存配置到数据库
@@ -6383,7 +6385,7 @@ pub async fn update_credential(
         let reload_task = crate::task::ReloadConfigTask {
             task_id: Uuid::new_v4().to_string(),
         };
-        crate::task::enqueue_reload_task(reload_task).await;
+        crate::task::enqueue_reload_task(reload_task, &db).await?;
         info!("检测到正在扫描，凭证保存任务已加入队列");
     } else {
         // 直接保存配置到数据库

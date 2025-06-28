@@ -7,6 +7,7 @@ pub mod config_item;
 pub mod favorite;
 pub mod page;
 pub mod submission;
+pub mod task_queue;
 pub mod video;
 pub mod video_source;
 pub mod watch_later;

@@ -257,7 +257,8 @@ impl BiliClient {
         };
 
         // 将任务加入队列
-        crate::task::enqueue_reload_task(reload_task).await;
+        let db = crate::database::setup_database().await;
+        crate::task::enqueue_reload_task(reload_task, &db).await?;
 
         Ok(())
     }
