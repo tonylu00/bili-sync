@@ -21,7 +21,7 @@ use crate::error::{DownloadAbortError, ExecutionStatus, ProcessPageError};
 use crate::unified_downloader::UnifiedDownloader;
 use crate::utils::format_arg::{page_format_args, video_format_args};
 use crate::utils::model::{
-    create_pages, create_videos, filter_unfilled_videos, filter_unhandled_video_pages, update_pages_model,
+    create_pages, create_videos, filter_unfilled_videos, filter_unhandled_video_pages, get_failed_videos_in_current_cycle, update_pages_model,
     update_videos_model,
 };
 use crate::utils::nfo::NFO;
@@ -151,10 +151,17 @@ pub async fn process_video_source(
             let error_msg = format!("{:#}", e);
             if retry_with_refresh(error_msg).await.is_ok() {
                 // 刷新成功，重试（继续使用原有的取消令牌）
-                download_unprocessed_videos(bili_client, &video_source, connection, downloader, token).await?;
+                download_unprocessed_videos(bili_client, &video_source, connection, downloader, token.clone()).await?;
             } else {
                 return Err(e);
             }
+        }
+        
+        // 新增：循环内重试失败的视频
+        // 在当前扫描循环结束前，对失败的视频进行一次额外的重试机会
+        if let Err(e) = retry_failed_videos_once(bili_client, &video_source, connection, downloader, token.clone()).await {
+            warn!("循环内重试失败的视频时出错: {:#}", e);
+            // 重试失败不中断主流程，继续执行
         }
     }
     Ok(new_video_count)
@@ -525,6 +532,89 @@ pub async fn download_unprocessed_videos(
         bail!(DownloadAbortError());
     }
     video_source.log_download_video_end();
+    Ok(())
+}
+
+/// 对当前循环中失败的视频进行一次重试
+pub async fn retry_failed_videos_once(
+    bili_client: &BiliClient,
+    video_source: &VideoSourceEnum,
+    connection: &DatabaseConnection,
+    downloader: &UnifiedDownloader,
+    token: CancellationToken,
+) -> Result<()> {
+    let failed_videos_pages = get_failed_videos_in_current_cycle(video_source.filter_expr(), connection).await?;
+    
+    if failed_videos_pages.is_empty() {
+        debug!("当前循环中没有失败的视频需要重试");
+        return Ok(());
+    }
+    
+    info!("开始重试当前循环中的 {} 个失败视频", failed_videos_pages.len());
+    
+    let current_config = crate::config::reload_config();
+    let semaphore = Semaphore::new(current_config.concurrent_limit.video);
+    let mut assigned_upper = HashSet::new();
+    
+    let tasks = failed_videos_pages
+        .into_iter()
+        .map(|(video_model, pages_model)| {
+            let should_download_upper = !assigned_upper.contains(&video_model.upper_id);
+            assigned_upper.insert(video_model.upper_id);
+            debug!("重试视频: {}", video_model.name);
+            download_video_pages(
+                bili_client,
+                video_source,
+                video_model,
+                pages_model,
+                connection,
+                &semaphore,
+                downloader,
+                should_download_upper,
+                token.clone(),
+            )
+        })
+        .collect::<FuturesUnordered<_>>();
+        
+    let mut download_aborted = false;
+    let mut stream = tasks;
+    let mut retry_success_count = 0;
+    
+    while let Some(res) = stream.next().await {
+        match res {
+            Ok(model) => {
+                if download_aborted {
+                    continue;
+                }
+                retry_success_count += 1;
+                if let Err(db_err) = update_videos_model(vec![model], connection).await {
+                    error!("重试后更新数据库失败: {:#}", db_err);
+                }
+            }
+            Err(e) => {
+                if e.downcast_ref::<DownloadAbortError>().is_some() || e.to_string().contains("Download cancelled") {
+                    if !download_aborted {
+                        debug!("重试过程中检测到风控或取消信号，停止重试");
+                        token.cancel();
+                        download_aborted = true;
+                    }
+                } else {
+                    // 重试失败，但不中断其他重试任务
+                    debug!("视频重试失败: {:#}", e);
+                }
+            }
+        }
+    }
+    
+    if download_aborted {
+        warn!("重试过程中触发风控，已停止重试");
+        // 不返回错误，避免影响主流程
+    } else if retry_success_count > 0 {
+        info!("循环内重试完成，成功重试 {} 个视频", retry_success_count);
+    } else {
+        debug!("循环内重试完成，但没有视频重试成功");
+    }
+    
     Ok(())
 }
 

@@ -48,6 +48,46 @@ pub async fn filter_unhandled_video_pages(
         .context("filter unhandled video pages failed")
 }
 
+/// 筛选在当前循环中失败但可重试的视频（不包括已达到最大重试次数的视频）
+pub async fn get_failed_videos_in_current_cycle(
+    additional_expr: SimpleExpr,
+    connection: &DatabaseConnection,
+) -> Result<Vec<(video::Model, Vec<page::Model>)>> {
+    use crate::utils::status::STATUS_COMPLETED;
+    
+    let all_videos = video::Entity::find()
+        .filter(
+            video::Column::Valid
+                .eq(true)
+                .and(video::Column::DownloadStatus.lt(STATUS_COMPLETED))
+                .and(video::Column::DownloadStatus.gt(0)) // 排除未开始的视频 (状态为0)
+                .and(video::Column::Category.is_in([1, 2]))
+                .and(video::Column::SinglePage.is_not_null())
+                .and(additional_expr)
+        )
+        .find_with_related(page::Entity)
+        .all(connection)
+        .await?;
+        
+    let result = all_videos
+        .into_iter()
+        .filter(|(video_model, pages_model)| {
+            // 检查视频和分页是否有可重试的失败
+            let video_status = crate::utils::status::VideoStatus::from(video_model.download_status);
+            let video_should_retry = video_status.should_run().iter().any(|&should_run| should_run);
+            
+            let pages_should_retry = pages_model.iter().any(|page_model| {
+                let page_status = crate::utils::status::PageStatus::from(page_model.download_status);
+                page_status.should_run().iter().any(|&should_run| should_run)
+            });
+            
+            video_should_retry || pages_should_retry
+        })
+        .collect::<Vec<_>>();
+    
+    Ok(result)
+}
+
 /// 尝试创建 Video Model，如果发生冲突则忽略
 /// 如果视频源启用了扫描已删除视频设置，则会恢复已删除的视频
 pub async fn create_videos(
