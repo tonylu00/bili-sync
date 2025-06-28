@@ -111,6 +111,12 @@ impl Aria2Downloader {
             loop {
                 interval.tick().await;
                 
+                // 检查任务暂停状态，暂停期间跳过健康检查
+                if crate::task::TASK_CONTROLLER.is_paused() {
+                    debug!("任务已暂停，跳过aria2健康检查");
+                    continue;
+                }
+                
                 // 检查当前系统负载，避免在高负载时进行健康检查
                 let instances_guard = instances.lock().await;
                 let current_count = instances_guard.len();
@@ -1014,6 +1020,12 @@ impl Aria2Downloader {
         let download_timeout = Duration::from_secs(30 * 60); // 30分钟
         
         loop {
+            // 检查任务暂停状态，如果暂停则立即退出下载等待
+            if crate::task::TASK_CONTROLLER.is_paused() {
+                debug!("检测到任务暂停，停止下载状态检查 (GID: {})", gid);
+                bail!("任务已暂停，停止下载");
+            }
+            
             // 检查总体超时
             if start_time.elapsed() > download_timeout {
                 warn!("下载超时 (GID: {})，已等待 {:.1} 分钟", gid, start_time.elapsed().as_secs_f64() / 60.0);
