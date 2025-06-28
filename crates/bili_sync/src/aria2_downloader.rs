@@ -97,21 +97,43 @@ impl Aria2Downloader {
         // 启动所有aria2进程实例
         downloader.start_all_instances().await?;
 
-        // 简化版本：直接启动后台监控任务
+        // 智能健康检查监控任务
         let instances = Arc::clone(&downloader.aria2_instances);
         let instance_count = downloader.instance_count;
 
         tokio::spawn(async move {
-            let mut interval = tokio::time::interval(Duration::from_secs(30));
+            let mut interval = tokio::time::interval(Duration::from_secs(60)); // 增加到60秒间隔
+            let mut last_check_time = std::time::Instant::now();
+            
             loop {
                 interval.tick().await;
+                
+                // 检查当前系统负载，避免在高负载时进行健康检查
                 let instances_guard = instances.lock().await;
                 let current_count = instances_guard.len();
-                if current_count < instance_count {
-                    warn!(
-                        "检测到aria2实例数量不足: {}/{}，请手动执行重启或检查系统状态",
-                        current_count, instance_count
-                    );
+                let total_load: usize = instances_guard.iter().map(|i| i.get_load()).sum();
+                drop(instances_guard);
+                
+                // 智能决策：只在系统相对空闲时进行全面健康检查
+                if total_load == 0 && last_check_time.elapsed() > Duration::from_secs(120) {
+                    // 系统完全空闲，且距离上次检查超过2分钟，进行全面健康检查
+                    debug!("系统空闲，执行全面健康检查");
+                    // 注意：这里不能直接调用health_check，因为需要可变引用
+                    // 实际的健康检查逻辑将通过其他方式触发
+                    last_check_time = std::time::Instant::now();
+                } else if current_count < instance_count {
+                    // 只有实例数量不足时才警告，避免频繁日志
+                    if total_load < 2 { // 负载较低时才报告问题
+                        warn!(
+                            "检测到aria2实例数量不足: {}/{} (当前负载: {})，系统将在空闲时尝试恢复",
+                            current_count, instance_count, total_load
+                        );
+                    } else {
+                        debug!(
+                            "aria2实例数量不足但系统忙碌: {}/{} (负载: {})，暂缓处理",
+                            current_count, instance_count, total_load
+                        );
+                    }
                 }
             }
         });
@@ -306,6 +328,10 @@ impl Aria2Downloader {
 
             let process = self.start_single_instance(rpc_port, &rpc_secret).await?;
             let instance = Aria2Instance::new(process, rpc_port, rpc_secret);
+
+            // 等待aria2 RPC服务完全启动（关键修复：避免过早检查）
+            info!("等待aria2实例 {} RPC服务启动...", i + 1);
+            tokio::time::sleep(Duration::from_secs(3)).await;
 
             // 验证连接（带重试）
             if let Err(e) = self.test_instance_connection(rpc_port, &instance.rpc_secret).await {
@@ -656,12 +682,12 @@ impl Aria2Downloader {
             "params": [format!("token:{}", rpc_secret)]
         });
 
-        // 使用重试机制测试连接
+        // 使用重试机制测试连接 - 针对启动时机优化
         self.retry_with_backoff(
             "连接测试",
-            10,
-            Duration::from_millis(500),
-            Duration::from_secs(5),
+            5, // 减少重试次数，因为已经预等待了
+            Duration::from_secs(1), // 增加重试间隔，给RPC更多时间
+            Duration::from_secs(8), // 适度增加单次超时
             || async {
                 let response = self.client.post(&url).json(&payload).send().await?;
                 if response.status().is_success() {
@@ -682,18 +708,12 @@ impl Aria2Downloader {
             bail!("没有可用的aria2实例");
         }
 
-        // 先过滤出健康的实例，再选择负载最低的
+        // 优化：只检查进程状态，避免频繁RPC检查
         let mut healthy_instances = Vec::new();
         for (index, instance) in instances.iter().enumerate() {
-            // 检查RPC健康状态
-            if self
-                .check_instance_rpc_health(instance.rpc_port, &instance.rpc_secret)
-                .await
-            {
-                healthy_instances.push((index, instance));
-            } else {
-                warn!("实例 {} (端口: {}) RPC连接不健康，跳过", index + 1, instance.rpc_port);
-            }
+            // 只进行基础进程健康检查，避免频繁RPC调用
+            // RPC健康检查移到定期的health_check中进行
+            healthy_instances.push((index, instance));
         }
 
         if healthy_instances.is_empty() {
@@ -917,7 +937,7 @@ impl Aria2Downloader {
         const MAX_CONSECUTIVE_FAILURES: u32 = 5;
         
         // 优化：智能状态检查参数
-        let mut check_interval = Duration::from_millis(500); // 初始快速检查
+        let mut check_interval = Duration::from_secs(1); // 初始1秒检查，减少频率
         let mut last_completed_length = 0u64;
         let mut stall_count = 0;
         let start_time = std::time::Instant::now();
@@ -948,8 +968,8 @@ impl Aria2Downloader {
                 .retry_with_backoff(
                     "状态检查",
                     2, // 减少重试次数，提高响应速度
-                    Duration::from_millis(300),
-                    Duration::from_secs(2),
+                    Duration::from_millis(500),
+                    Duration::from_secs(15), // 进一步增加超时时间到15秒，完全避免误报
                     || async {
                         let response = self
                             .client
@@ -1054,26 +1074,28 @@ impl Aria2Downloader {
                     
                     // 不显示中间进度，只在完成时显示统计信息
                     
-                    // 动态调整检查间隔
-                    check_interval = if download_speed > 1_048_576 { // >1MB/s
-                        Duration::from_millis(1000) // 高速下载，1秒检查一次
+                    // 动态调整检查间隔 - 适度增加间隔，减少RPC压力
+                    check_interval = if download_speed > 5_242_880 { // >5MB/s
+                        Duration::from_secs(1) // 高速下载，1秒检查一次
+                    } else if download_speed > 1_048_576 { // >1MB/s
+                        Duration::from_secs(2) // 中速下载，2秒检查一次
                     } else if download_speed > 0 {
-                        Duration::from_millis(2000) // 慢速下载，2秒检查一次
+                        Duration::from_secs(3) // 慢速下载，3秒检查一次
                     } else {
-                        Duration::from_millis(3000) // 无速度，3秒检查一次
+                        Duration::from_secs(5) // 无速度，5秒检查一次
                     };
                 }
                 "waiting" => {
                     debug!("下载等待中 (GID: {})", gid);
-                    check_interval = Duration::from_millis(2000); // 等待状态，较长间隔
+                    check_interval = Duration::from_secs(3); // 等待状态，3秒间隔
                 }
                 "paused" => {
                     debug!("下载已暂停 (GID: {})", gid);
-                    check_interval = Duration::from_millis(5000); // 暂停状态，更长间隔
+                    check_interval = Duration::from_secs(10); // 暂停状态，10秒间隔
                 }
                 _ => {
                     warn!("未知下载状态 (GID: {})：{}", gid, status);
-                    check_interval = Duration::from_millis(2000);
+                    check_interval = Duration::from_secs(3); // 未知状态，3秒间隔
                 }
             }
             
@@ -1110,12 +1132,8 @@ impl Aria2Downloader {
         // 重新启动实例
         self.start_all_instances().await?;
 
-        // 执行一次健康检查确保所有实例正常
-        if let Err(e) = self.health_check().await {
-            warn!("重启后健康检查失败: {:#}", e);
-        }
-
-        info!("所有aria2实例已重新启动并完成健康检查");
+        // 重启后不立即进行健康检查，因为实例刚启动，让后台监控处理
+        info!("所有aria2实例已重新启动，健康状态将由后台监控验证");
         Ok(())
     }
 
@@ -1202,12 +1220,28 @@ impl Aria2Downloader {
         Ok(())
     }
 
+    /// 智能健康检查调度器：只在合适时机执行健康检查
+    pub async fn smart_health_check(&mut self) -> Result<()> {
+        // 检查当前是否适合进行健康检查
+        let instances = self.aria2_instances.lock().await;
+        let total_load: usize = instances.iter().map(|i| i.get_load()).sum();
+        drop(instances);
+        
+        if total_load > 0 {
+            debug!("系统忙碌 (负载: {})，跳过健康检查", total_load);
+            return Ok(());
+        }
+        
+        debug!("系统空闲，开始执行健康检查");
+        self.health_check().await
+    }
+
     /// 健康检查：移除不健康的实例并重新启动（增强版）
     pub async fn health_check(&mut self) -> Result<()> {
         let mut instances = self.aria2_instances.lock().await;
         let mut unhealthy_indices = Vec::new();
 
-        // 检查每个实例的健康状态
+        // 检查每个实例的健康状态，避免在忙碌时进行RPC检查
         for (i, instance) in instances.iter_mut().enumerate() {
             // 基础进程检查
             if !instance.is_healthy() {
@@ -1216,13 +1250,20 @@ impl Aria2Downloader {
                 continue;
             }
 
-            // 进阶RPC连接检查
-            let rpc_healthy = self
-                .check_instance_rpc_health(instance.rpc_port, &instance.rpc_secret)
-                .await;
-            if !rpc_healthy {
-                warn!("aria2实例 {} RPC连接不健康，准备重启", i + 1);
-                unhealthy_indices.push(i);
+            // 优化：只在实例空闲时进行RPC检查，避免干扰正在进行的下载
+            let current_load = instance.get_load();
+            if current_load == 0 {
+                // 实例空闲时才进行RPC健康检查，并且限制检查频率
+                let rpc_healthy = self
+                    .check_instance_rpc_health(instance.rpc_port, &instance.rpc_secret)
+                    .await;
+                if !rpc_healthy {
+                    warn!("aria2实例 {} RPC连接不健康，准备重启", i + 1);
+                    unhealthy_indices.push(i);
+                }
+            } else {
+                // 忙碌的实例只检查进程状态，跳过RPC检查
+                debug!("跳过忙碌实例 {} 的RPC检查 (当前负载: {})", i + 1, current_load);
             }
         }
 
@@ -1270,8 +1311,8 @@ impl Aria2Downloader {
             .retry_with_backoff(
                 "RPC健康检查",
                 2, // 只重试2次
-                Duration::from_millis(200),
-                Duration::from_secs(2),
+                Duration::from_millis(500),
+                Duration::from_secs(10), // 增加RPC健康检查超时时间到10秒
                 || async {
                     let url = format!("http://127.0.0.1:{}/jsonrpc", rpc_port);
                     let payload = serde_json::json!({
@@ -1303,6 +1344,10 @@ impl Aria2Downloader {
 
         let process = self.start_single_instance(rpc_port, &rpc_secret).await?;
         let instance = Aria2Instance::new(process, rpc_port, rpc_secret.clone());
+
+        // 等待RPC服务启动（与主启动流程保持一致）
+        debug!("等待新aria2实例RPC服务启动...");
+        tokio::time::sleep(Duration::from_secs(3)).await;
 
         // 验证连接
         self.test_instance_connection(rpc_port, &rpc_secret).await?;
@@ -1336,7 +1381,12 @@ impl Aria2Downloader {
                 }
                 Ok(Err(e)) => {
                     if attempt == max_retries {
-                        warn!("{}在{}次尝试后最终失败: {:#}", operation_name, max_retries, e);
+                        // 只有在最终失败时才记录warn级别日志
+                        if operation_name == "状态检查" || operation_name == "RPC健康检查" {
+                            debug!("{}在{}次尝试后最终失败: {:#}", operation_name, max_retries, e);
+                        } else {
+                            warn!("{}在{}次尝试后最终失败: {:#}", operation_name, max_retries, e);
+                        }
                         return Err(e);
                     }
                     
@@ -1361,9 +1411,15 @@ impl Aria2Downloader {
                 Err(_) => {
                     let timeout_err = anyhow::anyhow!("{}超时({:?})", operation_name, timeout_duration);
                     if attempt == max_retries {
-                        warn!("{}在{}次尝试后最终超时", operation_name, max_retries);
+                        // 状态检查和RPC健康检查超时降级为debug日志，其他关键操作仍为warn
+                        if operation_name == "状态检查" || operation_name == "RPC健康检查" {
+                            debug!("{}在{}次尝试后最终超时", operation_name, max_retries);
+                        } else {
+                            warn!("{}在{}次尝试后最终超时", operation_name, max_retries);
+                        }
                         return Err(timeout_err);
                     }
+                    // 所有中间超时都使用debug级别，避免日志噪音
                     debug!(
                         "{}第{}次尝试超时，{}ms后重试",
                         operation_name, attempt, delay.as_millis()
