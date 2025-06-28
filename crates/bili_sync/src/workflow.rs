@@ -592,7 +592,14 @@ pub async fn download_video_pages(
             // 从API获取季度标题
             let season_title = match get_season_title_from_api(bili_client, season_id, token.clone()).await {
                 Some(title) => title,
-                None => format!("第{}季", season_id), // 如果找不到季度名称，使用默认格式
+                None => {
+                    // API请求失败，使用安全的回退策略
+                    error!("无法获取season_id={}的标题，跳过创建季度文件夹", season_id);
+                    return Err(anyhow::anyhow!(
+                        "无法获取番剧季度信息 (season_id: {})，请检查网络连接或番剧是否存在", 
+                        season_id
+                    ));
+                }
             };
 
             (base_path.join(&season_title), Some(season_title))
@@ -1577,80 +1584,144 @@ async fn get_season_title_from_api(
     token: CancellationToken,
 ) -> Option<String> {
     let url = format!("https://api.bilibili.com/pgc/view/web/season?season_id={}", season_id);
+    
+    // 重试配置：最大重试3次，每次重试间隔递增
+    let max_retries = 3;
+    let mut retry_count = 0;
+    
+    while retry_count <= max_retries {
+        // 检查是否被取消
+        if token.is_cancelled() {
+            debug!("请求被取消，停止重试");
+            return None;
+        }
+        
+        let retry_delay = std::time::Duration::from_millis(500 * (retry_count as u64 + 1));
+        if retry_count > 0 {
+            debug!("第{}次重试获取季度信息，延迟{}ms", retry_count, retry_delay.as_millis());
+            tokio::time::sleep(retry_delay).await;
+        }
 
-    match tokio::select! {
-        biased;
-        _ = token.cancelled() => return None,
-        res = bili_client.get(&url, token.clone()) => res,
-    } {
-        Ok(res) => {
-            if res.status().is_success() {
-                match res.json::<serde_json::Value>().await {
-                    Ok(json) => {
-                        // 检查API返回是否成功
-                        if json["code"].as_i64().unwrap_or(-1) == 0 {
-                            // 获取季度标题
-                            if let Some(title) = json["result"]["title"].as_str() {
-                                debug!("获取到季度标题: {}", title);
-                                return Some(title.to_string());
+        match tokio::select! {
+            biased;
+            _ = token.cancelled() => return None,
+            res = bili_client.get(&url, token.clone()) => res,
+        } {
+            Ok(res) => {
+                if res.status().is_success() {
+                    match res.json::<serde_json::Value>().await {
+                        Ok(json) => {
+                            // 检查API返回是否成功
+                            if json["code"].as_i64().unwrap_or(-1) == 0 {
+                                // 获取季度标题
+                                if let Some(title) = json["result"]["title"].as_str() {
+                                    debug!("获取到季度标题: {} (尝试次数: {})", title, retry_count + 1);
+                                    return Some(title.to_string());
+                                }
+                            } else {
+                                warn!(
+                                    "获取季度信息失败，API返回错误: {} (尝试次数: {})",
+                                    json["message"].as_str().unwrap_or("未知错误"),
+                                    retry_count + 1
+                                );
+                                // API返回错误码通常不是临时性问题，直接返回
+                                return None;
                             }
-                        } else {
-                            warn!(
-                                "获取季度信息失败，API返回错误: {}",
-                                json["message"].as_str().unwrap_or("未知错误")
-                            );
+                        }
+                        Err(e) => {
+                            warn!("解析季度信息JSON失败: {} (尝试次数: {})", e, retry_count + 1);
+                            // JSON解析失败通常不是临时性问题，直接返回
+                            return None;
                         }
                     }
-                    Err(e) => warn!("解析季度信息JSON失败: {}", e),
+                } else {
+                    warn!("获取季度信息HTTP请求失败，状态码: {} (尝试次数: {})", res.status(), retry_count + 1);
                 }
-            } else {
-                warn!("获取季度信息HTTP请求失败，状态码: {}", res.status());
+            }
+            Err(e) => {
+                warn!("发送季度信息请求失败: {} (尝试次数: {})", e, retry_count + 1);
             }
         }
-        Err(e) => warn!("发送季度信息请求失败: {}", e),
+        
+        retry_count += 1;
     }
-
+    
+    error!("获取season_id={}的季度信息失败，已重试{}次", season_id, max_retries);
     None
 }
 
 /// 从番剧API获取指定EP的AID
 async fn get_bangumi_aid_from_api(bili_client: &BiliClient, ep_id: &str, token: CancellationToken) -> Option<String> {
     let url = format!("https://api.bilibili.com/pgc/view/web/season?ep_id={}", ep_id);
+    
+    // 重试配置：最大重试3次，每次重试间隔递增
+    let max_retries = 3;
+    let mut retry_count = 0;
+    
+    while retry_count <= max_retries {
+        // 检查是否被取消
+        if token.is_cancelled() {
+            debug!("请求被取消，停止重试");
+            return None;
+        }
+        
+        let retry_delay = std::time::Duration::from_millis(500 * (retry_count as u64 + 1));
+        if retry_count > 0 {
+            debug!("第{}次重试获取EP信息，延时{}ms", retry_count, retry_delay.as_millis());
+            tokio::time::sleep(retry_delay).await;
+        }
 
-    match tokio::select! {
-        biased;
-        _ = token.cancelled() => return None,
-        res = bili_client.get(&url, token.clone()) => res,
-    } {
-        Ok(res) => {
-            if res.status().is_success() {
-                match res.json::<serde_json::Value>().await {
-                    Ok(json) => {
-                        // 检查API返回是否成功
-                        if json["code"].as_i64().unwrap_or(-1) == 0 {
-                            // 在episodes数组中查找对应EP的AID
-                            if let Some(episodes) = json["result"]["episodes"].as_array() {
-                                for episode in episodes {
-                                    if let Some(episode_id) = episode["id"].as_i64() {
-                                        if episode_id.to_string() == ep_id {
-                                            return episode["aid"].as_i64().map(|aid| aid.to_string());
+        match tokio::select! {
+            biased;
+            _ = token.cancelled() => return None,
+            res = bili_client.get(&url, token.clone()) => res,
+        } {
+            Ok(res) => {
+                if res.status().is_success() {
+                    match res.json::<serde_json::Value>().await {
+                        Ok(json) => {
+                            // 检查API返回是否成功
+                            if json["code"].as_i64().unwrap_or(-1) == 0 {
+                                // 在episodes数组中查找对应EP的AID
+                                if let Some(episodes) = json["result"]["episodes"].as_array() {
+                                    for episode in episodes {
+                                        if let Some(episode_id) = episode["id"].as_i64() {
+                                            if episode_id.to_string() == ep_id {
+                                                debug!("获取到EP {} 的AID (尝试次数: {})", ep_id, retry_count + 1);
+                                                return episode["aid"].as_i64().map(|aid| aid.to_string());
+                                            }
                                         }
                                     }
                                 }
+                                // 找不到对应的EP，不是网络问题，直接返回
+                                warn!("在episodes数组中找不到EP {}", ep_id);
+                                return None;
+                            } else {
+                                warn!("获取EP信息失败，API返回错误: {} (尝试次数: {})", 
+                                      json["message"].as_str().unwrap_or("未知错误"), retry_count + 1);
+                                // API返回错误码通常不是临时性问题，直接返回
+                                return None;
                             }
                         }
+                        Err(e) => {
+                            warn!("解析番剧API响应失败: {} (尝试次数: {})", e, retry_count + 1);
+                            // JSON解析失败通常不是临时性问题，直接返回
+                            return None;
+                        }
                     }
-                    Err(e) => {
-                        error!("解析番剧API响应失败: {}", e);
-                    }
+                } else {
+                    warn!("请求EP信息HTTP失败，状态码: {} (尝试次数: {})", res.status(), retry_count + 1);
                 }
             }
+            Err(e) => {
+                warn!("请求番剧API失败: {} (尝试次数: {})", e, retry_count + 1);
+            }
         }
-        Err(e) => {
-            error!("请求番剧API失败: {}", e);
-        }
+        
+        retry_count += 1;
     }
-
+    
+    error!("获取ep_id={}的AID失败，已重试{}次", ep_id, max_retries);
     None
 }
 
@@ -1661,46 +1732,80 @@ async fn get_bangumi_info_from_api(
     token: CancellationToken,
 ) -> Option<(i64, u32)> {
     let url = format!("https://api.bilibili.com/pgc/view/web/season?ep_id={}", ep_id);
+    
+    // 重试配置：最大重试3次，每次重试间隔递增
+    let max_retries = 3;
+    let mut retry_count = 0;
+    
+    while retry_count <= max_retries {
+        // 检查是否被取消
+        if token.is_cancelled() {
+            debug!("请求被取消，停止重试");
+            return None;
+        }
+        
+        let retry_delay = std::time::Duration::from_millis(500 * (retry_count as u64 + 1));
+        if retry_count > 0 {
+            debug!("第{}次重试获取EP详细信息，延时{}ms", retry_count, retry_delay.as_millis());
+            tokio::time::sleep(retry_delay).await;
+        }
 
-    match tokio::select! {
-        biased;
-        _ = token.cancelled() => return None,
-        res = bili_client.get(&url, token.clone()) => res,
-    } {
-        Ok(res) => {
-            if res.status().is_success() {
-                match res.json::<serde_json::Value>().await {
-                    Ok(json) => {
-                        // 检查API返回是否成功
-                        if json["code"].as_i64().unwrap_or(-1) == 0 {
-                            // 在episodes数组中查找对应EP的信息
-                            if let Some(episodes) = json["result"]["episodes"].as_array() {
-                                for episode in episodes {
-                                    if let Some(episode_id) = episode["id"].as_i64() {
-                                        if episode_id.to_string() == ep_id {
-                                            let cid = episode["cid"].as_i64().unwrap_or(0);
-                                            // duration在API中是毫秒，需要转换为秒
-                                            let duration_ms = episode["duration"].as_i64().unwrap_or(0);
-                                            let duration_sec = (duration_ms / 1000) as u32;
-                                            debug!("获取到番剧EP {} 的CID: {}, 时长: {}秒", ep_id, cid, duration_sec);
-                                            return Some((cid, duration_sec));
+        match tokio::select! {
+            biased;
+            _ = token.cancelled() => return None,
+            res = bili_client.get(&url, token.clone()) => res,
+        } {
+            Ok(res) => {
+                if res.status().is_success() {
+                    match res.json::<serde_json::Value>().await {
+                        Ok(json) => {
+                            // 检查API返回是否成功
+                            if json["code"].as_i64().unwrap_or(-1) == 0 {
+                                // 在episodes数组中查找对应EP的信息
+                                if let Some(episodes) = json["result"]["episodes"].as_array() {
+                                    for episode in episodes {
+                                        if let Some(episode_id) = episode["id"].as_i64() {
+                                            if episode_id.to_string() == ep_id {
+                                                let cid = episode["cid"].as_i64().unwrap_or(0);
+                                                // duration在API中是毫秒，需要转换为秒
+                                                let duration_ms = episode["duration"].as_i64().unwrap_or(0);
+                                                let duration_sec = (duration_ms / 1000) as u32;
+                                                debug!("获取到番剧EP {} 的CID: {}, 时长: {}秒 (尝试次数: {})", 
+                                                       ep_id, cid, duration_sec, retry_count + 1);
+                                                return Some((cid, duration_sec));
+                                            }
                                         }
                                     }
                                 }
+                                // 找不到对应的EP，不是网络问题，直接返回
+                                warn!("在episodes数组中找不到EP {}", ep_id);
+                                return None;
+                            } else {
+                                warn!("获取EP详细信息失败，API返回错误: {} (尝试次数: {})", 
+                                      json["message"].as_str().unwrap_or("未知错误"), retry_count + 1);
+                                // API返回错误码通常不是临时性问题，直接返回
+                                return None;
                             }
                         }
+                        Err(e) => {
+                            warn!("解析番剧API响应失败: {} (尝试次数: {})", e, retry_count + 1);
+                            // JSON解析失败通常不是临时性问题，直接返回
+                            return None;
+                        }
                     }
-                    Err(e) => {
-                        error!("解析番剧API响应失败: {}", e);
-                    }
+                } else {
+                    warn!("请求EP详细信息HTTP失败，状态码: {} (尝试次数: {})", res.status(), retry_count + 1);
                 }
             }
+            Err(e) => {
+                warn!("请求番剧API失败: {} (尝试次数: {})", e, retry_count + 1);
+            }
         }
-        Err(e) => {
-            error!("请求番剧API失败: {}", e);
-        }
+        
+        retry_count += 1;
     }
-
+    
+    error!("获取ep_id={}的详细信息失败，已重试{}次", ep_id, max_retries);
     None
 }
 
