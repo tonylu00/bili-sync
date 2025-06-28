@@ -770,10 +770,17 @@ pub async fn download_video_pages(
             ExecutionStatus::ClassifiedFailed(classified_error) => {
                 // 根据错误分类进行不同级别的日志记录
                 match classified_error.error_type {
-                    crate::error::ErrorType::NotFound | crate::error::ErrorType::Permission => {
+                    crate::error::ErrorType::NotFound => {
                         debug!(
                             "处理视频「{}」{}失败({}): {}",
                             &video_model.name, task_name, classified_error.error_type, classified_error.message
+                        );
+                    }
+                    crate::error::ErrorType::Permission => {
+                        // 对于权限错误（包括充电专享视频），使用info级别记录
+                        info!(
+                            "跳过视频「{}」{}: {}",
+                            &video_model.name, task_name, classified_error.message
                         );
                     }
                     crate::error::ErrorType::Network
@@ -1092,13 +1099,23 @@ pub async fn download_page(
             ExecutionStatus::ClassifiedFailed(classified_error) => {
                 // 根据错误分类进行不同级别的日志记录
                 match classified_error.error_type {
-                    crate::error::ErrorType::NotFound | crate::error::ErrorType::Permission => {
+                    crate::error::ErrorType::NotFound => {
                         debug!(
                             "处理视频「{}」第 {} 页{}失败({}): {}",
                             &video_model.name,
                             page_model.pid,
                             task_name,
                             classified_error.error_type,
+                            classified_error.message
+                        );
+                    }
+                    crate::error::ErrorType::Permission => {
+                        // 对于权限错误（包括充电专享视频），使用info级别记录
+                        info!(
+                            "跳过视频「{}」第 {} 页{}: {}",
+                            &video_model.name,
+                            page_model.pid,
+                            task_name,
                             classified_error.message
                         );
                     }

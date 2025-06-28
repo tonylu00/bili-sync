@@ -189,7 +189,8 @@ impl ErrorClassifier {
             }
             crate::bilibili::BiliError::RequestFailed(code, msg) => {
                 let error_type = match *code {
-                    87008 | -352 | -412 => ErrorType::RiskControl, // 特定风控错误码
+                    87007 | 87008 => ErrorType::Permission, // 充电专享视频，归类为权限错误
+                    -352 | -412 => ErrorType::RiskControl, // 特定风控错误码
                     -401 | -403 => ErrorType::Authentication,
                     -404 => ErrorType::NotFound,
                     -429 => ErrorType::RateLimit,
@@ -198,12 +199,23 @@ impl ErrorClassifier {
                 };
 
                 let should_retry = match *code {
-                    87008 | -352 | -412 => false, // 风控不重试
+                    87007 | 87008 => false, // 充电专享视频不需要重试
+                    -352 | -412 => false, // 风控不重试
                     -500..=-400 | -1 => true,     // 服务器错误或网络错误可重试
                     _ => false,
                 };
 
-                ClassifiedError::new(error_type, format!("B站API错误: {}", msg)).with_retry_policy(should_retry, false)
+                let should_ignore = match *code {
+                    87007 | 87008 => true, // 充电专享视频应该被忽略
+                    _ => false,
+                };
+
+                let message = match *code {
+                    87007 | 87008 => "充电专享视频，需要为UP主充电才能观看".to_string(),
+                    _ => format!("B站API错误: {}", msg),
+                };
+
+                ClassifiedError::new(error_type, message).with_retry_policy(should_retry, should_ignore)
             }
         }
     }
