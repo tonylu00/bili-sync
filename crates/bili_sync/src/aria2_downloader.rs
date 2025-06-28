@@ -122,12 +122,31 @@ impl Aria2Downloader {
                     // 实际的健康检查逻辑将通过其他方式触发
                     last_check_time = std::time::Instant::now();
                 } else if current_count < instance_count {
-                    // 只有实例数量不足时才警告，避免频繁日志
-                    if total_load < 2 { // 负载较低时才报告问题
+                    // 实例数量不足，需要自动恢复
+                    if total_load < 2 { // 负载较低时立即尝试恢复
                         warn!(
-                            "检测到aria2实例数量不足: {}/{} (当前负载: {})，系统将在空闲时尝试恢复",
+                            "检测到aria2实例数量不足: {}/{} (当前负载: {})，立即尝试自动恢复",
                             current_count, instance_count, total_load
                         );
+                        
+                        // 计算需要创建的实例数量
+                        let missing_count = instance_count - current_count;
+                        
+                        // 尝试创建缺失的实例
+                        for i in 0..missing_count {
+                            match Self::create_missing_instance(&instances).await {
+                                Ok(new_instance) => {
+                                    let mut instances_guard = instances.lock().await;
+                                    instances_guard.push(new_instance);
+                                    info!("成功恢复第{}个aria2实例", i + 1);
+                                }
+                                Err(e) => {
+                                    error!("恢复第{}个aria2实例失败: {:#}", i + 1, e);
+                                    // 记录详细的失败原因以便诊断
+                                    Self::log_startup_diagnostics().await;
+                                }
+                            }
+                        }
                     } else {
                         debug!(
                             "aria2实例数量不足但系统忙碌: {}/{} (负载: {})，暂缓处理",
@@ -661,13 +680,52 @@ impl Aria2Downloader {
             args.push("--check-certificate=false".to_string());
         }
 
-        let child = tokio::process::Command::new(&self.aria2_binary_path)
+        // 启动aria2进程，保留stderr用于诊断
+        let mut child = tokio::process::Command::new(&self.aria2_binary_path)
             .args(&args)
             .stdin(std::process::Stdio::null())
             .stdout(std::process::Stdio::null())
-            .stderr(std::process::Stdio::null())
+            .stderr(std::process::Stdio::piped()) // 保留stderr用于错误诊断
             .spawn()
-            .context("Failed to start aria2 daemon")?;
+            .with_context(|| {
+                format!(
+                    "Failed to start aria2 daemon: binary={}, port={}, args={:?}",
+                    self.aria2_binary_path.display(),
+                    rpc_port,
+                    args
+                )
+            })?;
+
+        // 检查进程是否立即退出
+        tokio::time::sleep(Duration::from_millis(500)).await;
+        match child.try_wait() {
+            Ok(Some(exit_status)) => {
+                // 进程立即退出，尝试读取错误信息
+                let mut stderr_output = String::new();
+                if let Some(mut stderr) = child.stderr.take() {
+                    let _ = tokio::io::AsyncReadExt::read_to_string(&mut stderr, &mut stderr_output).await;
+                }
+                
+                error!(
+                    "aria2进程立即退出，退出码: {:?}, stderr: {}",
+                    exit_status.code(),
+                    stderr_output
+                );
+                bail!(
+                    "aria2进程启动失败，立即退出，退出码: {:?}, 错误信息: {}",
+                    exit_status.code(),
+                    stderr_output
+                );
+            }
+            Ok(None) => {
+                // 进程正在运行，移除stderr避免影响正常运行
+                child.stderr.take();
+                debug!("aria2进程启动成功，端口: {}", rpc_port);
+            }
+            Err(e) => {
+                warn!("无法检查aria2进程状态: {}", e);
+            }
+        }
 
         Ok(child)
     }
@@ -1333,6 +1391,128 @@ impl Aria2Downloader {
             .await;
 
         result.is_ok()
+    }
+
+    /// 创建缺失的实例（用于监控任务自动恢复）
+    async fn create_missing_instance(_instances: &Arc<Mutex<Vec<Aria2Instance>>>) -> Result<Aria2Instance> {
+        let rpc_port = Self::find_available_port().await?;
+        let rpc_secret = Self::generate_secret();
+
+        info!("尝试创建缺失的aria2实例，端口: {}", rpc_port);
+
+        // 需要临时创建一个aria2下载器来启动实例
+        let aria2_binary_path = Self::extract_aria2_binary().await?;
+        let temp_downloader = Self::create_temp_downloader(aria2_binary_path).await?;
+        
+        let process = temp_downloader.start_single_instance(rpc_port, &rpc_secret).await?;
+        let instance = Aria2Instance::new(process, rpc_port, rpc_secret.clone());
+
+        // 等待RPC服务启动
+        info!("等待新aria2实例RPC服务启动...");
+        tokio::time::sleep(Duration::from_secs(3)).await;
+
+        // 验证连接
+        temp_downloader.test_instance_connection(rpc_port, &rpc_secret).await?;
+
+        info!("新aria2实例创建成功，端口: {}", rpc_port);
+        Ok(instance)
+    }
+
+    /// 创建临时下载器用于实例恢复
+    async fn create_temp_downloader(aria2_binary_path: PathBuf) -> Result<Self> {
+        let client = crate::bilibili::Client::new();
+        Ok(Self {
+            client,
+            aria2_instances: Arc::new(Mutex::new(Vec::new())),
+            aria2_binary_path,
+            instance_count: 1,
+            next_instance_index: std::sync::atomic::AtomicUsize::new(0),
+        })
+    }
+
+    /// 记录启动诊断信息
+    async fn log_startup_diagnostics() {
+        error!("=== Aria2启动失败诊断信息 ===");
+        
+        // 检查aria2二进制文件
+        match Self::extract_aria2_binary().await {
+            Ok(binary_path) => {
+                if binary_path.exists() {
+                    info!("✓ aria2二进制文件存在: {}", binary_path.display());
+                    
+                    // 检查文件权限
+                    match tokio::fs::metadata(&binary_path).await {
+                        Ok(metadata) => {
+                            info!("✓ 文件大小: {} 字节", metadata.len());
+                            #[cfg(unix)]
+                            {
+                                use std::os::unix::fs::PermissionsExt;
+                                let perms = metadata.permissions();
+                                info!("✓ 文件权限: {:o}", perms.mode());
+                            }
+                        }
+                        Err(e) => error!("✗ 无法读取文件元数据: {}", e),
+                    }
+                    
+                    // 测试执行
+                    match tokio::process::Command::new(&binary_path)
+                        .arg("--version")
+                        .output()
+                        .await
+                    {
+                        Ok(output) => {
+                            if output.status.success() {
+                                let version = String::from_utf8_lossy(&output.stdout);
+                                info!("✓ aria2版本: {}", version.trim());
+                            } else {
+                                error!("✗ aria2执行失败，退出码: {:?}", output.status.code());
+                                error!("stderr: {}", String::from_utf8_lossy(&output.stderr));
+                            }
+                        }
+                        Err(e) => error!("✗ 无法执行aria2: {}", e),
+                    }
+                } else {
+                    error!("✗ aria2二进制文件不存在: {}", binary_path.display());
+                }
+            }
+            Err(e) => error!("✗ 无法获取aria2二进制文件: {:#}", e),
+        }
+        
+        // 检查端口可用性
+        match Self::find_available_port().await {
+            Ok(port) => info!("✓ 找到可用端口: {}", port),
+            Err(e) => error!("✗ 无法找到可用端口: {}", e),
+        }
+        
+        // 检查系统资源
+        #[cfg(target_os = "linux")]
+        {
+            // 检查进程限制
+            if let Ok(output) = tokio::process::Command::new("ulimit")
+                .args(["-n"])
+                .output()
+                .await
+            {
+                if output.status.success() {
+                    let limit = String::from_utf8_lossy(&output.stdout);
+                    info!("✓ 文件描述符限制: {}", limit.trim());
+                }
+            }
+            
+            // 检查内存使用
+            if let Ok(output) = tokio::process::Command::new("free")
+                .args(["-h"])
+                .output()
+                .await
+            {
+                if output.status.success() {
+                    let memory_info = String::from_utf8_lossy(&output.stdout);
+                    info!("✓ 内存状态:\n{}", memory_info);
+                }
+            }
+        }
+        
+        error!("=== 诊断信息结束 ===");
     }
 
     /// 创建新实例（用于健康检查重启）
