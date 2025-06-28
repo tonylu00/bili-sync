@@ -1345,14 +1345,41 @@ pub async fn fetch_page_video(
                     e
                 })?;
 
+            // 增强的音视频合并，带损坏文件检测和重试机制
             let res = downloader.merge(&tmp_video_path, &tmp_audio_path, page_path).await;
-            let _ = fs::remove_file(tmp_video_path).await;
-            let _ = fs::remove_file(tmp_audio_path).await;
-
+            
+            // 合并失败时的智能处理
             if let Err(e) = res {
                 error!("音视频合并失败: {:#}", e);
-                return Err(e);
+                
+                // 检查是否是文件损坏导致的失败
+                let error_msg = e.to_string();
+                if error_msg.contains("Invalid data found when processing input") || 
+                   error_msg.contains("ffmpeg error") ||
+                   error_msg.contains("文件损坏") {
+                    
+                    warn!("检测到文件损坏，清理临时文件并标记为重试: {}", error_msg);
+                    
+                    // 立即清理损坏的临时文件
+                    let _ = fs::remove_file(&tmp_video_path).await;
+                    let _ = fs::remove_file(&tmp_audio_path).await;
+                    
+                    // 返回特殊错误，让上层重试下载
+                    return Err(anyhow::anyhow!(
+                        "视频文件损坏，已清理临时文件，请重试下载: {}", 
+                        error_msg
+                    ));
+                } else {
+                    // 其他类型的合并错误，清理临时文件后直接返回
+                    let _ = fs::remove_file(&tmp_video_path).await;
+                    let _ = fs::remove_file(&tmp_audio_path).await;
+                    return Err(e);
+                }
             }
+            
+            // 合并成功，清理临时文件
+            let _ = fs::remove_file(tmp_video_path).await;
+            let _ = fs::remove_file(tmp_audio_path).await;
 
             // 获取合并后文件大小，如果失败则使用视频和音频大小之和
             tokio::fs::metadata(page_path)
