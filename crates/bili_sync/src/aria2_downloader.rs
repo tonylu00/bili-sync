@@ -100,6 +100,9 @@ impl Aria2Downloader {
         // 智能健康检查监控任务
         let instances = Arc::clone(&downloader.aria2_instances);
         let instance_count = downloader.instance_count;
+        
+        // 为健康检查任务创建独立的client
+        let health_check_client = crate::bilibili::Client::new();
 
         tokio::spawn(async move {
             let mut interval = tokio::time::interval(Duration::from_secs(60)); // 增加到60秒间隔
@@ -118,8 +121,14 @@ impl Aria2Downloader {
                 if total_load == 0 && last_check_time.elapsed() > Duration::from_secs(120) {
                     // 系统完全空闲，且距离上次检查超过2分钟，进行全面健康检查
                     debug!("系统空闲，执行全面健康检查");
-                    // 注意：这里不能直接调用health_check，因为需要可变引用
-                    // 实际的健康检查逻辑将通过其他方式触发
+                    
+                    // 执行完整的智能健康检查
+                    if let Err(e) = Self::smart_health_check(&health_check_client, &instances, instance_count).await {
+                        warn!("全面健康检查失败: {:#}", e);
+                    } else {
+                        debug!("全面健康检查完成");
+                    }
+                    
                     last_check_time = std::time::Instant::now();
                 } else if current_count < instance_count {
                     // 实例数量不足，需要自动恢复
@@ -995,6 +1004,7 @@ impl Aria2Downloader {
         const MAX_CONSECUTIVE_FAILURES: u32 = 5;
         
         // 优化：智能状态检查参数
+        #[allow(unused_assignments)]
         let mut check_interval = Duration::from_secs(1); // 初始1秒检查，减少频率
         let mut last_completed_length = 0u64;
         let mut stall_count = 0;
@@ -1279,11 +1289,15 @@ impl Aria2Downloader {
     }
 
     /// 智能健康检查调度器：只在合适时机执行健康检查
-    pub async fn smart_health_check(&mut self) -> Result<()> {
+    pub async fn smart_health_check(
+        client: &crate::bilibili::Client,
+        instances: &Arc<Mutex<Vec<Aria2Instance>>>,
+        instance_count: usize,
+    ) -> Result<()> {
         // 检查当前是否适合进行健康检查
-        let instances = self.aria2_instances.lock().await;
-        let total_load: usize = instances.iter().map(|i| i.get_load()).sum();
-        drop(instances);
+        let instances_guard = instances.lock().await;
+        let total_load: usize = instances_guard.iter().map(|i| i.get_load()).sum();
+        drop(instances_guard);
         
         if total_load > 0 {
             debug!("系统忙碌 (负载: {})，跳过健康检查", total_load);
@@ -1291,16 +1305,20 @@ impl Aria2Downloader {
         }
         
         debug!("系统空闲，开始执行健康检查");
-        self.health_check().await
+        Self::health_check(client, instances, instance_count).await
     }
 
     /// 健康检查：移除不健康的实例并重新启动（增强版）
-    pub async fn health_check(&mut self) -> Result<()> {
-        let mut instances = self.aria2_instances.lock().await;
+    pub async fn health_check(
+        client: &crate::bilibili::Client,
+        instances: &Arc<Mutex<Vec<Aria2Instance>>>,
+        instance_count: usize,
+    ) -> Result<()> {
+        let mut instances_guard = instances.lock().await;
         let mut unhealthy_indices = Vec::new();
 
         // 检查每个实例的健康状态，避免在忙碌时进行RPC检查
-        for (i, instance) in instances.iter_mut().enumerate() {
+        for (i, instance) in instances_guard.iter_mut().enumerate() {
             // 基础进程检查
             if !instance.is_healthy() {
                 warn!("aria2实例 {} 进程不健康，准备重启", i + 1);
@@ -1312,8 +1330,7 @@ impl Aria2Downloader {
             let current_load = instance.get_load();
             if current_load == 0 {
                 // 实例空闲时才进行RPC健康检查，并且限制检查频率
-                let rpc_healthy = self
-                    .check_instance_rpc_health(instance.rpc_port, &instance.rpc_secret)
+                let rpc_healthy = Self::check_instance_rpc_health(client, instance.rpc_port, &instance.rpc_secret)
                     .await;
                 if !rpc_healthy {
                     warn!("aria2实例 {} RPC连接不健康，准备重启", i + 1);
@@ -1327,51 +1344,59 @@ impl Aria2Downloader {
 
         // 移除不健康的实例
         for &index in unhealthy_indices.iter().rev() {
-            let removed_instance = instances.remove(index);
+            let removed_instance = instances_guard.remove(index);
             info!("移除不健康的aria2实例，端口: {}", removed_instance.rpc_port);
         }
 
         let unhealthy_count = unhealthy_indices.len();
-        drop(instances);
+        drop(instances_guard);
 
         // 重新启动不健康的实例
         if unhealthy_count > 0 {
             info!("重新启动 {} 个aria2实例", unhealthy_count);
 
             for i in 0..unhealthy_count {
-                match self.create_new_instance().await {
+                match Self::create_missing_instance(instances).await {
                     Ok(instance) => {
-                        self.aria2_instances.lock().await.push(instance);
+                        instances.lock().await.push(instance);
                         info!("成功重启第{}个aria2实例", i + 1);
                     }
                     Err(e) => {
                         error!("重启第{}个aria2实例失败: {:#}", i + 1, e);
+                        // 记录详细的失败原因以便诊断
+                        Self::log_startup_diagnostics().await;
                     }
                 }
             }
         }
 
-        let current_count = self.aria2_instances.lock().await.len();
+        let current_count = instances.lock().await.len();
         if current_count == 0 {
             bail!("所有aria2实例都不可用");
         }
 
         info!(
             "健康检查完成，当前可用实例数: {}/{}",
-            current_count, self.instance_count
+            current_count, instance_count
         );
         Ok(())
     }
 
     /// 检查实例的RPC健康状态
-    async fn check_instance_rpc_health(&self, rpc_port: u16, rpc_secret: &str) -> bool {
-        let result = self
-            .retry_with_backoff(
-                "RPC健康检查",
-                2, // 只重试2次
-                Duration::from_millis(500),
-                Duration::from_secs(10), // 增加RPC健康检查超时时间到10秒
-                || async {
+    async fn check_instance_rpc_health(client: &crate::bilibili::Client, rpc_port: u16, rpc_secret: &str) -> bool {
+        let client_clone = client.clone();
+        let rpc_secret_clone = rpc_secret.to_string();
+        
+        let result = Self::retry_with_backoff_static(
+            client,
+            "RPC健康检查",
+            2, // 只重试2次
+            Duration::from_millis(500),
+            Duration::from_secs(10), // 增加RPC健康检查超时时间到10秒
+            move || {
+                let client = client_clone.clone();
+                let rpc_secret = rpc_secret_clone.clone();
+                async move {
                     let url = format!("http://127.0.0.1:{}/jsonrpc", rpc_port);
                     let payload = serde_json::json!({
                         "jsonrpc": "2.0",
@@ -1380,15 +1405,16 @@ impl Aria2Downloader {
                         "params": [format!("token:{}", rpc_secret)]
                     });
 
-                    let response = self.client.post(&url).json(&payload).send().await?;
+                    let response = client.post(&url).json(&payload).send().await?;
                     if response.status().is_success() {
                         Ok(())
                     } else {
                         bail!("RPC返回错误状态: {}", response.status())
                     }
-                },
-            )
-            .await;
+                }
+            },
+        )
+        .await;
 
         result.is_ok()
     }
@@ -1515,26 +1541,6 @@ impl Aria2Downloader {
         error!("=== 诊断信息结束 ===");
     }
 
-    /// 创建新实例（用于健康检查重启）
-    async fn create_new_instance(&self) -> Result<Aria2Instance> {
-        let rpc_port = Self::find_available_port().await?;
-        let rpc_secret = Self::generate_secret();
-
-        debug!("创建新aria2实例，端口: {}", rpc_port);
-
-        let process = self.start_single_instance(rpc_port, &rpc_secret).await?;
-        let instance = Aria2Instance::new(process, rpc_port, rpc_secret.clone());
-
-        // 等待RPC服务启动（与主启动流程保持一致）
-        debug!("等待新aria2实例RPC服务启动...");
-        tokio::time::sleep(Duration::from_secs(3)).await;
-
-        // 验证连接
-        self.test_instance_connection(rpc_port, &rpc_secret).await?;
-
-        info!("新aria2实例创建成功，端口: {}", rpc_port);
-        Ok(instance)
-    }
 
     /// 通用的重试机制，支持指数退避（优化版）
     async fn retry_with_backoff<F, Fut, T>(
@@ -1609,6 +1615,71 @@ impl Aria2Downloader {
 
             sleep(delay).await;
             delay = std::cmp::min(delay * 2, Duration::from_secs(10)); // 减少最大延迟到10秒
+        }
+
+        unreachable!()
+    }
+
+    /// 静态版本的重试方法，用于健康检查
+    async fn retry_with_backoff_static<F, Fut, T>(
+        _client: &crate::bilibili::Client,
+        operation_name: &str,
+        max_retries: u32,
+        initial_delay: Duration,
+        timeout_duration: Duration,
+        operation: F,
+    ) -> Result<T>
+    where
+        F: Fn() -> Fut,
+        Fut: std::future::Future<Output = Result<T>>,
+    {
+        let mut delay = initial_delay;
+
+        for attempt in 1..=max_retries {
+            match timeout(timeout_duration, operation()).await {
+                Ok(Ok(result)) => {
+                    if attempt > 1 {
+                        debug!("{}在第{}次尝试后成功", operation_name, attempt);
+                    }
+                    return Ok(result);
+                }
+                Ok(Err(e)) => {
+                    if attempt == max_retries {
+                        debug!("{}在{}次尝试后最终失败: {:#}", operation_name, max_retries, e);
+                        return Err(e);
+                    }
+                    
+                    let should_retry_immediately = e.to_string().contains("Connection refused") 
+                        || e.to_string().contains("timeout");
+                    
+                    if should_retry_immediately && attempt <= 2 {
+                        debug!(
+                            "{}第{}次尝试失败（网络问题）: {:#}，立即重试",
+                            operation_name, attempt, e
+                        );
+                        continue;
+                    } else {
+                        debug!(
+                            "{}第{}次尝试失败: {:#}，{}ms后重试",
+                            operation_name, attempt, e, delay.as_millis()
+                        );
+                    }
+                }
+                Err(_) => {
+                    let timeout_err = anyhow::anyhow!("{}超时({:?})", operation_name, timeout_duration);
+                    if attempt == max_retries {
+                        debug!("{}在{}次尝试后最终超时", operation_name, max_retries);
+                        return Err(timeout_err);
+                    }
+                    debug!(
+                        "{}第{}次尝试超时，{}ms后重试",
+                        operation_name, attempt, delay.as_millis()
+                    );
+                }
+            }
+
+            sleep(delay).await;
+            delay = std::cmp::min(delay * 2, Duration::from_secs(10));
         }
 
         unreachable!()
