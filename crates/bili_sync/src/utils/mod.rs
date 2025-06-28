@@ -66,21 +66,42 @@ impl tracing::field::Visit for MessageVisitor {
 }
 
 pub fn init_logger(log_level: &str) {
-    // 控制台输出层 - 使用用户指定的日志级别（如info）
+    // 构建优化的日志过滤器，降低sqlx慢查询等噪音
+    let console_filter = build_optimized_filter(log_level);
+    let api_filter = build_optimized_filter("debug");
+
+    // 控制台输出层 - 使用优化的过滤器
     let fmt_layer = tracing_subscriber::fmt::layer()
         .compact()
         .with_target(false)
         .with_timer(tracing_subscriber::fmt::time::ChronoLocal::new(
             "%b %d %H:%M:%S".to_owned(),
         ))
-        .with_filter(tracing_subscriber::EnvFilter::builder().parse_lossy(log_level));
+        .with_filter(console_filter);
 
-    // API日志捕获层 - 捕获debug级别及以上的所有日志
-    let log_capture_layer = LogCaptureLayer.with_filter(tracing_subscriber::EnvFilter::new("debug"));
+    // API日志捕获层 - 使用优化的过滤器
+    let log_capture_layer = LogCaptureLayer.with_filter(api_filter);
 
     tracing_subscriber::registry()
         .with(fmt_layer)
         .with(log_capture_layer)
         .try_init()
         .expect("初始化日志失败");
+}
+
+/// 构建优化的日志过滤器，减少噪音日志
+fn build_optimized_filter(base_level: &str) -> tracing_subscriber::EnvFilter {
+    tracing_subscriber::EnvFilter::builder()
+        .parse_lossy(format!(
+            "{},\
+            sqlx::query=error,\
+            sqlx=error,\
+            sea_orm::database=error,\
+            sea_orm_migration=warn,\
+            tokio_util=warn,\
+            hyper=warn,\
+            reqwest=warn,\
+            h2=warn",
+            base_level
+        ))
 }
