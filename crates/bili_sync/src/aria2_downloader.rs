@@ -904,7 +904,7 @@ impl Aria2Downloader {
         Ok(gid)
     }
 
-    /// 在指定实例上等待下载完成（带重试和超时机制）
+    /// 在指定实例上等待下载完成（优化版状态检查）
     async fn wait_for_download_on_instance(
         &self,
         gid: &str,
@@ -915,15 +915,31 @@ impl Aria2Downloader {
         let url = format!("http://127.0.0.1:{}/jsonrpc", rpc_port);
         let mut consecutive_failures = 0;
         const MAX_CONSECUTIVE_FAILURES: u32 = 5;
-
+        
+        // 优化：智能状态检查参数
+        let mut check_interval = Duration::from_millis(500); // 初始快速检查
+        let mut last_completed_length = 0u64;
+        let mut stall_count = 0;
+        let start_time = std::time::Instant::now();
+        
+        // 下载超时保护：默认30分钟，大文件动态调整
+        let download_timeout = Duration::from_secs(30 * 60); // 30分钟
+        
         loop {
+            // 检查总体超时
+            if start_time.elapsed() > download_timeout {
+                warn!("下载超时 (GID: {})，已等待 {:.1} 分钟", gid, start_time.elapsed().as_secs_f64() / 60.0);
+                bail!("下载超时，超过{}分钟", download_timeout.as_secs() / 60);
+            }
+            
             let payload = serde_json::json!({
                 "jsonrpc": "2.0",
                 "method": "aria2.tellStatus",
                 "id": "check_status",
                 "params": [
                     format!("token:{}", rpc_secret),
-                    gid
+                    gid,
+                    ["status", "totalLength", "completedLength", "downloadSpeed", "errorMessage"]
                 ]
             });
 
@@ -931,9 +947,9 @@ impl Aria2Downloader {
             let check_result = self
                 .retry_with_backoff(
                     "状态检查",
-                    3,
-                    Duration::from_millis(500),
-                    Duration::from_secs(3),
+                    2, // 减少重试次数，提高响应速度
+                    Duration::from_millis(300),
+                    Duration::from_secs(2),
                     || async {
                         let response = self
                             .client
@@ -970,7 +986,8 @@ impl Aria2Downloader {
                         return Err(e.context("连续状态检查失败次数过多，放弃下载"));
                     }
 
-                    sleep(Duration::from_millis(2000)).await;
+                    // 失败时使用更长的等待时间
+                    sleep(Duration::from_millis(3000)).await;
                     continue;
                 }
             };
@@ -983,35 +1000,85 @@ impl Aria2Downloader {
                     // 获取下载统计信息
                     let total_length = result["totalLength"].as_str().unwrap_or("0");
                     let completed_length = result["completedLength"].as_str().unwrap_or("0");
+                    let download_speed = result["downloadSpeed"].as_str().unwrap_or("0");
 
-                    if let (Ok(total), Ok(completed)) = (total_length.parse::<u64>(), completed_length.parse::<u64>()) {
+                    if let (Ok(total), Ok(completed), Ok(speed)) = (
+                        total_length.parse::<u64>(),
+                        completed_length.parse::<u64>(),
+                        download_speed.parse::<u64>()
+                    ) {
                         let total_mb = total as f64 / 1_048_576.0;
                         let completed_mb = completed as f64 / 1_048_576.0;
-                        debug!(
-                            "aria2下载完成，GID: {}，总大小: {:.2} MB，已完成: {:.2} MB",
-                            gid, total_mb, completed_mb
+                        let _speed_mb = speed as f64 / 1_048_576.0;
+                        let duration = start_time.elapsed();
+                        
+                        info!(
+                            "aria2下载完成 (GID: {})，大小: {:.2}/{:.2} MB，平均速度: {:.2} MB/s，用时: {:.1}s",
+                            gid, completed_mb, total_mb, 
+                            completed_mb / duration.as_secs_f64().max(0.1),
+                            duration.as_secs_f64()
                         );
                     } else {
-                        debug!("aria2下载完成，GID: {}", gid);
+                        info!("aria2下载完成 (GID: {})，用时: {:.1}s", gid, start_time.elapsed().as_secs_f64());
                     }
                     return Ok(());
                 }
                 "error" => {
                     let error_msg = result["errorMessage"].as_str().unwrap_or("Unknown error");
+                    error!("aria2下载失败 (GID: {})：{}", gid, error_msg);
                     bail!("下载失败: {}", error_msg);
                 }
                 "removed" => {
+                    warn!("aria2下载被移除 (GID: {})", gid);
                     bail!("下载被移除");
                 }
-                "active" | "waiting" | "paused" => {
-                    // 继续等待
-                    sleep(Duration::from_millis(1000)).await;
+                "active" => {
+                    // 优化：动态调整检查间隔和进度监控
+                    let _total_length = result["totalLength"].as_str().unwrap_or("0").parse::<u64>().unwrap_or(0);
+                    let completed_length = result["completedLength"].as_str().unwrap_or("0").parse::<u64>().unwrap_or(0);
+                    let download_speed = result["downloadSpeed"].as_str().unwrap_or("0").parse::<u64>().unwrap_or(0);
+                    
+                    // 检查下载是否停滞
+                    if completed_length == last_completed_length {
+                        stall_count += 1;
+                        if stall_count >= 30 { // 30次检查无进度（约30-60秒）
+                            warn!("下载停滞检测 (GID: {})，无进度超过{}次检查", gid, stall_count);
+                            if stall_count >= 60 { // 更长时间停滞则认为失败
+                                bail!("下载停滞超过60次状态检查，可能网络异常");
+                            }
+                        }
+                    } else {
+                        stall_count = 0;
+                        last_completed_length = completed_length;
+                    }
+                    
+                    // 不显示中间进度，只在完成时显示统计信息
+                    
+                    // 动态调整检查间隔
+                    check_interval = if download_speed > 1_048_576 { // >1MB/s
+                        Duration::from_millis(1000) // 高速下载，1秒检查一次
+                    } else if download_speed > 0 {
+                        Duration::from_millis(2000) // 慢速下载，2秒检查一次
+                    } else {
+                        Duration::from_millis(3000) // 无速度，3秒检查一次
+                    };
+                }
+                "waiting" => {
+                    debug!("下载等待中 (GID: {})", gid);
+                    check_interval = Duration::from_millis(2000); // 等待状态，较长间隔
+                }
+                "paused" => {
+                    debug!("下载已暂停 (GID: {})", gid);
+                    check_interval = Duration::from_millis(5000); // 暂停状态，更长间隔
                 }
                 _ => {
-                    warn!("未知下载状态: {}", status);
-                    sleep(Duration::from_millis(1000)).await;
+                    warn!("未知下载状态 (GID: {})：{}", gid, status);
+                    check_interval = Duration::from_millis(2000);
                 }
             }
+            
+            // 使用动态检查间隔
+            sleep(check_interval).await;
         }
     }
 
@@ -1244,7 +1311,7 @@ impl Aria2Downloader {
         Ok(instance)
     }
 
-    /// 通用的重试机制，支持指数退避
+    /// 通用的重试机制，支持指数退避（优化版）
     async fn retry_with_backoff<F, Fut, T>(
         &self,
         operation_name: &str,
@@ -1263,40 +1330,49 @@ impl Aria2Downloader {
             match timeout(timeout_duration, operation()).await {
                 Ok(Ok(result)) => {
                     if attempt > 1 {
-                        info!("{}在第{}次尝试后成功", operation_name, attempt);
+                        debug!("{}在第{}次尝试后成功", operation_name, attempt);
                     }
                     return Ok(result);
                 }
                 Ok(Err(e)) => {
                     if attempt == max_retries {
-                        error!("{}在{}次尝试后最终失败: {:#}", operation_name, max_retries, e);
+                        warn!("{}在{}次尝试后最终失败: {:#}", operation_name, max_retries, e);
                         return Err(e);
                     }
-                    warn!(
-                        "{}第{}次尝试失败: {:#}，{}ms后重试",
-                        operation_name,
-                        attempt,
-                        e,
-                        delay.as_millis()
-                    );
+                    
+                    // 优化：根据错误类型调整重试策略
+                    let should_retry_immediately = e.to_string().contains("Connection refused") 
+                        || e.to_string().contains("timeout");
+                    
+                    if should_retry_immediately && attempt <= 2 {
+                        debug!(
+                            "{}第{}次尝试失败（网络问题）: {:#}，立即重试",
+                            operation_name, attempt, e
+                        );
+                        // 网络问题立即重试，不等待
+                        continue;
+                    } else {
+                        debug!(
+                            "{}第{}次尝试失败: {:#}，{}ms后重试",
+                            operation_name, attempt, e, delay.as_millis()
+                        );
+                    }
                 }
                 Err(_) => {
                     let timeout_err = anyhow::anyhow!("{}超时({:?})", operation_name, timeout_duration);
                     if attempt == max_retries {
-                        error!("{}在{}次尝试后最终超时", operation_name, max_retries);
+                        warn!("{}在{}次尝试后最终超时", operation_name, max_retries);
                         return Err(timeout_err);
                     }
-                    warn!(
+                    debug!(
                         "{}第{}次尝试超时，{}ms后重试",
-                        operation_name,
-                        attempt,
-                        delay.as_millis()
+                        operation_name, attempt, delay.as_millis()
                     );
                 }
             }
 
             sleep(delay).await;
-            delay = std::cmp::min(delay * 2, Duration::from_secs(30)); // 最大延迟30秒
+            delay = std::cmp::min(delay * 2, Duration::from_secs(10)); // 减少最大延迟到10秒
         }
 
         unreachable!()
