@@ -21,8 +21,7 @@ async fn database_connection() -> Result<DatabaseConnection> {
         .acquire_timeout(std::time::Duration::from_secs(30)) // 缩短超时时间
         .idle_timeout(std::time::Duration::from_secs(300)) // 空闲连接超时5分钟
         .max_lifetime(std::time::Duration::from_secs(3600)) // 连接最大生命周期1小时
-        .sqlx_logging(true) // 启用sqlx日志以便控制级别
-        .sqlx_logging_level(tracing::log::LevelFilter::Error); // 只记录错误级别的sqlx日志，过滤慢查询警告
+        .sqlx_logging(false); // 禁用sqlx查询日志，避免过多的日志输出
 
     let connection = Database::connect(option).await?;
 
