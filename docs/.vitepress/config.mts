@@ -23,7 +23,7 @@ export default defineConfig({
 		nav: [
 			{ text: "主页", link: "/" },
 			{
-				        text: "v2.7.2 Final",
+				        text: "v2.7.4 Latest",
 				items: [
 					{
 						text: "程序更新",
@@ -68,8 +68,10 @@ export default defineConfig({
 			{
 				text: "高级",
 				items: [
-					{ text: "v2.7.2 Final 高级功能", link: "/bili-sync-v2.7.2-advanced-features" },
-					{ text: "任务队列管理", link: "/queue-management" },
+					{ text: "v2.7.4 完整功能", link: "/all-features" },
+					{ text: "任务队列管理", link: "/QUEUE_FEATURE_SUMMARY" },
+					{ text: "智能错误处理", link: "/comprehensive-comparison-summary" },
+					{ text: "前端功能指南", link: "/frontend" },
 					{ text: "智能风控处理", link: "/risk-control-guide" },
 					{ text: "双重重置系统", link: "/reset-functionality-guide" },
 					{ text: "视觉功能增强", link: "/visual-enhancements-guide" },
@@ -89,6 +91,7 @@ export default defineConfig({
 				text: "更新日志",
 				collapsed: true,
 				items: [
+					{ text: "v2.7.4 (2025-06-29) ⭐", link: "/update-log-v2.7.4" },
 					{ text: "v2.7.3.1 (2025-06-23)", link: "/update-log-v2.7.3.1" },
 					{ text: "v2.7.3 (2025-06-23)", link: "/update-log-v2.7.3" },
 					{ text: "v2.7.2 Final (2025-06-14)", link: "/update-log-2025-06-14-comprehensive" },
