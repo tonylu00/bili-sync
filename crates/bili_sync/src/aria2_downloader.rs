@@ -1022,8 +1022,8 @@ impl Aria2Downloader {
         loop {
             // 检查任务暂停状态，如果暂停则立即退出下载等待
             if crate::task::TASK_CONTROLLER.is_paused() {
-                debug!("检测到任务暂停，停止下载状态检查 (GID: {})", gid);
-                bail!("任务已暂停，停止下载");
+                info!("用户暂停任务，停止下载状态检查 (GID: {})", gid);
+                bail!("用户主动暂停任务");
             }
             
             // 检查总体超时

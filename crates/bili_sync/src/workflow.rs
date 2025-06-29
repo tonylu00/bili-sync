@@ -436,7 +436,17 @@ pub async fn fetch_video_details(
         let mut stream = tasks;
         while let Some(res) = stream.next().await {
             if let Err(e) = res {
-                if e.downcast_ref::<DownloadAbortError>().is_some() || e.to_string().contains("Download cancelled") {
+                let error_msg = e.to_string();
+                
+                // 检查是否是暂停导致的失败，只有在任务暂停时才将 Download cancelled 视为暂停错误
+                if error_msg.contains("任务已暂停") || error_msg.contains("停止下载") || 
+                   error_msg.contains("用户主动暂停任务") ||
+                   (error_msg.contains("Download cancelled") && crate::task::TASK_CONTROLLER.is_paused()) {
+                    info!("视频详情获取因用户暂停而终止: {}", error_msg);
+                    return Err(e); // 直接返回暂停错误，不取消其他任务
+                }
+                
+                if e.downcast_ref::<DownloadAbortError>().is_some() || error_msg.contains("Download cancelled") {
                     token.cancel();
                     // drain the rest of the tasks
                     while stream.next().await.is_some() {}
@@ -505,15 +515,38 @@ pub async fn download_unprocessed_videos(
                 }
             }
             Err(e) => {
-                if e.downcast_ref::<DownloadAbortError>().is_some() || e.to_string().contains("Download cancelled") {
+                let error_msg = e.to_string();
+                
+                // 调试：输出完整的错误信息
+                debug!("检查下载错误消息: '{}'", error_msg);
+                debug!("完整错误链: {:#}", e);
+                debug!("是否包含'任务已暂停': {}", error_msg.contains("任务已暂停"));
+                debug!("是否包含'停止下载': {}", error_msg.contains("停止下载"));
+                debug!("是否包含'Download cancelled': {}", error_msg.contains("Download cancelled"));
+                
+                // 检查是否是暂停导致的失败，只有在任务暂停时才将 Download cancelled 视为暂停错误
+                if error_msg.contains("任务已暂停") || error_msg.contains("停止下载") || 
+                   error_msg.contains("用户主动暂停任务") ||
+                   (error_msg.contains("Download cancelled") && crate::task::TASK_CONTROLLER.is_paused()) {
+                    info!("下载任务因用户暂停而终止: {}", error_msg);
+                    continue; // 跳过暂停相关的错误，不触发风控
+                }
+                
+                if e.downcast_ref::<DownloadAbortError>().is_some() || error_msg.contains("Download cancelled") {
                     if !download_aborted {
                         debug!("检测到风控或取消信号，开始中止所有下载任务");
                         token.cancel(); // 立即取消所有其他正在运行的任务
                         download_aborted = true;
                     }
                 } else {
-                    // 任务返回了非中止的错误
-                    error!("下载任务失败: {:#}", e);
+                    // 检查是否为暂停相关错误
+                    let error_msg = e.to_string();
+                    if error_msg.contains("用户主动暂停任务") || error_msg.contains("任务已暂停") {
+                        info!("下载任务因用户暂停而终止");
+                    } else {
+                        // 任务返回了非中止的错误
+                        error!("下载任务失败: {:#}", e);
+                    }
                 }
             }
         }
@@ -592,7 +625,17 @@ pub async fn retry_failed_videos_once(
                 }
             }
             Err(e) => {
-                if e.downcast_ref::<DownloadAbortError>().is_some() || e.to_string().contains("Download cancelled") {
+                let error_msg = e.to_string();
+                
+                // 检查是否是暂停导致的失败，只有在任务暂停时才将 Download cancelled 视为暂停错误
+                if error_msg.contains("任务已暂停") || error_msg.contains("停止下载") || 
+                   error_msg.contains("用户主动暂停任务") ||
+                   (error_msg.contains("Download cancelled") && crate::task::TASK_CONTROLLER.is_paused()) {
+                    info!("重试任务因用户暂停而终止: {}", error_msg);
+                    continue; // 跳过暂停相关的错误，不触发风控
+                }
+                
+                if e.downcast_ref::<DownloadAbortError>().is_some() || error_msg.contains("Download cancelled") {
                     if !download_aborted {
                         debug!("重试过程中检测到风控或取消信号，停止重试");
                         token.cancel();
@@ -903,10 +946,18 @@ pub async fn download_video_pages(
                         );
                     }
                     _ => {
-                        error!(
-                            "处理视频「{}」{}失败({}): {}",
-                            &video_model.name, task_name, classified_error.error_type, classified_error.message
-                        );
+                        // 检查是否为暂停相关错误
+                        if classified_error.message.contains("用户主动暂停任务") || classified_error.message.contains("任务已暂停") {
+                            info!(
+                                "处理视频「{}」{}因用户暂停而终止",
+                                &video_model.name, task_name
+                            );
+                        } else {
+                            error!(
+                                "处理视频「{}」{}失败({}): {}",
+                                &video_model.name, task_name, classified_error.error_type, classified_error.message
+                            );
+                        }
                     }
                 }
             }
@@ -915,7 +966,13 @@ pub async fn download_video_pages(
                 if let Some(BiliError::RequestFailed(-404, _)) = e.downcast_ref::<BiliError>() {
                     debug!("处理视频「{}」{}失败(404): {:#}", &video_model.name, task_name, e);
                 } else {
-                    error!("处理视频「{}」{}失败: {:#}", &video_model.name, task_name, e);
+                    // 检查是否为暂停相关错误
+                    let error_msg = e.to_string();
+                    if error_msg.contains("用户主动暂停任务") || error_msg.contains("任务已暂停") {
+                        info!("处理视频「{}」{}因用户暂停而终止", &video_model.name, task_name);
+                    } else {
+                        error!("处理视频「{}」{}失败: {:#}", &video_model.name, task_name, e);
+                    }
                 }
             }
         });
@@ -975,13 +1032,29 @@ pub async fn dispatch_download_page(args: DownloadPageArgs<'_>, token: Cancellat
                 update_pages_model(vec![model], args.connection).await?;
             }
             Err(e) => {
-                if e.downcast_ref::<DownloadAbortError>().is_some() || e.to_string().contains("Download cancelled") {
+                let error_msg = e.to_string();
+                
+                // 检查是否是暂停导致的失败，只有在任务暂停时才将 Download cancelled 视为暂停错误
+                if error_msg.contains("任务已暂停") || error_msg.contains("停止下载") || 
+                   error_msg.contains("用户主动暂停任务") ||
+                   (error_msg.contains("Download cancelled") && crate::task::TASK_CONTROLLER.is_paused()) {
+                    info!("分页下载任务因用户暂停而终止: {}", error_msg);
+                    continue; // 跳过暂停相关的错误，不触发风控
+                }
+                
+                if e.downcast_ref::<DownloadAbortError>().is_some() || error_msg.contains("Download cancelled") {
                     if !download_aborted {
                         token.cancel();
                         download_aborted = true;
                     }
                 } else {
-                    error!("下载分页子任务失败: {:#}", e);
+                    // 检查是否为暂停相关错误
+                    let error_msg = e.to_string();
+                    if error_msg.contains("用户主动暂停任务") || error_msg.contains("任务已暂停") {
+                        info!("分页下载因用户暂停而终止");
+                    } else {
+                        error!("下载分页子任务失败: {:#}", e);
+                    }
                 }
             }
         }
@@ -1240,14 +1313,22 @@ pub async fn download_page(
                         );
                     }
                     _ => {
-                        error!(
-                            "处理视频「{}」第 {} 页{}失败({}): {}",
-                            &video_model.name,
-                            page_model.pid,
-                            task_name,
-                            classified_error.error_type,
-                            classified_error.message
-                        );
+                        // 检查是否为暂停相关错误
+                        if classified_error.message.contains("用户主动暂停任务") || classified_error.message.contains("任务已暂停") {
+                            info!(
+                                "处理视频「{}」第 {} 页{}因用户暂停而终止",
+                                &video_model.name, page_model.pid, task_name
+                            );
+                        } else {
+                            error!(
+                                "处理视频「{}」第 {} 页{}失败({}): {}",
+                                &video_model.name,
+                                page_model.pid,
+                                task_name,
+                                classified_error.error_type,
+                                classified_error.message
+                            );
+                        }
                     }
                 }
             }
@@ -1259,10 +1340,19 @@ pub async fn download_page(
                         &video_model.name, page_model.pid, task_name, e
                     );
                 } else {
-                    error!(
-                        "处理视频「{}」第 {} 页{}失败: {:#}",
-                        &video_model.name, page_model.pid, task_name, e
-                    );
+                    // 检查是否为暂停相关错误
+                    let error_msg = e.to_string();
+                    if error_msg.contains("用户主动暂停任务") || error_msg.contains("任务已暂停") {
+                        info!(
+                            "处理视频「{}」第 {} 页{}因用户暂停而终止",
+                            &video_model.name, page_model.pid, task_name
+                        );
+                    } else {
+                        error!(
+                            "处理视频「{}」第 {} 页{}失败: {:#}",
+                            &video_model.name, page_model.pid, task_name, e
+                        );
+                    }
                 }
             }
         });
@@ -1336,8 +1426,12 @@ async fn download_stream(downloader: &UnifiedDownloader, urls: &[&str], path: &P
                 .unwrap_or(0))
         }
         Err(e) => {
-            // 对于404错误，降级为debug日志
-            if let Some(BiliError::RequestFailed(-404, _)) = e.downcast_ref::<BiliError>() {
+            let error_msg = e.to_string();
+            // 检查是否为暂停相关错误
+            if error_msg.contains("用户主动暂停任务") || error_msg.contains("任务已暂停") {
+                info!("下载因用户暂停而终止");
+            } else if let Some(BiliError::RequestFailed(-404, _)) = e.downcast_ref::<BiliError>() {
+                // 对于404错误，降级为debug日志
                 debug!("下载失败(404): {:#}", e);
             } else {
                 error!("下载失败: {:#}", e);
@@ -1418,7 +1512,12 @@ pub async fn fetch_page_video(
             let video_size = download_stream(downloader, &video_urls, &tmp_video_path)
                 .await
                 .map_err(|e| {
-                    error!("视频流下载失败: {:#}", e);
+                    let error_msg = e.to_string();
+                    if error_msg.contains("用户主动暂停任务") || error_msg.contains("任务已暂停") {
+                        info!("视频流下载因用户暂停而终止");
+                    } else {
+                        error!("视频流下载失败: {:#}", e);
+                    }
                     e
                 })?;
 
@@ -1426,7 +1525,12 @@ pub async fn fetch_page_video(
             let audio_size = download_stream(downloader, &audio_urls, &tmp_audio_path)
                 .await
                 .map_err(|e| {
-                    error!("音频流下载失败: {:#}", e);
+                    let error_msg = e.to_string();
+                    if error_msg.contains("用户主动暂停任务") || error_msg.contains("任务已暂停") {
+                        info!("音频流下载因用户暂停而终止");
+                    } else {
+                        error!("音频流下载失败: {:#}", e);
+                    }
                     // 异步删除临时视频文件
                     let video_path_clone = tmp_video_path.clone();
                     tokio::spawn(async move {
