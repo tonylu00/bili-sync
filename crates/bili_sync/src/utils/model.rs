@@ -21,6 +21,7 @@ pub async fn filter_unfilled_videos(
                 .and(video::Column::DownloadStatus.eq(0))
                 .and(video::Column::Category.is_in([1, 2]))
                 .and(video::Column::SinglePage.is_null())
+                .and(video::Column::Deleted.eq(0))
                 .and(additional_expr),
         )
         .all(conn)
@@ -40,6 +41,7 @@ pub async fn filter_unhandled_video_pages(
                 .and(video::Column::DownloadStatus.lt(STATUS_COMPLETED))
                 .and(video::Column::Category.is_in([1, 2]))
                 .and(video::Column::SinglePage.is_not_null())
+                .and(video::Column::Deleted.eq(0))
                 .and(additional_expr),
         )
         .find_with_related(page::Entity)
@@ -63,6 +65,7 @@ pub async fn get_failed_videos_in_current_cycle(
                 .and(video::Column::DownloadStatus.gt(0)) // 排除未开始的视频 (状态为0)
                 .and(video::Column::Category.is_in([1, 2]))
                 .and(video::Column::SinglePage.is_not_null())
+                .and(video::Column::Deleted.eq(0))
                 .and(additional_expr),
         )
         .find_with_related(page::Entity)

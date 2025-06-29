@@ -232,11 +232,6 @@ impl DeleteTaskQueue {
     /// 设置处理状态
     pub fn set_processing(&self, is_processing: bool) {
         self.is_processing.store(is_processing, Ordering::SeqCst);
-        if is_processing {
-            info!("开始处理删除任务队列");
-        } else {
-            info!("删除任务队列处理完成");
-        }
     }
 
     /// 处理队列中的所有删除任务
@@ -244,14 +239,19 @@ impl DeleteTaskQueue {
         use crate::api::handler::delete_video_source_internal;
 
         if self.is_processing() {
-            warn!("删除任务队列正在处理中，跳过重复处理");
+            debug!("删除任务队列正在处理中，跳过重复处理");
+            return Ok(0);
+        }
+
+        let queue_length = self.queue_length().await;
+        if queue_length == 0 {
             return Ok(0);
         }
 
         self.set_processing(true);
         let mut processed_count = 0u32;
 
-        info!("开始处理暂存的删除任务，当前队列长度: {}", self.queue_length().await);
+        info!("开始处理暂存的删除任务，当前队列长度: {}", queue_length);
 
         while let Some(task) = self.dequeue_task().await {
             info!(
@@ -295,11 +295,7 @@ impl DeleteTaskQueue {
 
         self.set_processing(false);
 
-        if processed_count > 0 {
-            info!("删除任务队列处理完成，共处理 {} 个任务", processed_count);
-        } else {
-            info!("删除任务队列为空，无需处理");
-        }
+        info!("删除任务队列处理完成，共处理 {} 个任务", processed_count);
 
         Ok(processed_count)
     }
@@ -450,17 +446,17 @@ impl VideoDeleteTaskQueue {
     /// 设置处理状态
     pub fn set_processing(&self, is_processing: bool) {
         self.is_processing.store(is_processing, Ordering::SeqCst);
-        if is_processing {
-            info!("开始处理视频删除任务队列");
-        } else {
-            info!("视频删除任务队列处理完成");
-        }
     }
 
     /// 处理队列中的所有视频删除任务
     pub async fn process_all_tasks(&self, db: Arc<DatabaseConnection>) -> Result<u32, anyhow::Error> {
         if self.is_processing() {
-            warn!("视频删除任务队列正在处理中，跳过重复处理");
+            debug!("视频删除任务队列正在处理中，跳过重复处理");
+            return Ok(0);
+        }
+
+        let queue_length = self.queue_length().await;
+        if queue_length == 0 {
             return Ok(0);
         }
 
@@ -469,7 +465,7 @@ impl VideoDeleteTaskQueue {
 
         info!(
             "开始处理暂存的视频删除任务，当前队列长度: {}",
-            self.queue_length().await
+            queue_length
         );
 
         while let Some(task) = self.dequeue_task().await {
@@ -515,11 +511,7 @@ impl VideoDeleteTaskQueue {
 
         self.set_processing(false);
 
-        if processed_count > 0 {
-            info!("视频删除任务队列处理完成，共处理 {} 个任务", processed_count);
-        } else {
-            info!("视频删除任务队列为空，无需处理");
-        }
+        info!("视频删除任务队列处理完成，共处理 {} 个任务", processed_count);
 
         Ok(processed_count)
     }
@@ -854,11 +846,6 @@ impl AddTaskQueue {
     /// 设置处理状态
     pub fn set_processing(&self, is_processing: bool) {
         self.is_processing.store(is_processing, Ordering::SeqCst);
-        if is_processing {
-            info!("开始处理添加任务队列");
-        } else {
-            info!("添加任务队列处理完成");
-        }
     }
 
     /// 处理队列中的所有添加任务
@@ -866,14 +853,19 @@ impl AddTaskQueue {
         use crate::api::handler::add_video_source_internal;
 
         if self.is_processing() {
-            warn!("添加任务队列正在处理中，跳过重复处理");
+            debug!("添加任务队列正在处理中，跳过重复处理");
+            return Ok(0);
+        }
+
+        let queue_length = self.queue_length().await;
+        if queue_length == 0 {
             return Ok(0);
         }
 
         self.set_processing(true);
         let mut processed_count = 0u32;
 
-        info!("开始处理暂存的添加任务，当前队列长度: {}", self.queue_length().await);
+        info!("开始处理暂存的添加任务，当前队列长度: {}", queue_length);
 
         while let Some(task) = self.dequeue_task().await {
             info!("正在处理添加任务: {} 名称={}", task.source_type, task.name);
@@ -921,11 +913,7 @@ impl AddTaskQueue {
 
         self.set_processing(false);
 
-        if processed_count > 0 {
-            info!("添加任务队列处理完成，共处理 {} 个任务", processed_count);
-        } else {
-            info!("添加任务队列为空，无需处理");
-        }
+        info!("添加任务队列处理完成，共处理 {} 个任务", processed_count);
 
         Ok(processed_count)
     }
@@ -1142,11 +1130,6 @@ impl ConfigTaskQueue {
     /// 设置处理状态
     pub fn set_processing(&self, is_processing: bool) {
         self.is_processing.store(is_processing, Ordering::SeqCst);
-        if is_processing {
-            info!("开始处理配置任务队列");
-        } else {
-            info!("配置任务队列处理完成");
-        }
     }
 
     /// 处理队列中的所有配置任务
@@ -1154,7 +1137,7 @@ impl ConfigTaskQueue {
         use crate::api::handler::{reload_config_internal, update_config_internal};
 
         if self.is_processing() {
-            warn!("配置任务队列正在处理中，跳过重复处理");
+            debug!("配置任务队列正在处理中，跳过重复处理");
             return Ok(0);
         }
 
@@ -1164,12 +1147,14 @@ impl ConfigTaskQueue {
         let update_count = self.update_queue_length().await;
         let reload_count = self.reload_queue_length().await;
 
-        if update_count > 0 || reload_count > 0 {
-            info!(
-                "开始处理暂存的配置任务，更新配置队列长度: {}, 重载配置队列长度: {}",
-                update_count, reload_count
-            );
+        if update_count == 0 && reload_count == 0 {
+            return Ok(0);
         }
+
+        info!(
+            "开始处理暂存的配置任务，更新配置队列长度: {}, 重载配置队列长度: {}",
+            update_count, reload_count
+        );
 
         // 先处理更新配置任务
         while let Some(task) = self.dequeue_update_task().await {
@@ -1290,11 +1275,7 @@ impl ConfigTaskQueue {
 
         self.set_processing(false);
 
-        if processed_count > 0 {
-            info!("配置任务队列处理完成，共处理 {} 个任务", processed_count);
-        } else {
-            info!("配置任务队列为空，无需处理");
-        }
+        info!("配置任务队列处理完成，共处理 {} 个任务", processed_count);
 
         Ok(processed_count)
     }
