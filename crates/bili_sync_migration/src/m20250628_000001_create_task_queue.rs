@@ -19,28 +19,15 @@ impl MigrationTrait for Migration {
                             .auto_increment()
                             .primary_key(),
                     )
-                    .col(
-                        ColumnDef::new(TaskQueue::TaskType)
-                            .string_len(50)
-                            .not_null(),
-                    )
-                    .col(
-                        ColumnDef::new(TaskQueue::TaskData)
-                            .text()
-                            .not_null(),
-                    )
+                    .col(ColumnDef::new(TaskQueue::TaskType).string_len(50).not_null())
+                    .col(ColumnDef::new(TaskQueue::TaskData).text().not_null())
                     .col(
                         ColumnDef::new(TaskQueue::Status)
                             .string_len(20)
                             .not_null()
                             .default("pending"),
                     )
-                    .col(
-                        ColumnDef::new(TaskQueue::RetryCount)
-                            .integer()
-                            .not_null()
-                            .default(0),
-                    )
+                    .col(ColumnDef::new(TaskQueue::RetryCount).integer().not_null().default(0))
                     .col(
                         ColumnDef::new(TaskQueue::CreatedAt)
                             .timestamp()

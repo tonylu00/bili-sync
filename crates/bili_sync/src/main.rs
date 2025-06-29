@@ -48,7 +48,7 @@ async fn main() -> Result<()> {
         // 立即串行处理恢复的任务
         info!("开始优先处理恢复的任务...");
         let mut total_processed = 0u32;
-        
+
         // 1. 处理配置任务（优先级最高，影响其他任务）
         match crate::task::process_config_tasks(connection.clone()).await {
             Ok(count) => {
@@ -59,7 +59,7 @@ async fn main() -> Result<()> {
             }
             Err(e) => warn!("处理恢复的配置任务失败: {:#}", e),
         }
-        
+
         // 2. 处理添加任务
         match crate::task::process_add_tasks(connection.clone()).await {
             Ok(count) => {
@@ -70,7 +70,7 @@ async fn main() -> Result<()> {
             }
             Err(e) => warn!("处理恢复的添加任务失败: {:#}", e),
         }
-        
+
         // 3. 处理删除任务
         match crate::task::process_delete_tasks(connection.clone()).await {
             Ok(count) => {
@@ -81,7 +81,7 @@ async fn main() -> Result<()> {
             }
             Err(e) => warn!("处理恢复的删除任务失败: {:#}", e),
         }
-        
+
         // 4. 处理视频删除任务
         match crate::task::process_video_delete_tasks(connection.clone()).await {
             Ok(count) => {
@@ -92,7 +92,7 @@ async fn main() -> Result<()> {
             }
             Err(e) => warn!("处理恢复的视频删除任务失败: {:#}", e),
         }
-        
+
         if total_processed > 0 {
             info!("恢复的任务处理完成，共处理 {} 个任务", total_processed);
         } else {

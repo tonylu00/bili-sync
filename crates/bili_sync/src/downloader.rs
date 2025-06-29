@@ -163,27 +163,36 @@ impl Downloader {
     /// 验证媒体文件的完整性
     async fn validate_media_file(&self, file_path: &Path, file_type: &str) -> Result<()> {
         // 检查文件大小
-        let metadata = tokio::fs::metadata(file_path).await
+        let metadata = tokio::fs::metadata(file_path)
+            .await
             .with_context(|| format!("无法读取{}文件元数据: {}", file_type, file_path.display()))?;
-        
+
         let file_size = metadata.len();
         if file_size == 0 {
             bail!("{}文件为空: {}", file_type, file_path.display());
         }
 
-        if file_size < 1024 { // 小于1KB很可能是损坏的
-            bail!("{}文件过小({}字节)，可能损坏: {}", file_type, file_size, file_path.display());
+        if file_size < 1024 {
+            // 小于1KB很可能是损坏的
+            bail!(
+                "{}文件过小({}字节)，可能损坏: {}",
+                file_type,
+                file_size,
+                file_path.display()
+            );
         }
 
         // 使用ffprobe快速验证文件格式
         let file_path_str = file_path.to_string_lossy().to_string();
         let result = tokio::process::Command::new("ffprobe")
             .args([
-                "-v", "quiet",           // 静默模式
-                "-print_format", "json", // JSON输出
-                "-show_format",          // 显示格式信息
-                "-show_streams",         // 显示流信息
-                &file_path_str
+                "-v",
+                "quiet", // 静默模式
+                "-print_format",
+                "json",          // JSON输出
+                "-show_format",  // 显示格式信息
+                "-show_streams", // 显示流信息
+                &file_path_str,
             ])
             .output()
             .await;
@@ -194,7 +203,7 @@ impl Downloader {
                     let stderr = str::from_utf8(&output.stderr).unwrap_or("unknown");
                     bail!("{}文件格式验证失败: {}", file_type, stderr);
                 }
-                
+
                 // 检查输出是否包含有效的流信息
                 let stdout = str::from_utf8(&output.stdout).unwrap_or("");
                 if stdout.len() < 50 || !stdout.contains("streams") {

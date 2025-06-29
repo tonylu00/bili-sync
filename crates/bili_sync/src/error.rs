@@ -190,7 +190,7 @@ impl ErrorClassifier {
             crate::bilibili::BiliError::RequestFailed(code, msg) => {
                 let error_type = match *code {
                     87007 | 87008 => ErrorType::Permission, // 充电专享视频，归类为权限错误
-                    -352 | -412 => ErrorType::RiskControl, // 特定风控错误码
+                    -352 | -412 => ErrorType::RiskControl,  // 特定风控错误码
                     -401 | -403 => ErrorType::Authentication,
                     -404 => ErrorType::NotFound,
                     -429 => ErrorType::RateLimit,
@@ -199,9 +199,9 @@ impl ErrorClassifier {
                 };
 
                 let should_retry = match *code {
-                    87007 | 87008 => false, // 充电专享视频不需要重试
-                    -352 | -412 => false, // 风控不重试
-                    -500..=-400 | -1 => true,     // 服务器错误或网络错误可重试
+                    87007 | 87008 => false,   // 充电专享视频不需要重试
+                    -352 | -412 => false,     // 风控不重试
+                    -500..=-400 | -1 => true, // 服务器错误或网络错误可重试
                     _ => false,
                 };
 

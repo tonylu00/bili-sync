@@ -91,9 +91,8 @@ pub fn init_logger(log_level: &str) {
 
 /// 构建优化的日志过滤器，减少噪音日志
 fn build_optimized_filter(base_level: &str) -> tracing_subscriber::EnvFilter {
-    tracing_subscriber::EnvFilter::builder()
-        .parse_lossy(format!(
-            "{},\
+    tracing_subscriber::EnvFilter::builder().parse_lossy(format!(
+        "{},\
             sqlx::query=error,\
             sqlx=error,\
             sea_orm::database=error,\
@@ -102,6 +101,6 @@ fn build_optimized_filter(base_level: &str) -> tracing_subscriber::EnvFilter {
             hyper=warn,\
             reqwest=warn,\
             h2=warn",
-            base_level
-        ))
+        base_level
+    ))
 }

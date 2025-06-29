@@ -100,53 +100,54 @@ impl Aria2Downloader {
         // 智能健康检查监控任务
         let instances = Arc::clone(&downloader.aria2_instances);
         let instance_count = downloader.instance_count;
-        
+
         // 为健康检查任务创建独立的client
         let health_check_client = crate::bilibili::Client::new();
 
         tokio::spawn(async move {
             let mut interval = tokio::time::interval(Duration::from_secs(60)); // 增加到60秒间隔
             let mut last_check_time = std::time::Instant::now();
-            
+
             loop {
                 interval.tick().await;
-                
+
                 // 检查任务暂停状态，暂停期间跳过健康检查
                 if crate::task::TASK_CONTROLLER.is_paused() {
                     debug!("任务已暂停，跳过aria2健康检查");
                     continue;
                 }
-                
+
                 // 检查当前系统负载，避免在高负载时进行健康检查
                 let instances_guard = instances.lock().await;
                 let current_count = instances_guard.len();
                 let total_load: usize = instances_guard.iter().map(|i| i.get_load()).sum();
                 drop(instances_guard);
-                
+
                 // 智能决策：只在系统相对空闲时进行全面健康检查
                 if total_load == 0 && last_check_time.elapsed() > Duration::from_secs(120) {
                     // 系统完全空闲，且距离上次检查超过2分钟，进行全面健康检查
                     debug!("系统空闲，执行全面健康检查");
-                    
+
                     // 执行完整的智能健康检查
                     if let Err(e) = Self::smart_health_check(&health_check_client, &instances, instance_count).await {
                         warn!("全面健康检查失败: {:#}", e);
                     } else {
                         debug!("全面健康检查完成");
                     }
-                    
+
                     last_check_time = std::time::Instant::now();
                 } else if current_count < instance_count {
                     // 实例数量不足，需要自动恢复
-                    if total_load < 2 { // 负载较低时立即尝试恢复
+                    if total_load < 2 {
+                        // 负载较低时立即尝试恢复
                         warn!(
                             "检测到aria2实例数量不足: {}/{} (当前负载: {})，立即尝试自动恢复",
                             current_count, instance_count, total_load
                         );
-                        
+
                         // 计算需要创建的实例数量
                         let missing_count = instance_count - current_count;
-                        
+
                         // 尝试创建缺失的实例
                         for i in 0..missing_count {
                             match Self::create_missing_instance(&instances).await {
@@ -720,7 +721,7 @@ impl Aria2Downloader {
                 if let Some(mut stderr) = child.stderr.take() {
                     let _ = tokio::io::AsyncReadExt::read_to_string(&mut stderr, &mut stderr_output).await;
                 }
-                
+
                 error!(
                     "aria2进程立即退出，退出码: {:?}, stderr: {}",
                     exit_status.code(),
@@ -758,7 +759,7 @@ impl Aria2Downloader {
         // 使用重试机制测试连接 - 针对启动时机优化
         self.retry_with_backoff(
             "连接测试",
-            5, // 减少重试次数，因为已经预等待了
+            5,                      // 减少重试次数，因为已经预等待了
             Duration::from_secs(1), // 增加重试间隔，给RPC更多时间
             Duration::from_secs(8), // 适度增加单次超时
             || async {
@@ -1008,30 +1009,34 @@ impl Aria2Downloader {
         let url = format!("http://127.0.0.1:{}/jsonrpc", rpc_port);
         let mut consecutive_failures = 0;
         const MAX_CONSECUTIVE_FAILURES: u32 = 5;
-        
+
         // 优化：智能状态检查参数
         #[allow(unused_assignments)]
         let mut check_interval = Duration::from_secs(1); // 初始1秒检查，减少频率
         let mut last_completed_length = 0u64;
         let mut stall_count = 0;
         let start_time = std::time::Instant::now();
-        
+
         // 下载超时保护：默认30分钟，大文件动态调整
         let download_timeout = Duration::from_secs(30 * 60); // 30分钟
-        
+
         loop {
             // 检查任务暂停状态，如果暂停则立即退出下载等待
             if crate::task::TASK_CONTROLLER.is_paused() {
                 info!("用户暂停任务，停止下载状态检查 (GID: {})", gid);
                 bail!("用户主动暂停任务");
             }
-            
+
             // 检查总体超时
             if start_time.elapsed() > download_timeout {
-                warn!("下载超时 (GID: {})，已等待 {:.1} 分钟", gid, start_time.elapsed().as_secs_f64() / 60.0);
+                warn!(
+                    "下载超时 (GID: {})，已等待 {:.1} 分钟",
+                    gid,
+                    start_time.elapsed().as_secs_f64() / 60.0
+                );
                 bail!("下载超时，超过{}分钟", download_timeout.as_secs() / 60);
             }
-            
+
             let payload = serde_json::json!({
                 "jsonrpc": "2.0",
                 "method": "aria2.tellStatus",
@@ -1105,34 +1110,40 @@ impl Aria2Downloader {
                     if let (Ok(total), Ok(completed), Ok(speed)) = (
                         total_length.parse::<u64>(),
                         completed_length.parse::<u64>(),
-                        download_speed.parse::<u64>()
+                        download_speed.parse::<u64>(),
                     ) {
                         let total_mb = total as f64 / 1_048_576.0;
                         let completed_mb = completed as f64 / 1_048_576.0;
                         let _speed_mb = speed as f64 / 1_048_576.0;
                         let duration = start_time.elapsed();
-                        
+
                         info!(
                             "aria2下载完成 (GID: {})，大小: {:.2}/{:.2} MB，平均速度: {:.2} MB/s，用时: {:.1}s",
-                            gid, completed_mb, total_mb, 
+                            gid,
+                            completed_mb,
+                            total_mb,
                             completed_mb / duration.as_secs_f64().max(0.1),
                             duration.as_secs_f64()
                         );
                     } else {
-                        info!("aria2下载完成 (GID: {})，用时: {:.1}s", gid, start_time.elapsed().as_secs_f64());
+                        info!(
+                            "aria2下载完成 (GID: {})，用时: {:.1}s",
+                            gid,
+                            start_time.elapsed().as_secs_f64()
+                        );
                     }
                     return Ok(());
                 }
                 "error" => {
                     let error_msg = result["errorMessage"].as_str().unwrap_or("Unknown error");
-                    
+
                     // 检查是否是暂停导致的错误
                     if crate::task::TASK_CONTROLLER.is_paused() {
                         info!("aria2下载因用户暂停而失败 (GID: {})：{}", gid, error_msg);
                     } else {
                         error!("aria2下载失败 (GID: {})：{}", gid, error_msg);
                     }
-                    
+
                     bail!("下载失败: {}", error_msg);
                 }
                 "removed" => {
@@ -1146,16 +1157,30 @@ impl Aria2Downloader {
                 }
                 "active" => {
                     // 优化：动态调整检查间隔和进度监控
-                    let _total_length = result["totalLength"].as_str().unwrap_or("0").parse::<u64>().unwrap_or(0);
-                    let completed_length = result["completedLength"].as_str().unwrap_or("0").parse::<u64>().unwrap_or(0);
-                    let download_speed = result["downloadSpeed"].as_str().unwrap_or("0").parse::<u64>().unwrap_or(0);
-                    
+                    let _total_length = result["totalLength"]
+                        .as_str()
+                        .unwrap_or("0")
+                        .parse::<u64>()
+                        .unwrap_or(0);
+                    let completed_length = result["completedLength"]
+                        .as_str()
+                        .unwrap_or("0")
+                        .parse::<u64>()
+                        .unwrap_or(0);
+                    let download_speed = result["downloadSpeed"]
+                        .as_str()
+                        .unwrap_or("0")
+                        .parse::<u64>()
+                        .unwrap_or(0);
+
                     // 检查下载是否停滞
                     if completed_length == last_completed_length {
                         stall_count += 1;
-                        if stall_count >= 30 { // 30次检查无进度（约30-60秒）
+                        if stall_count >= 30 {
+                            // 30次检查无进度（约30-60秒）
                             warn!("下载停滞检测 (GID: {})，无进度超过{}次检查", gid, stall_count);
-                            if stall_count >= 60 { // 更长时间停滞则认为失败
+                            if stall_count >= 60 {
+                                // 更长时间停滞则认为失败
                                 bail!("下载停滞超过60次状态检查，可能网络异常");
                             }
                         }
@@ -1163,13 +1188,15 @@ impl Aria2Downloader {
                         stall_count = 0;
                         last_completed_length = completed_length;
                     }
-                    
+
                     // 不显示中间进度，只在完成时显示统计信息
-                    
+
                     // 动态调整检查间隔 - 适度增加间隔，减少RPC压力
-                    check_interval = if download_speed > 5_242_880 { // >5MB/s
+                    check_interval = if download_speed > 5_242_880 {
+                        // >5MB/s
                         Duration::from_secs(1) // 高速下载，1秒检查一次
-                    } else if download_speed > 1_048_576 { // >1MB/s
+                    } else if download_speed > 1_048_576 {
+                        // >1MB/s
                         Duration::from_secs(2) // 中速下载，2秒检查一次
                     } else if download_speed > 0 {
                         Duration::from_secs(3) // 慢速下载，3秒检查一次
@@ -1190,7 +1217,7 @@ impl Aria2Downloader {
                     check_interval = Duration::from_secs(3); // 未知状态，3秒间隔
                 }
             }
-            
+
             // 使用动态检查间隔
             sleep(check_interval).await;
         }
@@ -1322,12 +1349,12 @@ impl Aria2Downloader {
         let instances_guard = instances.lock().await;
         let total_load: usize = instances_guard.iter().map(|i| i.get_load()).sum();
         drop(instances_guard);
-        
+
         if total_load > 0 {
             debug!("系统忙碌 (负载: {})，跳过健康检查", total_load);
             return Ok(());
         }
-        
+
         debug!("系统空闲，开始执行健康检查");
         Self::health_check(client, instances, instance_count).await
     }
@@ -1354,8 +1381,8 @@ impl Aria2Downloader {
             let current_load = instance.get_load();
             if current_load == 0 {
                 // 实例空闲时才进行RPC健康检查，并且限制检查频率
-                let rpc_healthy = Self::check_instance_rpc_health(client, instance.rpc_port, &instance.rpc_secret)
-                    .await;
+                let rpc_healthy =
+                    Self::check_instance_rpc_health(client, instance.rpc_port, &instance.rpc_secret).await;
                 if !rpc_healthy {
                     warn!("aria2实例 {} RPC连接不健康，准备重启", i + 1);
                     unhealthy_indices.push(i);
@@ -1399,10 +1426,7 @@ impl Aria2Downloader {
             bail!("所有aria2实例都不可用");
         }
 
-        info!(
-            "健康检查完成，当前可用实例数: {}/{}",
-            current_count, instance_count
-        );
+        info!("健康检查完成，当前可用实例数: {}/{}", current_count, instance_count);
         Ok(())
     }
 
@@ -1410,7 +1434,7 @@ impl Aria2Downloader {
     async fn check_instance_rpc_health(client: &crate::bilibili::Client, rpc_port: u16, rpc_secret: &str) -> bool {
         let client_clone = client.clone();
         let rpc_secret_clone = rpc_secret.to_string();
-        
+
         let result = Self::retry_with_backoff_static(
             client,
             "RPC健康检查",
@@ -1453,7 +1477,7 @@ impl Aria2Downloader {
         // 需要临时创建一个aria2下载器来启动实例
         let aria2_binary_path = Self::extract_aria2_binary().await?;
         let temp_downloader = Self::create_temp_downloader(aria2_binary_path).await?;
-        
+
         let process = temp_downloader.start_single_instance(rpc_port, &rpc_secret).await?;
         let instance = Aria2Instance::new(process, rpc_port, rpc_secret.clone());
 
@@ -1483,13 +1507,13 @@ impl Aria2Downloader {
     /// 记录启动诊断信息
     async fn log_startup_diagnostics() {
         error!("=== Aria2启动失败诊断信息 ===");
-        
+
         // 检查aria2二进制文件
         match Self::extract_aria2_binary().await {
             Ok(binary_path) => {
                 if binary_path.exists() {
                     info!("✓ aria2二进制文件存在: {}", binary_path.display());
-                    
+
                     // 检查文件权限
                     match tokio::fs::metadata(&binary_path).await {
                         Ok(metadata) => {
@@ -1503,7 +1527,7 @@ impl Aria2Downloader {
                         }
                         Err(e) => error!("✗ 无法读取文件元数据: {}", e),
                     }
-                    
+
                     // 测试执行
                     match tokio::process::Command::new(&binary_path)
                         .arg("--version")
@@ -1527,44 +1551,35 @@ impl Aria2Downloader {
             }
             Err(e) => error!("✗ 无法获取aria2二进制文件: {:#}", e),
         }
-        
+
         // 检查端口可用性
         match Self::find_available_port().await {
             Ok(port) => info!("✓ 找到可用端口: {}", port),
             Err(e) => error!("✗ 无法找到可用端口: {}", e),
         }
-        
+
         // 检查系统资源
         #[cfg(target_os = "linux")]
         {
             // 检查进程限制
-            if let Ok(output) = tokio::process::Command::new("ulimit")
-                .args(["-n"])
-                .output()
-                .await
-            {
+            if let Ok(output) = tokio::process::Command::new("ulimit").args(["-n"]).output().await {
                 if output.status.success() {
                     let limit = String::from_utf8_lossy(&output.stdout);
                     info!("✓ 文件描述符限制: {}", limit.trim());
                 }
             }
-            
+
             // 检查内存使用
-            if let Ok(output) = tokio::process::Command::new("free")
-                .args(["-h"])
-                .output()
-                .await
-            {
+            if let Ok(output) = tokio::process::Command::new("free").args(["-h"]).output().await {
                 if output.status.success() {
                     let memory_info = String::from_utf8_lossy(&output.stdout);
                     info!("✓ 内存状态:\n{}", memory_info);
                 }
             }
         }
-        
+
         error!("=== 诊断信息结束 ===");
     }
-
 
     /// 通用的重试机制，支持指数退避（优化版）
     async fn retry_with_backoff<F, Fut, T>(
@@ -1599,11 +1614,11 @@ impl Aria2Downloader {
                         }
                         return Err(e);
                     }
-                    
+
                     // 优化：根据错误类型调整重试策略
-                    let should_retry_immediately = e.to_string().contains("Connection refused") 
-                        || e.to_string().contains("timeout");
-                    
+                    let should_retry_immediately =
+                        e.to_string().contains("Connection refused") || e.to_string().contains("timeout");
+
                     if should_retry_immediately && attempt <= 2 {
                         debug!(
                             "{}第{}次尝试失败（网络问题）: {:#}，立即重试",
@@ -1614,7 +1629,10 @@ impl Aria2Downloader {
                     } else {
                         debug!(
                             "{}第{}次尝试失败: {:#}，{}ms后重试",
-                            operation_name, attempt, e, delay.as_millis()
+                            operation_name,
+                            attempt,
+                            e,
+                            delay.as_millis()
                         );
                     }
                 }
@@ -1632,7 +1650,9 @@ impl Aria2Downloader {
                     // 所有中间超时都使用debug级别，避免日志噪音
                     debug!(
                         "{}第{}次尝试超时，{}ms后重试",
-                        operation_name, attempt, delay.as_millis()
+                        operation_name,
+                        attempt,
+                        delay.as_millis()
                     );
                 }
             }
@@ -1672,10 +1692,10 @@ impl Aria2Downloader {
                         debug!("{}在{}次尝试后最终失败: {:#}", operation_name, max_retries, e);
                         return Err(e);
                     }
-                    
-                    let should_retry_immediately = e.to_string().contains("Connection refused") 
-                        || e.to_string().contains("timeout");
-                    
+
+                    let should_retry_immediately =
+                        e.to_string().contains("Connection refused") || e.to_string().contains("timeout");
+
                     if should_retry_immediately && attempt <= 2 {
                         debug!(
                             "{}第{}次尝试失败（网络问题）: {:#}，立即重试",
@@ -1685,7 +1705,10 @@ impl Aria2Downloader {
                     } else {
                         debug!(
                             "{}第{}次尝试失败: {:#}，{}ms后重试",
-                            operation_name, attempt, e, delay.as_millis()
+                            operation_name,
+                            attempt,
+                            e,
+                            delay.as_millis()
                         );
                     }
                 }
@@ -1697,7 +1720,9 @@ impl Aria2Downloader {
                     }
                     debug!(
                         "{}第{}次尝试超时，{}ms后重试",
-                        operation_name, attempt, delay.as_millis()
+                        operation_name,
+                        attempt,
+                        delay.as_millis()
                     );
                 }
             }

@@ -22,8 +22,8 @@ use crate::task::{DeleteVideoTask, VIDEO_DELETE_TASK_QUEUE};
 use crate::unified_downloader::UnifiedDownloader;
 use crate::utils::format_arg::{page_format_args, video_format_args};
 use crate::utils::model::{
-    create_pages, create_videos, filter_unfilled_videos, filter_unhandled_video_pages, get_failed_videos_in_current_cycle, update_pages_model,
-    update_videos_model,
+    create_pages, create_videos, filter_unfilled_videos, filter_unhandled_video_pages,
+    get_failed_videos_in_current_cycle, update_pages_model, update_videos_model,
 };
 use crate::utils::nfo::NFO;
 use crate::utils::status::{PageStatus, VideoStatus, STATUS_OK};
@@ -157,10 +157,12 @@ pub async fn process_video_source(
                 return Err(e);
             }
         }
-        
+
         // 新增：循环内重试失败的视频
         // 在当前扫描循环结束前，对失败的视频进行一次额外的重试机会
-        if let Err(e) = retry_failed_videos_once(bili_client, &video_source, connection, downloader, token.clone()).await {
+        if let Err(e) =
+            retry_failed_videos_once(bili_client, &video_source, connection, downloader, token.clone()).await
+        {
             warn!("循环内重试失败的视频时出错: {:#}", e);
             // 重试失败不中断主流程，继续执行
         }
@@ -438,15 +440,17 @@ pub async fn fetch_video_details(
         while let Some(res) = stream.next().await {
             if let Err(e) = res {
                 let error_msg = e.to_string();
-                
+
                 // 检查是否是暂停导致的失败，只有在任务暂停时才将 Download cancelled 视为暂停错误
-                if error_msg.contains("任务已暂停") || error_msg.contains("停止下载") || 
-                   error_msg.contains("用户主动暂停任务") ||
-                   (error_msg.contains("Download cancelled") && crate::task::TASK_CONTROLLER.is_paused()) {
+                if error_msg.contains("任务已暂停")
+                    || error_msg.contains("停止下载")
+                    || error_msg.contains("用户主动暂停任务")
+                    || (error_msg.contains("Download cancelled") && crate::task::TASK_CONTROLLER.is_paused())
+                {
                     info!("视频详情获取因用户暂停而终止: {}", error_msg);
                     return Err(e); // 直接返回暂停错误，不取消其他任务
                 }
-                
+
                 if e.downcast_ref::<DownloadAbortError>().is_some() || error_msg.contains("Download cancelled") {
                     token.cancel();
                     // drain the rest of the tasks
@@ -517,22 +521,27 @@ pub async fn download_unprocessed_videos(
             }
             Err(e) => {
                 let error_msg = e.to_string();
-                
+
                 // 调试：输出完整的错误信息
                 debug!("检查下载错误消息: '{}'", error_msg);
                 debug!("完整错误链: {:#}", e);
                 debug!("是否包含'任务已暂停': {}", error_msg.contains("任务已暂停"));
                 debug!("是否包含'停止下载': {}", error_msg.contains("停止下载"));
-                debug!("是否包含'Download cancelled': {}", error_msg.contains("Download cancelled"));
-                
+                debug!(
+                    "是否包含'Download cancelled': {}",
+                    error_msg.contains("Download cancelled")
+                );
+
                 // 检查是否是暂停导致的失败，只有在任务暂停时才将 Download cancelled 视为暂停错误
-                if error_msg.contains("任务已暂停") || error_msg.contains("停止下载") || 
-                   error_msg.contains("用户主动暂停任务") ||
-                   (error_msg.contains("Download cancelled") && crate::task::TASK_CONTROLLER.is_paused()) {
+                if error_msg.contains("任务已暂停")
+                    || error_msg.contains("停止下载")
+                    || error_msg.contains("用户主动暂停任务")
+                    || (error_msg.contains("Download cancelled") && crate::task::TASK_CONTROLLER.is_paused())
+                {
                     info!("下载任务因用户暂停而终止: {}", error_msg);
                     continue; // 跳过暂停相关的错误，不触发风控
                 }
-                
+
                 if e.downcast_ref::<DownloadAbortError>().is_some() || error_msg.contains("Download cancelled") {
                     if !download_aborted {
                         debug!("检测到风控或取消信号，开始中止所有下载任务");
@@ -578,18 +587,18 @@ pub async fn retry_failed_videos_once(
     token: CancellationToken,
 ) -> Result<()> {
     let failed_videos_pages = get_failed_videos_in_current_cycle(video_source.filter_expr(), connection).await?;
-    
+
     if failed_videos_pages.is_empty() {
         debug!("当前循环中没有失败的视频需要重试");
         return Ok(());
     }
-    
+
     info!("开始重试当前循环中的 {} 个失败视频", failed_videos_pages.len());
-    
+
     let current_config = crate::config::reload_config();
     let semaphore = Semaphore::new(current_config.concurrent_limit.video);
     let mut assigned_upper = HashSet::new();
-    
+
     let tasks = failed_videos_pages
         .into_iter()
         .map(|(video_model, pages_model)| {
@@ -609,11 +618,11 @@ pub async fn retry_failed_videos_once(
             )
         })
         .collect::<FuturesUnordered<_>>();
-        
+
     let mut download_aborted = false;
     let mut stream = tasks;
     let mut retry_success_count = 0;
-    
+
     while let Some(res) = stream.next().await {
         match res {
             Ok(model) => {
@@ -627,15 +636,17 @@ pub async fn retry_failed_videos_once(
             }
             Err(e) => {
                 let error_msg = e.to_string();
-                
+
                 // 检查是否是暂停导致的失败，只有在任务暂停时才将 Download cancelled 视为暂停错误
-                if error_msg.contains("任务已暂停") || error_msg.contains("停止下载") || 
-                   error_msg.contains("用户主动暂停任务") ||
-                   (error_msg.contains("Download cancelled") && crate::task::TASK_CONTROLLER.is_paused()) {
+                if error_msg.contains("任务已暂停")
+                    || error_msg.contains("停止下载")
+                    || error_msg.contains("用户主动暂停任务")
+                    || (error_msg.contains("Download cancelled") && crate::task::TASK_CONTROLLER.is_paused())
+                {
                     info!("重试任务因用户暂停而终止: {}", error_msg);
                     continue; // 跳过暂停相关的错误，不触发风控
                 }
-                
+
                 if e.downcast_ref::<DownloadAbortError>().is_some() || error_msg.contains("Download cancelled") {
                     if !download_aborted {
                         debug!("重试过程中检测到风控或取消信号，停止重试");
@@ -649,7 +660,7 @@ pub async fn retry_failed_videos_once(
             }
         }
     }
-    
+
     if download_aborted {
         warn!("重试过程中触发风控，已停止重试");
         // 不返回错误，避免影响主流程
@@ -658,7 +669,7 @@ pub async fn retry_failed_videos_once(
     } else {
         debug!("循环内重试完成，但没有视频重试成功");
     }
-    
+
     Ok(())
 }
 
@@ -730,7 +741,7 @@ pub async fn download_video_pages(
                     // API请求失败，使用安全的回退策略
                     error!("无法获取season_id={}的标题，跳过创建季度文件夹", season_id);
                     return Err(anyhow::anyhow!(
-                        "无法获取番剧季度信息 (season_id: {})，请检查网络连接或番剧是否存在", 
+                        "无法获取番剧季度信息 (season_id: {})，请检查网络连接或番剧是否存在",
                         season_id
                     ));
                 }
@@ -910,27 +921,24 @@ pub async fn download_video_pages(
             }
         }
     }
-    
+
     // 如果检测到87007错误，创建自动删除任务
     if has_87007_error {
         let delete_task = DeleteVideoTask {
             video_id: video_model.id,
             task_id: format!("auto_delete_87007_{}", video_model.id),
         };
-        
+
         if let Err(delete_err) = VIDEO_DELETE_TASK_QUEUE.enqueue_task(delete_task, connection).await {
             error!(
                 "无法创建充电专享视频「{}」的自动删除任务: {:#}",
                 &video_model.name, delete_err
             );
         } else {
-            info!(
-                "已为充电专享视频「{}」创建自动删除任务",
-                &video_model.name
-            );
+            info!("已为充电专享视频「{}」创建自动删除任务", &video_model.name);
         }
     }
-    
+
     results
         .iter()
         .take(4)
@@ -987,11 +995,10 @@ pub async fn download_video_pages(
                     }
                     _ => {
                         // 检查是否为暂停相关错误
-                        if classified_error.message.contains("用户主动暂停任务") || classified_error.message.contains("任务已暂停") {
-                            info!(
-                                "处理视频「{}」{}因用户暂停而终止",
-                                &video_model.name, task_name
-                            );
+                        if classified_error.message.contains("用户主动暂停任务")
+                            || classified_error.message.contains("任务已暂停")
+                        {
+                            info!("处理视频「{}」{}因用户暂停而终止", &video_model.name, task_name);
                         } else {
                             error!(
                                 "处理视频「{}」{}失败({}): {}",
@@ -1073,15 +1080,17 @@ pub async fn dispatch_download_page(args: DownloadPageArgs<'_>, token: Cancellat
             }
             Err(e) => {
                 let error_msg = e.to_string();
-                
+
                 // 检查是否是暂停导致的失败，只有在任务暂停时才将 Download cancelled 视为暂停错误
-                if error_msg.contains("任务已暂停") || error_msg.contains("停止下载") || 
-                   error_msg.contains("用户主动暂停任务") ||
-                   (error_msg.contains("Download cancelled") && crate::task::TASK_CONTROLLER.is_paused()) {
+                if error_msg.contains("任务已暂停")
+                    || error_msg.contains("停止下载")
+                    || error_msg.contains("用户主动暂停任务")
+                    || (error_msg.contains("Download cancelled") && crate::task::TASK_CONTROLLER.is_paused())
+                {
                     info!("分页下载任务因用户暂停而终止: {}", error_msg);
                     continue; // 跳过暂停相关的错误，不触发风控
                 }
-                
+
                 if e.downcast_ref::<DownloadAbortError>().is_some() || error_msg.contains("Download cancelled") {
                     if !download_aborted {
                         token.cancel();
@@ -1303,27 +1312,24 @@ pub async fn download_page(
             }
         }
     }
-    
+
     // 如果检测到87007错误，创建自动删除任务
     if has_87007_error {
         let delete_task = DeleteVideoTask {
             video_id: video_model.id,
             task_id: format!("auto_delete_87007_page_{}", video_model.id),
         };
-        
+
         if let Err(delete_err) = VIDEO_DELETE_TASK_QUEUE.enqueue_task(delete_task, connection).await {
             error!(
                 "无法创建充电专享视频「{}」的自动删除任务: {:#}",
                 &video_model.name, delete_err
             );
         } else {
-            info!(
-                "已为充电专享视频「{}」创建自动删除任务",
-                &video_model.name
-            );
+            info!("已为充电专享视频「{}」创建自动删除任务", &video_model.name);
         }
     }
-    
+
     results
         .iter()
         .zip(["封面", "视频", "详情", "弹幕", "字幕"])
@@ -1362,10 +1368,7 @@ pub async fn download_page(
                         // 对于权限错误（包括充电专享视频），使用info级别记录
                         info!(
                             "跳过视频「{}」第 {} 页{}: {}",
-                            &video_model.name,
-                            page_model.pid,
-                            task_name,
-                            classified_error.message
+                            &video_model.name, page_model.pid, task_name, classified_error.message
                         );
                     }
                     crate::error::ErrorType::Network
@@ -1393,7 +1396,9 @@ pub async fn download_page(
                     }
                     _ => {
                         // 检查是否为暂停相关错误
-                        if classified_error.message.contains("用户主动暂停任务") || classified_error.message.contains("任务已暂停") {
+                        if classified_error.message.contains("用户主动暂停任务")
+                            || classified_error.message.contains("任务已暂停")
+                        {
                             info!(
                                 "处理视频「{}」第 {} 页{}因用户暂停而终止",
                                 &video_model.name, page_model.pid, task_name
@@ -1515,8 +1520,9 @@ async fn download_stream(downloader: &UnifiedDownloader, urls: &[&str], path: &P
             } else {
                 let error_msg = e.to_string();
                 // 检查是否是暂停导致的连接错误
-                if (error_msg.contains("tcp connect error") && error_msg.contains("由于目标计算机积极拒绝")) &&
-                   crate::task::TASK_CONTROLLER.is_paused() {
+                if (error_msg.contains("tcp connect error") && error_msg.contains("由于目标计算机积极拒绝"))
+                    && crate::task::TASK_CONTROLLER.is_paused()
+                {
                     info!("下载因用户暂停导致的连接失败: {:#}", e);
                 } else {
                     error!("下载失败: {:#}", e);
@@ -1603,8 +1609,9 @@ pub async fn fetch_page_video(
                         info!("视频流下载因用户暂停而终止");
                     } else {
                         // 检查是否是暂停导致的连接错误
-                        if (error_msg.contains("tcp connect error") && error_msg.contains("由于目标计算机积极拒绝")) &&
-                           crate::task::TASK_CONTROLLER.is_paused() {
+                        if (error_msg.contains("tcp connect error") && error_msg.contains("由于目标计算机积极拒绝"))
+                            && crate::task::TASK_CONTROLLER.is_paused()
+                        {
                             info!("视频流下载因用户暂停导致的连接失败: {:#}", e);
                         } else {
                             error!("视频流下载失败: {:#}", e);
@@ -1622,8 +1629,9 @@ pub async fn fetch_page_video(
                         info!("音频流下载因用户暂停而终止");
                     } else {
                         // 检查是否是暂停导致的连接错误
-                        if (error_msg.contains("tcp connect error") && error_msg.contains("由于目标计算机积极拒绝")) &&
-                           crate::task::TASK_CONTROLLER.is_paused() {
+                        if (error_msg.contains("tcp connect error") && error_msg.contains("由于目标计算机积极拒绝"))
+                            && crate::task::TASK_CONTROLLER.is_paused()
+                        {
                             info!("音频流下载因用户暂停导致的连接失败: {:#}", e);
                         } else {
                             error!("音频流下载失败: {:#}", e);
@@ -1639,26 +1647,26 @@ pub async fn fetch_page_video(
 
             // 增强的音视频合并，带损坏文件检测和重试机制
             let res = downloader.merge(&tmp_video_path, &tmp_audio_path, page_path).await;
-            
+
             // 合并失败时的智能处理
             if let Err(e) = res {
                 error!("音视频合并失败: {:#}", e);
-                
+
                 // 检查是否是文件损坏导致的失败
                 let error_msg = e.to_string();
-                if error_msg.contains("Invalid data found when processing input") || 
-                   error_msg.contains("ffmpeg error") ||
-                   error_msg.contains("文件损坏") {
-                    
+                if error_msg.contains("Invalid data found when processing input")
+                    || error_msg.contains("ffmpeg error")
+                    || error_msg.contains("文件损坏")
+                {
                     warn!("检测到文件损坏，清理临时文件并标记为重试: {}", error_msg);
-                    
+
                     // 立即清理损坏的临时文件
                     let _ = fs::remove_file(&tmp_video_path).await;
                     let _ = fs::remove_file(&tmp_audio_path).await;
-                    
+
                     // 返回特殊错误，让上层重试下载
                     return Err(anyhow::anyhow!(
-                        "视频文件损坏，已清理临时文件，请重试下载: {}", 
+                        "视频文件损坏，已清理临时文件，请重试下载: {}",
                         error_msg
                     ));
                 } else {
@@ -1668,7 +1676,7 @@ pub async fn fetch_page_video(
                     return Err(e);
                 }
             }
-            
+
             // 合并成功，清理临时文件
             let _ = fs::remove_file(tmp_video_path).await;
             let _ = fs::remove_file(tmp_audio_path).await;
@@ -1903,18 +1911,18 @@ async fn get_season_title_from_api(
     token: CancellationToken,
 ) -> Option<String> {
     let url = format!("https://api.bilibili.com/pgc/view/web/season?season_id={}", season_id);
-    
+
     // 重试配置：最大重试3次，每次重试间隔递增
     let max_retries = 3;
     let mut retry_count = 0;
-    
+
     while retry_count <= max_retries {
         // 检查是否被取消
         if token.is_cancelled() {
             debug!("请求被取消，停止重试");
             return None;
         }
-        
+
         let retry_delay = std::time::Duration::from_millis(500 * (retry_count as u64 + 1));
         if retry_count > 0 {
             debug!("第{}次重试获取季度信息，延迟{}ms", retry_count, retry_delay.as_millis());
@@ -1954,17 +1962,21 @@ async fn get_season_title_from_api(
                         }
                     }
                 } else {
-                    warn!("获取季度信息HTTP请求失败，状态码: {} (尝试次数: {})", res.status(), retry_count + 1);
+                    warn!(
+                        "获取季度信息HTTP请求失败，状态码: {} (尝试次数: {})",
+                        res.status(),
+                        retry_count + 1
+                    );
                 }
             }
             Err(e) => {
                 warn!("发送季度信息请求失败: {} (尝试次数: {})", e, retry_count + 1);
             }
         }
-        
+
         retry_count += 1;
     }
-    
+
     error!("获取season_id={}的季度信息失败，已重试{}次", season_id, max_retries);
     None
 }
@@ -1972,18 +1984,18 @@ async fn get_season_title_from_api(
 /// 从番剧API获取指定EP的AID
 async fn get_bangumi_aid_from_api(bili_client: &BiliClient, ep_id: &str, token: CancellationToken) -> Option<String> {
     let url = format!("https://api.bilibili.com/pgc/view/web/season?ep_id={}", ep_id);
-    
+
     // 重试配置：最大重试3次，每次重试间隔递增
     let max_retries = 3;
     let mut retry_count = 0;
-    
+
     while retry_count <= max_retries {
         // 检查是否被取消
         if token.is_cancelled() {
             debug!("请求被取消，停止重试");
             return None;
         }
-        
+
         let retry_delay = std::time::Duration::from_millis(500 * (retry_count as u64 + 1));
         if retry_count > 0 {
             debug!("第{}次重试获取EP信息，延时{}ms", retry_count, retry_delay.as_millis());
@@ -2016,8 +2028,11 @@ async fn get_bangumi_aid_from_api(bili_client: &BiliClient, ep_id: &str, token: 
                                 warn!("在episodes数组中找不到EP {}", ep_id);
                                 return None;
                             } else {
-                                warn!("获取EP信息失败，API返回错误: {} (尝试次数: {})", 
-                                      json["message"].as_str().unwrap_or("未知错误"), retry_count + 1);
+                                warn!(
+                                    "获取EP信息失败，API返回错误: {} (尝试次数: {})",
+                                    json["message"].as_str().unwrap_or("未知错误"),
+                                    retry_count + 1
+                                );
                                 // API返回错误码通常不是临时性问题，直接返回
                                 return None;
                             }
@@ -2029,17 +2044,21 @@ async fn get_bangumi_aid_from_api(bili_client: &BiliClient, ep_id: &str, token: 
                         }
                     }
                 } else {
-                    warn!("请求EP信息HTTP失败，状态码: {} (尝试次数: {})", res.status(), retry_count + 1);
+                    warn!(
+                        "请求EP信息HTTP失败，状态码: {} (尝试次数: {})",
+                        res.status(),
+                        retry_count + 1
+                    );
                 }
             }
             Err(e) => {
                 warn!("请求番剧API失败: {} (尝试次数: {})", e, retry_count + 1);
             }
         }
-        
+
         retry_count += 1;
     }
-    
+
     error!("获取ep_id={}的AID失败，已重试{}次", ep_id, max_retries);
     None
 }
@@ -2051,21 +2070,25 @@ async fn get_bangumi_info_from_api(
     token: CancellationToken,
 ) -> Option<(i64, u32)> {
     let url = format!("https://api.bilibili.com/pgc/view/web/season?ep_id={}", ep_id);
-    
+
     // 重试配置：最大重试3次，每次重试间隔递增
     let max_retries = 3;
     let mut retry_count = 0;
-    
+
     while retry_count <= max_retries {
         // 检查是否被取消
         if token.is_cancelled() {
             debug!("请求被取消，停止重试");
             return None;
         }
-        
+
         let retry_delay = std::time::Duration::from_millis(500 * (retry_count as u64 + 1));
         if retry_count > 0 {
-            debug!("第{}次重试获取EP详细信息，延时{}ms", retry_count, retry_delay.as_millis());
+            debug!(
+                "第{}次重试获取EP详细信息，延时{}ms",
+                retry_count,
+                retry_delay.as_millis()
+            );
             tokio::time::sleep(retry_delay).await;
         }
 
@@ -2089,8 +2112,13 @@ async fn get_bangumi_info_from_api(
                                                 // duration在API中是毫秒，需要转换为秒
                                                 let duration_ms = episode["duration"].as_i64().unwrap_or(0);
                                                 let duration_sec = (duration_ms / 1000) as u32;
-                                                debug!("获取到番剧EP {} 的CID: {}, 时长: {}秒 (尝试次数: {})", 
-                                                       ep_id, cid, duration_sec, retry_count + 1);
+                                                debug!(
+                                                    "获取到番剧EP {} 的CID: {}, 时长: {}秒 (尝试次数: {})",
+                                                    ep_id,
+                                                    cid,
+                                                    duration_sec,
+                                                    retry_count + 1
+                                                );
                                                 return Some((cid, duration_sec));
                                             }
                                         }
@@ -2100,8 +2128,11 @@ async fn get_bangumi_info_from_api(
                                 warn!("在episodes数组中找不到EP {}", ep_id);
                                 return None;
                             } else {
-                                warn!("获取EP详细信息失败，API返回错误: {} (尝试次数: {})", 
-                                      json["message"].as_str().unwrap_or("未知错误"), retry_count + 1);
+                                warn!(
+                                    "获取EP详细信息失败，API返回错误: {} (尝试次数: {})",
+                                    json["message"].as_str().unwrap_or("未知错误"),
+                                    retry_count + 1
+                                );
                                 // API返回错误码通常不是临时性问题，直接返回
                                 return None;
                             }
@@ -2113,17 +2144,21 @@ async fn get_bangumi_info_from_api(
                         }
                     }
                 } else {
-                    warn!("请求EP详细信息HTTP失败，状态码: {} (尝试次数: {})", res.status(), retry_count + 1);
+                    warn!(
+                        "请求EP详细信息HTTP失败，状态码: {} (尝试次数: {})",
+                        res.status(),
+                        retry_count + 1
+                    );
                 }
             }
             Err(e) => {
                 warn!("请求番剧API失败: {} (尝试次数: {})", e, retry_count + 1);
             }
         }
-        
+
         retry_count += 1;
     }
-    
+
     error!("获取ep_id={}的详细信息失败，已重试{}次", ep_id, max_retries);
     None
 }

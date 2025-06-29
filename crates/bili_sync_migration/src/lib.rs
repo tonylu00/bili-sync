@@ -4,6 +4,7 @@ mod m20240322_000001_create_table;
 mod m20240505_130850_add_collection;
 mod m20240709_130914_watch_later;
 mod m20240724_161008_submission;
+mod m20241228_000001_add_video_query_indexes;
 mod m20250122_062926_add_latest_row_at;
 mod m20250519_000001_add_source_id;
 mod m20250520_000001_add_download_all_seasons;
@@ -18,7 +19,6 @@ mod m20250616_000001_create_config_tables;
 mod m20250624_000001_add_deleted_field;
 mod m20250624_000002_add_scan_deleted_videos_field;
 mod m20250628_000001_create_task_queue;
-mod m20241228_000001_add_video_query_indexes;
 
 pub struct Migrator;
 

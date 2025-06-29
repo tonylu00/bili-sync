@@ -204,28 +204,26 @@ pub async fn get_videos(
         // 状态值：0=未开始，1-6=失败次数，7=成功
         // 筛选任一子任务状态在1-6范围内的视频
         use sea_orm::sea_query::Expr;
-        
+
         let mut conditions = Vec::new();
-        
+
         // 检查5个子任务位置的状态
         for offset in 0..5 {
             let shift = offset * 3;
             // 提取第offset个子任务状态: (download_status >> shift) & 7
             // 检查是否为失败状态: >= 1 AND <= 6
-            conditions.push(
-                Expr::cust(format!(
-                    "((download_status >> {}) & 7) BETWEEN 1 AND 6", 
-                    shift
-                ))
-            );
+            conditions.push(Expr::cust(format!(
+                "((download_status >> {}) & 7) BETWEEN 1 AND 6",
+                shift
+            )));
         }
-        
+
         // 使用OR连接：任一子任务失败即匹配
         let mut final_condition = conditions[0].clone();
         for condition in conditions.into_iter().skip(1) {
             final_condition = final_condition.or(condition);
         }
-        
+
         query = query.filter(final_condition);
     }
 
@@ -1523,9 +1521,7 @@ pub async fn add_video_source_internal(
         (status = 200, body = ApiResponse<bool>),
     )
 )]
-pub async fn reload_config(
-    Extension(db): Extension<Arc<DatabaseConnection>>,
-) -> Result<ApiResponse<bool>, ApiError> {
+pub async fn reload_config(Extension(db): Extension<Arc<DatabaseConnection>>) -> Result<ApiResponse<bool>, ApiError> {
     // 检查是否正在扫描
     if crate::task::is_scanning() {
         // 正在扫描，将重载配置任务加入队列
@@ -5293,18 +5289,19 @@ pub async fn get_user_collections(
         Err(e) => {
             let error_msg = format!("获取UP主 {} 的合集失败", mid);
             warn!("{}: {}", error_msg, e);
-            
+
             // 检查是否是网络错误，提供更友好的错误信息
-            let user_friendly_error = if e.to_string().contains("ERR_EMPTY_RESPONSE") || e.to_string().contains("Failed to fetch") {
-                format!("该UP主的合集可能需要登录访问，或暂时无法获取。请稍后重试或手动输入合集ID。")
-            } else if e.to_string().contains("403") || e.to_string().contains("Forbidden") {
-                format!("该UP主的合集为私有，无法访问。")
-            } else if e.to_string().contains("404") || e.to_string().contains("Not Found") {
-                format!("UP主不存在或合集已被删除。")
-            } else {
-                format!("网络错误或服务暂时不可用，请稍后重试。")
-            };
-            
+            let user_friendly_error =
+                if e.to_string().contains("ERR_EMPTY_RESPONSE") || e.to_string().contains("Failed to fetch") {
+                    format!("该UP主的合集可能需要登录访问，或暂时无法获取。请稍后重试或手动输入合集ID。")
+                } else if e.to_string().contains("403") || e.to_string().contains("Forbidden") {
+                    format!("该UP主的合集为私有，无法访问。")
+                } else if e.to_string().contains("404") || e.to_string().contains("Not Found") {
+                    format!("UP主不存在或合集已被删除。")
+                } else {
+                    format!("网络错误或服务暂时不可用，请稍后重试。")
+                };
+
             Err(anyhow!("{}", user_friendly_error).into())
         }
     }

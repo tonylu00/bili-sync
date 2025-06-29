@@ -54,7 +54,7 @@ pub async fn get_failed_videos_in_current_cycle(
     connection: &DatabaseConnection,
 ) -> Result<Vec<(video::Model, Vec<page::Model>)>> {
     use crate::utils::status::STATUS_COMPLETED;
-    
+
     let all_videos = video::Entity::find()
         .filter(
             video::Column::Valid
@@ -63,28 +63,28 @@ pub async fn get_failed_videos_in_current_cycle(
                 .and(video::Column::DownloadStatus.gt(0)) // 排除未开始的视频 (状态为0)
                 .and(video::Column::Category.is_in([1, 2]))
                 .and(video::Column::SinglePage.is_not_null())
-                .and(additional_expr)
+                .and(additional_expr),
         )
         .find_with_related(page::Entity)
         .all(connection)
         .await?;
-        
+
     let result = all_videos
         .into_iter()
         .filter(|(video_model, pages_model)| {
             // 检查视频和分页是否有可重试的失败
             let video_status = crate::utils::status::VideoStatus::from(video_model.download_status);
             let video_should_retry = video_status.should_run().iter().any(|&should_run| should_run);
-            
+
             let pages_should_retry = pages_model.iter().any(|page_model| {
                 let page_status = crate::utils::status::PageStatus::from(page_model.download_status);
                 page_status.should_run().iter().any(|&should_run| should_run)
             });
-            
+
             video_should_retry || pages_should_retry
         })
         .collect::<Vec<_>>();
-    
+
     Ok(result)
 }
 
