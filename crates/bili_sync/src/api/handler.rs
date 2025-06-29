@@ -3342,6 +3342,7 @@ pub async fn get_config() -> Result<ApiResponse<crate::api::response::ConfigResp
         enable_auto_backoff: config.submission_risk_control.enable_auto_backoff,
         auto_backoff_base_seconds: config.submission_risk_control.auto_backoff_base_seconds,
         auto_backoff_max_multiplier: config.submission_risk_control.auto_backoff_max_multiplier,
+        scan_deleted_videos: config.scan_deleted_videos,
         // B站凭证信息
         credential: {
             let credential = config.credential.load();

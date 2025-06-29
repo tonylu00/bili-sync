@@ -235,6 +235,8 @@ pub struct ConfigResponse {
     pub enable_auto_backoff: bool,
     pub auto_backoff_base_seconds: u64,
     pub auto_backoff_max_multiplier: u64,
+    // 系统设置
+    pub scan_deleted_videos: bool,
     // B站凭证信息
     pub credential: Option<CredentialInfo>,
 }
