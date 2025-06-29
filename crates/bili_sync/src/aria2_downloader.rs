@@ -1426,7 +1426,7 @@ impl Aria2Downloader {
             bail!("所有aria2实例都不可用");
         }
 
-        info!("健康检查完成，当前可用实例数: {}/{}", current_count, instance_count);
+        debug!("健康检查完成，当前可用实例数: {}/{}", current_count, instance_count);
         Ok(())
     }
 
