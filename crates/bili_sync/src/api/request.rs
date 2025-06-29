@@ -148,6 +148,8 @@ pub struct UpdateConfigRequest {
     pub enable_auto_backoff: Option<bool>,
     pub auto_backoff_base_seconds: Option<u64>,
     pub auto_backoff_max_multiplier: Option<u64>,
+    // 系统配置
+    pub scan_deleted_videos: Option<bool>,
 }
 
 #[derive(Debug, Deserialize, ToSchema)]

@@ -1219,6 +1219,8 @@ impl ConfigTaskQueue {
                 enable_auto_backoff: task.enable_auto_backoff,
                 auto_backoff_base_seconds: task.auto_backoff_base_seconds,
                 auto_backoff_max_multiplier: task.auto_backoff_max_multiplier,
+                // 系统配置相关字段，任务队列中不使用
+                scan_deleted_videos: None,
             };
 
             match update_config_internal(db.clone(), request).await {

@@ -3833,6 +3833,14 @@ pub async fn update_config_internal(
         }
     }
 
+    // 处理显示已删除视频配置
+    if let Some(scan_deleted) = params.scan_deleted_videos {
+        if scan_deleted != config.scan_deleted_videos {
+            config.scan_deleted_videos = scan_deleted;
+            updated_fields.push("scan_deleted_videos");
+        }
+    }
+
     // 处理UP主投稿风控配置
     if let Some(threshold) = params.large_submission_threshold {
         if threshold != config.submission_risk_control.large_submission_threshold {
