@@ -1132,6 +1132,74 @@ impl ConfigTaskQueue {
         self.is_processing.store(is_processing, Ordering::SeqCst);
     }
 
+    /// 查询数据库中待处理的更新配置任务数量
+    pub async fn get_pending_update_tasks_count(&self, connection: &DatabaseConnection) -> Result<u64, anyhow::Error> {
+        let count = TaskQueueEntity::find()
+            .filter(task_queue::Column::TaskType.eq(TaskType::UpdateConfig))
+            .filter(task_queue::Column::Status.eq(TaskStatus::Pending))
+            .count(connection)
+            .await?;
+        Ok(count)
+    }
+
+    /// 查询数据库中待处理的重载配置任务数量
+    pub async fn get_pending_reload_tasks_count(&self, connection: &DatabaseConnection) -> Result<u64, anyhow::Error> {
+        let count = TaskQueueEntity::find()
+            .filter(task_queue::Column::TaskType.eq(TaskType::ReloadConfig))
+            .filter(task_queue::Column::Status.eq(TaskStatus::Pending))
+            .count(connection)
+            .await?;
+        Ok(count)
+    }
+
+    /// 从数据库恢复配置任务到内存队列
+    pub async fn recover_config_tasks_from_db(&self, connection: &DatabaseConnection) -> Result<u32, anyhow::Error> {
+        // 查询所有待处理的配置任务
+        let pending_tasks = TaskQueueEntity::find()
+            .filter(task_queue::Column::Status.eq(TaskStatus::Pending))
+            .filter(
+                task_queue::Column::TaskType
+                    .is_in([TaskType::UpdateConfig, TaskType::ReloadConfig])
+            )
+            .order_by_asc(task_queue::Column::CreatedAt)
+            .all(connection)
+            .await?;
+
+        let mut recovered_count = 0u32;
+
+        for task_model in pending_tasks {
+            match task_model.task_type {
+                TaskType::UpdateConfig => {
+                    if let Ok(task) = serde_json::from_str::<UpdateConfigTask>(&task_model.task_data) {
+                        let mut queue = self.update_queue.lock().await;
+                        queue.push_back(task);
+                        recovered_count += 1;
+                    } else {
+                        warn!("无法反序列化更新配置任务数据: {}", task_model.task_data);
+                    }
+                }
+                TaskType::ReloadConfig => {
+                    if let Ok(task) = serde_json::from_str::<ReloadConfigTask>(&task_model.task_data) {
+                        let mut queue = self.reload_queue.lock().await;
+                        queue.push_back(task);
+                        recovered_count += 1;
+                    } else {
+                        warn!("无法反序列化重载配置任务数据: {}", task_model.task_data);
+                    }
+                }
+                _ => {
+                    // 忽略其他任务类型
+                }
+            }
+        }
+
+        if recovered_count > 0 {
+            info!("从数据库恢复了 {} 个配置任务到内存队列", recovered_count);
+        }
+
+        Ok(recovered_count)
+    }
+
     /// 处理队列中的所有配置任务
     pub async fn process_all_tasks(&self, db: Arc<DatabaseConnection>) -> Result<u32, anyhow::Error> {
         use crate::api::handler::{reload_config_internal, update_config_internal};
@@ -1147,13 +1215,52 @@ impl ConfigTaskQueue {
         let update_count = self.update_queue_length().await;
         let reload_count = self.reload_queue_length().await;
 
-        if update_count == 0 && reload_count == 0 {
+        // 检查数据库中是否有待处理的配置任务
+        let db_update_count = self.get_pending_update_tasks_count(&db).await.unwrap_or(0);
+        let db_reload_count = self.get_pending_reload_tasks_count(&db).await.unwrap_or(0);
+
+        // 如果内存队列为空但数据库中有待处理任务，则先恢复
+        if update_count == 0 && reload_count == 0 && (db_update_count > 0 || db_reload_count > 0) {
+            info!(
+                "检测到数据库中有 {} 个更新配置任务和 {} 个重载配置任务，开始恢复到内存队列",
+                db_update_count, db_reload_count
+            );
+            
+            if let Ok(recovered) = self.recover_config_tasks_from_db(&db).await {
+                if recovered > 0 {
+                    info!("成功恢复 {} 个配置任务，重新获取队列长度", recovered);
+                    // 重新获取内存队列长度
+                    let new_update_count = self.update_queue_length().await;
+                    let new_reload_count = self.reload_queue_length().await;
+                    
+                    if new_update_count == 0 && new_reload_count == 0 {
+                        warn!("恢复任务后内存队列仍为空，可能存在数据不一致问题");
+                        self.set_processing(false);
+                        return Ok(0);
+                    }
+                } else {
+                    debug!("没有成功恢复任何配置任务");
+                    self.set_processing(false);
+                    return Ok(0);
+                }
+            } else {
+                error!("恢复配置任务失败");
+                self.set_processing(false);
+                return Ok(0);
+            }
+        } else if update_count == 0 && reload_count == 0 {
+            // 内存队列和数据库都没有待处理任务
+            self.set_processing(false);
             return Ok(0);
         }
 
+        // 重新获取最新的队列长度用于日志
+        let final_update_count = self.update_queue_length().await;
+        let final_reload_count = self.reload_queue_length().await;
+
         info!(
             "开始处理暂存的配置任务，更新配置队列长度: {}, 重载配置队列长度: {}",
-            update_count, reload_count
+            final_update_count, final_reload_count
         );
 
         // 先处理更新配置任务
@@ -1277,7 +1384,20 @@ impl ConfigTaskQueue {
 
         self.set_processing(false);
 
-        info!("配置任务队列处理完成，共处理 {} 个任务", processed_count);
+        // 最终检查是否还有未处理的任务
+        let remaining_update_count = self.update_queue_length().await;
+        let remaining_reload_count = self.reload_queue_length().await;
+        let remaining_db_update_count = self.get_pending_update_tasks_count(&db).await.unwrap_or(0);
+        let remaining_db_reload_count = self.get_pending_reload_tasks_count(&db).await.unwrap_or(0);
+
+        info!(
+            "配置任务队列处理完成，共处理 {} 个任务，剩余内存队列: 更新({}) 重载({})，剩余数据库队列: 更新({}) 重载({})",
+            processed_count, remaining_update_count, remaining_reload_count, remaining_db_update_count, remaining_db_reload_count
+        );
+
+        if remaining_update_count > 0 || remaining_reload_count > 0 || remaining_db_update_count > 0 || remaining_db_reload_count > 0 {
+            warn!("配置任务处理完成后仍有剩余任务，可能需要下轮处理");
+        }
 
         Ok(processed_count)
     }
