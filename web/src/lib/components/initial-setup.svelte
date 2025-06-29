@@ -32,7 +32,7 @@
 
 	// 组件初始化时清除可能的错误状态
 	import { onMount } from 'svelte';
-	
+
 	onMount(() => {
 		// 清除可能存在的无效token
 		api.setAuthToken('');
@@ -54,11 +54,11 @@
 		try {
 			// 调用后端API设置Token
 			const response = await api.setupAuthToken(authToken);
-			
+
 			if (response.data.success) {
 				// 设置本地token
 				api.setAuthToken(authToken);
-				
+
 				// Token设置成功，进入下一步
 				currentStep = 2;
 				toast.success('API Token 设置成功');
@@ -100,7 +100,7 @@
 				dedeuserid: dedeuserid.trim(),
 				ac_time_value: ac_time_value.trim() || undefined
 			});
-			
+
 			if (response.data.success) {
 				toast.success('B站凭证设置成功');
 				// 设置完成，触发完成事件
@@ -163,16 +163,12 @@
 				<div class="space-y-6">
 					<div class="text-center">
 						<h2 class="text-xl font-semibold text-gray-900">步骤 1: 设置 API Token</h2>
-						<p class="mt-2 text-sm text-gray-600">
-							API Token 用于保护管理界面的访问安全
-						</p>
+						<p class="mt-2 text-sm text-gray-600">API Token 用于保护管理界面的访问安全</p>
 					</div>
 
 					<div class="space-y-4">
 						<div>
-							<Label for="auth-token" class="text-sm font-medium text-gray-700">
-								API Token *
-							</Label>
+							<Label for="auth-token" class="text-sm font-medium text-gray-700">API Token *</Label>
 							<Input
 								id="auth-token"
 								type="password"
@@ -214,16 +210,12 @@
 				<div class="space-y-6">
 					<div class="text-center">
 						<h2 class="text-xl font-semibold text-gray-900">步骤 2: 设置 B站登录凭证</h2>
-						<p class="mt-2 text-sm text-gray-600">
-							设置B站登录凭证以启用视频下载功能
-						</p>
+						<p class="mt-2 text-sm text-gray-600">设置B站登录凭证以启用视频下载功能</p>
 					</div>
 
 					<div class="space-y-4">
 						<div>
-							<Label for="sessdata" class="text-sm font-medium text-gray-700">
-								SESSDATA *
-							</Label>
+							<Label for="sessdata" class="text-sm font-medium text-gray-700">SESSDATA *</Label>
 							<Input
 								id="sessdata"
 								type="password"
@@ -235,9 +227,7 @@
 						</div>
 
 						<div>
-							<Label for="bili_jct" class="text-sm font-medium text-gray-700">
-								bili_jct *
-							</Label>
+							<Label for="bili_jct" class="text-sm font-medium text-gray-700">bili_jct *</Label>
 							<Input
 								id="bili_jct"
 								type="password"
@@ -249,9 +239,7 @@
 						</div>
 
 						<div>
-							<Label for="buvid3" class="text-sm font-medium text-gray-700">
-								buvid3 *
-							</Label>
+							<Label for="buvid3" class="text-sm font-medium text-gray-700">buvid3 *</Label>
 							<Input
 								id="buvid3"
 								type="text"
@@ -263,9 +251,7 @@
 						</div>
 
 						<div>
-							<Label for="dedeuserid" class="text-sm font-medium text-gray-700">
-								DedeUserID *
-							</Label>
+							<Label for="dedeuserid" class="text-sm font-medium text-gray-700">DedeUserID *</Label>
 							<Input
 								id="dedeuserid"
 								type="text"
@@ -300,7 +286,7 @@
 									<h3 class="text-sm font-medium text-yellow-800">获取凭证信息</h3>
 									<div class="mt-2 text-sm text-yellow-700">
 										<p>请按以下步骤获取B站登录凭证：</p>
-										<ol class="mt-1 list-decimal list-inside space-y-1">
+										<ol class="mt-1 list-inside list-decimal space-y-1">
 											<li>在浏览器中登录B站</li>
 											<li>按F12打开开发者工具</li>
 											<li>切换到"网络"或"Network"标签</li>
@@ -321,23 +307,13 @@
 						</div>
 
 						<div class="flex space-x-3">
-							<Button variant="outline" onclick={goBack} class="flex-1">
-								上一步
-							</Button>
-							<Button
-								onclick={saveCredential}
-								disabled={isSavingCredential}
-								class="flex-1"
-							>
+							<Button variant="outline" onclick={goBack} class="flex-1">上一步</Button>
+							<Button onclick={saveCredential} disabled={isSavingCredential} class="flex-1">
 								{isSavingCredential ? '保存中...' : '完成设置'}
 							</Button>
 						</div>
 
-						<Button
-							variant="ghost"
-							onclick={skipCredentialSetup}
-							class="w-full text-gray-500"
-						>
+						<Button variant="ghost" onclick={skipCredentialSetup} class="w-full text-gray-500">
 							跳过此步骤（稍后设置）
 						</Button>
 					</div>
@@ -356,7 +332,7 @@
 		<div class="space-y-4 text-sm">
 			<div>
 				<h4 class="font-medium">方法一：通过开发者工具获取</h4>
-				<ol class="mt-2 list-decimal list-inside space-y-1 text-gray-600">
+				<ol class="mt-2 list-inside list-decimal space-y-1 text-gray-600">
 					<li>在Chrome或Edge浏览器中登录B站 (bilibili.com)</li>
 					<li>按F12键打开开发者工具</li>
 					<li>点击"Network"（网络）标签</li>
@@ -365,17 +341,17 @@
 					<li>在右侧面板中找到"Request Headers"（请求头）</li>
 					<li>找到"Cookie"字段，复制其中的值：</li>
 				</ol>
-				<ul class="mt-2 ml-4 list-disc list-inside space-y-1 text-gray-600">
+				<ul class="mt-2 ml-4 list-inside list-disc space-y-1 text-gray-600">
 					<li><code>SESSDATA=</code> 后面的值复制到SESSDATA框</li>
 					<li><code>bili_jct=</code> 后面的值复制到bili_jct框</li>
 					<li><code>buvid3=</code> 后面的值复制到buvid3框</li>
 					<li><code>DedeUserID=</code> 后面的值复制到DedeUserID框</li>
 				</ul>
 			</div>
-			
+
 			<div>
 				<h4 class="font-medium">方法二：通过浏览器设置获取</h4>
-				<ol class="mt-2 list-decimal list-inside space-y-1 text-gray-600">
+				<ol class="mt-2 list-inside list-decimal space-y-1 text-gray-600">
 					<li>在Chrome中访问 chrome://settings/content/cookies</li>
 					<li>搜索"bilibili.com"</li>
 					<li>展开bilibili.com，找到对应的Cookie值</li>
@@ -385,8 +361,8 @@
 			<div class="rounded-md bg-red-50 p-3">
 				<h4 class="font-medium text-red-800">重要提醒</h4>
 				<p class="mt-1 text-red-700">
-					• 请确保在登录状态下获取Cookie<br>
-					• 这些信息相当于您的登录凭证，请妥善保管<br>
+					• 请确保在登录状态下获取Cookie<br />
+					• 这些信息相当于您的登录凭证，请妥善保管<br />
 					• 如果Cookie过期，需要重新获取
 				</p>
 			</div>
@@ -395,4 +371,4 @@
 			<AlertDialog.Action>我知道了</AlertDialog.Action>
 		</AlertDialog.Footer>
 	</AlertDialog.Content>
-</AlertDialog.Root> 
+</AlertDialog.Root>

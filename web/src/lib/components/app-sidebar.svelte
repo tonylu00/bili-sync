@@ -68,7 +68,14 @@
 	}
 
 	// 处理显示操作菜单（与MoreVerticalIcon的点击事件对应）
-	function handleShowActions(event: Event, type: string, id: number, name: string, path: string, enabled: boolean) {
+	function handleShowActions(
+		event: Event,
+		type: string,
+		id: number,
+		name: string,
+		path: string,
+		enabled: boolean
+	) {
 		event.preventDefault();
 		event.stopPropagation();
 		toggleActionMenu(event, type, id);
@@ -180,7 +187,13 @@
 	}
 
 	// 确认路径重设
-	async function handleConfirmResetPath(event: CustomEvent<{ new_path: string; apply_rename_rules?: boolean; clean_empty_folders?: boolean }>) {
+	async function handleConfirmResetPath(
+		event: CustomEvent<{
+			new_path: string;
+			apply_rename_rules?: boolean;
+			clean_empty_folders?: boolean;
+		}>
+	) {
 		const request = event.detail;
 
 		try {
@@ -191,7 +204,8 @@
 			);
 			if (result.data.success) {
 				toast.success('路径重设成功', {
-					description: result.data.message + 
+					description:
+						result.data.message +
 						(request.apply_rename_rules ? `，已移动 ${result.data.moved_files_count} 个文件` : '')
 				});
 
@@ -225,7 +239,7 @@
 		try {
 			const newScanDeleted = !currentScanDeleted;
 			const result = await api.updateVideoSourceScanDeleted(sourceType, sourceId, newScanDeleted);
-			
+
 			if (result.data.success) {
 				toast.success('设置更新成功', {
 					description: result.data.message
@@ -300,11 +314,15 @@
 														<Sidebar.MenuItem>
 															<div class="group/item flex items-start gap-1">
 																<button
-																	class="text-foreground hover:bg-accent/50 flex-1 cursor-pointer rounded-md px-3 py-2 text-left text-sm transition-all duration-200 {!source.enabled ? 'opacity-50' : ''}"
+																	class="text-foreground hover:bg-accent/50 flex-1 cursor-pointer rounded-md px-3 py-2 text-left text-sm transition-all duration-200 {!source.enabled
+																		? 'opacity-50'
+																		: ''}"
 																	on:click={() => handleSourceClick(item.type, source.id)}
 																>
 																	<div class="flex flex-col gap-1">
-																		<span class="block break-words leading-tight">{source.name}</span>
+																		<span class="block leading-tight break-words"
+																			>{source.name}</span
+																		>
 																		{#if !source.enabled}
 																			<span class="text-muted-foreground text-xs">(已禁用)</span>
 																		{/if}
@@ -313,7 +331,15 @@
 																<div class="pt-2">
 																	<button
 																		class="text-muted-foreground hover:text-foreground hover:bg-accent rounded p-1.5 opacity-0 transition-all duration-200 group-hover/item:opacity-100"
-																		on:click={(e) => handleShowActions(e, item.type, source.id, source.name, source.path, source.enabled)}
+																		on:click={(e) =>
+																			handleShowActions(
+																				e,
+																				item.type,
+																				source.id,
+																				source.name,
+																				source.path,
+																				source.enabled
+																			)}
 																		title="更多操作"
 																	>
 																		{#if expandedActionMenuKey === getSourceKey(item.type, source.id)}
@@ -324,41 +350,75 @@
 																	</button>
 																</div>
 															</div>
-															
+
 															<!-- 展开的操作菜单 -->
 															{#if expandedActionMenuKey === getSourceKey(item.type, source.id)}
-																<div class="ml-4 mt-2 space-y-1 border-l border-border pl-3">
+																<div class="border-border mt-2 ml-4 space-y-1 border-l pl-3">
 																	<!-- 启用/禁用 -->
 																	<button
-																		class="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-xs transition-colors hover:bg-accent/50"
-																		on:click={(e) => handleToggleEnabled(e, item.type, source.id, source.enabled, source.name)}
+																		class="hover:bg-accent/50 flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-xs transition-colors"
+																		on:click={(e) =>
+																			handleToggleEnabled(
+																				e,
+																				item.type,
+																				source.id,
+																				source.enabled,
+																				source.name
+																			)}
 																	>
-																		<PowerIcon class="h-3 w-3 {source.enabled ? 'text-green-600' : 'text-gray-400'}" />
+																		<PowerIcon
+																			class="h-3 w-3 {source.enabled
+																				? 'text-green-600'
+																				: 'text-gray-400'}"
+																		/>
 																		<span>{source.enabled ? '禁用' : '启用'}</span>
 																	</button>
-																	
+
 																	<!-- 重设路径 -->
 																	<button
-																		class="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-xs transition-colors hover:bg-accent/50"
-																		on:click={(e) => handleResetPath(e, item.type, source.id, source.name, source.path)}
+																		class="hover:bg-accent/50 flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-xs transition-colors"
+																		on:click={(e) =>
+																			handleResetPath(
+																				e,
+																				item.type,
+																				source.id,
+																				source.name,
+																				source.path
+																			)}
 																	>
 																		<FolderOpenIcon class="h-3 w-3 text-orange-600" />
 																		<span>重设路径</span>
 																	</button>
-																	
+
 																	<!-- 扫描已删除视频设置 -->
 																	<button
-																		class="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-xs transition-colors hover:bg-accent/50"
-																		on:click={(e) => handleToggleScanDeleted(e, item.type, source.id, source.scan_deleted_videos, source.name)}
+																		class="hover:bg-accent/50 flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-xs transition-colors"
+																		on:click={(e) =>
+																			handleToggleScanDeleted(
+																				e,
+																				item.type,
+																				source.id,
+																				source.scan_deleted_videos,
+																				source.name
+																			)}
 																	>
-																		<RotateCcwIcon class="h-3 w-3 {source.scan_deleted_videos ? 'text-blue-600' : 'text-gray-400'}" />
-																		<span>{source.scan_deleted_videos ? '禁用扫描已删除' : '启用扫描已删除'}</span>
+																		<RotateCcwIcon
+																			class="h-3 w-3 {source.scan_deleted_videos
+																				? 'text-blue-600'
+																				: 'text-gray-400'}"
+																		/>
+																		<span
+																			>{source.scan_deleted_videos
+																				? '禁用扫描已删除'
+																				: '启用扫描已删除'}</span
+																		>
 																	</button>
-																	
+
 																	<!-- 删除视频源 -->
 																	<button
-																		class="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-xs transition-colors hover:bg-destructive/10 text-destructive"
-																		on:click={(e) => handleDeleteSource(e, item.type, source.id, source.name)}
+																		class="hover:bg-destructive/10 text-destructive flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-xs transition-colors"
+																		on:click={(e) =>
+																			handleDeleteSource(e, item.type, source.id, source.name)}
 																	>
 																		<TrashIcon class="h-3 w-3" />
 																		<span>删除</span>
@@ -448,4 +508,3 @@
 	on:confirm={handleConfirmResetPath}
 	on:cancel={handleCancelResetPath}
 />
-

@@ -132,12 +132,25 @@ impl ConfigManager {
                 .await?;
 
             if let Some(existing_model) = existing {
+                // 记录变更历史
+                if let Err(e) = self
+                    .record_config_change(&key, Some(&existing_model.value_json), &value_json)
+                    .await
+                {
+                    warn!("记录配置变更历史失败: {}", e);
+                }
+
                 // 更新现有配置项
                 let mut active_model: config_item::ActiveModel = existing_model.into();
                 active_model.value_json = Set(value_json);
                 active_model.updated_at = Set(chrono::Utc::now());
                 active_model.update(&self.db).await?;
             } else {
+                // 记录变更历史（新增）
+                if let Err(e) = self.record_config_change(&key, None, &value_json).await {
+                    warn!("记录配置变更历史失败: {}", e);
+                }
+
                 // 创建新配置项
                 let new_model = config_item::ActiveModel {
                     key_name: Set(key),

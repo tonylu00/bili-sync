@@ -359,7 +359,7 @@
 		{#if videoData.pages && videoData.pages.length > 0 && videoData.pages[0].path}
 			<div class="mb-4 rounded-lg border bg-gray-50 p-4">
 				<h3 class="mb-2 text-sm font-medium text-gray-700">📁 下载保存路径</h3>
-				<div class="break-all rounded border bg-white px-3 py-2 font-mono text-sm">
+				<div class="rounded border bg-white px-3 py-2 font-mono text-sm break-all">
 					{videoData.pages[0].path}
 				</div>
 				<p class="mt-1 text-xs text-gray-500">视频文件将保存到此路径下</p>
@@ -683,19 +683,19 @@
 
 	<!-- 删除确认对话框 -->
 	{#if deleteDialogOpen}
-		<div class="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-			<div class="bg-background border rounded-lg shadow-lg p-6 max-w-md w-full mx-4">
+		<div class="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
+			<div class="bg-background mx-4 w-full max-w-md rounded-lg border p-6 shadow-lg">
 				<div class="space-y-4">
 					<div class="space-y-2">
 						<h3 class="text-lg font-semibold">确认删除视频</h3>
 						<p class="text-muted-foreground">
 							确定要删除视频 "<span class="font-medium">{videoData?.video.name}</span>" 吗？
 						</p>
-						<p class="text-sm text-muted-foreground">
+						<p class="text-muted-foreground text-sm">
 							此操作将把视频标记为已删除状态，不会删除实际文件。在视频源设置中开启"扫描已删除视频"后可重新下载。
 						</p>
 					</div>
-					<div class="flex gap-2 justify-end">
+					<div class="flex justify-end gap-2">
 						<Button
 							variant="outline"
 							onclick={() => (deleteDialogOpen = false)}
@@ -703,11 +703,7 @@
 						>
 							取消
 						</Button>
-						<Button
-							variant="destructive"
-							onclick={handleDeleteVideo}
-							disabled={deleting}
-						>
+						<Button variant="destructive" onclick={handleDeleteVideo} disabled={deleting}>
 							{deleting ? '删除中...' : '确认删除'}
 						</Button>
 					</div>

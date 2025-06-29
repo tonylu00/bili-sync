@@ -673,7 +673,7 @@
 					<!-- 自定义关闭按钮 -->
 					<button
 						onclick={() => (openSheet = null)}
-						class="ring-offset-background focus:ring-ring absolute right-2 top-2 rounded-sm p-1 opacity-70 transition-opacity hover:bg-gray-100 hover:opacity-100 focus:outline-none focus:ring-2 focus:ring-offset-2 disabled:pointer-events-none"
+						class="ring-offset-background focus:ring-ring absolute top-2 right-2 rounded-sm p-1 opacity-70 transition-opacity hover:bg-gray-100 hover:opacity-100 focus:ring-2 focus:ring-offset-2 focus:outline-none disabled:pointer-events-none"
 						type="button"
 					>
 						<svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -734,7 +734,7 @@
 												</div>
 											{/each}
 										</div>
-										<h4 class="mb-2 mt-4 font-medium text-blue-900">通用函数</h4>
+										<h4 class="mt-4 mb-2 font-medium text-blue-900">通用函数</h4>
 										<div class="space-y-1">
 											{#each variableHelp.common as item}
 												<div class="flex">
@@ -1070,7 +1070,7 @@
 								<select
 									id="collection-folder-mode"
 									bind:value={collectionFolderMode}
-									class="border-input bg-background ring-offset-background focus-visible:ring-ring flex h-10 w-full rounded-md border px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2"
+									class="border-input bg-background ring-offset-background focus-visible:ring-ring flex h-10 w-full rounded-md border px-3 py-2 text-sm focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:outline-none"
 								>
 									<option value="separate">分离模式</option>
 									<option value="unified" selected>统一模式</option>
@@ -1093,7 +1093,7 @@
 							<select
 								id="nfo-time-type"
 								bind:value={nfoTimeType}
-								class="border-input bg-background ring-offset-background focus-visible:ring-ring flex h-10 w-full rounded-md border px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2"
+								class="border-input bg-background ring-offset-background focus-visible:ring-ring flex h-10 w-full rounded-md border px-3 py-2 text-sm focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:outline-none"
 							>
 								{#each nfoTimeTypeOptions as option}
 									<option value={option.value}>{option.label}</option>
@@ -1240,7 +1240,7 @@
 					<!-- 自定义关闭按钮 -->
 					<button
 						onclick={() => (openSheet = null)}
-						class="ring-offset-background focus:ring-ring absolute right-2 top-2 rounded-sm p-1 opacity-70 transition-opacity hover:bg-gray-100 hover:opacity-100 focus:outline-none focus:ring-2 focus:ring-offset-2 disabled:pointer-events-none"
+						class="ring-offset-background focus:ring-ring absolute top-2 right-2 rounded-sm p-1 opacity-70 transition-opacity hover:bg-gray-100 hover:opacity-100 focus:ring-2 focus:ring-offset-2 focus:outline-none disabled:pointer-events-none"
 						type="button"
 					>
 						<svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -1268,7 +1268,7 @@
 								<select
 									id="video-max-quality"
 									bind:value={videoMaxQuality}
-									class="border-input bg-background ring-offset-background focus-visible:ring-ring flex h-10 w-full rounded-md border px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2"
+									class="border-input bg-background ring-offset-background focus-visible:ring-ring flex h-10 w-full rounded-md border px-3 py-2 text-sm focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:outline-none"
 								>
 									{#each videoQualityOptions as option}
 										<option value={option.value}>{option.label}</option>
@@ -1281,7 +1281,7 @@
 								<select
 									id="video-min-quality"
 									bind:value={videoMinQuality}
-									class="border-input bg-background ring-offset-background focus-visible:ring-ring flex h-10 w-full rounded-md border px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2"
+									class="border-input bg-background ring-offset-background focus-visible:ring-ring flex h-10 w-full rounded-md border px-3 py-2 text-sm focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:outline-none"
 								>
 									{#each videoQualityOptions as option}
 										<option value={option.value}>{option.label}</option>
@@ -1294,7 +1294,7 @@
 								<select
 									id="audio-max-quality"
 									bind:value={audioMaxQuality}
-									class="border-input bg-background ring-offset-background focus-visible:ring-ring flex h-10 w-full rounded-md border px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2"
+									class="border-input bg-background ring-offset-background focus-visible:ring-ring flex h-10 w-full rounded-md border px-3 py-2 text-sm focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:outline-none"
 								>
 									{#each audioQualityOptions as option}
 										<option value={option.value}>{option.label}</option>
@@ -1307,7 +1307,7 @@
 								<select
 									id="audio-min-quality"
 									bind:value={audioMinQuality}
-									class="border-input bg-background ring-offset-background focus-visible:ring-ring flex h-10 w-full rounded-md border px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2"
+									class="border-input bg-background ring-offset-background focus-visible:ring-ring flex h-10 w-full rounded-md border px-3 py-2 text-sm focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:outline-none"
 								>
 									{#each audioQualityOptions as option}
 										<option value={option.value}>{option.label}</option>
@@ -1500,7 +1500,7 @@
 					<!-- 自定义关闭按钮 -->
 					<button
 						onclick={() => (openSheet = null)}
-						class="ring-offset-background focus:ring-ring absolute right-2 top-2 rounded-sm p-1 opacity-70 transition-opacity hover:bg-gray-100 hover:opacity-100 focus:outline-none focus:ring-2 focus:ring-offset-2 disabled:pointer-events-none"
+						class="ring-offset-background focus:ring-ring absolute top-2 right-2 rounded-sm p-1 opacity-70 transition-opacity hover:bg-gray-100 hover:opacity-100 focus:ring-2 focus:ring-offset-2 focus:outline-none disabled:pointer-events-none"
 						type="button"
 					>
 						<svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -1534,7 +1534,7 @@
 								/>
 								<Label
 									for="parallel-download"
-									class="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
+									class="text-sm leading-none font-medium peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
 								>
 									启用多线程下载
 								</Label>
@@ -1675,7 +1675,7 @@
 					<!-- 自定义关闭按钮 -->
 					<button
 						onclick={() => (openSheet = null)}
-						class="ring-offset-background focus:ring-ring absolute right-2 top-2 rounded-sm p-1 opacity-70 transition-opacity hover:bg-gray-100 hover:opacity-100 focus:outline-none focus:ring-2 focus:ring-offset-2 disabled:pointer-events-none"
+						class="ring-offset-background focus:ring-ring absolute top-2 right-2 rounded-sm p-1 opacity-70 transition-opacity hover:bg-gray-100 hover:opacity-100 focus:ring-2 focus:ring-offset-2 focus:outline-none disabled:pointer-events-none"
 						type="button"
 					>
 						<svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -1902,7 +1902,7 @@
 					<!-- 自定义关闭按钮 -->
 					<button
 						onclick={() => (openSheet = null)}
-						class="ring-offset-background focus:ring-ring absolute right-2 top-2 rounded-sm p-1 opacity-70 transition-opacity hover:bg-gray-100 hover:opacity-100 focus:outline-none focus:ring-2 focus:ring-offset-2 disabled:pointer-events-none"
+						class="ring-offset-background focus:ring-ring absolute top-2 right-2 rounded-sm p-1 opacity-70 transition-opacity hover:bg-gray-100 hover:opacity-100 focus:ring-2 focus:ring-offset-2 focus:outline-none disabled:pointer-events-none"
 						type="button"
 					>
 						<svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -2046,7 +2046,7 @@
 					<!-- 自定义关闭按钮 -->
 					<button
 						onclick={() => (openSheet = null)}
-						class="ring-offset-background focus:ring-ring absolute right-2 top-2 rounded-sm p-1 opacity-70 transition-opacity hover:bg-gray-100 hover:opacity-100 focus:outline-none focus:ring-2 focus:ring-offset-2 disabled:pointer-events-none"
+						class="ring-offset-background focus:ring-ring absolute top-2 right-2 rounded-sm p-1 opacity-70 transition-opacity hover:bg-gray-100 hover:opacity-100 focus:ring-2 focus:ring-offset-2 focus:outline-none disabled:pointer-events-none"
 						type="button"
 					>
 						<svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -2333,7 +2333,7 @@
 					<!-- 自定义关闭按钮 -->
 					<button
 						onclick={() => (openSheet = null)}
-						class="ring-offset-background focus:ring-ring absolute right-2 top-2 rounded-sm p-1 opacity-70 transition-opacity hover:bg-gray-100 hover:opacity-100 focus:outline-none focus:ring-2 focus:ring-offset-2 disabled:pointer-events-none"
+						class="ring-offset-background focus:ring-ring absolute top-2 right-2 rounded-sm p-1 opacity-70 transition-opacity hover:bg-gray-100 hover:opacity-100 focus:ring-2 focus:ring-offset-2 focus:outline-none disabled:pointer-events-none"
 						type="button"
 					>
 						<svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -2377,7 +2377,7 @@
 									id="timezone"
 									bind:value={timezone}
 									onchange={() => setTimezone(timezone)}
-									class="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+									class="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500 focus:outline-none"
 								>
 									{#each TIMEZONE_OPTIONS as option}
 										<option value={option.value}>{option.label}</option>
@@ -2406,7 +2406,7 @@
 									bind:checked={scanDeletedVideos}
 									class="text-primary focus:ring-primary h-4 w-4 rounded border-gray-300"
 								/>
-								<Label for="scan-deleted-videos" class="text-sm">扫描已删除视频</Label>
+								<Label for="scan-deleted-videos" class="text-sm">显示已删除视频</Label>
 								<p class="text-muted-foreground ml-2 text-sm">在视频列表中显示已删除的视频</p>
 							</div>
 
@@ -2416,6 +2416,10 @@
 									<p><strong>扫描间隔：</strong>每次扫描下载的时间间隔（秒）</p>
 									<p><strong>时间格式：</strong>控制时间变量在文件名中的显示格式</p>
 									<p><strong>CDN排序：</strong>启用后优先使用质量更高的CDN，可能提升下载速度</p>
+									<p>
+										<strong>显示已删除视频：</strong
+										>控制前端列表是否显示已删除的视频（注：与视频源的"扫描已删除视频"功能不同）
+									</p>
 								</div>
 							</div>
 						</div>

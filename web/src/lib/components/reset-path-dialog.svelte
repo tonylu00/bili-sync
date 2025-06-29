@@ -79,7 +79,7 @@
 <AlertDialog.Root bind:open={isOpen}>
 	<AlertDialog.Content class="max-w-lg">
 		<AlertDialog.Header>
-			<AlertDialog.Title class="text-blue-600 flex items-center gap-2">
+			<AlertDialog.Title class="flex items-center gap-2 text-blue-600">
 				<svg class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
 					<path
 						stroke-linecap="round"
@@ -111,7 +111,7 @@
 					</div>
 					<div class="flex items-start gap-2 text-sm">
 						<span class="font-medium">当前路径：</span>
-						<span class="font-mono text-gray-600 break-all">{currentPath}</span>
+						<span class="font-mono break-all text-gray-600">{currentPath}</span>
 					</div>
 				</div>
 
@@ -185,9 +185,7 @@
 										</svg>
 										清理空的原始文件夹
 									</label>
-									<p class="text-xs text-gray-600">
-										移动文件后，删除原始路径中的空文件夹。
-									</p>
+									<p class="text-xs text-gray-600">移动文件后，删除原始路径中的空文件夹。</p>
 								</div>
 							</div>
 						{/if}

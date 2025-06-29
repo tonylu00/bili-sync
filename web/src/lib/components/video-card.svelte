@@ -196,12 +196,12 @@
 <Card class="{cardClasses} relative overflow-hidden">
 	<!-- 整个卡片的背景模糊图片 -->
 	{#if video.cover && mode === 'default'}
-		<div 
-			class="absolute inset-0 bg-cover bg-center blur-[2px] scale-110 opacity-20"
+		<div
+			class="absolute inset-0 scale-110 bg-cover bg-center opacity-20 blur-[2px]"
 			style="background-image: url('{getProxiedImageUrl(video.cover)}')"
 		></div>
 	{/if}
-	
+
 	<!-- 封面图片 -->
 	{#if video.cover && mode === 'default'}
 		<div class="relative z-10 overflow-hidden rounded-t-lg">
@@ -221,7 +221,7 @@
 				}}
 			/>
 			<!-- 状态徽章覆盖在封面上 -->
-			<div class="absolute right-2 top-2 z-20">
+			<div class="absolute top-2 right-2 z-20">
 				<Badge variant={overallStatus.color} class="shrink-0 text-xs shadow-md">
 					{overallStatus.text}
 				</Badge>
@@ -268,7 +268,9 @@
 		{/if}
 	</CardHeader>
 	<CardContent
-		class="{mode === 'default' ? 'flex min-w-0 flex-1 flex-col justify-end pt-0' : 'pt-0'} relative z-10"
+		class="{mode === 'default'
+			? 'flex min-w-0 flex-1 flex-col justify-end pt-0'
+			: 'pt-0'} relative z-10"
 	>
 		<div class="space-y-3">
 			<!-- 进度条区域 -->

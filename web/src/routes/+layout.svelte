@@ -82,9 +82,9 @@
 				<div
 					class="bg-background/95 supports-[backdrop-filter]:bg-background/60 sticky top-0 z-50 flex min-h-[73px] w-full items-center border-b backdrop-blur"
 				>
-					<div class="flex w-full items-center gap-2 sm:gap-4 px-4 sm:px-6 py-2">
+					<div class="flex w-full items-center gap-2 px-4 py-2 sm:gap-4 sm:px-6">
 						<Sidebar.Trigger class="shrink-0" data-sidebar="trigger" />
-						<div class="flex-1 min-w-0">
+						<div class="min-w-0 flex-1">
 							<SearchBar onSearch={handleSearch} value={searchValue} />
 						</div>
 						<div class="flex items-center gap-1 sm:gap-2">
@@ -93,7 +93,7 @@
 									size="sm"
 									variant="outline"
 									onclick={() => goto('/add-source')}
-									class="hidden sm:flex items-center gap-2"
+									class="hidden items-center gap-2 sm:flex"
 								>
 									<Plus class="h-4 w-4" />
 									添加视频源
@@ -103,7 +103,7 @@
 									size="sm"
 									variant="outline"
 									onclick={() => goto('/add-source')}
-									class="sm:hidden flex items-center justify-center"
+									class="flex items-center justify-center sm:hidden"
 									title="添加视频源"
 								>
 									<Plus class="h-4 w-4" />
@@ -113,7 +113,7 @@
 								size="sm"
 								variant="outline"
 								onclick={() => goto('/settings')}
-								class="hidden sm:flex items-center gap-2"
+								class="hidden items-center gap-2 sm:flex"
 							>
 								<Settings class="h-4 w-4" />
 								配置
@@ -123,7 +123,7 @@
 								size="sm"
 								variant="outline"
 								onclick={() => goto('/settings')}
-								class="sm:hidden flex items-center justify-center"
+								class="flex items-center justify-center sm:hidden"
 								title="配置"
 							>
 								<Settings class="h-4 w-4" />
@@ -132,7 +132,7 @@
 								size="sm"
 								variant="outline"
 								onclick={handleLogout}
-								class="hidden sm:flex items-center gap-2"
+								class="hidden items-center gap-2 sm:flex"
 							>
 								<LogOut class="h-4 w-4" />
 								退出
@@ -142,7 +142,7 @@
 								size="sm"
 								variant="outline"
 								onclick={handleLogout}
-								class="sm:hidden flex items-center justify-center"
+								class="flex items-center justify-center sm:hidden"
 								title="退出"
 							>
 								<LogOut class="h-4 w-4" />

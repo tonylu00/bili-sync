@@ -228,7 +228,7 @@ class ApiClient {
 	 * @param params 可选的查询参数，用于筛选特定视频源的视频
 	 */
 	async resetSpecificTasks(
-		taskIndexes: number[], 
+		taskIndexes: number[],
 		params?: {
 			collection?: number;
 			favorite?: number;
@@ -435,7 +435,9 @@ class ApiClient {
 	 * 更新B站登录凭证
 	 * @param params 凭证参数
 	 */
-	async updateCredential(params: UpdateCredentialRequest): Promise<ApiResponse<UpdateCredentialResponse>> {
+	async updateCredential(
+		params: UpdateCredentialRequest
+	): Promise<ApiResponse<UpdateCredentialResponse>> {
 		return this.put<UpdateCredentialResponse>('/credential', params);
 	}
 
@@ -444,7 +446,9 @@ class ApiClient {
 	 * @param token API Token
 	 */
 	async setupAuthToken(token: string): Promise<ApiResponse<{ success: boolean; message: string }>> {
-		return this.post<{ success: boolean; message: string }>('/setup/auth-token', { auth_token: token });
+		return this.post<{ success: boolean; message: string }>('/setup/auth-token', {
+			auth_token: token
+		});
 	}
 
 	/**
@@ -531,7 +535,7 @@ export const api = {
 	 * 选择性重置特定任务
 	 */
 	resetSpecificTasks: (
-		taskIndexes: number[], 
+		taskIndexes: number[],
 		params?: {
 			collection?: number;
 			favorite?: number;

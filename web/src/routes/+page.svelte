@@ -5,7 +5,12 @@
 	import AuthLogin from '$lib/components/auth-login.svelte';
 	import InitialSetup from '$lib/components/initial-setup.svelte';
 	import api from '$lib/api';
-	import type { VideosResponse, VideoSourcesResponse, ApiError, TaskControlStatusResponse } from '$lib/types';
+	import type {
+		VideosResponse,
+		VideoSourcesResponse,
+		ApiError,
+		TaskControlStatusResponse
+	} from '$lib/types';
 	import { onMount } from 'svelte';
 	import { page } from '$app/stores';
 	import { goto } from '$app/navigation';
@@ -55,17 +60,17 @@
 	// 动态计算每页数量
 	function calculateOptimalPageSize(): number {
 		if (innerWidth === 0 || innerHeight === 0) return 20;
-		
+
 		// 卡片最小宽度260px，间距16px
 		const cardMinWidth = 260 + 16;
 		const availableWidth = innerWidth - 300; // 减去侧边栏宽度
 		const cardsPerRow = Math.floor(availableWidth / cardMinWidth);
-		
+
 		// 卡片高度约200px，间距16px
 		const cardHeight = 200 + 16;
 		const availableHeight = innerHeight - 200; // 减去头部和分页区域
 		const rowsPerPage = Math.floor(availableHeight / cardHeight);
-		
+
 		const optimalSize = Math.max(cardsPerRow * rowsPerPage, 12); // 最少12个
 		return Math.min(optimalSize, 100); // 最多100个
 	}
@@ -76,13 +81,13 @@
 	// 批量重置状态
 	let resetAllDialogOpen = false;
 	let resettingAll = false;
-	
+
 	// 批量重置选项
 	let resetOptions = {
-		all: true,           // 重置所有失败任务
-		videoCover: false,   // 重置视频封面
+		all: true, // 重置所有失败任务
+		videoCover: false, // 重置视频封面
 		videoContent: false, // 重置视频内容
-		videoInfo: false,    // 重置视频信息
+		videoInfo: false, // 重置视频信息
 		videoDanmaku: false, // 重置视频弹幕
 		videoSubtitle: false // 重置视频字幕
 	};
@@ -115,7 +120,7 @@
 		try {
 			// 检查本地是否有token
 			const storedToken = localStorage.getItem('auth_token');
-			
+
 			if (!storedToken) {
 				// 没有token，检查是否是全新系统还是新浏览器
 				try {
@@ -147,7 +152,7 @@
 				// Token无效，清除无效token
 				localStorage.removeItem('auth_token');
 				api.setAuthToken('');
-				
+
 				// 检查是否是系统问题还是token问题
 				try {
 					const setupCheck = await api.checkInitialSetup();
@@ -215,7 +220,7 @@
 	// 暂停所有任务
 	async function pauseAllTasks() {
 		if (loadingTaskControl) return;
-		
+
 		loadingTaskControl = true;
 		try {
 			const response = await api.pauseScanning();
@@ -236,7 +241,7 @@
 	// 恢复所有任务
 	async function resumeAllTasks() {
 		if (loadingTaskControl) return;
-		
+
 		loadingTaskControl = true;
 		try {
 			const response = await api.resumeScanning();
@@ -346,7 +351,12 @@
 		} else {
 			clearVideoSourceFilter();
 		}
-		loadVideos(query || '', parseInt($page.url.searchParams.get('page') || '0'), currentFilter, showFailedOnly);
+		loadVideos(
+			query || '',
+			parseInt($page.url.searchParams.get('page') || '0'),
+			currentFilter,
+			showFailedOnly
+		);
 	}
 
 	function handleFilterRemove() {
@@ -359,7 +369,7 @@
 	function toggleFailedTasksFilter() {
 		showFailedOnly = !showFailedOnly;
 		currentPage = 0; // 重置到第一页
-		
+
 		const query = ToQuery($appStateStore);
 		const failedParam = showFailedOnly ? '&failed=true' : '';
 		if (query) {
@@ -374,36 +384,40 @@
 		resettingAll = true;
 		try {
 			let result;
-			
+
 			if (resetOptions.all) {
 				// 重置所有失败任务，根据当前过滤器传递参数
-				const filterParams = currentFilter ? {
-					[currentFilter.type]: parseInt(currentFilter.id)
-				} : undefined;
+				const filterParams = currentFilter
+					? {
+							[currentFilter.type]: parseInt(currentFilter.id)
+						}
+					: undefined;
 				result = await api.resetAllVideos(filterParams);
 			} else {
 				// 选择性重置特定任务
 				const taskIndexes = [];
-				
+
 				// 根据选择的选项确定要重置的任务索引
-				if (resetOptions.videoCover) taskIndexes.push(0);    // 视频封面
-				if (resetOptions.videoContent) taskIndexes.push(1);  // 视频内容  
-				if (resetOptions.videoInfo) taskIndexes.push(2);     // 视频信息
-				if (resetOptions.videoDanmaku) taskIndexes.push(3);  // 视频弹幕
+				if (resetOptions.videoCover) taskIndexes.push(0); // 视频封面
+				if (resetOptions.videoContent) taskIndexes.push(1); // 视频内容
+				if (resetOptions.videoInfo) taskIndexes.push(2); // 视频信息
+				if (resetOptions.videoDanmaku) taskIndexes.push(3); // 视频弹幕
 				if (resetOptions.videoSubtitle) taskIndexes.push(4); // 视频字幕
-				
+
 				if (taskIndexes.length === 0) {
 					toast.error('请至少选择一个要重置的任务');
 					return;
 				}
-				
+
 				// 调用选择性重置API，根据当前过滤器传递参数
-				const filterParams = currentFilter ? {
-					[currentFilter.type]: parseInt(currentFilter.id)
-				} : undefined;
+				const filterParams = currentFilter
+					? {
+							[currentFilter.type]: parseInt(currentFilter.id)
+						}
+					: undefined;
 				result = await api.resetSpecificTasks(taskIndexes, filterParams);
 			}
-			
+
 			const data = result.data;
 			if (data.resetted) {
 				toast.success('重置成功', {
@@ -424,7 +438,7 @@
 			resetAllDialogOpen = false;
 		}
 	}
-	
+
 	// 处理重置选项变化
 	function handleResetOptionChange(option: string, checked: boolean) {
 		if (option === 'all') {
@@ -456,7 +470,7 @@
 	// 检查认证状态和初始设置
 	onMount(async () => {
 		setBreadcrumb([{ label: '主页', isActive: true }]);
-		
+
 		// 检查是否需要初始设置
 		await checkInitialSetup();
 	});
@@ -505,21 +519,28 @@
 	<AuthLogin on:login-success={handleLoginSuccess} />
 {:else}
 	<FilterBadge {filterTitle} {filterName} onRemove={handleFilterRemove} />
-	
+
 	<!-- 失败任务筛选徽章 -->
 	{#if showFailedOnly}
 		<div class="mb-4">
-			<div class="inline-flex items-center gap-2 rounded-full bg-red-100 px-3 py-1 text-sm text-red-800">
+			<div
+				class="inline-flex items-center gap-2 rounded-full bg-red-100 px-3 py-1 text-sm text-red-800"
+			>
 				<FilterIcon class="h-4 w-4" />
 				<span>仅显示失败任务</span>
 				<button
 					onclick={toggleFailedTasksFilter}
-					class="ml-1 hover:bg-red-200 rounded-full p-1"
+					class="ml-1 rounded-full p-1 hover:bg-red-200"
 					title="清除失败任务筛选"
 					aria-label="清除失败任务筛选"
 				>
 					<svg class="h-3 w-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-						<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+						<path
+							stroke-linecap="round"
+							stroke-linejoin="round"
+							stroke-width="2"
+							d="M6 18L18 6M6 6l12 12"
+						/>
 					</svg>
 				</button>
 			</div>
@@ -528,9 +549,9 @@
 
 	<!-- 统计信息和操作按钮 -->
 	{#if videosData}
-		<div class="mb-6 space-y-4 sm:space-y-0 sm:flex sm:items-center sm:justify-between">
+		<div class="mb-6 space-y-4 sm:flex sm:items-center sm:justify-between sm:space-y-0">
 			<!-- 统计信息 -->
-			<div class="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-4">
+			<div class="flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-4">
 				<div class="text-muted-foreground text-sm">
 					{#if showFailedOnly}
 						共 {videosData.total_count} 个失败任务，{totalPages} 页
@@ -542,12 +563,14 @@
 					每页 {pageSize} 个
 				</div>
 			</div>
-			
+
 			<!-- 操作按钮区域 -->
-			<div class="flex flex-col sm:flex-row items-start sm:items-center gap-3 sm:gap-2">
+			<div class="flex flex-col items-start gap-3 sm:flex-row sm:items-center sm:gap-2">
 				<!-- 页面大小控制 -->
 				<div class="flex items-center gap-2">
-					<label for="page-size-select" class="text-muted-foreground text-sm whitespace-nowrap">每页:</label>
+					<label for="page-size-select" class="text-muted-foreground text-sm whitespace-nowrap"
+						>每页:</label
+					>
 					<select
 						id="page-size-select"
 						value={autoPageSize ? 'auto' : pageSize}
@@ -563,7 +586,7 @@
 							currentPage = 0;
 							handleSearchParamsChange();
 						}}
-						class="border-input bg-background h-8 rounded-md border px-2 py-1 text-sm min-w-[80px]"
+						class="border-input bg-background h-8 min-w-[80px] rounded-md border px-2 py-1 text-sm"
 					>
 						<option value="auto">自动</option>
 						<option value={12}>12</option>
@@ -573,16 +596,18 @@
 						<option value={100}>100</option>
 					</select>
 				</div>
-				
+
 				<!-- 任务控制按钮 -->
 				{#if taskControlStatus}
 					<Button
 						size="sm"
-						variant={taskControlStatus.is_paused ? "default" : "destructive"}
+						variant={taskControlStatus.is_paused ? 'default' : 'destructive'}
 						onclick={taskControlStatus.is_paused ? resumeAllTasks : pauseAllTasks}
 						disabled={loadingTaskControl}
 						class="w-full sm:w-auto"
-						title={taskControlStatus.is_paused ? '恢复所有下载和扫描任务' : '停止所有下载和扫描任务'}
+						title={taskControlStatus.is_paused
+							? '恢复所有下载和扫描任务'
+							: '停止所有下载和扫描任务'}
 					>
 						{#if loadingTaskControl}
 							<RotateCcwIcon class="mr-2 h-4 w-4 animate-spin" />
@@ -596,11 +621,11 @@
 						{/if}
 					</Button>
 				{/if}
-				
+
 				<!-- 失败任务筛选按钮 -->
 				<Button
 					size="sm"
-					variant={showFailedOnly ? "default" : "outline"}
+					variant={showFailedOnly ? 'default' : 'outline'}
 					onclick={toggleFailedTasksFilter}
 					class="w-full sm:w-auto"
 					title={showFailedOnly ? '显示所有任务' : '仅显示失败任务'}
@@ -660,7 +685,7 @@
 					<p class="mb-4">选择要强制重置的任务类型（不管当前状态）：</p>
 				</AlertDialog.Description>
 			</AlertDialog.Header>
-			
+
 			<div class="space-y-4">
 				<!-- 重置所有失败任务 -->
 				<div class="flex items-center space-x-2">
@@ -671,16 +696,14 @@
 						onchange={(e) => handleResetOptionChange('all', e.currentTarget.checked)}
 						class="h-4 w-4 rounded border-gray-300"
 					/>
-					<Label for="reset-all" class="text-sm font-medium">
-						强制重置所有任务
-					</Label>
+					<Label for="reset-all" class="text-sm font-medium">强制重置所有任务</Label>
 				</div>
-				
+
 				<div class="border-t pt-3">
-					<p class="text-sm text-muted-foreground mb-3">或选择特定任务：</p>
-					
+					<p class="text-muted-foreground mb-3 text-sm">或选择特定任务：</p>
+
 					<!-- 视频封面 -->
-					<div class="flex items-center space-x-2 mb-2">
+					<div class="mb-2 flex items-center space-x-2">
 						<input
 							type="checkbox"
 							id="reset-cover"
@@ -688,13 +711,11 @@
 							onchange={(e) => handleResetOptionChange('videoCover', e.currentTarget.checked)}
 							class="h-4 w-4 rounded border-gray-300"
 						/>
-						<Label for="reset-cover" class="text-sm">
-							强制重置视频封面
-						</Label>
+						<Label for="reset-cover" class="text-sm">强制重置视频封面</Label>
 					</div>
-					
+
 					<!-- 视频内容 -->
-					<div class="flex items-center space-x-2 mb-2">
+					<div class="mb-2 flex items-center space-x-2">
 						<input
 							type="checkbox"
 							id="reset-content"
@@ -702,13 +723,11 @@
 							onchange={(e) => handleResetOptionChange('videoContent', e.currentTarget.checked)}
 							class="h-4 w-4 rounded border-gray-300"
 						/>
-						<Label for="reset-content" class="text-sm">
-							强制重置视频内容
-						</Label>
+						<Label for="reset-content" class="text-sm">强制重置视频内容</Label>
 					</div>
-					
+
 					<!-- 视频信息 -->
-					<div class="flex items-center space-x-2 mb-2">
+					<div class="mb-2 flex items-center space-x-2">
 						<input
 							type="checkbox"
 							id="reset-info"
@@ -716,13 +735,11 @@
 							onchange={(e) => handleResetOptionChange('videoInfo', e.currentTarget.checked)}
 							class="h-4 w-4 rounded border-gray-300"
 						/>
-						<Label for="reset-info" class="text-sm">
-							强制重置视频信息
-						</Label>
+						<Label for="reset-info" class="text-sm">强制重置视频信息</Label>
 					</div>
-					
+
 					<!-- 视频弹幕 -->
-					<div class="flex items-center space-x-2 mb-2">
+					<div class="mb-2 flex items-center space-x-2">
 						<input
 							type="checkbox"
 							id="reset-danmaku"
@@ -730,13 +747,11 @@
 							onchange={(e) => handleResetOptionChange('videoDanmaku', e.currentTarget.checked)}
 							class="h-4 w-4 rounded border-gray-300"
 						/>
-						<Label for="reset-danmaku" class="text-sm">
-							强制重置视频弹幕
-						</Label>
+						<Label for="reset-danmaku" class="text-sm">强制重置视频弹幕</Label>
 					</div>
-					
+
 					<!-- 视频字幕 -->
-					<div class="flex items-center space-x-2 mb-2">
+					<div class="mb-2 flex items-center space-x-2">
 						<input
 							type="checkbox"
 							id="reset-subtitle"
@@ -744,19 +759,18 @@
 							onchange={(e) => handleResetOptionChange('videoSubtitle', e.currentTarget.checked)}
 							class="h-4 w-4 rounded border-gray-300"
 						/>
-						<Label for="reset-subtitle" class="text-sm">
-							强制重置视频字幕
-						</Label>
+						<Label for="reset-subtitle" class="text-sm">强制重置视频字幕</Label>
 					</div>
 				</div>
-				
-				<div class="bg-yellow-50 border border-yellow-200 rounded-lg p-3">
+
+				<div class="rounded-lg border border-yellow-200 bg-yellow-50 p-3">
 					<p class="text-sm text-yellow-800">
-						<strong>注意：</strong>强制重置会将选中的任务状态重置为"未开始"，不管当前是否已完成。选择特定任务重置时，会同时重置对应的分P下载状态。
+						<strong>注意：</strong
+						>强制重置会将选中的任务状态重置为"未开始"，不管当前是否已完成。选择特定任务重置时，会同时重置对应的分P下载状态。
 					</p>
 				</div>
 			</div>
-			
+
 			<AlertDialog.Footer>
 				<AlertDialog.Cancel>取消</AlertDialog.Cancel>
 				<AlertDialog.Action onclick={handleResetAllVideos} disabled={resettingAll}>

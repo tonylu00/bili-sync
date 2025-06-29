@@ -38,7 +38,7 @@
 	let validatingFavorite = false;
 	let favoriteValidationResult: any = null;
 	let favoriteValidationTimeout: any;
-	
+
 	// UP主收藏夹搜索相关
 	let searchedUserFavorites: any[] = [];
 	let loadingSearchedUserFavorites = false;
@@ -73,7 +73,11 @@
 	// 源类型选项
 	const sourceTypeOptions = [
 		{ value: 'collection', label: '合集', description: '视频合集，需要UP主ID和合集ID' },
-		{ value: 'favorite', label: '收藏夹', description: '可添加任何公开收藏夹，收藏夹ID可在收藏夹页面URL中获取' },
+		{
+			value: 'favorite',
+			label: '收藏夹',
+			description: '可添加任何公开收藏夹，收藏夹ID可在收藏夹页面URL中获取'
+		},
 		{ value: 'submission', label: 'UP主投稿', description: 'UP主ID可在UP主空间URL中获取' },
 		{ value: 'watch_later', label: '稍后观看', description: '同步稍后观看列表' },
 		{ value: 'bangumi', label: '番剧', description: '番剧season_id可在番剧页面URL中获取' }
@@ -138,7 +142,7 @@
 		try {
 			// 针对番剧搜索，需要更多页面因为每页实际只有25+25=50个结果但分配可能不均
 			const pageSize = searchType === 'media_bangumi' ? 100 : 50;
-			
+
 			// 第一次请求获取总数
 			const firstResult = await api.searchBilibili({
 				keyword: searchKeyword,
@@ -155,7 +159,7 @@
 			const totalResults = firstResult.data.total;
 			searchTotalResults = totalResults;
 			let allResults = [...firstResult.data.results];
-			
+
 			// 如果总数超过pageSize，继续获取剩余页面
 			if (totalResults > pageSize) {
 				const totalPages = Math.ceil(totalResults / pageSize);
@@ -174,9 +178,9 @@
 						if (pageResult.data.success && pageResult.data.results) {
 							allResults.push(...pageResult.data.results);
 						}
-						
+
 						// 添加小延迟避免请求过于频繁
-						await new Promise(resolve => setTimeout(resolve, 100));
+						await new Promise((resolve) => setTimeout(resolve, 100));
 					} catch (error) {
 						// 静默处理失败，继续获取下一页
 					}
@@ -186,23 +190,26 @@
 			// 去重处理（基于season_id, bvid, mid等唯一标识）
 			const uniqueResults = allResults.filter((result, index, arr) => {
 				const id = result.season_id || result.bvid || result.mid || `${result.title}_${index}`;
-				return arr.findIndex(r => {
-					const rid = r.season_id || r.bvid || r.mid || `${r.title}_${arr.indexOf(r)}`;
-					return rid === id;
-				}) === index;
+				return (
+					arr.findIndex((r) => {
+						const rid = r.season_id || r.bvid || r.mid || `${r.title}_${arr.indexOf(r)}`;
+						return rid === id;
+					}) === index
+				);
 			});
 
 			searchResults = uniqueResults;
 			showSearchResults = true;
-			
+
 			// 优化提示信息
 			const successRate = ((uniqueResults.length / totalResults) * 100).toFixed(1);
 			if (uniqueResults.length < totalResults) {
-				toast.success(`搜索完成，获取到 ${uniqueResults.length}/${totalResults} 个结果 (${successRate}%)`);
+				toast.success(
+					`搜索完成，获取到 ${uniqueResults.length}/${totalResults} 个结果 (${successRate}%)`
+				);
 			} else {
 				toast.success(`搜索完成，共获取到 ${uniqueResults.length} 个结果`);
 			}
-
 		} catch (error: any) {
 			console.error('搜索失败:', error);
 			toast.error('搜索失败', { description: error.message });
@@ -463,16 +470,16 @@
 	async function selectUserAndFetchFavorites(user: any) {
 		selectedUserId = user.mid.toString();
 		selectedUserName = user.title; // 使用搜索结果中的title
-		
+
 		loadingSearchedUserFavorites = true;
 		searchedUserFavorites = [];
-		
+
 		// 关闭搜索结果
 		showSearchResults = false;
 		searchResults = [];
 		searchKeyword = '';
 		searchTotalResults = 0;
-		
+
 		try {
 			const result = await api.getUserFavoritesByUid(selectedUserId);
 			if (result.data && result.data.length > 0) {
@@ -517,7 +524,7 @@
 		try {
 			const result = await api.validateFavorite(fid.trim());
 			favoriteValidationResult = result.data;
-			
+
 			if (result.data.valid && !name) {
 				// 如果验证成功且用户还没有填写名称，自动填入收藏夹标题
 				name = result.data.title;
@@ -580,11 +587,11 @@
 			}
 		} catch (error: any) {
 			console.error('获取合集列表失败:', error);
-			
+
 			// 根据错误类型提供更友好的提示
 			let errorMessage = '获取合集列表失败';
 			let errorDescription = '';
-			
+
 			if (error.message === 'Failed to fetch' || error.message.includes('ERR_EMPTY_RESPONSE')) {
 				errorDescription = '该UP主的合集可能需要登录访问，或暂时无法获取';
 			} else if (error.message.includes('403') || error.message.includes('Forbidden')) {
@@ -594,7 +601,7 @@
 			} else {
 				errorDescription = '网络错误或服务暂时不可用，请稍后重试';
 			}
-			
+
 			toast.error(errorMessage, { description: errorDescription });
 			userCollections = [];
 		} finally {
@@ -982,9 +989,7 @@
 											已获取 {userFavorites.length} 个收藏夹，请在{isMobile ? '下方' : '右侧'}选择
 										</p>
 									{:else}
-										<p class="text-xs text-yellow-600">
-											点击右侧按钮获取您的收藏夹列表
-										</p>
+										<p class="text-xs text-yellow-600">点击右侧按钮获取您的收藏夹列表</p>
 									{/if}
 								</div>
 
@@ -993,7 +998,7 @@
 									<div class="mb-3">
 										<span class="text-sm font-medium text-blue-800">他人的公开收藏夹</span>
 									</div>
-									
+
 									<!-- 搜索UP主的收藏夹 -->
 									<div class="mb-4 rounded border border-gray-200 bg-white p-3">
 										<div class="mb-2">
@@ -1014,21 +1019,23 @@
 												{#if searchLoading}搜索中...{:else}搜索{/if}
 											</Button>
 										</div>
-										
+
 										<p class="mt-2 text-xs text-gray-600">
 											{#if showSearchResults && searchResults.length > 0}
-												找到 {searchResults.length} 个UP主，请在{isMobile ? '下方' : '右侧'}列表中选择
+												找到 {searchResults.length} 个UP主，请在{isMobile
+													? '下方'
+													: '右侧'}列表中选择
 											{:else}
 												输入UP主名称后点击搜索，结果将在{isMobile ? '下方' : '右侧'}显示
 											{/if}
 										</p>
 									</div>
-									
+
 									<!-- 手动输入收藏夹ID -->
 									<div class="text-xs text-blue-600">
-										<strong>或者手动输入收藏夹ID：</strong><br>
-										1. 打开想要添加的收藏夹页面<br>
-										2. 复制URL中 "fid=" 后面的数字<br>
+										<strong>或者手动输入收藏夹ID：</strong><br />
+										1. 打开想要添加的收藏夹页面<br />
+										2. 复制URL中 "fid=" 后面的数字<br />
 										3. 在下方输入框中填写该数字
 									</div>
 								</div>
@@ -1104,7 +1111,9 @@
 										<p class="mt-1 text-xs text-blue-600">🔍 验证收藏夹中...</p>
 									{:else if favoriteValidationResult}
 										{#if favoriteValidationResult.valid}
-											<p class="mt-1 text-xs text-green-600">✓ 收藏夹验证成功：{favoriteValidationResult.title}</p>
+											<p class="mt-1 text-xs text-green-600">
+												✓ 收藏夹验证成功：{favoriteValidationResult.title}
+											</p>
 										{:else}
 											<p class="mt-1 text-xs text-red-600">✗ {favoriteValidationResult.message}</p>
 										{/if}
@@ -1521,7 +1530,9 @@
 						>
 							<div class="flex items-center justify-between border-b bg-green-50 p-4">
 								<div>
-									<span class="text-base font-medium text-green-800">{selectedUserName} 的收藏夹</span>
+									<span class="text-base font-medium text-green-800"
+										>{selectedUserName} 的收藏夹</span
+									>
 									<span class="text-sm text-green-600 {isMobile ? 'block' : 'ml-2'}">
 										{#if loadingSearchedUserFavorites}
 											正在加载...

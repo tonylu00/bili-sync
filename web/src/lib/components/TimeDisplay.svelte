@@ -48,4 +48,4 @@
 	</span>
 {:else}
 	<span>{formattedTime}</span>
-{/if} 
+{/if}

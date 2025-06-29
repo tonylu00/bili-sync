@@ -43,7 +43,7 @@ export function formatTimestamp(
 ): string {
 	try {
 		let date: Date;
-		
+
 		if (typeof timestamp === 'string') {
 			// 处理字符串时间戳
 			date = new Date(timestamp);
@@ -97,7 +97,7 @@ export function getRelativeTime(
 ): string {
 	try {
 		let date: Date;
-		
+
 		if (typeof timestamp === 'string') {
 			date = new Date(timestamp);
 		} else if (typeof timestamp === 'number') {
@@ -141,7 +141,7 @@ export function convertUTCToTimezone(
 	timezone: string = getCurrentTimezone()
 ): Date {
 	let date: Date;
-	
+
 	if (typeof utcTimestamp === 'string') {
 		// 如果字符串不包含时区信息，假设为UTC
 		if (!utcTimestamp.includes('Z') && !utcTimestamp.includes('+') && !utcTimestamp.includes('-')) {
@@ -165,13 +165,13 @@ export function getTimezoneOffset(timezone: string): string {
 		const utc = new Date(now.getTime() + now.getTimezoneOffset() * 60000);
 		const targetTime = new Date(utc.toLocaleString('en-US', { timeZone: timezone }));
 		const offset = (targetTime.getTime() - utc.getTime()) / (1000 * 60 * 60);
-		
+
 		const sign = offset >= 0 ? '+' : '-';
 		const hours = Math.floor(Math.abs(offset));
 		const minutes = Math.floor((Math.abs(offset) - hours) * 60);
-		
+
 		return `UTC${sign}${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}`;
 	} catch (error) {
 		return 'UTC+00:00';
 	}
-} 
+}
