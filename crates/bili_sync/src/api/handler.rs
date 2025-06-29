@@ -5293,13 +5293,13 @@ pub async fn get_user_collections(
             // 检查是否是网络错误，提供更友好的错误信息
             let user_friendly_error =
                 if e.to_string().contains("ERR_EMPTY_RESPONSE") || e.to_string().contains("Failed to fetch") {
-                    format!("该UP主的合集可能需要登录访问，或暂时无法获取。请稍后重试或手动输入合集ID。")
+                    "该UP主的合集可能需要登录访问，或暂时无法获取。请稍后重试或手动输入合集ID。".to_string()
                 } else if e.to_string().contains("403") || e.to_string().contains("Forbidden") {
-                    format!("该UP主的合集为私有，无法访问。")
+                    "该UP主的合集为私有，无法访问。".to_string()
                 } else if e.to_string().contains("404") || e.to_string().contains("Not Found") {
-                    format!("UP主不存在或合集已被删除。")
+                    "UP主不存在或合集已被删除。".to_string()
                 } else {
-                    format!("网络错误或服务暂时不可用，请稍后重试。")
+                    "网络错误或服务暂时不可用，请稍后重试。".to_string()
                 };
 
             Err(anyhow!("{}", user_friendly_error).into())
