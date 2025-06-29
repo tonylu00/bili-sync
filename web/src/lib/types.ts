@@ -14,6 +14,7 @@ export interface VideosRequest {
 	query?: string;
 	page?: number;
 	page_size?: number;
+	show_failed_only?: boolean;
 }
 
 // 视频来源类型

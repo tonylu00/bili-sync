@@ -26,6 +26,7 @@
 	import RotateCcwIcon from '@lucide/svelte/icons/rotate-ccw';
 	import PauseIcon from '@lucide/svelte/icons/pause';
 	import PlayIcon from '@lucide/svelte/icons/play';
+	import FilterIcon from '@lucide/svelte/icons/filter';
 	import { onDestroy } from 'svelte';
 
 	// 认证状态
@@ -43,6 +44,9 @@
 	let taskControlStatus: TaskControlStatusResponse | null = null;
 	let loadingTaskControl = false;
 	let statusUpdateInterval: ReturnType<typeof setInterval> | null = null;
+
+	// 失败任务筛选状态
+	let showFailedOnly = false;
 
 	// 响应式变量
 	let innerWidth = 0;
@@ -261,6 +265,11 @@
 		return null;
 	}
 
+	// 从URL参数获取失败任务筛选状态
+	function getShowFailedOnlyFromURL(searchParams: URLSearchParams): boolean {
+		return searchParams.get('failed') === 'true';
+	}
+
 	// 获取筛选项名称
 	function getFilterName(type: string, id: string): string {
 		const videoSources = $videoSourceStore;
@@ -280,11 +289,12 @@
 	async function loadVideos(
 		query?: string,
 		pageNum: number = 0,
-		filter?: { type: string; id: string } | null
+		filter?: { type: string; id: string } | null,
+		failedOnly: boolean = false
 	) {
 		loading = true;
 		try {
-			const params: Record<string, string | number> = {
+			const params: Record<string, string | number | boolean> = {
 				page: pageNum,
 				page_size: pageSize
 			};
@@ -296,6 +306,11 @@
 			// 添加筛选参数
 			if (filter) {
 				params[filter.type] = parseInt(filter.id);
+			}
+
+			// 添加失败任务筛选参数
+			if (failedOnly) {
+				params.show_failed_only = true;
 			}
 
 			const result = await api.getVideos(params);
@@ -313,28 +328,45 @@
 
 	async function handlePageChange(pageNum: number) {
 		const query = ToQuery($appStateStore);
+		const failedParam = showFailedOnly ? '&failed=true' : '';
 		if (query) {
-			goto(`/${query}&page=${pageNum}`);
+			goto(`/${query}&page=${pageNum}${failedParam}`);
 		} else {
-			goto(`/?page=${pageNum}`);
+			goto(`/?page=${pageNum}${failedParam}`);
 		}
 	}
 
 	async function handleSearchParamsChange() {
 		const query = $page.url.searchParams.get('query');
 		currentFilter = getFilterFromURL($page.url.searchParams);
+		showFailedOnly = getShowFailedOnlyFromURL($page.url.searchParams);
 		setQuery(query || '');
 		if (currentFilter) {
 			setVideoSourceFilter(currentFilter.type, currentFilter.id);
 		} else {
 			clearVideoSourceFilter();
 		}
-		loadVideos(query || '', parseInt($page.url.searchParams.get('page') || '0'), currentFilter);
+		loadVideos(query || '', parseInt($page.url.searchParams.get('page') || '0'), currentFilter, showFailedOnly);
 	}
 
 	function handleFilterRemove() {
 		clearVideoSourceFilter();
-		goto(`/${ToQuery($appStateStore)}`);
+		const failedParam = showFailedOnly ? '&failed=true' : '';
+		goto(`/${ToQuery($appStateStore)}${failedParam}`);
+	}
+
+	// 切换失败任务筛选状态
+	function toggleFailedTasksFilter() {
+		showFailedOnly = !showFailedOnly;
+		currentPage = 0; // 重置到第一页
+		
+		const query = ToQuery($appStateStore);
+		const failedParam = showFailedOnly ? '&failed=true' : '';
+		if (query) {
+			goto(`/${query}${failedParam}`);
+		} else {
+			goto(`/${failedParam ? '?' + failedParam.slice(1) : ''}`);
+		}
 	}
 
 	// 批量重置所有视频
@@ -473,6 +505,26 @@
 	<AuthLogin on:login-success={handleLoginSuccess} />
 {:else}
 	<FilterBadge {filterTitle} {filterName} onRemove={handleFilterRemove} />
+	
+	<!-- 失败任务筛选徽章 -->
+	{#if showFailedOnly}
+		<div class="mb-4">
+			<div class="inline-flex items-center gap-2 rounded-full bg-red-100 px-3 py-1 text-sm text-red-800">
+				<FilterIcon class="h-4 w-4" />
+				<span>仅显示失败任务</span>
+				<button
+					onclick={toggleFailedTasksFilter}
+					class="ml-1 hover:bg-red-200 rounded-full p-1"
+					title="清除失败任务筛选"
+					aria-label="清除失败任务筛选"
+				>
+					<svg class="h-3 w-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+						<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+					</svg>
+				</button>
+			</div>
+		</div>
+	{/if}
 
 	<!-- 统计信息和操作按钮 -->
 	{#if videosData}
@@ -480,7 +532,11 @@
 			<!-- 统计信息 -->
 			<div class="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-4">
 				<div class="text-muted-foreground text-sm">
-					共 {videosData.total_count} 个视频，{totalPages} 页
+					{#if showFailedOnly}
+						共 {videosData.total_count} 个失败任务，{totalPages} 页
+					{:else}
+						共 {videosData.total_count} 个视频，{totalPages} 页
+					{/if}
 				</div>
 				<div class="text-muted-foreground text-xs">
 					每页 {pageSize} 个
@@ -495,7 +551,7 @@
 					<select
 						id="page-size-select"
 						value={autoPageSize ? 'auto' : pageSize}
-						on:change={(e) => {
+						onchange={(e) => {
 							const value = e.currentTarget.value;
 							if (value === 'auto') {
 								autoPageSize = true;
@@ -541,6 +597,18 @@
 					</Button>
 				{/if}
 				
+				<!-- 失败任务筛选按钮 -->
+				<Button
+					size="sm"
+					variant={showFailedOnly ? "default" : "outline"}
+					onclick={toggleFailedTasksFilter}
+					class="w-full sm:w-auto"
+					title={showFailedOnly ? '显示所有任务' : '仅显示失败任务'}
+				>
+					<FilterIcon class="mr-2 h-4 w-4" />
+					{showFailedOnly ? '失败任务' : '显示失败'}
+				</Button>
+
 				<!-- 强制重置按钮 -->
 				<Button
 					size="sm"
@@ -600,7 +668,7 @@
 						type="checkbox"
 						id="reset-all"
 						bind:checked={resetOptions.all}
-						on:change={(e) => handleResetOptionChange('all', e.currentTarget.checked)}
+						onchange={(e) => handleResetOptionChange('all', e.currentTarget.checked)}
 						class="h-4 w-4 rounded border-gray-300"
 					/>
 					<Label for="reset-all" class="text-sm font-medium">
@@ -617,7 +685,7 @@
 							type="checkbox"
 							id="reset-cover"
 							bind:checked={resetOptions.videoCover}
-							on:change={(e) => handleResetOptionChange('videoCover', e.currentTarget.checked)}
+							onchange={(e) => handleResetOptionChange('videoCover', e.currentTarget.checked)}
 							class="h-4 w-4 rounded border-gray-300"
 						/>
 						<Label for="reset-cover" class="text-sm">
@@ -631,7 +699,7 @@
 							type="checkbox"
 							id="reset-content"
 							bind:checked={resetOptions.videoContent}
-							on:change={(e) => handleResetOptionChange('videoContent', e.currentTarget.checked)}
+							onchange={(e) => handleResetOptionChange('videoContent', e.currentTarget.checked)}
 							class="h-4 w-4 rounded border-gray-300"
 						/>
 						<Label for="reset-content" class="text-sm">
@@ -645,7 +713,7 @@
 							type="checkbox"
 							id="reset-info"
 							bind:checked={resetOptions.videoInfo}
-							on:change={(e) => handleResetOptionChange('videoInfo', e.currentTarget.checked)}
+							onchange={(e) => handleResetOptionChange('videoInfo', e.currentTarget.checked)}
 							class="h-4 w-4 rounded border-gray-300"
 						/>
 						<Label for="reset-info" class="text-sm">
@@ -659,7 +727,7 @@
 							type="checkbox"
 							id="reset-danmaku"
 							bind:checked={resetOptions.videoDanmaku}
-							on:change={(e) => handleResetOptionChange('videoDanmaku', e.currentTarget.checked)}
+							onchange={(e) => handleResetOptionChange('videoDanmaku', e.currentTarget.checked)}
 							class="h-4 w-4 rounded border-gray-300"
 						/>
 						<Label for="reset-danmaku" class="text-sm">
@@ -673,7 +741,7 @@
 							type="checkbox"
 							id="reset-subtitle"
 							bind:checked={resetOptions.videoSubtitle}
-							on:change={(e) => handleResetOptionChange('videoSubtitle', e.currentTarget.checked)}
+							onchange={(e) => handleResetOptionChange('videoSubtitle', e.currentTarget.checked)}
 							class="h-4 w-4 rounded border-gray-300"
 						/>
 						<Label for="reset-subtitle" class="text-sm">

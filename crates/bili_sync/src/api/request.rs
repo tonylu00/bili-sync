@@ -12,6 +12,7 @@ pub struct VideosRequest {
     pub query: Option<String>,
     pub page: Option<u64>,
     pub page_size: Option<u64>,
+    pub show_failed_only: Option<bool>,
 }
 
 // 添加新视频源的请求结构体

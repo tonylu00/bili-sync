@@ -196,6 +196,39 @@ pub async fn get_videos(
                 .or(video::Column::Path.contains(&query_word)),
         );
     }
+
+    // 筛选失败任务（仅显示下载状态中包含失败的视频）
+    if params.show_failed_only.unwrap_or(false) {
+        // download_status是u32类型，使用位运算编码5个子任务状态
+        // 每3位表示一个子任务：(download_status >> (offset * 3)) & 7
+        // 状态值：0=未开始，1-6=失败次数，7=成功
+        // 筛选任一子任务状态在1-6范围内的视频
+        use sea_orm::sea_query::Expr;
+        
+        let mut conditions = Vec::new();
+        
+        // 检查5个子任务位置的状态
+        for offset in 0..5 {
+            let shift = offset * 3;
+            // 提取第offset个子任务状态: (download_status >> shift) & 7
+            // 检查是否为失败状态: >= 1 AND <= 6
+            conditions.push(
+                Expr::cust(format!(
+                    "((download_status >> {}) & 7) BETWEEN 1 AND 6", 
+                    shift
+                ))
+            );
+        }
+        
+        // 使用OR连接：任一子任务失败即匹配
+        let mut final_condition = conditions[0].clone();
+        for condition in conditions.into_iter().skip(1) {
+            final_condition = final_condition.or(condition);
+        }
+        
+        query = query.filter(final_condition);
+    }
+
     let total_count = query.clone().count(db.as_ref()).await?;
     let (page, page_size) = if let (Some(page), Some(page_size)) = (params.page, params.page_size) {
         (page, page_size)
