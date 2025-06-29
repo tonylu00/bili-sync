@@ -18,6 +18,7 @@ use crate::adapter::{video_source_from, Args, VideoSource, VideoSourceEnum};
 use crate::bilibili::{BestStream, BiliClient, BiliError, Dimension, PageInfo, Video, VideoInfo};
 use crate::config::ARGS;
 use crate::error::{DownloadAbortError, ExecutionStatus, ProcessPageError};
+use crate::task::{DeleteVideoTask, VIDEO_DELETE_TASK_QUEUE};
 use crate::unified_downloader::UnifiedDownloader;
 use crate::utils::format_arg::{page_format_args, video_format_args};
 use crate::utils::model::{
@@ -894,6 +895,42 @@ pub async fn download_video_pages(
         .collect::<Vec<_>>();
     status.update_status(&results);
 
+    // 处理87007错误检测和自动删除（在for_each之前）
+    let mut has_87007_error = false;
+    for (res, task_name) in results.iter().take(4).zip(["封面", "详情", "作者头像", "作者详情"]) {
+        if let ExecutionStatus::Ignored(e) = res {
+            let error_msg = e.to_string();
+            if error_msg.contains("status code: 87007") {
+                warn!(
+                    "检测到充电专享视频「{}」{}，将自动删除该视频以避免重复尝试: {:#}",
+                    &video_model.name, task_name, e
+                );
+                has_87007_error = true;
+                break; // 只需要检测一次即可
+            }
+        }
+    }
+    
+    // 如果检测到87007错误，创建自动删除任务
+    if has_87007_error {
+        let delete_task = DeleteVideoTask {
+            video_id: video_model.id,
+            task_id: format!("auto_delete_87007_{}", video_model.id),
+        };
+        
+        if let Err(delete_err) = VIDEO_DELETE_TASK_QUEUE.enqueue_task(delete_task, connection).await {
+            error!(
+                "无法创建充电专享视频「{}」的自动删除任务: {:#}",
+                &video_model.name, delete_err
+            );
+        } else {
+            info!(
+                "已为充电专享视频「{}」创建自动删除任务",
+                &video_model.name
+            );
+        }
+    }
+    
     results
         .iter()
         .take(4)
@@ -902,10 +939,13 @@ pub async fn download_video_pages(
             ExecutionStatus::Skipped => debug!("处理视频「{}」{}已成功过，跳过", &video_model.name, task_name),
             ExecutionStatus::Succeeded => debug!("处理视频「{}」{}成功", &video_model.name, task_name),
             ExecutionStatus::Ignored(e) => {
-                info!(
-                    "处理视频「{}」{}出现常见错误，已忽略: {:#}",
-                    &video_model.name, task_name, e
-                )
+                let error_msg = e.to_string();
+                if !error_msg.contains("status code: 87007") {
+                    info!(
+                        "处理视频「{}」{}出现常见错误，已忽略: {:#}",
+                        &video_model.name, task_name, e
+                    );
+                }
             }
             ExecutionStatus::ClassifiedFailed(classified_error) => {
                 // 根据错误分类进行不同级别的日志记录
@@ -1248,6 +1288,42 @@ pub async fn download_page(
         .collect::<Vec<_>>();
     status.update_status(&results);
 
+    // 处理87007错误检测和自动删除（在for_each之前）
+    let mut has_87007_error = false;
+    for (res, task_name) in results.iter().zip(["封面", "视频", "详情", "弹幕", "字幕"]) {
+        if let ExecutionStatus::Ignored(e) = res {
+            let error_msg = e.to_string();
+            if error_msg.contains("status code: 87007") {
+                warn!(
+                    "检测到充电专享视频「{}」第 {} 页{}，将自动删除该视频以避免重复尝试: {:#}",
+                    &video_model.name, page_model.pid, task_name, e
+                );
+                has_87007_error = true;
+                break; // 只需要检测一次即可
+            }
+        }
+    }
+    
+    // 如果检测到87007错误，创建自动删除任务
+    if has_87007_error {
+        let delete_task = DeleteVideoTask {
+            video_id: video_model.id,
+            task_id: format!("auto_delete_87007_page_{}", video_model.id),
+        };
+        
+        if let Err(delete_err) = VIDEO_DELETE_TASK_QUEUE.enqueue_task(delete_task, connection).await {
+            error!(
+                "无法创建充电专享视频「{}」的自动删除任务: {:#}",
+                &video_model.name, delete_err
+            );
+        } else {
+            info!(
+                "已为充电专享视频「{}」创建自动删除任务",
+                &video_model.name
+            );
+        }
+    }
+    
     results
         .iter()
         .zip(["封面", "视频", "详情", "弹幕", "字幕"])
@@ -1261,10 +1337,13 @@ pub async fn download_page(
                 &video_model.name, page_model.pid, task_name
             ),
             ExecutionStatus::Ignored(e) => {
-                info!(
-                    "处理视频「{}」第 {} 页{}出现常见错误，已忽略: {:#}",
-                    &video_model.name, page_model.pid, task_name, e
-                )
+                let error_msg = e.to_string();
+                if !error_msg.contains("status code: 87007") {
+                    info!(
+                        "处理视频「{}」第 {} 页{}出现常见错误，已忽略: {:#}",
+                        &video_model.name, page_model.pid, task_name, e
+                    );
+                }
             }
             ExecutionStatus::ClassifiedFailed(classified_error) => {
                 // 根据错误分类进行不同级别的日志记录

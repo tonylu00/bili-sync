@@ -5,7 +5,7 @@ pub use http_server::http_server;
 pub use video_downloader::video_downloader;
 
 use anyhow::Result;
-use sea_orm::{DatabaseConnection, Set, ActiveModelTrait, EntityTrait, QueryFilter, ColumnTrait, QueryOrder};
+use sea_orm::{DatabaseConnection, Set, ActiveModelTrait, EntityTrait, QueryFilter, ColumnTrait, QueryOrder, PaginatorTrait};
 use serde::{Deserialize, Serialize};
 use std::collections::VecDeque;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -315,8 +315,47 @@ impl VideoDeleteTaskQueue {
         }
     }
 
-    /// 添加视频删除任务到队列（同时保存到数据库）
+    /// 检查视频是否已有待处理的删除任务
+    pub async fn has_pending_delete_task(&self, video_id: i32, connection: &DatabaseConnection) -> Result<bool> {
+        let count = TaskQueueEntity::find()
+            .filter(task_queue::Column::TaskType.eq(TaskType::DeleteVideo))
+            .filter(task_queue::Column::Status.eq(TaskStatus::Pending))
+            .count(connection)
+            .await?;
+        
+        if count == 0 {
+            return Ok(false);
+        }
+        
+        // 检查待处理任务中是否包含该视频ID
+        let pending_tasks = TaskQueueEntity::find()
+            .filter(task_queue::Column::TaskType.eq(TaskType::DeleteVideo))
+            .filter(task_queue::Column::Status.eq(TaskStatus::Pending))
+            .all(connection)
+            .await?;
+        
+        for task_record in pending_tasks {
+            if let Ok(task_data) = serde_json::from_str::<DeleteVideoTask>(&task_record.task_data) {
+                if task_data.video_id == video_id {
+                    return Ok(true);
+                }
+            }
+        }
+        
+        Ok(false)
+    }
+    
+    /// 添加视频删除任务到队列（同时保存到数据库，带重复检查）
     pub async fn enqueue_task(&self, task: DeleteVideoTask, connection: &DatabaseConnection) -> Result<()> {
+        // 检查是否已有该视频的待处理删除任务
+        if self.has_pending_delete_task(task.video_id, connection).await? {
+            debug!(
+                "视频ID={} 已有待处理的删除任务，跳过重复创建",
+                task.video_id
+            );
+            return Ok(());
+        }
+        
         // 保存到数据库
         let task_data = serde_json::to_string(&task)?;
         let active_model = task_queue::ActiveModel {
@@ -445,11 +484,24 @@ impl VideoDeleteTaskQueue {
                     }
                 }
                 Err(e) => {
-                    error!("视频删除任务执行失败: 视频ID={}, 错误: {:#?}", task.video_id, e);
+                    let error_msg = e.to_string();
                     
-                    // 标记数据库任务为失败
-                    if let Err(e) = self.mark_task_failed(&task, &db).await {
-                        error!("更新任务失败状态失败: {:#}", e);
+                    // 对于“视频已经被删除”的错误，使用INFO级别记录
+                    if error_msg.contains("视频已经被删除") {
+                        info!("视频删除任务跳过: 视频ID={} 已经被删除", task.video_id);
+                        processed_count += 1; // 对于已删除的视频也认为是成功处理
+                        
+                        // 标记为已完成，因为目标已达成（视频已经不存在）
+                        if let Err(e) = self.mark_task_completed(&task, &db).await {
+                            error!("更新任务完成状态失败: {:#}", e);
+                        }
+                    } else {
+                        error!("视频删除任务执行失败: 视频ID={}, 错误: {:#?}", task.video_id, e);
+                        
+                        // 标记数据库任务为失败
+                        if let Err(e) = self.mark_task_failed(&task, &db).await {
+                            error!("更新任务失败状态失败: {:#}", e);
+                        }
                     }
                 }
             }
