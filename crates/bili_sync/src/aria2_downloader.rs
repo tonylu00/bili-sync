@@ -27,6 +27,7 @@ pub struct Aria2Instance {
     rpc_secret: String,
     active_downloads: std::sync::atomic::AtomicUsize,
     last_used: std::sync::Arc<std::sync::Mutex<std::time::Instant>>,
+    health_check_failures: std::sync::atomic::AtomicUsize,
 }
 
 impl Aria2Instance {
@@ -37,6 +38,7 @@ impl Aria2Instance {
             rpc_secret,
             active_downloads: std::sync::atomic::AtomicUsize::new(0),
             last_used: std::sync::Arc::new(std::sync::Mutex::new(std::time::Instant::now())),
+            health_check_failures: std::sync::atomic::AtomicUsize::new(0),
         }
     }
 
@@ -58,9 +60,32 @@ impl Aria2Instance {
     pub fn is_healthy(&mut self) -> bool {
         // 检查进程是否还在运行
         match self.process.try_wait() {
-            Ok(Some(_)) => false, // 进程已退出
-            Ok(None) => true,     // 进程仍在运行
-            Err(_) => false,      // 检查失败
+            Ok(Some(_)) => {
+                // 进程已退出
+                debug!("aria2进程已退出 (端口: {})", self.rpc_port);
+                false
+            }
+            Ok(None) => {
+                // 进程仍在运行，重置失败计数器
+                self.health_check_failures.store(0, std::sync::atomic::Ordering::SeqCst);
+                true
+            }
+            Err(e) => {
+                // 检查失败，增加失败计数
+                let failure_count = self.health_check_failures.fetch_add(1, std::sync::atomic::Ordering::SeqCst) + 1;
+                
+                if failure_count >= 3 {
+                    // 连续3次失败才判定为不健康
+                    warn!("aria2进程状态检查连续{}次失败 (端口: {}): {}, 判定为不健康", 
+                          failure_count, self.rpc_port, e);
+                    false
+                } else {
+                    // 失败次数未达到阈值，仍认为健康
+                    debug!("aria2进程状态检查失败 (端口: {}, 第{}次): {}, 继续监控", 
+                           self.rpc_port, failure_count, e);
+                    true
+                }
+            }
         }
     }
 }
@@ -1370,6 +1395,14 @@ impl Aria2Downloader {
 
         // 检查每个实例的健康状态，避免在忙碌时进行RPC检查
         for (i, instance) in instances_guard.iter_mut().enumerate() {
+            let current_load = instance.get_load();
+            
+            // 对于有活跃下载的实例，采用更宽松的健康检查策略
+            if current_load > 0 {
+                debug!("实例 {} 有活跃下载 (负载: {})，跳过健康检查", i + 1, current_load);
+                continue;
+            }
+            
             // 基础进程检查
             if !instance.is_healthy() {
                 warn!("aria2实例 {} 进程不健康，准备重启", i + 1);
@@ -1377,19 +1410,12 @@ impl Aria2Downloader {
                 continue;
             }
 
-            // 优化：只在实例空闲时进行RPC检查，避免干扰正在进行的下载
-            let current_load = instance.get_load();
-            if current_load == 0 {
-                // 实例空闲时才进行RPC健康检查，并且限制检查频率
-                let rpc_healthy =
-                    Self::check_instance_rpc_health(client, instance.rpc_port, &instance.rpc_secret).await;
-                if !rpc_healthy {
-                    warn!("aria2实例 {} RPC连接不健康，准备重启", i + 1);
-                    unhealthy_indices.push(i);
-                }
-            } else {
-                // 忙碌的实例只检查进程状态，跳过RPC检查
-                debug!("跳过忙碌实例 {} 的RPC检查 (当前负载: {})", i + 1, current_load);
+            // 对于空闲实例，进行RPC健康检查
+            let rpc_healthy =
+                Self::check_instance_rpc_health(client, instance.rpc_port, &instance.rpc_secret).await;
+            if !rpc_healthy {
+                warn!("aria2实例 {} RPC连接不健康，准备重启", i + 1);
+                unhealthy_indices.push(i);
             }
         }
 
