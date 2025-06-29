@@ -1434,7 +1434,14 @@ async fn download_stream(downloader: &UnifiedDownloader, urls: &[&str], path: &P
                 // 对于404错误，降级为debug日志
                 debug!("下载失败(404): {:#}", e);
             } else {
-                error!("下载失败: {:#}", e);
+                let error_msg = e.to_string();
+                // 检查是否是暂停导致的连接错误
+                if (error_msg.contains("tcp connect error") && error_msg.contains("由于目标计算机积极拒绝")) &&
+                   crate::task::TASK_CONTROLLER.is_paused() {
+                    info!("下载因用户暂停导致的连接失败: {:#}", e);
+                } else {
+                    error!("下载失败: {:#}", e);
+                }
             }
             Err(e)
         }
@@ -1516,7 +1523,13 @@ pub async fn fetch_page_video(
                     if error_msg.contains("用户主动暂停任务") || error_msg.contains("任务已暂停") {
                         info!("视频流下载因用户暂停而终止");
                     } else {
-                        error!("视频流下载失败: {:#}", e);
+                        // 检查是否是暂停导致的连接错误
+                        if (error_msg.contains("tcp connect error") && error_msg.contains("由于目标计算机积极拒绝")) &&
+                           crate::task::TASK_CONTROLLER.is_paused() {
+                            info!("视频流下载因用户暂停导致的连接失败: {:#}", e);
+                        } else {
+                            error!("视频流下载失败: {:#}", e);
+                        }
                     }
                     e
                 })?;
@@ -1529,7 +1542,13 @@ pub async fn fetch_page_video(
                     if error_msg.contains("用户主动暂停任务") || error_msg.contains("任务已暂停") {
                         info!("音频流下载因用户暂停而终止");
                     } else {
-                        error!("音频流下载失败: {:#}", e);
+                        // 检查是否是暂停导致的连接错误
+                        if (error_msg.contains("tcp connect error") && error_msg.contains("由于目标计算机积极拒绝")) &&
+                           crate::task::TASK_CONTROLLER.is_paused() {
+                            info!("音频流下载因用户暂停导致的连接失败: {:#}", e);
+                        } else {
+                            error!("音频流下载失败: {:#}", e);
+                        }
                     }
                     // 异步删除临时视频文件
                     let video_path_clone = tmp_video_path.clone();

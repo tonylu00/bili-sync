@@ -1125,11 +1125,23 @@ impl Aria2Downloader {
                 }
                 "error" => {
                     let error_msg = result["errorMessage"].as_str().unwrap_or("Unknown error");
-                    error!("aria2下载失败 (GID: {})：{}", gid, error_msg);
+                    
+                    // 检查是否是暂停导致的错误
+                    if crate::task::TASK_CONTROLLER.is_paused() {
+                        info!("aria2下载因用户暂停而失败 (GID: {})：{}", gid, error_msg);
+                    } else {
+                        error!("aria2下载失败 (GID: {})：{}", gid, error_msg);
+                    }
+                    
                     bail!("下载失败: {}", error_msg);
                 }
                 "removed" => {
-                    warn!("aria2下载被移除 (GID: {})", gid);
+                    // 检查是否是暂停导致的移除
+                    if crate::task::TASK_CONTROLLER.is_paused() {
+                        info!("aria2下载因用户暂停而被移除 (GID: {})", gid);
+                    } else {
+                        warn!("aria2下载被移除 (GID: {})", gid);
+                    }
                     bail!("下载被移除");
                 }
                 "active" => {
