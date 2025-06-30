@@ -130,7 +130,16 @@ impl Aria2Downloader {
         let health_check_client = crate::bilibili::Client::new();
 
         tokio::spawn(async move {
-            let mut interval = tokio::time::interval(Duration::from_secs(60)); // 增加到60秒间隔
+            // 获取用户配置的扫描间隔
+            let config = crate::config::with_config(|bundle| bundle.config.clone());
+            let scan_interval = config.interval;
+            
+            // 计算健康检查间隔（取扫描间隔的一半，但不少于30秒，不超过300秒）
+            let health_check_interval = std::cmp::max(std::cmp::min(scan_interval / 2, 300), 30);
+            
+            info!("健康检查间隔设置为 {} 秒（基于扫描间隔 {} 秒）", health_check_interval, scan_interval);
+            
+            let mut interval = tokio::time::interval(Duration::from_secs(health_check_interval));
             let mut last_check_time = std::time::Instant::now();
 
             loop {
@@ -149,9 +158,10 @@ impl Aria2Downloader {
                 drop(instances_guard);
 
                 // 智能决策：只在系统相对空闲时进行全面健康检查
-                if total_load == 0 && last_check_time.elapsed() > Duration::from_secs(120) {
-                    // 系统完全空闲，且距离上次检查超过2分钟，进行全面健康检查
-                    debug!("系统空闲，执行全面健康检查");
+                // 使用扫描间隔作为深度检查间隔，确保不会在扫描过程中干扰
+                if total_load == 0 && last_check_time.elapsed() > Duration::from_secs(scan_interval) {
+                    // 系统完全空闲，且距离上次检查超过扫描间隔，进行全面健康检查
+                    debug!("系统空闲，执行全面健康检查（距离上次检查: {}秒）", last_check_time.elapsed().as_secs());
 
                     // 执行完整的智能健康检查
                     if let Err(e) = Self::smart_health_check(&health_check_client, &instances, instance_count).await {
