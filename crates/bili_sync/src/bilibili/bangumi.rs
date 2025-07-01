@@ -200,47 +200,72 @@ impl Bangumi {
 
             debug!("番剧标题: {}, 季度编号: {:?}", title, season_number);
 
-            let episodes = bangumi.get_episodes().await?;
+            // 直接从 season_info 中解析分集信息，避免重复API调用
+            let episodes = season_info["episodes"]
+                .as_array()
+                .ok_or_else(|| anyhow::anyhow!("Failed to get episodes from season info"))?;
             debug!("获取到 {} 集番剧内容", episodes.len());
 
             for episode in episodes {
+                // 解析分集信息
+                let ep_id = episode["id"].as_i64().unwrap_or_default();
+                let aid = episode["aid"].as_i64().unwrap_or_default();
+                let bvid = episode["bvid"].as_str().unwrap_or_default().to_string();
+                let cid = episode["cid"].as_i64().unwrap_or_default();
+                let episode_title_raw = episode["title"].as_str().unwrap_or_default().to_string();
+                let _long_title = episode["long_title"].as_str().unwrap_or_default().to_string();
+                let pub_time_timestamp = episode["pub_time"].as_i64().unwrap_or_default();
+                let _duration = episode["duration"].as_i64().unwrap_or_default();
+                let show_title = episode["show_title"].as_str().unwrap_or_default().to_string();
+                let episode_cover_url = episode["cover"].as_str().unwrap_or_default().to_string();
+                let share_copy = episode["share_copy"].as_str().map(|s| s.to_string());
+                
+                tracing::debug!(
+                    "解析剧集：{} (EP{}) BV号: {} 封面: {} share_copy: {:?}",
+                    episode_title_raw,
+                    ep_id,
+                    bvid,
+                    episode_cover_url,
+                    share_copy
+                );
+
                 // 将发布时间戳转换为 DateTime<Utc>
-                let pub_time = DateTime::<Utc>::from_timestamp(episode.pub_time, 0)
+                let pub_time = DateTime::<Utc>::from_timestamp(pub_time_timestamp, 0)
                     .unwrap_or_else(Utc::now);
 
                 // 使用show_title字段作为标题
-                let episode_title = if !episode.show_title.is_empty() {
-                    episode.show_title.clone()
+                let episode_title = if !show_title.is_empty() {
+                    show_title.clone()
                 } else {
-                    format!("{} - {}", title, episode.title)
+                    format!("{} - {}", title, episode_title_raw)
                 };
 
                 // 直接从API的title字段获取集数
-                let episode_number = episode.title.parse::<i32>().ok();
+                let episode_number = episode_title_raw.parse::<i32>().ok();
 
                 // 使用单集封面，如果没有则回退到季度封面
-                let episode_cover = if !episode.cover.is_empty() {
-                    episode.cover.clone()
+                let episode_cover = if !episode_cover_url.is_empty() {
+                    episode_cover_url.clone()
                 } else {
                     cover.clone()
                 };
 
-                tracing::debug!("生成番剧视频信息: {}, BV: {}, 集数: {:?}, 封面: {}", episode_title, episode.bvid, episode_number, episode_cover);
+                tracing::debug!("生成番剧视频信息: {}, BV: {}, 集数: {:?}, 封面: {}", episode_title, bvid, episode_number, episode_cover);
 
                 yield VideoInfo::Bangumi {
                     title: episode_title,
                     season_id: current_season_id.clone(),
-                    ep_id: episode.id.to_string(),
-                    bvid: episode.bvid.clone(),
-                    cid: episode.cid.to_string(),
-                    aid: episode.aid.to_string(),
+                    ep_id: ep_id.to_string(),
+                    bvid: bvid,
+                    cid: cid.to_string(),
+                    aid: aid.to_string(),
                     cover: episode_cover,
                     intro: intro.clone(),
                     pubtime: pub_time,
-                    show_title: Some(episode.show_title.clone()),
+                    show_title: Some(show_title),
                     season_number,
                     episode_number,
-                    share_copy: episode.share_copy.clone(),
+                    share_copy,
                     show_season_type,
                 }
             }
@@ -277,47 +302,72 @@ impl Bangumi {
                 // 季度编号就是在seasons数组中的位置+1
                 let season_number = Some((season_index + 1) as i32);
 
-                let episodes = season_bangumi.get_episodes().await?;
+                // 直接从 season_info 中解析分集信息，避免重复API调用
+                let episodes = season_info["episodes"]
+                    .as_array()
+                    .ok_or_else(|| anyhow::anyhow!("Failed to get episodes from season info"))?;
                 debug!("季度 {} (第{}季) 获取到 {} 集番剧内容", season.season_title, season_index + 1, episodes.len());
 
                 for episode in episodes {
+                    // 解析分集信息
+                    let ep_id = episode["id"].as_i64().unwrap_or_default();
+                    let aid = episode["aid"].as_i64().unwrap_or_default();
+                    let bvid = episode["bvid"].as_str().unwrap_or_default().to_string();
+                    let cid = episode["cid"].as_i64().unwrap_or_default();
+                    let episode_title_raw = episode["title"].as_str().unwrap_or_default().to_string();
+                    let _long_title = episode["long_title"].as_str().unwrap_or_default().to_string();
+                    let pub_time_timestamp = episode["pub_time"].as_i64().unwrap_or_default();
+                    let _duration = episode["duration"].as_i64().unwrap_or_default();
+                    let show_title = episode["show_title"].as_str().unwrap_or_default().to_string();
+                    let episode_cover_url = episode["cover"].as_str().unwrap_or_default().to_string();
+                    let share_copy = episode["share_copy"].as_str().map(|s| s.to_string());
+                    
+                    tracing::debug!(
+                        "解析剧集：{} (EP{}) BV号: {} 封面: {} share_copy: {:?}",
+                        episode_title_raw,
+                        ep_id,
+                        bvid,
+                        episode_cover_url,
+                        share_copy
+                    );
+
                     // 将发布时间戳转换为 DateTime<Utc>
-                    let pub_time = DateTime::<Utc>::from_timestamp(episode.pub_time, 0)
+                    let pub_time = DateTime::<Utc>::from_timestamp(pub_time_timestamp, 0)
                         .unwrap_or_else(Utc::now);
 
                     // 使用show_title字段作为标题
-                    let episode_title = if !episode.show_title.is_empty() {
-                        episode.show_title.clone()
+                    let episode_title = if !show_title.is_empty() {
+                        show_title.clone()
                     } else {
-                        format!("{} - {}", title, episode.title)
+                        format!("{} - {}", title, episode_title_raw)
                     };
 
                     // 直接从API的title字段获取集数
-                    let episode_number = episode.title.parse::<i32>().ok();
+                    let episode_number = episode_title_raw.parse::<i32>().ok();
 
                     // 使用单集封面，如果没有则回退到季度封面
-                    let episode_cover = if !episode.cover.is_empty() {
-                        episode.cover.clone()
+                    let episode_cover = if !episode_cover_url.is_empty() {
+                        episode_cover_url.clone()
                     } else {
                         cover.clone()
                     };
 
-                    tracing::debug!("生成番剧视频信息: {}, BV: {}, 集数: {:?}, 封面: {}", episode_title, episode.bvid, episode_number, episode_cover);
+                    tracing::debug!("生成番剧视频信息: {}, BV: {}, 集数: {:?}, 封面: {}", episode_title, bvid, episode_number, episode_cover);
 
                     yield VideoInfo::Bangumi {
                         title: episode_title,
                         season_id: season_id_clone.clone(),
-                        ep_id: episode.id.to_string(),
-                        bvid: episode.bvid.clone(),
-                        cid: episode.cid.to_string(),
-                        aid: episode.aid.to_string(),
+                        ep_id: ep_id.to_string(),
+                        bvid: bvid,
+                        cid: cid.to_string(),
+                        aid: aid.to_string(),
                         cover: episode_cover,
                         intro: intro.clone(),
                         pubtime: pub_time,
-                        show_title: Some(episode.show_title.clone()),
+                        show_title: Some(show_title),
                         season_number,
                         episode_number,
-                        share_copy: episode.share_copy.clone(),
+                        share_copy,
                         show_season_type,
                     }
                 }
@@ -371,47 +421,72 @@ impl Bangumi {
                     Some((season_index + 1) as i32)
                 };
 
-                let episodes = season_bangumi.get_episodes().await?;
+                // 直接从 season_info 中解析分集信息，避免重复API调用
+                let episodes = season_info["episodes"]
+                    .as_array()
+                    .ok_or_else(|| anyhow::anyhow!("Failed to get episodes from season info"))?;
                 debug!("季度 {} (第{}季) 获取到 {} 集番剧内容", season.season_title, season_number.unwrap_or(0), episodes.len());
 
                 for episode in episodes {
+                    // 解析分集信息
+                    let ep_id = episode["id"].as_i64().unwrap_or_default();
+                    let aid = episode["aid"].as_i64().unwrap_or_default();
+                    let bvid = episode["bvid"].as_str().unwrap_or_default().to_string();
+                    let cid = episode["cid"].as_i64().unwrap_or_default();
+                    let episode_title_raw = episode["title"].as_str().unwrap_or_default().to_string();
+                    let _long_title = episode["long_title"].as_str().unwrap_or_default().to_string();
+                    let pub_time_timestamp = episode["pub_time"].as_i64().unwrap_or_default();
+                    let _duration = episode["duration"].as_i64().unwrap_or_default();
+                    let show_title = episode["show_title"].as_str().unwrap_or_default().to_string();
+                    let episode_cover_url = episode["cover"].as_str().unwrap_or_default().to_string();
+                    let share_copy = episode["share_copy"].as_str().map(|s| s.to_string());
+                    
+                    tracing::debug!(
+                        "解析剧集：{} (EP{}) BV号: {} 封面: {} share_copy: {:?}",
+                        episode_title_raw,
+                        ep_id,
+                        bvid,
+                        episode_cover_url,
+                        share_copy
+                    );
+
                     // 将发布时间戳转换为 DateTime<Utc>
-                    let pub_time = DateTime::<Utc>::from_timestamp(episode.pub_time, 0)
+                    let pub_time = DateTime::<Utc>::from_timestamp(pub_time_timestamp, 0)
                         .unwrap_or_else(Utc::now);
 
                     // 使用show_title字段作为标题
-                    let episode_title = if !episode.show_title.is_empty() {
-                        episode.show_title.clone()
+                    let episode_title = if !show_title.is_empty() {
+                        show_title.clone()
                     } else {
-                        format!("{} - {}", title, episode.title)
+                        format!("{} - {}", title, episode_title_raw)
                     };
 
                     // 直接从API的title字段获取集数
-                    let episode_number = episode.title.parse::<i32>().ok();
+                    let episode_number = episode_title_raw.parse::<i32>().ok();
 
                     // 使用单集封面，如果没有则回退到季度封面
-                    let episode_cover = if !episode.cover.is_empty() {
-                        episode.cover.clone()
+                    let episode_cover = if !episode_cover_url.is_empty() {
+                        episode_cover_url.clone()
                     } else {
                         cover.clone()
                     };
 
-                    tracing::debug!("生成番剧视频信息: {}, BV: {}, 集数: {:?}, 封面: {}", episode_title, episode.bvid, episode_number, episode_cover);
+                    tracing::debug!("生成番剧视频信息: {}, BV: {}, 集数: {:?}, 封面: {}", episode_title, bvid, episode_number, episode_cover);
 
                     yield VideoInfo::Bangumi {
                         title: episode_title,
                         season_id: season_id_clone.clone(),
-                        ep_id: episode.id.to_string(),
-                        bvid: episode.bvid.clone(),
-                        cid: episode.cid.to_string(),
-                        aid: episode.aid.to_string(),
+                        ep_id: ep_id.to_string(),
+                        bvid: bvid,
+                        cid: cid.to_string(),
+                        aid: aid.to_string(),
                         cover: episode_cover,
                         intro: intro.clone(),
                         pubtime: pub_time,
-                        show_title: Some(episode.show_title.clone()),
+                        show_title: Some(show_title),
                         season_number,
                         episode_number,
-                        share_copy: episode.share_copy.clone(),
+                        share_copy,
                         show_season_type,
                     }
                 }
