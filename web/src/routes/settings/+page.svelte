@@ -1102,7 +1102,7 @@
 							<p class="text-muted-foreground text-sm">
 								选择NFO文件中使用的时间类型。
 								<span class="text-amber-600 font-medium">注意：</span>
-								更改此设置后，系统会自动重置所有NFO相关任务状态，并通过正常下载流程重新生成NFO文件以应用新的时间类型。
+								更改此设置后，系统会自动重置所有NFO相关任务状态，并立即开始重新生成NFO文件以应用新的时间类型。
 							</p>
 						</div>
 

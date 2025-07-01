@@ -33,6 +33,7 @@ use crate::api::response::{
     UpdateVideoStatusResponse, VideoInfo, VideoResponse, VideoSource, VideoSourcesResponse, VideosResponse,
 };
 use crate::api::wrapper::{ApiError, ApiResponse};
+use crate::utils::nfo::NFO;
 use crate::utils::status::{PageStatus, VideoStatus};
 
 /// 标准化文件路径格式
@@ -3444,8 +3445,6 @@ pub async fn update_config(
             success: true,
             message: "正在扫描中，更新配置任务已加入队列，将在扫描完成后自动处理".to_string(),
             updated_files: None,
-            resetted_nfo_videos_count: None,
-            resetted_nfo_pages_count: None,
         }));
     }
 
@@ -3940,8 +3939,6 @@ pub async fn update_config_internal(
             success: false,
             message: "没有提供有效的配置更新".to_string(),
             updated_files: None,
-            resetted_nfo_videos_count: None,
-            resetted_nfo_pages_count: None,
         });
     }
 
@@ -4014,44 +4011,30 @@ pub async fn update_config_internal(
         info!("重命名操作结束，已恢复定时扫描任务");
     }
 
-    // 检查是否需要重置NFO任务状态
-    let should_reset_nfo = updated_fields.contains(&"nfo_time_type");
-    let mut resetted_nfo_videos_count = 0;
-    let mut resetted_nfo_pages_count = 0;
+    // 检查是否需要重新生成NFO文件
+    let should_regenerate_nfo = updated_fields.contains(&"nfo_time_type");
 
-    if should_reset_nfo {
-        // 重置NFO任务状态
-        match reset_nfo_tasks_for_config_change(db.clone()).await {
-            Ok((videos_count, pages_count)) => {
-                resetted_nfo_videos_count = videos_count;
-                resetted_nfo_pages_count = pages_count;
-                info!("NFO任务状态重置成功，重置了 {} 个视频和 {} 个页面", videos_count, pages_count);
-                
-                // 如果有任务被重置，触发立即扫描来处理重置的NFO任务
-                if videos_count > 0 || pages_count > 0 {
-                    info!("准备触发立即扫描来处理重置的NFO任务");
-                    crate::task::resume_scanning();
-                    info!("NFO任务重置完成，已成功触发立即扫描");
-                } else {
-                    info!("没有NFO任务需要重置，跳过扫描触发");
+    if should_regenerate_nfo {
+        // 重新生成NFO文件
+        match regenerate_nfo_files(db.clone(), &config).await {
+            Ok(count) => {
+                if !should_rename {
+                    updated_files = count;
                 }
             }
             Err(e) => {
-                error!("重置NFO任务状态时出错: {}", e);
-                // 即使重置失败，配置更新仍然成功
+                error!("重新生成NFO文件时出错: {}", e);
+                // 即使重新生成失败，配置更新仍然成功
             }
         }
     }
 
     Ok(crate::api::response::UpdateConfigResponse {
         success: true,
-        message: if should_rename && should_reset_nfo {
+        message: if should_rename && should_regenerate_nfo {
             format!(
-                "配置更新成功，已更新字段: {}，重命名了 {} 个文件/文件夹，重置了 {} 个视频和 {} 个页面的NFO任务并已触发立即扫描",
-                updated_fields.join(", "),
-                updated_files,
-                resetted_nfo_videos_count,
-                resetted_nfo_pages_count
+                "配置更新成功，已更新字段: {}，重命名了文件并重新生成了NFO文件",
+                updated_fields.join(", ")
             )
         } else if should_rename {
             format!(
@@ -4059,30 +4042,20 @@ pub async fn update_config_internal(
                 updated_fields.join(", "),
                 updated_files
             )
-        } else if should_reset_nfo {
-            if resetted_nfo_videos_count > 0 || resetted_nfo_pages_count > 0 {
-                format!(
-                    "配置更新成功，已更新字段: {}，重置了 {} 个视频和 {} 个页面的NFO任务并已触发立即扫描",
-                    updated_fields.join(", "),
-                    resetted_nfo_videos_count,
-                    resetted_nfo_pages_count
-                )
-            } else {
-                format!(
-                    "配置更新成功，已更新字段: {}，没有找到需要重置的NFO任务",
-                    updated_fields.join(", ")
-                )
-            }
+        } else if should_regenerate_nfo {
+            format!(
+                "配置更新成功，已更新字段: {}，重新生成了 {} 个NFO文件",
+                updated_fields.join(", "),
+                updated_files
+            )
         } else {
             format!("配置更新成功，已更新字段: {}", updated_fields.join(", "))
         },
-        updated_files: if should_rename {
+        updated_files: if should_rename || should_regenerate_nfo {
             Some(updated_files)
         } else {
             None
         },
-        resetted_nfo_videos_count: if should_reset_nfo { Some(resetted_nfo_videos_count) } else { None },
-        resetted_nfo_pages_count: if should_reset_nfo { Some(resetted_nfo_pages_count) } else { None },
     })
 }
 
@@ -4704,6 +4677,344 @@ async fn rename_existing_files(
     Ok(updated_count)
 }
 
+/// 重新生成已下载视频的NFO文件以使用新的时间类型配置
+async fn regenerate_nfo_files(db: Arc<DatabaseConnection>, config: &crate::config::Config) -> Result<u32> {
+    use handlebars::Handlebars;
+    use sea_orm::*;
+    use std::path::Path;
+
+    info!("开始重新生成NFO文件以使用新的时间类型配置...");
+
+    let mut updated_count = 0u32;
+
+    // 获取所有已下载的视频（下载状态大于0表示已下载）
+    let videos = bili_sync_entity::video::Entity::find()
+        .filter(bili_sync_entity::video::Column::DownloadStatus.gt(0))
+        .all(db.as_ref())
+        .await?;
+
+    info!("找到 {} 个已下载的视频需要重新生成NFO文件", videos.len());
+
+    for video in videos {
+        let video_path = Path::new(&video.path);
+
+        if !video_path.exists() {
+            warn!("视频路径不存在，跳过NFO重新生成: {:?}", video_path);
+            continue;
+        }
+
+        // 获取视频的实际文件名（不包括扩展名）
+        let video_base_name = if let Ok(entries) = std::fs::read_dir(video_path) {
+            let mut found_name = None;
+            for entry in entries.flatten() {
+                let file_name = entry.file_name();
+                let file_name_str = file_name.to_string_lossy();
+                if file_name_str.ends_with(".mp4") {
+                    // 找到MP4文件，获取其基础名称（不包括.mp4扩展名）
+                    found_name = Some(file_name_str.trim_end_matches(".mp4").to_string());
+                    break;
+                }
+            }
+            found_name.unwrap_or_else(|| video.name.clone())
+        } else {
+            video.name.clone()
+        };
+
+        // 重新生成视频NFO文件
+        let video_nfo_path = if video.single_page.unwrap_or(false) {
+            // 单P视频：使用与MP4文件相同的基础名称
+            video_path.join(format!("{}.nfo", video_base_name))
+        } else {
+            // 多P视频：使用视频名称作为NFO文件名
+            let video_name = if let Some(video_dir_name) = video_path.file_name() {
+                video_dir_name.to_string_lossy().to_string()
+            } else {
+                crate::utils::filenamify::filenamify(&video.name)
+            };
+            video_path.join(format!("{}.nfo", video_name))
+        };
+
+        let nfo = if video.single_page.unwrap_or(false) {
+            NFO::Movie((&video).into())
+        } else {
+            NFO::TVShow((&video).into())
+        };
+
+        match nfo.generate_nfo().await {
+            Ok(nfo_content) => {
+                if let Some(parent) = video_nfo_path.parent() {
+                    if let Err(e) = tokio::fs::create_dir_all(parent).await {
+                        warn!("创建NFO文件目录失败: {:?}, 错误: {}", parent, e);
+                        continue;
+                    }
+                }
+
+                match tokio::fs::write(&video_nfo_path, nfo_content.as_bytes()).await {
+                    Ok(_) => {
+                        debug!("重新生成视频NFO文件成功: {:?}", video_nfo_path);
+                        updated_count += 1;
+                    }
+                    Err(e) => {
+                        warn!("写入视频NFO文件失败: {:?}, 错误: {}", video_nfo_path, e);
+                    }
+                }
+            }
+            Err(e) => {
+                warn!("生成视频NFO内容失败: {}, 错误: {}", video.name, e);
+            }
+        }
+
+        // 重新生成UP主NFO文件
+        let upper_id = video.upper_id.to_string();
+        let base_upper_path = &config
+            .upper_path
+            .join(upper_id.chars().next().unwrap_or('0').to_string())
+            .join(&upper_id);
+        let upper_nfo_path = base_upper_path.join("person.nfo");
+        let upper_nfo = NFO::Upper((&video).into());
+
+        match upper_nfo.generate_nfo().await {
+            Ok(nfo_content) => {
+                // 确保UP主目录存在
+                if let Some(parent) = upper_nfo_path.parent() {
+                    if let Err(e) = tokio::fs::create_dir_all(parent).await {
+                        warn!("创建UP主NFO文件目录失败: {:?}, 错误: {}", parent, e);
+                        continue;
+                    }
+                }
+
+                match tokio::fs::write(&upper_nfo_path, nfo_content.as_bytes()).await {
+                    Ok(_) => {
+                        debug!("重新生成UP主NFO文件成功: {:?}", upper_nfo_path);
+                        updated_count += 1;
+                    }
+                    Err(e) => {
+                        warn!("写入UP主NFO文件失败: {:?}, 错误: {}", upper_nfo_path, e);
+                    }
+                }
+            }
+            Err(e) => {
+                warn!("生成UP主NFO内容失败: {}, 错误: {}", video.name, e);
+            }
+        }
+
+        // 重新生成分页NFO文件（对多P视频或番剧类型）
+        let is_bangumi = video.source_type == Some(1);
+        if !video.single_page.unwrap_or(false) || is_bangumi {
+            if is_bangumi {
+                // 对于番剧，需要获取番剧源的模板配置
+                let bangumi_source = bili_sync_entity::video_source::Entity::find()
+                    .filter(bili_sync_entity::video_source::Column::Id.eq(video.source_id.unwrap_or(0)))
+                    .filter(bili_sync_entity::video_source::Column::Type.eq(1))
+                    .one(db.as_ref())
+                    .await?;
+
+                let pages = bili_sync_entity::page::Entity::find()
+                    .filter(bili_sync_entity::page::Column::VideoId.eq(video.id))
+                    .filter(bili_sync_entity::page::Column::DownloadStatus.gt(0))
+                    .all(db.as_ref())
+                    .await?;
+
+                for page in pages {
+                    // 对于番剧，首先尝试从现有文件中查找实际的文件名格式
+                    let actual_page_name = if let Ok(entries) = std::fs::read_dir(video_path) {
+                        let mut found_name = None;
+                        let episode_number = video.episode_number.unwrap_or(page.pid);
+
+                        for entry in entries.flatten() {
+                            let file_name = entry.file_name();
+                            let file_name_str = file_name.to_string_lossy();
+                            if file_name_str.ends_with(".mp4") {
+                                // 尝试多种匹配模式
+                                let patterns = [
+                                    format!("第{:02}集", episode_number),       // 第01集
+                                    format!("第{}集", episode_number),          // 第1集
+                                    format!("S{:02}E{:02}", 1, episode_number), // S01E01
+                                    format!("E{:02}", episode_number),          // E01
+                                    format!("{:02}", episode_number),           // 01
+                                ];
+
+                                if patterns.iter().any(|pattern| file_name_str.contains(pattern)) {
+                                    // 找到匹配的视频文件，提取基础名称
+                                    found_name = Some(file_name_str.trim_end_matches(".mp4").to_string());
+                                    debug!("找到番剧分页文件: {} 对应集数: {}", file_name_str, episode_number);
+                                    break;
+                                }
+                            }
+                        }
+                        found_name
+                    } else {
+                        None
+                    };
+
+                    let page_name = if let Some(actual_name) = actual_page_name {
+                        // 使用实际找到的文件名格式
+                        actual_name
+                    } else {
+                        // 如果找不到实际文件，则使用模板生成（兜底方案）
+                        if let Some(bangumi_source) = &bangumi_source {
+                            let template = bangumi_source
+                                .page_name_template
+                                .as_deref()
+                                .unwrap_or("S{{season_pad}}E{{pid_pad}}-{{pid_pad}}");
+
+                            // 构建番剧专用的模板数据
+                            let episode_number = video.episode_number.unwrap_or(page.pid);
+                            let season_number = video.season_number.unwrap_or(1);
+
+                            let mut template_data = std::collections::HashMap::new();
+                            template_data.insert("bvid".to_string(), serde_json::Value::String(video.bvid.clone()));
+                            template_data.insert("title".to_string(), serde_json::Value::String(video.name.clone()));
+                            template_data.insert(
+                                "upper_name".to_string(),
+                                serde_json::Value::String(video.upper_name.clone()),
+                            );
+                            template_data.insert(
+                                "upper_mid".to_string(),
+                                serde_json::Value::String(video.upper_id.to_string()),
+                            );
+                            template_data.insert("ptitle".to_string(), serde_json::Value::String(page.name.clone()));
+                            template_data
+                                .insert("pid".to_string(), serde_json::Value::String(episode_number.to_string()));
+                            template_data.insert(
+                                "pid_pad".to_string(),
+                                serde_json::Value::String(format!("{:02}", episode_number)),
+                            );
+                            template_data.insert(
+                                "season".to_string(),
+                                serde_json::Value::String(season_number.to_string()),
+                            );
+                            template_data.insert(
+                                "season_pad".to_string(),
+                                serde_json::Value::String(format!("{:02}", season_number)),
+                            );
+
+                            let handlebars = Handlebars::new();
+                            let template_value = serde_json::Value::Object(template_data.into_iter().collect());
+
+                            match handlebars.render_template(template, &template_value) {
+                                Ok(rendered) => crate::utils::filenamify::filenamify(&rendered),
+                                Err(e) => {
+                                    warn!("渲染番剧模板失败: {}, 使用默认格式", e);
+                                    format!("S{:02}E{:02}-{:02}", season_number, episode_number, episode_number)
+                                }
+                            }
+                        } else {
+                            // 如果找不到番剧源配置，使用默认格式
+                            let season_number = video.season_number.unwrap_or(1);
+                            let episode_number = video.episode_number.unwrap_or(page.pid);
+                            format!("S{:02}E{:02}-{:02}", season_number, episode_number, episode_number)
+                        }
+                    };
+
+                    let page_nfo_path = video_path.join(format!("{}.nfo", page_name));
+                    let page_nfo = NFO::Episode((&page).into());
+
+                    match page_nfo.generate_nfo().await {
+                        Ok(nfo_content) => match tokio::fs::write(&page_nfo_path, nfo_content.as_bytes()).await {
+                            Ok(_) => {
+                                debug!("重新生成番剧分页NFO文件成功: {:?}", page_nfo_path);
+                                updated_count += 1;
+                            }
+                            Err(e) => {
+                                warn!("写入番剧分页NFO文件失败: {:?}, 错误: {}", page_nfo_path, e);
+                            }
+                        },
+                        Err(e) => {
+                            warn!("生成分页NFO内容失败: {}", e);
+                        }
+                    }
+                }
+            } else {
+                // 对于普通多P视频，需要使用与实际文件相同的命名模式
+                let pages = bili_sync_entity::page::Entity::find()
+                    .filter(bili_sync_entity::page::Column::VideoId.eq(video.id))
+                    .filter(bili_sync_entity::page::Column::DownloadStatus.gt(0))
+                    .all(db.as_ref())
+                    .await?;
+
+                for page in pages {
+                    // 使用multi_page_name模板来生成正确的文件名
+                    let mut template_data = std::collections::HashMap::new();
+                    template_data.insert("title".to_string(), serde_json::Value::String(video.name.clone()));
+                    template_data.insert("show_title".to_string(), serde_json::Value::String(video.name.clone()));
+                    template_data.insert("bvid".to_string(), serde_json::Value::String(video.bvid.clone()));
+                    template_data.insert(
+                        "upper_name".to_string(),
+                        serde_json::Value::String(video.upper_name.clone()),
+                    );
+                    template_data.insert(
+                        "upper_mid".to_string(),
+                        serde_json::Value::String(video.upper_id.to_string()),
+                    );
+                    template_data.insert("ptitle".to_string(), serde_json::Value::String(page.name.clone()));
+                    template_data.insert("pid".to_string(), serde_json::Value::String(page.pid.to_string()));
+                    template_data.insert(
+                        "pid_pad".to_string(),
+                        serde_json::Value::String(format!("{:02}", page.pid)),
+                    );
+                    template_data.insert("season".to_string(), serde_json::Value::String("1".to_string()));
+                    template_data.insert("season_pad".to_string(), serde_json::Value::String("01".to_string()));
+                    template_data.insert(
+                        "duration".to_string(),
+                        serde_json::Value::String(page.duration.to_string()),
+                    );
+
+                    if let Some(width) = page.width {
+                        template_data.insert("width".to_string(), serde_json::Value::String(width.to_string()));
+                    }
+
+                    if let Some(height) = page.height {
+                        template_data.insert("height".to_string(), serde_json::Value::String(height.to_string()));
+                    }
+
+                    // 格式化时间
+                    let formatted_pubtime = video.pubtime.format(&config.time_format).to_string();
+                    template_data.insert("pubtime".to_string(), serde_json::Value::String(formatted_pubtime));
+
+                    let formatted_favtime = video.favtime.format(&config.time_format).to_string();
+                    template_data.insert("fav_time".to_string(), serde_json::Value::String(formatted_favtime));
+
+                    let formatted_ctime = video.ctime.format(&config.time_format).to_string();
+                    template_data.insert("ctime".to_string(), serde_json::Value::String(formatted_ctime));
+
+                    // 使用multi_page_name模板渲染文件名
+                    let handlebars = Handlebars::new();
+                    let template_value = serde_json::Value::Object(template_data.into_iter().collect());
+
+                    let page_name = match handlebars.render_template(&config.multi_page_name, &template_value) {
+                        Ok(rendered) => crate::utils::filenamify::filenamify(&rendered),
+                        Err(e) => {
+                            warn!("渲染多P视频模板失败: {}, 使用默认格式", e);
+                            format!("S01E{:02}-{:02}", page.pid, page.pid)
+                        }
+                    };
+
+                    let page_nfo_path = video_path.join(format!("{}.nfo", page_name));
+                    let page_nfo = NFO::Episode((&page).into());
+
+                    match page_nfo.generate_nfo().await {
+                        Ok(nfo_content) => match tokio::fs::write(&page_nfo_path, nfo_content.as_bytes()).await {
+                            Ok(_) => {
+                                debug!("重新生成分页NFO文件成功: {:?}", page_nfo_path);
+                                updated_count += 1;
+                            }
+                            Err(e) => {
+                                warn!("写入分页NFO文件失败: {:?}, 错误: {}", page_nfo_path, e);
+                            }
+                        },
+                        Err(e) => {
+                            warn!("生成分页NFO内容失败: {}", e);
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    info!("NFO文件重新生成完成，共重新生成了 {} 个NFO文件", updated_count);
+    Ok(updated_count)
+}
 
 /// 获取番剧的所有季度信息
 #[utoipa::path(
@@ -7481,159 +7792,4 @@ pub async fn get_user_favorites_by_uid(
             .into())
         }
     }
-}
-
-/// 重置所有视频的NFO相关任务状态，用于配置更改后重新下载NFO文件
-async fn reset_nfo_tasks_for_config_change(db: Arc<DatabaseConnection>) -> Result<(usize, usize)> {
-    use std::collections::HashSet;
-    use sea_orm::*;
-
-    info!("开始重置NFO相关任务状态以应用新的配置...");
-
-    // 根据配置决定是否过滤已删除的视频
-    let scan_deleted = crate::config::with_config(|bundle| bundle.config.scan_deleted_videos);
-
-    // 查询所有符合条件的视频
-    let mut video_query = video::Entity::find();
-    if !scan_deleted {
-        video_query = video_query.filter(video::Column::Deleted.eq(0));
-    }
-
-    let all_videos = video_query
-        .select_only()
-        .columns([
-            video::Column::Id,
-            video::Column::Name,
-            video::Column::UpperName,
-            video::Column::Path,
-            video::Column::Category,
-            video::Column::DownloadStatus,
-            video::Column::Cover,
-        ])
-        .into_tuple::<(i32, String, String, String, i32, u32, String)>()
-        .all(db.as_ref())
-        .await?;
-
-    // 查询所有相关的页面
-    let all_pages = page::Entity::find()
-        .inner_join(video::Entity)
-        .filter({
-            let mut page_query_filter = Condition::all();
-            if !scan_deleted {
-                page_query_filter = page_query_filter.add(video::Column::Deleted.eq(0));
-            }
-            page_query_filter
-        })
-        .select_only()
-        .columns([
-            page::Column::Id,
-            page::Column::Pid,
-            page::Column::Name,
-            page::Column::DownloadStatus,
-            page::Column::VideoId,
-        ])
-        .into_tuple::<(i32, i32, String, u32, i32)>()
-        .all(db.as_ref())
-        .await?;
-
-    // 重置页面的NFO任务状态（索引2：视频信息NFO）
-    let resetted_pages_info = all_pages
-        .into_iter()
-        .filter_map(|(id, pid, name, download_status, video_id)| {
-            let mut page_status = PageStatus::from(download_status);
-            let current_nfo_status = page_status.get(2); // 索引2是视频信息NFO
-            
-            if current_nfo_status != 0 {
-                // 只重置已经开始的NFO任务
-                page_status.set(2, 0); // 重置为未开始
-                let page_info = PageInfo::from((id, pid, name, page_status.into()));
-                Some((page_info, video_id))
-            } else {
-                None
-            }
-        })
-        .collect::<Vec<_>>();
-
-    let video_ids_with_resetted_pages: HashSet<i32> =
-        resetted_pages_info.iter().map(|(_, video_id)| *video_id).collect();
-
-    let resetted_pages_info: Vec<PageInfo> = resetted_pages_info
-        .into_iter()
-        .map(|(page_info, _)| page_info)
-        .collect();
-
-    let all_videos_info: Vec<VideoInfo> = all_videos.into_iter().map(VideoInfo::from).collect();
-
-    // 重置视频的NFO任务状态（索引1：视频信息NFO）
-    let resetted_videos_info = all_videos_info
-        .into_iter()
-        .filter_map(|mut video_info| {
-            let mut video_status = VideoStatus::from(video_info.download_status);
-            let mut video_resetted = false;
-
-            // 重置视频信息NFO任务（索引1）
-            let current_nfo_status = video_status.get(1);
-            if current_nfo_status != 0 {
-                video_status.set(1, 0); // 重置为未开始
-                video_resetted = true;
-            }
-
-            // 如果有页面被重置，同时重置分P下载状态（索引4）
-            if video_ids_with_resetted_pages.contains(&video_info.id) {
-                video_status.set(4, 0); // 将"分P下载"重置为 0
-                video_resetted = true;
-            }
-
-            if video_resetted {
-                video_info.download_status = video_status.into();
-                Some(video_info)
-            } else {
-                None
-            }
-        })
-        .collect::<Vec<_>>();
-
-    let resetted = !(resetted_videos_info.is_empty() && resetted_pages_info.is_empty());
-
-    if resetted {
-        let txn = db.begin().await?;
-
-        // 批量更新视频状态
-        if !resetted_videos_info.is_empty() {
-            for video in &resetted_videos_info {
-                video::Entity::update(video::ActiveModel {
-                    id: sea_orm::ActiveValue::Unchanged(video.id),
-                    download_status: sea_orm::Set(VideoStatus::from(video.download_status).into()),
-                    ..Default::default()
-                })
-                .exec(&txn)
-                .await?;
-            }
-        }
-
-        // 批量更新页面状态
-        if !resetted_pages_info.is_empty() {
-            for page in &resetted_pages_info {
-                page::Entity::update(page::ActiveModel {
-                    id: sea_orm::ActiveValue::Unchanged(page.id),
-                    download_status: sea_orm::Set(PageStatus::from(page.download_status).into()),
-                    ..Default::default()
-                })
-                .exec(&txn)
-                .await?;
-            }
-        }
-
-        txn.commit().await?;
-    }
-
-    let resetted_videos_count = resetted_videos_info.len();
-    let resetted_pages_count = resetted_pages_info.len();
-
-    info!(
-        "NFO任务状态重置完成，共重置了 {} 个视频和 {} 个页面的NFO任务",
-        resetted_videos_count, resetted_pages_count
-    );
-
-    Ok((resetted_videos_count, resetted_pages_count))
 }

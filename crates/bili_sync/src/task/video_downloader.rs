@@ -396,6 +396,12 @@ pub async fn video_downloader(connection: Arc<DatabaseConnection>) {
             tokio::time::sleep(tokio::time::Duration::from_secs(sleep_duration)).await;
             remaining_time = remaining_time.saturating_sub(sleep_duration);
 
+            // 检查是否刚刚恢复，如果是则立即开始新扫描
+            if TASK_CONTROLLER.take_just_resumed() {
+                info!("检测到任务恢复信号，立即开始新一轮扫描");
+                break; // 跳出等待循环，立即开始新扫描
+            }
+
             // 检查配置是否更新了（通过比较interval值）
             let current_config = crate::config::reload_config();
             if current_config.interval != wait_interval {
