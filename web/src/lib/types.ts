@@ -229,6 +229,10 @@ export interface ConfigResponse {
 	auto_backoff_max_multiplier?: number;
 	// 扫描已删除视频设置
 	scan_deleted_videos?: boolean;
+	// aria2监控配置
+	enable_aria2_health_check?: boolean;
+	enable_aria2_auto_restart?: boolean;
+	aria2_health_check_interval?: number;
 	// B站凭证信息
 	credential?: {
 		sessdata: string;
@@ -300,6 +304,10 @@ export interface UpdateConfigRequest {
 	auto_backoff_max_multiplier?: number;
 	// 扫描已删除视频设置
 	scan_deleted_videos?: boolean;
+	// aria2监控配置
+	enable_aria2_health_check?: boolean;
+	enable_aria2_auto_restart?: boolean;
+	aria2_health_check_interval?: number;
 }
 
 // 更新配置响应类型

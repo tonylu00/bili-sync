@@ -150,6 +150,10 @@ pub struct UpdateConfigRequest {
     pub auto_backoff_max_multiplier: Option<u64>,
     // 系统配置
     pub scan_deleted_videos: Option<bool>,
+    // aria2监控配置
+    pub enable_aria2_health_check: Option<bool>,
+    pub enable_aria2_auto_restart: Option<bool>,
+    pub aria2_health_check_interval: Option<u64>,
 }
 
 #[derive(Debug, Deserialize, ToSchema)]

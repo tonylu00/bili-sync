@@ -25,6 +25,7 @@
 		FileTextIcon,
 		KeyIcon,
 		MessageSquareIcon,
+		MonitorIcon,
 		SettingsIcon,
 		ShieldIcon,
 		VideoIcon
@@ -87,6 +88,12 @@
 			title: '风控配置',
 			description: 'UP主投稿获取风控策略',
 			icon: ShieldIcon
+		},
+		{
+			id: 'aria2',
+			title: 'Aria2监控',
+			description: '下载器健康检查和自动重启配置',
+			icon: MonitorIcon
 		},
 		{
 			id: 'system',
@@ -167,6 +174,11 @@
 	let enableAutoBackoff = true;
 	let autoBackoffBaseSeconds = 10;
 	let autoBackoffMaxMultiplier = 5;
+
+	// aria2监控配置
+	let enableAria2HealthCheck = false;
+	let enableAria2AutoRestart = false;
+	let aria2HealthCheckInterval = 300;
 
 	// 显示帮助信息的状态（在文件命名抽屉中使用）
 	let showHelp = false;
@@ -408,6 +420,11 @@
 			enableAutoBackoff = config.enable_auto_backoff || true;
 			autoBackoffBaseSeconds = config.auto_backoff_base_seconds || 10;
 			autoBackoffMaxMultiplier = config.auto_backoff_max_multiplier || 5;
+
+			// aria2监控配置
+			enableAria2HealthCheck = config.enable_aria2_health_check ?? false;
+			enableAria2AutoRestart = config.enable_aria2_auto_restart ?? false;
+			aria2HealthCheckInterval = config.aria2_health_check_interval ?? 300;
 		} catch (error: any) {
 			console.error('加载配置失败:', error);
 			toast.error('加载配置失败', { description: error.message });
@@ -540,7 +557,11 @@
 				batch_delay_seconds: batchDelaySeconds,
 				enable_auto_backoff: enableAutoBackoff,
 				auto_backoff_base_seconds: autoBackoffBaseSeconds,
-				auto_backoff_max_multiplier: autoBackoffMaxMultiplier
+				auto_backoff_max_multiplier: autoBackoffMaxMultiplier,
+				// aria2监控配置
+				enable_aria2_health_check: enableAria2HealthCheck,
+				enable_aria2_auto_restart: enableAria2AutoRestart,
+				aria2_health_check_interval: aria2HealthCheckInterval
 			};
 
 			const response = await api.updateConfig(params);
@@ -1101,7 +1122,7 @@
 							</select>
 							<p class="text-muted-foreground text-sm">
 								选择NFO文件中使用的时间类型。
-								<span class="text-amber-600 font-medium">注意：</span>
+								<span class="font-medium text-amber-600">注意：</span>
 								更改此设置后，系统会自动重置所有NFO相关任务状态，并立即开始重新生成NFO文件以应用新的时间类型。
 							</p>
 						</div>
@@ -2282,6 +2303,189 @@
 									<strong>超大型UP主（&gt;1000视频）：</strong> 启用所有风控策略，适当增加各项延迟参数
 								</p>
 								<p><strong>频繁遇到412错误：</strong> 增加基础请求间隔和延迟倍数</p>
+							</div>
+						</div>
+					</div>
+					<SheetFooter class="pb-safe border-t pt-4">
+						<Button type="submit" disabled={saving} class="w-full">
+							{saving ? '保存中...' : '保存设置'}
+						</Button>
+					</SheetFooter>
+				</form>
+			</div>
+		</div>
+	</SheetContent>
+</Sheet>
+
+<!-- Aria2监控设置抽屉 -->
+<Sheet
+	open={openSheet === 'aria2'}
+	onOpenChange={(open) => {
+		if (!open) openSheet = null;
+	}}
+>
+	<SheetContent
+		side={isMobile ? 'bottom' : 'right'}
+		class="{isMobile
+			? 'h-[85vh] max-h-[85vh]'
+			: '!inset-y-0 !right-0 !h-screen !w-screen !max-w-none'} [&>button]:hidden"
+	>
+		{#if !isMobile && randomCovers.length > 0}
+			<!-- 电脑端背景图 -->
+			<div class="absolute inset-0 z-0 overflow-hidden">
+				<img
+					src={randomCovers[(currentBackgroundIndex + 7) % randomCovers.length]}
+					alt="背景"
+					class="h-full w-full object-cover"
+					style="opacity: 0.6; filter: contrast(1.1) brightness(0.9);"
+					loading="lazy"
+				/>
+				<div
+					class="absolute inset-0"
+					style="background: linear-gradient(to bottom right, rgba(255,255,255,0.85), rgba(255,255,255,0.5));"
+				></div>
+			</div>
+		{/if}
+		<div class="flex h-full items-center justify-center {isMobile ? '' : 'p-8'} relative z-10">
+			<div
+				class="{isMobile
+					? 'bg-background h-full w-full'
+					: 'bg-card/95 w-full max-w-4xl rounded-lg border shadow-2xl backdrop-blur-sm'} relative overflow-hidden"
+			>
+				<SheetHeader class="{isMobile ? '' : 'border-b p-6'} relative">
+					<SheetTitle>Aria2监控设置</SheetTitle>
+					<SheetDescription>下载器健康检查和自动重启配置</SheetDescription>
+					<!-- 自定义关闭按钮 -->
+					<button
+						onclick={() => (openSheet = null)}
+						class="ring-offset-background focus:ring-ring absolute top-2 right-2 rounded-sm p-1 opacity-70 transition-opacity hover:bg-gray-100 hover:opacity-100 focus:ring-2 focus:ring-offset-2 focus:outline-none disabled:pointer-events-none"
+						type="button"
+					>
+						<svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+							<path
+								stroke-linecap="round"
+								stroke-linejoin="round"
+								stroke-width="2"
+								d="M6 18L18 6M6 6l12 12"
+							/>
+						</svg>
+						<span class="sr-only">关闭</span>
+					</button>
+				</SheetHeader>
+				<form
+					onsubmit={(e) => {
+						e.preventDefault();
+						saveConfig();
+					}}
+					class="flex flex-col {isMobile ? 'h-[calc(100%-5rem)]' : 'h-[calc(100%-8rem)]'}"
+				>
+					<div class="flex-1 space-y-6 overflow-y-auto px-6 py-6">
+						<!-- Aria2监控配置 -->
+						<div class="rounded-lg border border-blue-200 bg-blue-50 p-4">
+							<h3 class="mb-3 text-sm font-medium text-blue-800">🔍 健康检查配置</h3>
+							<div class="space-y-4">
+								<div class="flex items-center space-x-2">
+									<input
+										type="checkbox"
+										id="enable-aria2-health-check"
+										bind:checked={enableAria2HealthCheck}
+										class="text-primary focus:ring-primary h-4 w-4 rounded border-gray-300"
+									/>
+									<Label for="enable-aria2-health-check" class="text-sm">启用Aria2健康检查</Label>
+									<p class="text-muted-foreground ml-2 text-xs">定期检查下载器进程状态和RPC连接</p>
+								</div>
+
+								{#if enableAria2HealthCheck}
+									<div class="ml-6 space-y-4">
+										<div class="space-y-2">
+											<Label for="aria2-health-check-interval">健康检查间隔（秒）</Label>
+											<Input
+												id="aria2-health-check-interval"
+												type="number"
+												bind:value={aria2HealthCheckInterval}
+												min="30"
+												max="600"
+												placeholder="300"
+											/>
+											<p class="text-muted-foreground text-xs">
+												检查频率，范围：30-600秒，推荐：300秒（5分钟）
+											</p>
+										</div>
+									</div>
+								{/if}
+							</div>
+						</div>
+
+						<!-- 自动重启配置 -->
+						<div class="rounded-lg border border-green-200 bg-green-50 p-4">
+							<h3 class="mb-3 text-sm font-medium text-green-800">🔄 自动重启配置</h3>
+							<div class="space-y-4">
+								<div class="flex items-center space-x-2">
+									<input
+										type="checkbox"
+										id="enable-aria2-auto-restart"
+										bind:checked={enableAria2AutoRestart}
+										class="text-primary focus:ring-primary h-4 w-4 rounded border-gray-300"
+									/>
+									<Label for="enable-aria2-auto-restart" class="text-sm">启用自动重启</Label>
+									<p class="text-muted-foreground ml-2 text-xs">检测到下载器异常时自动重启实例</p>
+								</div>
+
+								{#if !enableAria2AutoRestart}
+									<div class="ml-6 rounded border border-orange-200 bg-orange-50 p-3">
+										<p class="text-sm text-orange-700">
+											<strong>注意：</strong
+											>禁用自动重启后，检测到下载器异常时只会记录日志，不会自动恢复。
+											如果下载器进程意外退出，需要手动重启应用程序。
+										</p>
+									</div>
+								{/if}
+							</div>
+						</div>
+
+						<!-- 配置说明 -->
+						<div class="rounded-lg border border-amber-200 bg-amber-50 p-4">
+							<h3 class="mb-3 text-sm font-medium text-amber-800">⚠️ 重要说明</h3>
+							<div class="space-y-2 text-sm text-amber-700">
+								<p>
+									<strong>为什么要禁用监控？</strong>
+									原有的Aria2监控机制可能会误判下载器状态，导致不必要的重启，反而中断正在进行的下载任务。
+								</p>
+								<p>
+									<strong>推荐配置：</strong>
+								</p>
+								<ul class="ml-4 list-disc space-y-1">
+									<li><strong>稳定环境</strong>：建议禁用健康检查和自动重启</li>
+									<li>
+										<strong>不稳定环境</strong>：可启用健康检查，将间隔设为较长时间（5-10分钟）
+									</li>
+									<li><strong>测试环境</strong>：可启用全部功能进行调试</li>
+								</ul>
+								<p>
+									<strong>注意事项：</strong> 修改这些设置需要重启应用程序才能生效。
+								</p>
+							</div>
+						</div>
+
+						<!-- 故障排除指南 -->
+						<div class="rounded-lg border border-purple-200 bg-purple-50 p-4">
+							<h3 class="mb-3 text-sm font-medium text-purple-800">🔧 故障排除</h3>
+							<div class="space-y-2 text-sm text-purple-700">
+								<p><strong>常见问题及解决方案：</strong></p>
+								<ul class="ml-4 list-disc space-y-1">
+									<li>
+										<strong>下载频繁中断：</strong> 禁用健康检查，或增加检查间隔到600秒
+									</li>
+									<li>
+										<strong>下载器启动失败：</strong> 检查系统防火墙和端口占用，禁用自动重启
+									</li>
+									<li>
+										<strong>系统资源占用高：</strong> 增加健康检查间隔，减少监控频率
+									</li>
+									<li>
+										<strong>下载任务丢失：</strong> 禁用自动重启，避免任务队列被重置
+									</li>
+								</ul>
 							</div>
 						</div>
 					</div>

@@ -237,6 +237,10 @@ pub struct ConfigResponse {
     pub auto_backoff_max_multiplier: u64,
     // 系统设置
     pub scan_deleted_videos: bool,
+    // aria2监控配置
+    pub enable_aria2_health_check: bool,
+    pub enable_aria2_auto_restart: bool,
+    pub aria2_health_check_interval: u64,
     // B站凭证信息
     pub credential: Option<CredentialInfo>,
 }

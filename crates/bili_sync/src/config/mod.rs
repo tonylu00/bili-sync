@@ -157,6 +157,17 @@ pub struct Config {
     pub submission_risk_control: crate::config::item::SubmissionRiskControlConfig,
     #[serde(default)]
     pub scan_deleted_videos: bool,
+    // aria2监控相关配置
+    #[serde(default)]
+    pub enable_aria2_health_check: bool,
+    #[serde(default)]
+    pub enable_aria2_auto_restart: bool,
+    #[serde(default = "default_aria2_health_check_interval")]
+    pub aria2_health_check_interval: u64,
+}
+
+fn default_aria2_health_check_interval() -> u64 {
+    300 // 默认5分钟
 }
 
 impl Clone for Config {
@@ -205,6 +216,9 @@ impl Clone for Config {
             timezone: self.timezone.clone(),
             submission_risk_control: self.submission_risk_control.clone(),
             scan_deleted_videos: self.scan_deleted_videos,
+            enable_aria2_health_check: self.enable_aria2_health_check,
+            enable_aria2_auto_restart: self.enable_aria2_auto_restart,
+            aria2_health_check_interval: self.aria2_health_check_interval,
         }
     }
 }
@@ -232,6 +246,9 @@ impl Default for Config {
             timezone: default_timezone(),
             submission_risk_control: crate::config::item::SubmissionRiskControlConfig::default(),
             scan_deleted_videos: false,
+            enable_aria2_health_check: false,
+            enable_aria2_auto_restart: false,
+            aria2_health_check_interval: default_aria2_health_check_interval(),
         }
     }
 }

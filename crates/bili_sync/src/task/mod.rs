@@ -1322,6 +1322,10 @@ impl ConfigTaskQueue {
                 auto_backoff_max_multiplier: task.auto_backoff_max_multiplier,
                 // 系统配置相关字段，任务队列中不使用
                 scan_deleted_videos: None,
+                // aria2监控配置，任务队列中不使用
+                enable_aria2_health_check: None,
+                enable_aria2_auto_restart: None,
+                aria2_health_check_interval: None,
             };
 
             match update_config_internal(db.clone(), request).await {

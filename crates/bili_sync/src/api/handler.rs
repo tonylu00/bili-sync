@@ -3342,6 +3342,10 @@ pub async fn get_config() -> Result<ApiResponse<crate::api::response::ConfigResp
         auto_backoff_base_seconds: config.submission_risk_control.auto_backoff_base_seconds,
         auto_backoff_max_multiplier: config.submission_risk_control.auto_backoff_max_multiplier,
         scan_deleted_videos: config.scan_deleted_videos,
+        // aria2监控配置
+        enable_aria2_health_check: config.enable_aria2_health_check,
+        enable_aria2_auto_restart: config.enable_aria2_auto_restart,
+        aria2_health_check_interval: config.aria2_health_check_interval,
         // B站凭证信息
         credential: {
             let credential = config.credential.load();
@@ -3840,6 +3844,28 @@ pub async fn update_config_internal(
         if scan_deleted != config.scan_deleted_videos {
             config.scan_deleted_videos = scan_deleted;
             updated_fields.push("scan_deleted_videos");
+        }
+    }
+
+    // 处理aria2监控配置
+    if let Some(enable_health_check) = params.enable_aria2_health_check {
+        if enable_health_check != config.enable_aria2_health_check {
+            config.enable_aria2_health_check = enable_health_check;
+            updated_fields.push("enable_aria2_health_check");
+        }
+    }
+
+    if let Some(enable_auto_restart) = params.enable_aria2_auto_restart {
+        if enable_auto_restart != config.enable_aria2_auto_restart {
+            config.enable_aria2_auto_restart = enable_auto_restart;
+            updated_fields.push("enable_aria2_auto_restart");
+        }
+    }
+
+    if let Some(check_interval) = params.aria2_health_check_interval {
+        if check_interval > 0 && check_interval != config.aria2_health_check_interval {
+            config.aria2_health_check_interval = check_interval;
+            updated_fields.push("aria2_health_check_interval");
         }
     }
 

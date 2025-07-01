@@ -129,24 +129,32 @@ impl Aria2Downloader {
         // 启动所有aria2进程实例
         downloader.start_all_instances().await?;
 
-        // 智能健康检查监控任务
-        let instances = Arc::clone(&downloader.aria2_instances);
-        let instance_count = downloader.instance_count;
+        // 检查是否启用aria2健康检查
+        let config = crate::config::with_config(|bundle| bundle.config.clone());
+        
+        if config.enable_aria2_health_check {
+            info!("aria2健康检查已启用，启动监控任务");
+            
+            // 智能健康检查监控任务
+            let instances = Arc::clone(&downloader.aria2_instances);
+            let instance_count = downloader.instance_count;
 
-        // 为健康检查任务创建独立的client
-        let health_check_client = crate::bilibili::Client::new();
+            // 为健康检查任务创建独立的client
+            let health_check_client = crate::bilibili::Client::new();
 
-        tokio::spawn(async move {
-            // 获取用户配置的扫描间隔
-            let config = crate::config::with_config(|bundle| bundle.config.clone());
-            let scan_interval = config.interval;
+            tokio::spawn(async move {
+                // 获取用户配置
+                let config = crate::config::with_config(|bundle| bundle.config.clone());
+                let scan_interval = config.interval;
+                let enable_auto_restart = config.enable_aria2_auto_restart;
+                let check_interval = config.aria2_health_check_interval;
 
-            // 计算健康检查间隔（取扫描间隔的一半，但不少于30秒，不超过300秒）
-            let health_check_interval = (scan_interval / 2).clamp(30, 300);
+            // 使用用户配置的检查间隔，并进行合理范围限制
+            let health_check_interval = check_interval.clamp(30, 600);
 
             info!(
-                "健康检查间隔设置为 {} 秒（基于扫描间隔 {} 秒）",
-                health_check_interval, scan_interval
+                "健康检查间隔设置为 {} 秒（用户配置: {} 秒，自动重启: {}）",
+                health_check_interval, check_interval, enable_auto_restart
             );
 
             let mut interval = tokio::time::interval(Duration::from_secs(health_check_interval));
@@ -185,9 +193,9 @@ impl Aria2Downloader {
 
                     last_check_time = std::time::Instant::now();
                 } else if current_count < instance_count {
-                    // 实例数量不足，需要自动恢复
-                    if total_load < 2 {
-                        // 负载较低时立即尝试恢复
+                    // 实例数量不足，检查是否启用自动恢复
+                    if enable_auto_restart && total_load < 2 {
+                        // 启用自动重启且负载较低时立即尝试恢复
                         warn!(
                             "检测到aria2实例数量不足: {}/{} (当前负载: {})，立即尝试自动恢复",
                             current_count, instance_count, total_load
@@ -211,6 +219,11 @@ impl Aria2Downloader {
                                 }
                             }
                         }
+                    } else if !enable_auto_restart {
+                        debug!(
+                            "aria2实例数量不足: {}/{} (负载: {})，但自动重启已禁用",
+                            current_count, instance_count, total_load
+                        );
                     } else {
                         debug!(
                             "aria2实例数量不足但系统忙碌: {}/{} (负载: {})，暂缓处理",
@@ -221,7 +234,11 @@ impl Aria2Downloader {
             }
         });
 
-        info!("aria2实例监控任务已启动");
+            info!("aria2实例监控任务已启动");
+        } else {
+            info!("aria2健康检查已禁用，跳过监控任务启动");
+        }
+
         Ok(downloader)
     }
 
@@ -1393,6 +1410,13 @@ impl Aria2Downloader {
         instances: &Arc<Mutex<Vec<Aria2Instance>>>,
         instance_count: usize,
     ) -> Result<()> {
+        // 首先检查是否启用了健康检查
+        let config = crate::config::with_config(|bundle| bundle.config.clone());
+        if !config.enable_aria2_health_check {
+            debug!("aria2健康检查已禁用，跳过检查");
+            return Ok(());
+        }
+
         // 检查当前是否适合进行健康检查
         let instances_guard = instances.lock().await;
         let total_load: usize = instances_guard.iter().map(|i| i.get_load()).sum();
@@ -1450,22 +1474,27 @@ impl Aria2Downloader {
         let unhealthy_count = unhealthy_indices.len();
         drop(instances_guard);
 
-        // 重新启动不健康的实例
+        // 检查是否启用自动重启，决定是否重新启动不健康的实例
+        let config = crate::config::with_config(|bundle| bundle.config.clone());
         if unhealthy_count > 0 {
-            info!("重新启动 {} 个aria2实例", unhealthy_count);
+            if config.enable_aria2_auto_restart {
+                info!("重新启动 {} 个aria2实例", unhealthy_count);
 
-            for i in 0..unhealthy_count {
-                match Self::create_missing_instance(instances).await {
-                    Ok(instance) => {
-                        instances.lock().await.push(instance);
-                        info!("成功重启第{}个aria2实例", i + 1);
-                    }
-                    Err(e) => {
-                        error!("重启第{}个aria2实例失败: {:#}", i + 1, e);
-                        // 记录详细的失败原因以便诊断
-                        Self::log_startup_diagnostics().await;
+                for i in 0..unhealthy_count {
+                    match Self::create_missing_instance(instances).await {
+                        Ok(instance) => {
+                            instances.lock().await.push(instance);
+                            info!("成功重启第{}个aria2实例", i + 1);
+                        }
+                        Err(e) => {
+                            error!("重启第{}个aria2实例失败: {:#}", i + 1, e);
+                            // 记录详细的失败原因以便诊断
+                            Self::log_startup_diagnostics().await;
+                        }
                     }
                 }
+            } else {
+                warn!("检测到 {} 个不健康的aria2实例，但自动重启已禁用", unhealthy_count);
             }
         }
 
