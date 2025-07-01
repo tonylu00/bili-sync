@@ -143,7 +143,28 @@ pub async fn create_videos(
 
                     info!("恢复已删除的视频并重置下载状态: {}", existing.name);
                 } else {
-                    // 视频存在且未删除，跳过
+                    // 视频存在且未删除，检查是否需要更新 share_copy 字段
+                    if let Some(new_share_copy) = model.share_copy.as_ref() {
+                        if existing.share_copy != model.share_copy.as_ref().clone() {
+                            // 需要更新 share_copy 字段
+                            info!("检测到需要更新share_copy: 视频={}, 原值={:?}, 新值={:?}", 
+                                existing.name, existing.share_copy, model.share_copy);
+                            let update_model = video::ActiveModel {
+                                id: Unchanged(existing.id),
+                                share_copy: model.share_copy.clone(),
+                                // 同时更新其他可能变化的字段
+                                name: model.name.clone(),
+                                intro: model.intro.clone(),
+                                cover: model.cover.clone(),
+                                ..Default::default()
+                            };
+                            update_model.save(connection).await?;
+                            info!("更新视频 {} 的 share_copy 字段完成", existing.name);
+                        } else {
+                            tracing::debug!("share_copy无需更新: 视频={}, 现有值={:?}", 
+                                existing.name, existing.share_copy);
+                        }
+                    }
                     continue;
                 }
             } else {
@@ -156,20 +177,60 @@ pub async fn create_videos(
             }
         }
     } else {
-        // 未启用扫描已删除视频：使用原有逻辑，但需要排除已删除的视频
-        let video_models = videos_info
-            .into_iter()
-            .map(|v| {
-                let mut model = v.into_simple_model();
-                video_source.set_relation_id(&mut model);
-                model
-            })
-            .collect::<Vec<_>>();
-        video::Entity::insert_many(video_models)
-            .on_conflict(OnConflict::new().do_nothing().to_owned())
-            .do_nothing()
-            .exec(connection)
-            .await?;
+        // 未启用扫描已删除视频：使用原有逻辑，但增加 share_copy 更新检查
+        for video_info in videos_info {
+            let mut model = video_info.into_simple_model();
+            video_source.set_relation_id(&mut model);
+
+            // 先尝试插入，如果失败说明记录已存在
+            let insert_result = video::Entity::insert(model.clone())
+                .on_conflict(OnConflict::new().do_nothing().to_owned())
+                .do_nothing()
+                .exec(connection)
+                .await;
+
+            // 如果插入没有影响任何行（即记录已存在），检查是否需要更新 share_copy
+            if let Ok(insert_res) = insert_result {
+                // 检查插入是否真的生效，如果没有生效说明记录已存在
+                let insert_success = match &insert_res {
+                    sea_orm::TryInsertResult::Inserted(_) => true,
+                    sea_orm::TryInsertResult::Conflicted => false,
+                    sea_orm::TryInsertResult::Empty => true, // 空插入视为成功
+                };
+                if !insert_success {
+                    // 记录已存在，检查是否需要更新 share_copy 字段
+                    if let Some(_new_share_copy) = model.share_copy.as_ref() {
+                        let existing_video = video::Entity::find()
+                            .filter(video::Column::Bvid.eq(model.bvid.as_ref()))
+                            .filter(video_source.filter_expr())
+                            .one(connection)
+                            .await?;
+
+                        if let Some(existing) = existing_video {
+                            if existing.share_copy != model.share_copy.as_ref().clone() {
+                                // 需要更新 share_copy 字段
+                                info!("检测到需要更新share_copy(未启用扫描删除): 视频={}, 原值={:?}, 新值={:?}", 
+                                    existing.name, existing.share_copy, model.share_copy);
+                                let update_model = video::ActiveModel {
+                                    id: Unchanged(existing.id),
+                                    share_copy: model.share_copy.clone(),
+                                    // 同时更新其他可能变化的字段
+                                    name: model.name.clone(),
+                                    intro: model.intro.clone(),
+                                    cover: model.cover.clone(),
+                                    ..Default::default()
+                                };
+                                update_model.save(connection).await?;
+                                info!("更新视频 {} 的 share_copy 字段完成", existing.name);
+                            } else {
+                                tracing::debug!("share_copy无需更新(未启用扫描删除): 视频={}, 现有值={:?}", 
+                                    existing.name, existing.share_copy);
+                            }
+                        }
+                    }
+                }
+            }
+        }
     }
     Ok(())
 }

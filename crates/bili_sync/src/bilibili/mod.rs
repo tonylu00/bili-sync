@@ -154,5 +154,7 @@ pub enum VideoInfo {
         season_number: Option<i32>,
         /// 集数，直接从API的title字段获取
         episode_number: Option<i32>,
+        /// 详细的分享标题，用于NFO智能title选择
+        share_copy: Option<String>,
     },
 }

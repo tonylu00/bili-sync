@@ -35,6 +35,7 @@ pub struct Model {
     pub season_number: Option<i32>,
     pub episode_number: Option<i32>,
     pub deleted: i32,
+    pub share_copy: Option<String>,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]

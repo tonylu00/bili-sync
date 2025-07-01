@@ -31,6 +31,7 @@ pub struct BangumiEpisode {
     pub duration: i64, // 视频时长（毫秒）
     pub show_title: String, // 显示标题
     pub cover: String, // 单集封面
+    pub share_copy: Option<String>, // 详细的分享标题
 }
 
 #[derive(Debug, Deserialize, Clone)]
@@ -116,13 +117,15 @@ impl Bangumi {
                 duration: episode["duration"].as_i64().unwrap_or_default(),
                 show_title: episode["show_title"].as_str().unwrap_or_default().to_string(),
                 cover: episode["cover"].as_str().unwrap_or_default().to_string(),
+                share_copy: episode["share_copy"].as_str().map(|s| s.to_string()),
             };
             tracing::debug!(
-                "解析剧集：{} (EP{}) BV号: {} 封面: {}",
+                "解析剧集：{} (EP{}) BV号: {} 封面: {} share_copy: {:?}",
                 ep.title,
                 ep.id,
                 ep.bvid,
-                ep.cover
+                ep.cover,
+                ep.share_copy
             );
             result.push(ep);
         }
@@ -236,6 +239,7 @@ impl Bangumi {
                     show_title: Some(episode.show_title.clone()),
                     season_number,
                     episode_number,
+                    share_copy: episode.share_copy.clone(),
                 }
             }
         })
@@ -310,6 +314,7 @@ impl Bangumi {
                         show_title: Some(episode.show_title.clone()),
                         season_number,
                         episode_number,
+                        share_copy: episode.share_copy.clone(),
                     }
                 }
             }
@@ -401,6 +406,7 @@ impl Bangumi {
                         show_title: Some(episode.show_title.clone()),
                         season_number,
                         episode_number,
+                        share_copy: episode.share_copy.clone(),
                     }
                 }
             }
@@ -440,6 +446,7 @@ impl Bangumi {
             show_title,
             season_number: None,
             episode_number: None,
+            share_copy: result["share_copy"].as_str().map(|s| s.to_string()),
         })
     }
 }
