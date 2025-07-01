@@ -149,6 +149,9 @@ impl BangumiSource {
         bili_client: &BiliClient,
         _path: &Path,
     ) -> Result<Pin<Box<dyn Stream<Item = Result<VideoInfo>> + Send>>> {
+        // 获取增量获取的时间参数
+        let latest_row_at = Some(self.latest_row_at.and_utc());
+        
         let bangumi = Bangumi::new(
             bili_client,
             self.media_id.clone(),
@@ -157,17 +160,17 @@ impl BangumiSource {
         );
 
         if self.download_all_seasons {
-            debug!("正在获取所有季度的番剧内容");
-            Ok(Box::pin(bangumi.to_all_seasons_video_stream()))
+            debug!("正在增量获取所有季度的番剧内容（时间过滤: {:?}）", latest_row_at);
+            Ok(Box::pin(bangumi.to_all_seasons_video_stream_incremental(latest_row_at)))
         } else if let Some(ref selected_seasons) = self.selected_seasons {
             // 如果有选中的季度，只下载选中的季度
-            debug!("正在获取选中的 {} 个季度的番剧内容", selected_seasons.len());
+            debug!("正在增量获取选中的 {} 个季度的番剧内容（时间过滤: {:?}）", selected_seasons.len(), latest_row_at);
             Ok(Box::pin(
-                bangumi.to_selected_seasons_video_stream(selected_seasons.clone()),
+                bangumi.to_selected_seasons_video_stream_incremental(selected_seasons.clone(), latest_row_at),
             ))
         } else {
-            debug!("仅获取当前季度的番剧内容");
-            Ok(Box::pin(bangumi.to_video_stream()))
+            debug!("正在增量获取当前季度的番剧内容（时间过滤: {:?}）", latest_row_at);
+            Ok(Box::pin(bangumi.to_video_stream_incremental(latest_row_at)))
         }
     }
 

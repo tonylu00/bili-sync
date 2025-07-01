@@ -171,7 +171,13 @@ impl Bangumi {
     }
 
     /// 将单季番剧转换为视频流
+    #[allow(dead_code)]
     pub fn to_video_stream(&self) -> Pin<Box<dyn Stream<Item = Result<VideoInfo>> + Send>> {
+        self.to_video_stream_incremental(None)
+    }
+
+    /// 将单季番剧转换为视频流（支持增量获取）
+    pub fn to_video_stream_incremental(&self, latest_row_at: Option<chrono::DateTime<chrono::Utc>>) -> Pin<Box<dyn Stream<Item = Result<VideoInfo>> + Send>> {
         let client = self.client.clone();
         let season_id = self.season_id.clone();
         let media_id = self.media_id.clone();
@@ -233,6 +239,14 @@ impl Bangumi {
                 let pub_time = DateTime::<Utc>::from_timestamp(pub_time_timestamp, 0)
                     .unwrap_or_else(Utc::now);
 
+                // 增量获取：跳过早于latest_row_at的集数
+                if let Some(latest_time) = latest_row_at {
+                    if pub_time <= latest_time {
+                        tracing::debug!("跳过旧集数：{} (发布时间: {}, 最新时间: {})", episode_title_raw, pub_time, latest_time);
+                        continue;
+                    }
+                }
+
                 // 使用show_title字段作为标题
                 let episode_title = if !show_title.is_empty() {
                     show_title.clone()
@@ -273,7 +287,13 @@ impl Bangumi {
     }
 
     /// 将所有季度的番剧转换为视频流
+    #[allow(dead_code)]
     pub fn to_all_seasons_video_stream(&self) -> Pin<Box<dyn Stream<Item = Result<VideoInfo>> + Send>> {
+        self.to_all_seasons_video_stream_incremental(None)
+    }
+
+    /// 将所有季度的番剧转换为视频流（支持增量获取）
+    pub fn to_all_seasons_video_stream_incremental(&self, latest_row_at: Option<chrono::DateTime<chrono::Utc>>) -> Pin<Box<dyn Stream<Item = Result<VideoInfo>> + Send>> {
         let client = self.client.clone();
         let season_id = self.season_id.clone();
         let media_id = self.media_id.clone();
@@ -286,6 +306,10 @@ impl Bangumi {
             // 获取所有季度信息
             let seasons = bangumi.get_all_seasons().await?;
             debug!("获取到 {} 个相关季度", seasons.len());
+
+            let mut processed_seasons = 0;
+            let mut total_episodes = 0;
+            let mut new_episodes = 0;
 
             // 对每个季度进行处理
             for (season_index, season) in seasons.iter().enumerate() {
@@ -308,7 +332,11 @@ impl Bangumi {
                     .ok_or_else(|| anyhow::anyhow!("Failed to get episodes from season info"))?;
                 debug!("季度 {} (第{}季) 获取到 {} 集番剧内容", season.season_title, season_index + 1, episodes.len());
 
+                let mut season_has_new_episodes = false;
+
                 for episode in episodes {
+                    total_episodes += 1;
+                    
                     // 解析分集信息
                     let ep_id = episode["id"].as_i64().unwrap_or_default();
                     let aid = episode["aid"].as_i64().unwrap_or_default();
@@ -334,6 +362,17 @@ impl Bangumi {
                     // 将发布时间戳转换为 DateTime<Utc>
                     let pub_time = DateTime::<Utc>::from_timestamp(pub_time_timestamp, 0)
                         .unwrap_or_else(Utc::now);
+
+                    // 增量获取：跳过早于latest_row_at的集数
+                    if let Some(latest_time) = latest_row_at {
+                        if pub_time <= latest_time {
+                            tracing::debug!("跳过旧集数：{} (发布时间: {}, 最新时间: {})", episode_title_raw, pub_time, latest_time);
+                            continue;
+                        }
+                    }
+
+                    season_has_new_episodes = true;
+                    new_episodes += 1;
 
                     // 使用show_title字段作为标题
                     let episode_title = if !show_title.is_empty() {
@@ -371,14 +410,37 @@ impl Bangumi {
                         show_season_type,
                     }
                 }
+
+                if season_has_new_episodes {
+                    processed_seasons += 1;
+                }
+            }
+
+            if latest_row_at.is_some() {
+                tracing::info!(
+                    "所有季度番剧增量获取完成：处理了 {}/{} 个有新集数的季度，共 {}/{} 集新内容",
+                    processed_seasons, seasons.len(), new_episodes, total_episodes
+                );
+            } else {
+                tracing::info!("所有季度番剧全量获取完成：处理了 {} 个季度，共 {} 集内容", seasons.len(), total_episodes);
             }
         })
     }
 
     /// 将选中的季度的番剧转换为视频流
+    #[allow(dead_code)]
     pub fn to_selected_seasons_video_stream(
         &self,
         selected_seasons: Vec<String>,
+    ) -> Pin<Box<dyn Stream<Item = Result<VideoInfo>> + Send>> {
+        self.to_selected_seasons_video_stream_incremental(selected_seasons, None)
+    }
+
+    /// 将选中的季度的番剧转换为视频流（支持增量获取）
+    pub fn to_selected_seasons_video_stream_incremental(
+        &self,
+        selected_seasons: Vec<String>,
+        latest_row_at: Option<chrono::DateTime<chrono::Utc>>,
     ) -> Pin<Box<dyn Stream<Item = Result<VideoInfo>> + Send>> {
         let client = self.client.clone();
         let season_id = self.season_id.clone();
@@ -398,6 +460,10 @@ impl Bangumi {
                 .collect();
 
             debug!("筛选出 {} 个选中的季度", seasons.len());
+
+            let mut processed_seasons = 0;
+            let mut total_episodes = 0;
+            let mut new_episodes = 0;
 
             // 对每个选中的季度进行处理
             for (season_index, season) in seasons.iter().enumerate() {
@@ -427,7 +493,11 @@ impl Bangumi {
                     .ok_or_else(|| anyhow::anyhow!("Failed to get episodes from season info"))?;
                 debug!("季度 {} (第{}季) 获取到 {} 集番剧内容", season.season_title, season_number.unwrap_or(0), episodes.len());
 
+                let mut season_has_new_episodes = false;
+
                 for episode in episodes {
+                    total_episodes += 1;
+                    
                     // 解析分集信息
                     let ep_id = episode["id"].as_i64().unwrap_or_default();
                     let aid = episode["aid"].as_i64().unwrap_or_default();
@@ -453,6 +523,17 @@ impl Bangumi {
                     // 将发布时间戳转换为 DateTime<Utc>
                     let pub_time = DateTime::<Utc>::from_timestamp(pub_time_timestamp, 0)
                         .unwrap_or_else(Utc::now);
+
+                    // 增量获取：跳过早于latest_row_at的集数
+                    if let Some(latest_time) = latest_row_at {
+                        if pub_time <= latest_time {
+                            tracing::debug!("跳过旧集数：{} (发布时间: {}, 最新时间: {})", episode_title_raw, pub_time, latest_time);
+                            continue;
+                        }
+                    }
+
+                    season_has_new_episodes = true;
+                    new_episodes += 1;
 
                     // 使用show_title字段作为标题
                     let episode_title = if !show_title.is_empty() {
@@ -490,6 +571,19 @@ impl Bangumi {
                         show_season_type,
                     }
                 }
+
+                if season_has_new_episodes {
+                    processed_seasons += 1;
+                }
+            }
+
+            if latest_row_at.is_some() {
+                tracing::info!(
+                    "选中季度番剧增量获取完成：处理了 {}/{} 个有新集数的季度，共 {}/{} 集新内容",
+                    processed_seasons, seasons.len(), new_episodes, total_episodes
+                );
+            } else {
+                tracing::info!("选中季度番剧全量获取完成：处理了 {} 个季度，共 {} 集内容", seasons.len(), total_episodes);
             }
         })
     }
