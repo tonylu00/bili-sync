@@ -307,6 +307,8 @@ export interface UpdateConfigResponse {
 	success: boolean;
 	message: string;
 	updated_files?: number;
+	resetted_nfo_videos_count?: number;
+	resetted_nfo_pages_count?: number;
 }
 
 // 搜索请求类型

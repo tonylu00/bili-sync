@@ -257,6 +257,8 @@ pub struct UpdateConfigResponse {
     pub success: bool,
     pub message: String,
     pub updated_files: Option<u32>, // 重命名的文件数量
+    pub resetted_nfo_videos_count: Option<usize>, // 重置的视频NFO任务数量
+    pub resetted_nfo_pages_count: Option<usize>, // 重置的页面NFO任务数量
 }
 
 // 配置管理相关响应结构体
