@@ -145,13 +145,13 @@ impl Canvas {
             collisions.sort_unstable();
             let (FloatOrd(time_need), lane_idx) = collisions[0];
             if time_need < 1.0 {
-                debug!("延迟弹幕 {} 秒", time_need);
+                // debug!("延迟弹幕 {} 秒", time_need);
                 // 只允许延迟 1s
                 danmu.timeline_s += time_need + 0.01; // 间隔也不要太小了
                 return Some(self.draw_float_in_lane(danmu, lane_idx));
             }
         }
-        debug!("skipping danmu: {}", danmu.content);
+        // debug!("skipping danmu: {}", danmu.content);
         None
     }
 
