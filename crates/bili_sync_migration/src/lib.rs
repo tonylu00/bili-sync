@@ -20,6 +20,7 @@ mod m20250624_000001_add_deleted_field;
 mod m20250624_000002_add_scan_deleted_videos_field;
 mod m20250628_000001_create_task_queue;
 mod m20250701_000001_add_share_copy_field;
+mod m20250701_000002_add_show_season_type_field;
 
 pub struct Migrator;
 
@@ -47,6 +48,7 @@ impl MigratorTrait for Migrator {
             Box::new(m20250628_000001_create_task_queue::Migration),
             Box::new(m20241228_000001_add_video_query_indexes::Migration),
             Box::new(m20250701_000001_add_share_copy_field::Migration),
+            Box::new(m20250701_000002_add_show_season_type_field::Migration),
         ]
     }
 }

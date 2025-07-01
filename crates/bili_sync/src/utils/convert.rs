@@ -109,20 +109,33 @@ impl VideoInfo {
                 season_number,
                 episode_number,
                 share_copy,
+                show_season_type,
                 ..
             } => {
                 // 对于番剧，智能选择最详细的标题作为name
-                // 优先级：share_copy > show_title > title  
-                tracing::debug!("处理番剧转换: title={}, share_copy={:?}, show_title={:?}", 
-                    title, share_copy, show_title);
-                let intelligent_name = share_copy
-                    .as_ref()
-                    .filter(|s| !s.is_empty() && s.len() > title.len()) // 只有当share_copy更详细时才使用
-                    .map(|s| s.as_str())
-                    .or(show_title.as_deref())
-                    .unwrap_or(&title);
+                // 对于番剧影视类型(show_season_type=2)，不使用share_copy避免文件名过长
+                // 优先级：番剧影视类型(show_title > title)，常规番剧(share_copy > show_title > title)
+                tracing::debug!(
+                    "处理番剧转换: title={}, share_copy={:?}, show_title={:?}, show_season_type={:?}",
+                    title,
+                    share_copy,
+                    show_title,
+                    show_season_type
+                );
+                let intelligent_name = if show_season_type == Some(2) {
+                    // 番剧影视类型，使用简化命名，直接使用title（如"日配"、"中配"）
+                    &title
+                } else {
+                    // 常规番剧类型，使用详细命名
+                    share_copy
+                        .as_ref()
+                        .filter(|s| !s.is_empty() && s.len() > title.len()) // 只有当share_copy更详细时才使用
+                        .map(|s| s.as_str())
+                        .or(show_title.as_deref())
+                        .unwrap_or(&title)
+                };
                 tracing::debug!("选择的intelligent_name: {}", intelligent_name);
-                
+
                 bili_sync_entity::video::ActiveModel {
                     bvid: Set(bvid),
                     name: Set(intelligent_name.to_string()),
@@ -137,9 +150,10 @@ impl VideoInfo {
                     season_number: Set(season_number),
                     episode_number: Set(episode_number),
                     share_copy: Set(share_copy),
+                    show_season_type: Set(show_season_type),
                     ..default
                 }
-            },
+            }
             _ => unreachable!(),
         }
     }

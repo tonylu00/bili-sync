@@ -186,6 +186,7 @@ impl Bangumi {
             let title = season_info["title"].as_str().unwrap_or_default().to_string();
             let intro = season_info["evaluate"].as_str().unwrap_or_default().to_string();
             let current_season_id = season_info["season_id"].as_str().unwrap_or_default().to_string();
+            let show_season_type = season_info["show_season_type"].as_i64().map(|v| v as i32);
 
             // 计算当前季度在seasons数组中的位置，作为季度编号
             let season_number = if let Some(seasons) = season_info["seasons"].as_array() {
@@ -240,6 +241,7 @@ impl Bangumi {
                     season_number,
                     episode_number,
                     share_copy: episode.share_copy.clone(),
+                    show_season_type,
                 }
             }
         })
@@ -270,6 +272,7 @@ impl Bangumi {
                 let cover = season_info["cover"].as_str().unwrap_or_default().to_string();
                 let title = season_info["title"].as_str().unwrap_or_default().to_string();
                 let intro = season_info["evaluate"].as_str().unwrap_or_default().to_string();
+                let show_season_type = season_info["show_season_type"].as_i64().map(|v| v as i32);
 
                 // 季度编号就是在seasons数组中的位置+1
                 let season_number = Some((season_index + 1) as i32);
@@ -315,6 +318,7 @@ impl Bangumi {
                         season_number,
                         episode_number,
                         share_copy: episode.share_copy.clone(),
+                        show_season_type,
                     }
                 }
             }
@@ -355,6 +359,7 @@ impl Bangumi {
                 let cover = season_info["cover"].as_str().unwrap_or_default().to_string();
                 let title = season_info["title"].as_str().unwrap_or_default().to_string();
                 let intro = season_info["evaluate"].as_str().unwrap_or_default().to_string();
+                let show_season_type = season_info["show_season_type"].as_i64().map(|v| v as i32);
 
                 // 获取当前季度在所有季度中的真实位置
                 let season_number = if let Some(all_seasons_array) = season_info["seasons"].as_array() {
@@ -407,6 +412,7 @@ impl Bangumi {
                         season_number,
                         episode_number,
                         share_copy: episode.share_copy.clone(),
+                        show_season_type,
                     }
                 }
             }
@@ -447,6 +453,7 @@ impl Bangumi {
             season_number: None,
             episode_number: None,
             share_copy: result["share_copy"].as_str().map(|s| s.to_string()),
+            show_season_type: result["show_season_type"].as_i64().map(|v| v as i32),
         })
     }
 }

@@ -156,5 +156,7 @@ pub enum VideoInfo {
         episode_number: Option<i32>,
         /// 详细的分享标题，用于NFO智能title选择
         share_copy: Option<String>,
+        /// 番剧季度类型，用于区分常规番剧(1)和番剧影视(2)
+        show_season_type: Option<i32>,
     },
 }

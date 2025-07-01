@@ -245,8 +245,17 @@ impl<'a> From<&'a video::Model> for Movie<'a> {
     fn from(video: &'a video::Model) -> Self {
         // 使用动态配置而非静态CONFIG
         let config = crate::config::reload_config();
+
+        // 对于番剧影视类型（show_season_type=2），使用share_copy作为标题
+        // 其他类型继续使用video.name
+        let nfo_title = if video.show_season_type == Some(2) {
+            video.share_copy.as_deref().unwrap_or(&video.name)
+        } else {
+            &video.name
+        };
+
         Self {
-            name: &video.name,
+            name: nfo_title,
             intro: &video.intro,
             bvid: &video.bvid,
             upper_id: video.upper_id,
@@ -267,8 +276,17 @@ impl<'a> From<&'a video::Model> for TVShow<'a> {
     fn from(video: &'a video::Model) -> Self {
         // 使用动态配置而非静态CONFIG
         let config = crate::config::reload_config();
+
+        // 对于番剧影视类型（show_season_type=2），使用share_copy作为标题
+        // 其他类型继续使用video.name
+        let nfo_title = if video.show_season_type == Some(2) {
+            video.share_copy.as_deref().unwrap_or(&video.name)
+        } else {
+            &video.name
+        };
+
         Self {
-            name: &video.name,
+            name: nfo_title,
             intro: &video.intro,
             bvid: &video.bvid,
             upper_id: video.upper_id,

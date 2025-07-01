@@ -463,10 +463,7 @@ impl VideoDeleteTaskQueue {
         self.set_processing(true);
         let mut processed_count = 0u32;
 
-        info!(
-            "开始处理暂存的视频删除任务，当前队列长度: {}",
-            queue_length
-        );
+        info!("开始处理暂存的视频删除任务，当前队列长度: {}", queue_length);
 
         while let Some(task) = self.dequeue_task().await {
             info!("正在处理视频删除任务: 视频ID={}", task.video_id);
@@ -1157,10 +1154,7 @@ impl ConfigTaskQueue {
         // 查询所有待处理的配置任务
         let pending_tasks = TaskQueueEntity::find()
             .filter(task_queue::Column::Status.eq(TaskStatus::Pending))
-            .filter(
-                task_queue::Column::TaskType
-                    .is_in([TaskType::UpdateConfig, TaskType::ReloadConfig])
-            )
+            .filter(task_queue::Column::TaskType.is_in([TaskType::UpdateConfig, TaskType::ReloadConfig]))
             .order_by_asc(task_queue::Column::CreatedAt)
             .all(connection)
             .await?;
@@ -1225,14 +1219,14 @@ impl ConfigTaskQueue {
                 "检测到数据库中有 {} 个更新配置任务和 {} 个重载配置任务，开始恢复到内存队列",
                 db_update_count, db_reload_count
             );
-            
+
             if let Ok(recovered) = self.recover_config_tasks_from_db(&db).await {
                 if recovered > 0 {
                     info!("成功恢复 {} 个配置任务，重新获取队列长度", recovered);
                     // 重新获取内存队列长度
                     let new_update_count = self.update_queue_length().await;
                     let new_reload_count = self.reload_queue_length().await;
-                    
+
                     if new_update_count == 0 && new_reload_count == 0 {
                         warn!("恢复任务后内存队列仍为空，可能存在数据不一致问题");
                         self.set_processing(false);
@@ -1395,7 +1389,11 @@ impl ConfigTaskQueue {
             processed_count, remaining_update_count, remaining_reload_count, remaining_db_update_count, remaining_db_reload_count
         );
 
-        if remaining_update_count > 0 || remaining_reload_count > 0 || remaining_db_update_count > 0 || remaining_db_reload_count > 0 {
+        if remaining_update_count > 0
+            || remaining_reload_count > 0
+            || remaining_db_update_count > 0
+            || remaining_db_reload_count > 0
+        {
             warn!("配置任务处理完成后仍有剩余任务，可能需要下轮处理");
         }
 

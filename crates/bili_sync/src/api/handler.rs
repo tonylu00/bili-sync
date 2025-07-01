@@ -4025,8 +4025,11 @@ pub async fn update_config_internal(
             Ok((videos_count, pages_count)) => {
                 resetted_nfo_videos_count = videos_count;
                 resetted_nfo_pages_count = pages_count;
-                info!("NFO任务状态重置成功，重置了 {} 个视频和 {} 个页面", videos_count, pages_count);
-                
+                info!(
+                    "NFO任务状态重置成功，重置了 {} 个视频和 {} 个页面",
+                    videos_count, pages_count
+                );
+
                 // 如果有任务被重置，触发立即扫描来处理重置的NFO任务
                 if videos_count > 0 || pages_count > 0 {
                     info!("准备触发立即扫描来处理重置的NFO任务");
@@ -4076,13 +4079,17 @@ pub async fn update_config_internal(
         } else {
             format!("配置更新成功，已更新字段: {}", updated_fields.join(", "))
         },
-        updated_files: if should_rename {
-            Some(updated_files)
+        updated_files: if should_rename { Some(updated_files) } else { None },
+        resetted_nfo_videos_count: if should_reset_nfo {
+            Some(resetted_nfo_videos_count)
         } else {
             None
         },
-        resetted_nfo_videos_count: if should_reset_nfo { Some(resetted_nfo_videos_count) } else { None },
-        resetted_nfo_pages_count: if should_reset_nfo { Some(resetted_nfo_pages_count) } else { None },
+        resetted_nfo_pages_count: if should_reset_nfo {
+            Some(resetted_nfo_pages_count)
+        } else {
+            None
+        },
     })
 }
 
@@ -4703,7 +4710,6 @@ async fn rename_existing_files(
     info!("文件重命名完成，共处理了 {} 个文件/文件夹", updated_count);
     Ok(updated_count)
 }
-
 
 /// 获取番剧的所有季度信息
 #[utoipa::path(
@@ -7485,8 +7491,8 @@ pub async fn get_user_favorites_by_uid(
 
 /// 重置所有视频的NFO相关任务状态，用于配置更改后重新下载NFO文件
 async fn reset_nfo_tasks_for_config_change(db: Arc<DatabaseConnection>) -> Result<(usize, usize)> {
-    use std::collections::HashSet;
     use sea_orm::*;
+    use std::collections::HashSet;
 
     info!("开始重置NFO相关任务状态以应用新的配置...");
 
@@ -7542,7 +7548,7 @@ async fn reset_nfo_tasks_for_config_change(db: Arc<DatabaseConnection>) -> Resul
         .filter_map(|(id, pid, name, download_status, video_id)| {
             let mut page_status = PageStatus::from(download_status);
             let current_nfo_status = page_status.get(2); // 索引2是视频信息NFO
-            
+
             if current_nfo_status != 0 {
                 // 只重置已经开始的NFO任务
                 page_status.set(2, 0); // 重置为未开始

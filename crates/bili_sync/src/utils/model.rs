@@ -9,6 +9,27 @@ use crate::adapter::{VideoSource, VideoSourceEnum};
 use crate::bilibili::{PageInfo, VideoInfo};
 use crate::utils::status::STATUS_COMPLETED;
 
+/// 根据show_season_type和其他字段重新计算番剧的智能命名
+fn recalculate_bangumi_name(
+    title: &str,
+    share_copy: Option<&str>,
+    show_title: Option<&str>,
+    show_season_type: Option<i32>,
+) -> String {
+    // 参考convert.rs中的智能命名逻辑
+    if show_season_type == Some(2) {
+        // 番剧影视类型，使用简化命名
+        show_title.unwrap_or(title).to_string()
+    } else {
+        // 常规番剧类型，使用详细命名
+        share_copy
+            .filter(|s| !s.is_empty() && s.len() > title.len()) // 只有当share_copy更详细时才使用
+            .or(show_title)
+            .unwrap_or(title)
+            .to_string()
+    }
+}
+
 /// 筛选未填充的视频
 pub async fn filter_unfilled_videos(
     additional_expr: SimpleExpr,
@@ -143,27 +164,93 @@ pub async fn create_videos(
 
                     info!("恢复已删除的视频并重置下载状态: {}", existing.name);
                 } else {
-                    // 视频存在且未删除，检查是否需要更新 share_copy 字段
-                    if let Some(new_share_copy) = model.share_copy.as_ref() {
-                        if existing.share_copy != model.share_copy.as_ref().clone() {
-                            // 需要更新 share_copy 字段
-                            info!("检测到需要更新share_copy: 视频={}, 原值={:?}, 新值={:?}", 
-                                existing.name, existing.share_copy, model.share_copy);
-                            let update_model = video::ActiveModel {
-                                id: Unchanged(existing.id),
-                                share_copy: model.share_copy.clone(),
-                                // 同时更新其他可能变化的字段
-                                name: model.name.clone(),
-                                intro: model.intro.clone(),
-                                cover: model.cover.clone(),
-                                ..Default::default()
-                            };
-                            update_model.save(connection).await?;
-                            info!("更新视频 {} 的 share_copy 字段完成", existing.name);
-                        } else {
-                            tracing::debug!("share_copy无需更新: 视频={}, 现有值={:?}", 
-                                existing.name, existing.share_copy);
+                    // 视频存在且未删除，检查是否需要更新字段
+                    let mut needs_update = false;
+                    let mut should_recalculate_name = false;
+
+                    // 检查 share_copy 字段更新
+                    let share_copy_changed = if let Some(new_share_copy) = model.share_copy.as_ref() {
+                        existing.share_copy.as_ref() != Some(new_share_copy)
+                    } else {
+                        false
+                    };
+
+                    // 检查 show_season_type 字段更新
+                    let show_season_type_changed = if let Some(new_show_season_type) = model.show_season_type.as_ref() {
+                        existing.show_season_type != Some(*new_show_season_type)
+                    } else {
+                        false
+                    };
+
+                    if share_copy_changed || show_season_type_changed {
+                        needs_update = true;
+                        should_recalculate_name = true;
+
+                        if share_copy_changed {
+                            info!(
+                                "检测到需要更新share_copy: 视频={}, 原值={:?}, 新值={:?}",
+                                existing.name, existing.share_copy, model.share_copy
+                            );
                         }
+                        if show_season_type_changed {
+                            info!(
+                                "检测到需要更新show_season_type: 视频={}, 原值={:?}, 新值={:?}",
+                                existing.name, existing.show_season_type, model.show_season_type
+                            );
+                        }
+                    }
+
+                    if needs_update {
+                        // 如果需要重新计算name，并且这是番剧类型（category=1）
+                        // 但对于番剧影视类型（show_season_type=2），不重新计算name，保持原有的简洁格式
+                        let new_name = if should_recalculate_name && existing.category == 1 {
+                            let new_show_season_type = match &model.show_season_type {
+                                Set(opt) => *opt,
+                                _ => existing.show_season_type,
+                            };
+
+                            // 如果是番剧影视类型，不重新计算name，保持现有的简洁name
+                            if new_show_season_type == Some(2) {
+                                sea_orm::ActiveValue::NotSet // 保持现有name不变
+                            } else {
+                                // 对于常规番剧类型，进行重新计算
+                                let title = existing.name.as_str();
+                                let share_copy = match &model.share_copy {
+                                    Set(Some(s)) => Some(s.as_str()),
+                                    Set(None) => None,
+                                    _ => existing.share_copy.as_deref(),
+                                };
+
+                                let recalculated_name =
+                                    recalculate_bangumi_name(title, share_copy, None, new_show_season_type);
+                                info!(
+                                    "重新计算常规番剧name: 视频={}, 原name={}, 新name={}",
+                                    existing.name, existing.name, recalculated_name
+                                );
+                                Set(recalculated_name)
+                            }
+                        } else {
+                            model.name.clone()
+                        };
+
+                        let update_model = video::ActiveModel {
+                            id: Unchanged(existing.id),
+                            share_copy: model.share_copy.clone(),
+                            show_season_type: model.show_season_type.clone(),
+                            name: new_name,
+                            intro: model.intro.clone(),
+                            cover: model.cover.clone(),
+                            ..Default::default()
+                        };
+                        update_model.save(connection).await?;
+                        info!("更新视频 {} 的字段完成", existing.name);
+                    } else {
+                        tracing::debug!(
+                            "字段无需更新: 视频={}, share_copy={:?}, show_season_type={:?}",
+                            existing.name,
+                            existing.share_copy,
+                            existing.show_season_type
+                        );
                     }
                     continue;
                 }
@@ -198,34 +285,101 @@ pub async fn create_videos(
                     sea_orm::TryInsertResult::Empty => true, // 空插入视为成功
                 };
                 if !insert_success {
-                    // 记录已存在，检查是否需要更新 share_copy 字段
-                    if let Some(_new_share_copy) = model.share_copy.as_ref() {
-                        let existing_video = video::Entity::find()
-                            .filter(video::Column::Bvid.eq(model.bvid.as_ref()))
-                            .filter(video_source.filter_expr())
-                            .one(connection)
-                            .await?;
+                    // 记录已存在，检查是否需要更新字段
+                    let existing_video = video::Entity::find()
+                        .filter(video::Column::Bvid.eq(model.bvid.as_ref()))
+                        .filter(video_source.filter_expr())
+                        .one(connection)
+                        .await?;
 
-                        if let Some(existing) = existing_video {
-                            if existing.share_copy != model.share_copy.as_ref().clone() {
-                                // 需要更新 share_copy 字段
-                                info!("检测到需要更新share_copy(未启用扫描删除): 视频={}, 原值={:?}, 新值={:?}", 
-                                    existing.name, existing.share_copy, model.share_copy);
-                                let update_model = video::ActiveModel {
-                                    id: Unchanged(existing.id),
-                                    share_copy: model.share_copy.clone(),
-                                    // 同时更新其他可能变化的字段
-                                    name: model.name.clone(),
-                                    intro: model.intro.clone(),
-                                    cover: model.cover.clone(),
-                                    ..Default::default()
-                                };
-                                update_model.save(connection).await?;
-                                info!("更新视频 {} 的 share_copy 字段完成", existing.name);
+                    if let Some(existing) = existing_video {
+                        let mut needs_update = false;
+                        let mut should_recalculate_name = false;
+
+                        // 检查 share_copy 字段更新
+                        let share_copy_changed = if let Some(_new_share_copy) = model.share_copy.as_ref() {
+                            existing.share_copy != model.share_copy.as_ref().clone()
+                        } else {
+                            false
+                        };
+
+                        // 检查 show_season_type 字段更新
+                        let show_season_type_changed =
+                            if let Some(new_show_season_type) = model.show_season_type.as_ref() {
+                                existing.show_season_type != Some(*new_show_season_type)
                             } else {
-                                tracing::debug!("share_copy无需更新(未启用扫描删除): 视频={}, 现有值={:?}", 
-                                    existing.name, existing.share_copy);
+                                false
+                            };
+
+                        if share_copy_changed || show_season_type_changed {
+                            needs_update = true;
+                            should_recalculate_name = true;
+
+                            if share_copy_changed {
+                                info!(
+                                    "检测到需要更新share_copy(未启用扫描删除): 视频={}, 原值={:?}, 新值={:?}",
+                                    existing.name, existing.share_copy, model.share_copy
+                                );
                             }
+                            if show_season_type_changed {
+                                info!(
+                                    "检测到需要更新show_season_type(未启用扫描删除): 视频={}, 原值={:?}, 新值={:?}",
+                                    existing.name, existing.show_season_type, model.show_season_type
+                                );
+                            }
+                        }
+
+                        if needs_update {
+                            // 如果需要重新计算name，并且这是番剧类型（category=1）
+                            // 但对于番剧影视类型（show_season_type=2），不重新计算name，保持原有的简洁格式
+                            let new_name = if should_recalculate_name && existing.category == 1 {
+                                let new_show_season_type = match &model.show_season_type {
+                                    Set(opt) => *opt,
+                                    _ => existing.show_season_type,
+                                };
+
+                                // 如果是番剧影视类型，不重新计算name，保持现有的简洁name
+                                if new_show_season_type == Some(2) {
+                                    sea_orm::ActiveValue::NotSet // 保持现有name不变
+                                } else {
+                                    // 对于常规番剧类型，进行重新计算
+                                    let title = existing.name.as_str();
+                                    let share_copy = match &model.share_copy {
+                                        Set(Some(s)) => Some(s.as_str()),
+                                        Set(None) => None,
+                                        _ => existing.share_copy.as_deref(),
+                                    };
+
+                                    let recalculated_name =
+                                        recalculate_bangumi_name(title, share_copy, None, new_show_season_type);
+                                    info!(
+                                        "重新计算常规番剧name(未启用扫描删除): 视频={}, 原name={}, 新name={}",
+                                        existing.name, existing.name, recalculated_name
+                                    );
+                                    Set(recalculated_name)
+                                }
+                            } else {
+                                model.name.clone()
+                            };
+
+                            let update_model = video::ActiveModel {
+                                id: Unchanged(existing.id),
+                                share_copy: model.share_copy.clone(),
+                                show_season_type: model.show_season_type.clone(),
+                                name: new_name,
+                                intro: model.intro.clone(),
+                                cover: model.cover.clone(),
+                                ..Default::default()
+                            };
+                            update_model.save(connection).await?;
+                            info!("更新视频 {} 的字段完成(未启用扫描删除)", existing.name);
+                        } else {
+                            tracing::debug!(
+                                "字段无需更新(未启用扫描删除): 视频={}, share_copy={:?}, show_season_type={:?}",
+                                existing.name,
+                                existing.share_copy,
+                                existing.show_season_type
+                            );
                         }
                     }
                 }
