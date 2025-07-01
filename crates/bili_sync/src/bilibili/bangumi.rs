@@ -18,16 +18,15 @@ pub struct Bangumi {
 }
 
 #[derive(Debug, Deserialize)]
+#[allow(dead_code)] // 整个结构体已弃用，直接从JSON解析更高效
 pub struct BangumiEpisode {
     pub id: i64,       // ep_id
     pub aid: i64,      // 视频 aid
     pub bvid: String,  // 视频 bvid
     pub cid: i64,      // 视频 cid
     pub title: String, // 集标题
-    #[allow(dead_code)]
     pub long_title: String, // 集副标题
     pub pub_time: i64, // 发布时间戳
-    #[allow(dead_code)]
     pub duration: i64, // 视频时长（毫秒）
     pub show_title: String, // 显示标题
     pub cover: String, // 单集封面
@@ -94,7 +93,8 @@ impl Bangumi {
         json.validate().map(|v| v["result"].clone())
     }
 
-    /// 获取番剧分集信息
+    /// 获取番剧分集信息（已弃用，直接从season_info解析episodes更高效）
+    #[allow(dead_code)]
     pub async fn get_episodes(&self) -> Result<Vec<BangumiEpisode>> {
         let season_info = self.get_season_info().await?;
         let episodes = season_info["episodes"]
@@ -256,7 +256,7 @@ impl Bangumi {
                     title: episode_title,
                     season_id: current_season_id.clone(),
                     ep_id: ep_id.to_string(),
-                    bvid: bvid,
+                    bvid,
                     cid: cid.to_string(),
                     aid: aid.to_string(),
                     cover: episode_cover,
@@ -358,7 +358,7 @@ impl Bangumi {
                         title: episode_title,
                         season_id: season_id_clone.clone(),
                         ep_id: ep_id.to_string(),
-                        bvid: bvid,
+                        bvid,
                         cid: cid.to_string(),
                         aid: aid.to_string(),
                         cover: episode_cover,
@@ -477,7 +477,7 @@ impl Bangumi {
                         title: episode_title,
                         season_id: season_id_clone.clone(),
                         ep_id: ep_id.to_string(),
-                        bvid: bvid,
+                        bvid,
                         cid: cid.to_string(),
                         aid: aid.to_string(),
                         cover: episode_cover,
