@@ -142,7 +142,7 @@ impl Aria2Downloader {
             let scan_interval = config.interval;
 
             // 计算健康检查间隔（取扫描间隔的一半，但不少于30秒，不超过300秒）
-            let health_check_interval = std::cmp::max(std::cmp::min(scan_interval / 2, 300), 30);
+            let health_check_interval = (scan_interval / 2).clamp(30, 300);
 
             info!(
                 "健康检查间隔设置为 {} 秒（基于扫描间隔 {} 秒）",
