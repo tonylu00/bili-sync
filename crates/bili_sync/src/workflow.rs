@@ -720,13 +720,17 @@ pub async fn download_video_pages(
         // 番剧直接使用配置的路径，不创建额外的视频标题文件夹
         let base_path = bangumi_source.path();
 
-        // 如果启用了下载所有季度，或者有选中的季度（且不为空），则根据season_id创建子文件夹
+        // 目录创建策略：
+        // 1. 如果启用了下载所有季度 -> 创建季度子目录
+        // 2. 如果有选中的季度（且不为空） -> 创建季度子目录
+        // 3. 如果没有选择但有season_id -> 创建季度子目录（单季度番剧的情况）
         let should_create_season_folder = bangumi_source.download_all_seasons
             || (bangumi_source
                 .selected_seasons
                 .as_ref()
                 .map(|s| !s.is_empty())
-                .unwrap_or(false));
+                .unwrap_or(false))
+            || video_model.season_id.is_some(); // 单季度番剧：如果有season_id就创建目录
 
         if should_create_season_folder && video_model.season_id.is_some() {
             let season_id = video_model

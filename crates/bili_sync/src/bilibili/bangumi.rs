@@ -20,16 +20,16 @@ pub struct Bangumi {
 #[derive(Debug, Deserialize)]
 #[allow(dead_code)] // 整个结构体已弃用，直接从JSON解析更高效
 pub struct BangumiEpisode {
-    pub id: i64,       // ep_id
-    pub aid: i64,      // 视频 aid
-    pub bvid: String,  // 视频 bvid
-    pub cid: i64,      // 视频 cid
-    pub title: String, // 集标题
-    pub long_title: String, // 集副标题
-    pub pub_time: i64, // 发布时间戳
-    pub duration: i64, // 视频时长（毫秒）
-    pub show_title: String, // 显示标题
-    pub cover: String, // 单集封面
+    pub id: i64,                    // ep_id
+    pub aid: i64,                   // 视频 aid
+    pub bvid: String,               // 视频 bvid
+    pub cid: i64,                   // 视频 cid
+    pub title: String,              // 集标题
+    pub long_title: String,         // 集副标题
+    pub pub_time: i64,              // 发布时间戳
+    pub duration: i64,              // 视频时长（毫秒）
+    pub show_title: String,         // 显示标题
+    pub cover: String,              // 单集封面
     pub share_copy: Option<String>, // 详细的分享标题
 }
 
@@ -177,7 +177,10 @@ impl Bangumi {
     }
 
     /// 将单季番剧转换为视频流（支持增量获取）
-    pub fn to_video_stream_incremental(&self, latest_row_at: Option<chrono::DateTime<chrono::Utc>>) -> Pin<Box<dyn Stream<Item = Result<VideoInfo>> + Send>> {
+    pub fn to_video_stream_incremental(
+        &self,
+        latest_row_at: Option<chrono::DateTime<chrono::Utc>>,
+    ) -> Pin<Box<dyn Stream<Item = Result<VideoInfo>> + Send>> {
         let client = self.client.clone();
         let season_id = self.season_id.clone();
         let media_id = self.media_id.clone();
@@ -191,15 +194,30 @@ impl Bangumi {
             let cover = season_info["cover"].as_str().unwrap_or_default().to_string();
             let title = season_info["title"].as_str().unwrap_or_default().to_string();
             let intro = season_info["evaluate"].as_str().unwrap_or_default().to_string();
-            let current_season_id = season_info["season_id"].as_str().unwrap_or_default().to_string();
+            let current_season_id = season_info["season_id"]
+                .as_i64()
+                .map(|id| id.to_string())
+                .or_else(|| season_info["season_id"].as_str().map(|s| s.to_string()))
+                .unwrap_or_default();
             let show_season_type = season_info["show_season_type"].as_i64().map(|v| v as i32);
 
             // 计算当前季度在seasons数组中的位置，作为季度编号
             let season_number = if let Some(seasons) = season_info["seasons"].as_array() {
-                seasons.iter().position(|season| {
-                    season["season_id"].as_str().unwrap_or_default() == current_season_id ||
-                    season["season_id"].as_i64().map(|id| id.to_string()).as_deref() == Some(&current_season_id)
-                }).map(|pos| (pos + 1) as i32)
+                if seasons.is_empty() {
+                    // 单季度番剧：seasons数组为空，默认为第1季
+                    Some(1)
+                } else {
+                    // 多季度番剧：从seasons数组中查找当前季度的位置
+                    Some(seasons.iter().position(|season| {
+                        // 支持字符串和数字两种类型的season_id比较
+                        let season_id_str = season["season_id"]
+                            .as_i64()
+                            .map(|id| id.to_string())
+                            .or_else(|| season["season_id"].as_str().map(|s| s.to_string()))
+                            .unwrap_or_default();
+                        season_id_str == current_season_id
+                    }).map(|pos| (pos + 1) as i32).unwrap_or(1)) // 如果找不到位置，默认为第1季
+                }
             } else {
                 Some(1) // 如果没有seasons数组，默认为第1季
             };
@@ -231,7 +249,7 @@ impl Bangumi {
                 let show_title = episode["show_title"].as_str().unwrap_or_default().to_string();
                 let episode_cover_url = episode["cover"].as_str().unwrap_or_default().to_string();
                 let share_copy = episode["share_copy"].as_str().map(|s| s.to_string());
-                
+
                 tracing::debug!(
                     "解析剧集：{} (EP{}) BV号: {} 封面: {} share_copy: {:?}",
                     episode_title_raw,
@@ -312,7 +330,10 @@ impl Bangumi {
     }
 
     /// 将所有季度的番剧转换为视频流（支持增量获取）
-    pub fn to_all_seasons_video_stream_incremental(&self, latest_row_at: Option<chrono::DateTime<chrono::Utc>>) -> Pin<Box<dyn Stream<Item = Result<VideoInfo>> + Send>> {
+    pub fn to_all_seasons_video_stream_incremental(
+        &self,
+        latest_row_at: Option<chrono::DateTime<chrono::Utc>>,
+    ) -> Pin<Box<dyn Stream<Item = Result<VideoInfo>> + Send>> {
         let client = self.client.clone();
         let season_id = self.season_id.clone();
         let media_id = self.media_id.clone();
@@ -356,7 +377,7 @@ impl Bangumi {
 
                 for episode in episodes {
                     total_episodes += 1;
-                    
+
                     // 解析分集信息
                     let ep_id = episode["id"].as_i64().unwrap_or_default();
                     let aid = episode["aid"].as_i64().unwrap_or_default();
@@ -369,7 +390,7 @@ impl Bangumi {
                     let show_title = episode["show_title"].as_str().unwrap_or_default().to_string();
                     let episode_cover_url = episode["cover"].as_str().unwrap_or_default().to_string();
                     let share_copy = episode["share_copy"].as_str().map(|s| s.to_string());
-                    
+
                     tracing::debug!(
                         "解析剧集：{} (EP{}) BV号: {} 封面: {} share_copy: {:?}",
                         episode_title_raw,
@@ -502,8 +523,13 @@ impl Bangumi {
                 // 获取当前季度在所有季度中的真实位置
                 let season_number = if let Some(all_seasons_array) = season_info["seasons"].as_array() {
                     all_seasons_array.iter().position(|s| {
-                        s["season_id"].as_str().unwrap_or_default() == season.season_id ||
-                        s["season_id"].as_i64().map(|id| id.to_string()).as_deref() == Some(&season.season_id)
+                        // 支持字符串和数字两种类型的season_id比较
+                        let s_season_id = s["season_id"]
+                            .as_i64()
+                            .map(|id| id.to_string())
+                            .or_else(|| s["season_id"].as_str().map(|s| s.to_string()))
+                            .unwrap_or_default();
+                        s_season_id == season.season_id
                     }).map(|pos| (pos + 1) as i32)
                 } else {
                     Some((season_index + 1) as i32)
@@ -519,7 +545,7 @@ impl Bangumi {
 
                 for episode in episodes {
                     total_episodes += 1;
-                    
+
                     // 解析分集信息
                     let ep_id = episode["id"].as_i64().unwrap_or_default();
                     let aid = episode["aid"].as_i64().unwrap_or_default();
@@ -532,7 +558,7 @@ impl Bangumi {
                     let show_title = episode["show_title"].as_str().unwrap_or_default().to_string();
                     let episode_cover_url = episode["cover"].as_str().unwrap_or_default().to_string();
                     let share_copy = episode["share_copy"].as_str().map(|s| s.to_string());
-                    
+
                     tracing::debug!(
                         "解析剧集：{} (EP{}) BV号: {} 封面: {} share_copy: {:?}",
                         episode_title_raw,
@@ -620,7 +646,11 @@ impl Bangumi {
 
         let result = &validated["result"];
         let title = result["title"].as_str().unwrap_or_default().to_string();
-        let season_id = result["season_id"].as_str().unwrap_or_default().to_string();
+        let season_id = result["season_id"]
+            .as_i64()
+            .map(|id| id.to_string())
+            .or_else(|| result["season_id"].as_str().map(|s| s.to_string()))
+            .unwrap_or_default();
         let ep_id = result["ep_id"].as_str().unwrap_or_default().to_string();
         let bvid = result["bvid"].as_str().unwrap_or_default().to_string();
         let cid = result["cid"].as_i64().unwrap_or_default().to_string();

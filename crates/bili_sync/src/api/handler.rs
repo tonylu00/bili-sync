@@ -1403,18 +1403,20 @@ pub async fn add_video_source_internal(
                 }
 
                 // 如果所有季度都被跳过了，返回错误
+                // 但是如果用户没有提供任何选择的季度，我们允许通过（用于单季度番剧的情况）
                 if !download_all_seasons && final_selected_seasons.as_ref().is_none_or(|s| s.is_empty()) {
-                    let skipped_msg = if skipped_seasons.is_empty() {
-                        "未选择任何季度".to_string()
-                    } else {
-                        format!("所选季度已在其他番剧源中存在，已跳过: {}", skipped_seasons.join(", "))
-                    };
-
+                    // 只有当用户明确选择了季度但这些季度都被跳过时才报错
+                    // 如果用户根本没有选择任何季度，我们允许通过（处理单季度番剧）
+                    if !skipped_seasons.is_empty() {
+                        let skipped_msg =
+                            format!("所选季度已在其他番剧源中存在，已跳过: {}", skipped_seasons.join(", "));
                     return Err(anyhow!(
                         "无法添加番剧：{}。请选择其他季度或使用'下载全部季度'选项。",
                         skipped_msg
                     )
                     .into());
+                    }
+                    // 如果没有跳过的季度且没有选择的季度，说明是单季度番剧，允许通过
                 }
 
                 // 处理选中的季度

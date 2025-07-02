@@ -1,16 +1,16 @@
 <script lang="ts">
+	import { goto } from '$app/navigation';
+	import api from '$lib/api';
+	import { Button } from '$lib/components/ui/button';
 	import { Input } from '$lib/components/ui/input';
 	import { Label } from '$lib/components/ui/label';
-	import { Button } from '$lib/components/ui/button';
-	import { toast } from 'svelte-sonner';
-	import { goto } from '$app/navigation';
 	import { setBreadcrumb } from '$lib/stores/breadcrumb';
-	import api from '$lib/api';
-	import { onMount, onDestroy } from 'svelte';
-	import type { VideoCategory, SearchResultItem } from '$lib/types';
+	import type { SearchResultItem, VideoCategory } from '$lib/types';
 	import { Search, X } from '@lucide/svelte';
-	import { fly, fade } from 'svelte/transition';
+	import { onDestroy, onMount } from 'svelte';
+	import { toast } from 'svelte-sonner';
 	import { flip } from 'svelte/animate';
+	import { fade, fly } from 'svelte/transition';
 
 	let sourceType: VideoCategory = 'collection';
 	let sourceId = '';
@@ -330,7 +330,8 @@
 
 		// 番剧特殊验证
 		if (sourceType === 'bangumi') {
-			if (!downloadAllSeasons && selectedSeasons.length === 0) {
+			// 如果不是下载全部季度，且没有选择任何季度，且不是单季度情况，则提示错误
+			if (!downloadAllSeasons && selectedSeasons.length === 0 && bangumiSeasons.length > 1) {
 				toast.error('请选择要下载的季度', {
 					description: '未选择"下载全部季度"时，至少需要选择一个季度'
 				});
@@ -649,6 +650,10 @@
 						selectedSeasons = [currentSeason.season_id];
 					}
 				}
+				// 如果只有一个季度，自动选中它
+				if (bangumiSeasons.length === 1) {
+					selectedSeasons = [bangumiSeasons[0].season_id];
+				}
 			} else {
 				bangumiSeasons = [];
 			}
@@ -876,7 +881,7 @@
 							<select
 								id="source-type"
 								bind:value={sourceType}
-								class="border-input bg-background ring-offset-background focus-visible:ring-ring flex h-10 w-full rounded-md border px-3 py-2 text-sm focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:outline-none"
+								class="border-input bg-background ring-offset-background focus-visible:ring-ring flex h-10 w-full rounded-md border px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2"
 							>
 								{#each sourceTypeOptions as option}
 									<option value={option.value}>{option.label}</option>
@@ -1049,7 +1054,7 @@
 								<select
 									id="collection-type"
 									bind:value={collectionType}
-									class="border-input bg-background ring-offset-background focus-visible:ring-ring flex h-10 w-full rounded-md border px-3 py-2 text-sm focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:outline-none"
+									class="border-input bg-background ring-offset-background focus-visible:ring-ring flex h-10 w-full rounded-md border px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2"
 								>
 									{#each collectionTypeOptions as option}
 										<option value={option.value}>{option.label}</option>
@@ -1134,23 +1139,23 @@
 										/>
 										<Label
 											for="download-all-seasons"
-											class="text-sm leading-none font-medium peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
+											class="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
 										>
 											下载所有季度
 										</Label>
 									</div>
 									{#if downloadAllSeasons}
-										<p class="mt-1 ml-6 text-xs text-purple-600">
+										<p class="ml-6 mt-1 text-xs text-purple-600">
 											勾选后将下载该番剧的所有季度，无需单独选择
 										</p>
 									{:else if bangumiSeasons.length > 1}
-										<p class="mt-1 ml-6 text-xs text-purple-600">
+										<p class="ml-6 mt-1 text-xs text-purple-600">
 											检测到 {bangumiSeasons.length} 个相关季度，请在{isMobile
 												? '下方'
 												: '右侧'}选择要下载的季度
 										</p>
 									{:else if bangumiSeasons.length === 1}
-										<p class="mt-1 ml-6 text-xs text-purple-600">该番剧只有当前一个季度</p>
+										<p class="ml-6 mt-1 text-xs text-purple-600">该番剧只有当前一个季度</p>
 									{/if}
 								{:else if sourceType === 'bangumi' && sourceId && loadingSeasons}
 									<p class="mt-3 text-xs text-purple-600">正在获取季度信息...</p>
@@ -1229,7 +1234,7 @@
 												onmouseenter={(e) => handleMouseEnter(result, e)}
 												onmouseleave={handleMouseLeave}
 												onmousemove={handleMouseMove}
-												class="relative flex transform items-start gap-3 rounded-lg border p-4 text-left transition-all duration-300 hover:scale-102 hover:bg-gray-50 hover:shadow-md"
+												class="hover:scale-102 relative flex transform items-start gap-3 rounded-lg border p-4 text-left transition-all duration-300 hover:bg-gray-50 hover:shadow-md"
 												transition:fly={{ y: 50, duration: 300, delay: i * 50 }}
 												animate:flip={{ duration: 300 }}
 											>
@@ -1640,7 +1645,7 @@
 													tabindex="0"
 													class="relative rounded-lg border p-4 transition-all duration-300 hover:bg-purple-50 {isMobile
 														? 'h-auto'
-														: 'h-[120px]'} transform hover:scale-102 hover:shadow-md"
+														: 'h-[120px]'} hover:scale-102 transform hover:shadow-md"
 													onmouseenter={(e) => handleSeasonMouseEnter(season, e)}
 													onmouseleave={handleSeasonMouseLeave}
 													onmousemove={handleSeasonMouseMove}
@@ -1670,7 +1675,7 @@
 															</div>
 														{/if}
 														<div class="min-w-0 flex-1">
-															<div class="absolute top-3 right-3">
+															<div class="absolute right-3 top-3">
 																<input
 																	type="checkbox"
 																	id="season-{season.season_id}"
@@ -1681,7 +1686,7 @@
 															</div>
 															<!-- 右下角集数标签 -->
 															{#if season.episode_count}
-																<div class="absolute right-3 bottom-3">
+																<div class="absolute bottom-3 right-3">
 																	<span
 																		class="rounded bg-purple-100 px-1.5 py-0.5 text-xs text-purple-700"
 																		>{season.episode_count}集</span
