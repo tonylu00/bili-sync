@@ -1579,11 +1579,15 @@ pub async fn fetch_page_video(
 
     // UnifiedDownloader会自动选择最佳下载方式
 
+    // 获取用户配置的筛选选项
+    let config = crate::config::reload_config();
+    let filter_option = &config.filter_option;
+
     // 记录开始时间
     let start_time = std::time::Instant::now();
 
     // 根据流类型进行不同处理
-    let total_bytes = match streams.best_stream(&Default::default())? {
+    let total_bytes = match streams.best_stream(filter_option)? {
         BestStream::Mixed(mix_stream) => {
             let urls = mix_stream.urls();
             download_stream(downloader, &urls, page_path).await?

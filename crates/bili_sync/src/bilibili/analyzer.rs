@@ -91,7 +91,7 @@ impl TryFrom<u64> for VideoCodecs {
 }
 
 // 视频流的筛选偏好
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Clone)]
 pub struct FilterOption {
     pub video_max_quality: VideoQuality,
     pub video_min_quality: VideoQuality,

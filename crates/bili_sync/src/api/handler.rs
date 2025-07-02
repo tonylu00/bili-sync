@@ -1410,11 +1410,11 @@ pub async fn add_video_source_internal(
                     if !skipped_seasons.is_empty() {
                         let skipped_msg =
                             format!("所选季度已在其他番剧源中存在，已跳过: {}", skipped_seasons.join(", "));
-                    return Err(anyhow!(
-                        "无法添加番剧：{}。请选择其他季度或使用'下载全部季度'选项。",
-                        skipped_msg
-                    )
-                    .into());
+                        return Err(anyhow!(
+                            "无法添加番剧：{}。请选择其他季度或使用'下载全部季度'选项。",
+                            skipped_msg
+                        )
+                        .into());
                     }
                     // 如果没有跳过的季度且没有选择的季度，说明是单季度番剧，允许通过
                 }
@@ -6315,8 +6315,8 @@ pub async fn get_video_play_info(
             .map_err(|e| ApiError::from(anyhow!("获取视频分析器失败: {}", e)))?
     };
 
-    // 使用默认的筛选选项
-    let filter_option = FilterOption::default();
+    // 使用用户配置的筛选选项
+    let filter_option = config.filter_option.clone();
     let best_stream = page_analyzer
         .best_stream(&filter_option)
         .map_err(|e| ApiError::from(anyhow!("获取最佳视频流失败: {}", e)))?;
