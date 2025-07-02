@@ -6256,7 +6256,7 @@ pub async fn get_video_play_info(
     Extension(db): Extension<Arc<DatabaseConnection>>,
 ) -> Result<ApiResponse<crate::api::response::VideoPlayInfoResponse>, ApiError> {
     use crate::api::response::{AudioStreamInfo, SubtitleStreamInfo, VideoPlayInfoResponse, VideoStreamInfo};
-    use crate::bilibili::{BestStream, BiliClient, FilterOption, PageInfo, Stream, Video};
+    use crate::bilibili::{BestStream, BiliClient, PageInfo, Stream, Video};
 
     // 查找视频信息
     let video_info = find_video_info(&video_id, &db)
