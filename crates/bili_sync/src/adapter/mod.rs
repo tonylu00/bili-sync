@@ -241,7 +241,7 @@ pub async fn bangumi_from<'a>(
     };
 
     // 获取番剧的视频流
-    let video_stream = bangumi_source.video_stream_from(bili_client, path).await?;
+    let video_stream = bangumi_source.video_stream_from(bili_client, path, connection).await?;
 
     // 将 'static 生命周期的流转换为 'a 生命周期
     let video_stream = unsafe {

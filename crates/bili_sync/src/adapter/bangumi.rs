@@ -148,9 +148,23 @@ impl BangumiSource {
         &self,
         bili_client: &BiliClient,
         _path: &Path,
+        connection: &sea_orm::DatabaseConnection,
     ) -> Result<Pin<Box<dyn Stream<Item = Result<VideoInfo>> + Send>>> {
-        // 获取增量获取的时间参数
-        let latest_row_at = Some(self.latest_row_at.and_utc());
+        // 检查是否是首次扫描：如果该源没有任何视频记录，应该进行全量获取
+        let video_count = bili_sync_entity::video::Entity::find()
+            .filter(bili_sync_entity::video::Column::SourceId.eq(self.id))
+            .filter(bili_sync_entity::video::Column::SourceType.eq(1)) // 番剧类型
+            .count(connection)
+            .await?;
+
+        let latest_row_at = if video_count == 0 {
+            // 首次扫描，使用全量模式
+            debug!("检测到新番剧源（无历史记录），启用全量获取模式");
+            None
+        } else {
+            // 已有记录，使用增量模式
+            Some(self.latest_row_at.and_utc())
+        };
         
         let bangumi = Bangumi::new(
             bili_client,
@@ -159,17 +173,19 @@ impl BangumiSource {
             self.ep_id.clone(),
         );
 
+        let mode_desc = if latest_row_at.is_some() { "增量" } else { "全量" };
+        
         if self.download_all_seasons {
-            debug!("正在增量获取所有季度的番剧内容（时间过滤: {:?}）", latest_row_at);
+            debug!("正在{}获取所有季度的番剧内容（时间过滤: {:?}）", mode_desc, latest_row_at);
             Ok(Box::pin(bangumi.to_all_seasons_video_stream_incremental(latest_row_at)))
         } else if let Some(ref selected_seasons) = self.selected_seasons {
             // 如果有选中的季度，只下载选中的季度
-            debug!("正在增量获取选中的 {} 个季度的番剧内容（时间过滤: {:?}）", selected_seasons.len(), latest_row_at);
+            debug!("正在{}获取选中的 {} 个季度的番剧内容（时间过滤: {:?}）", mode_desc, selected_seasons.len(), latest_row_at);
             Ok(Box::pin(
                 bangumi.to_selected_seasons_video_stream_incremental(selected_seasons.clone(), latest_row_at),
             ))
         } else {
-            debug!("正在增量获取当前季度的番剧内容（时间过滤: {:?}）", latest_row_at);
+            debug!("正在{}获取当前季度的番剧内容（时间过滤: {:?}）", mode_desc, latest_row_at);
             Ok(Box::pin(bangumi.to_video_stream_incremental(latest_row_at)))
         }
     }

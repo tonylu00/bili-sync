@@ -206,6 +206,11 @@ impl Bangumi {
 
             debug!("番剧标题: {}, 季度编号: {:?}", title, season_number);
 
+            // 统计变量
+            let mut total_episodes = 0;
+            let mut new_episodes = 0;
+            let mut skipped_episodes = 0;
+
             // 直接从 season_info 中解析分集信息，避免重复API调用
             let episodes = season_info["episodes"]
                 .as_array()
@@ -213,6 +218,7 @@ impl Bangumi {
             debug!("获取到 {} 集番剧内容", episodes.len());
 
             for episode in episodes {
+                total_episodes += 1;
                 // 解析分集信息
                 let ep_id = episode["id"].as_i64().unwrap_or_default();
                 let aid = episode["aid"].as_i64().unwrap_or_default();
@@ -242,10 +248,13 @@ impl Bangumi {
                 // 增量获取：跳过早于latest_row_at的集数
                 if let Some(latest_time) = latest_row_at {
                     if pub_time <= latest_time {
-                        tracing::debug!("跳过旧集数：{} (发布时间: {}, 最新时间: {})", episode_title_raw, pub_time, latest_time);
+                        tracing::trace!("跳过旧集数：{} (发布时间: {}, 最新时间: {})", episode_title_raw, pub_time, latest_time);
+                        skipped_episodes += 1;
                         continue;
                     }
                 }
+
+                new_episodes += 1;
 
                 // 使用show_title字段作为标题
                 let episode_title = if !show_title.is_empty() {
@@ -283,6 +292,16 @@ impl Bangumi {
                     show_season_type,
                 }
             }
+
+            // 输出统计信息
+            if latest_row_at.is_some() {
+                tracing::info!(
+                    "单季度番剧「{}」增量获取完成：跳过 {} 集旧内容，处理 {} 集新内容，总计 {} 集",
+                    title, skipped_episodes, new_episodes, total_episodes
+                );
+            } else {
+                tracing::info!("单季度番剧「{}」全量获取完成：处理 {} 集内容", title, total_episodes);
+            }
         })
     }
 
@@ -310,6 +329,7 @@ impl Bangumi {
             let mut processed_seasons = 0;
             let mut total_episodes = 0;
             let mut new_episodes = 0;
+            let mut skipped_episodes = 0;
 
             // 对每个季度进行处理
             for (season_index, season) in seasons.iter().enumerate() {
@@ -366,7 +386,8 @@ impl Bangumi {
                     // 增量获取：跳过早于latest_row_at的集数
                     if let Some(latest_time) = latest_row_at {
                         if pub_time <= latest_time {
-                            tracing::debug!("跳过旧集数：{} (发布时间: {}, 最新时间: {})", episode_title_raw, pub_time, latest_time);
+                            tracing::trace!("跳过旧集数：{} (发布时间: {}, 最新时间: {})", episode_title_raw, pub_time, latest_time);
+                            skipped_episodes += 1;
                             continue;
                         }
                     }
@@ -418,8 +439,8 @@ impl Bangumi {
 
             if latest_row_at.is_some() {
                 tracing::info!(
-                    "所有季度番剧增量获取完成：处理了 {}/{} 个有新集数的季度，共 {}/{} 集新内容",
-                    processed_seasons, seasons.len(), new_episodes, total_episodes
+                    "所有季度番剧增量获取完成：跳过 {} 集旧内容，处理 {} 集新内容，涉及 {}/{} 个季度，总计 {} 集",
+                    skipped_episodes, new_episodes, processed_seasons, seasons.len(), total_episodes
                 );
             } else {
                 tracing::info!("所有季度番剧全量获取完成：处理了 {} 个季度，共 {} 集内容", seasons.len(), total_episodes);
@@ -464,6 +485,7 @@ impl Bangumi {
             let mut processed_seasons = 0;
             let mut total_episodes = 0;
             let mut new_episodes = 0;
+            let mut skipped_episodes = 0;
 
             // 对每个选中的季度进行处理
             for (season_index, season) in seasons.iter().enumerate() {
@@ -527,7 +549,8 @@ impl Bangumi {
                     // 增量获取：跳过早于latest_row_at的集数
                     if let Some(latest_time) = latest_row_at {
                         if pub_time <= latest_time {
-                            tracing::debug!("跳过旧集数：{} (发布时间: {}, 最新时间: {})", episode_title_raw, pub_time, latest_time);
+                            tracing::trace!("跳过旧集数：{} (发布时间: {}, 最新时间: {})", episode_title_raw, pub_time, latest_time);
+                            skipped_episodes += 1;
                             continue;
                         }
                     }
@@ -579,8 +602,8 @@ impl Bangumi {
 
             if latest_row_at.is_some() {
                 tracing::info!(
-                    "选中季度番剧增量获取完成：处理了 {}/{} 个有新集数的季度，共 {}/{} 集新内容",
-                    processed_seasons, seasons.len(), new_episodes, total_episodes
+                    "选中季度番剧增量获取完成：跳过 {} 集旧内容，处理 {} 集新内容，涉及 {}/{} 个季度，总计 {} 集",
+                    skipped_episodes, new_episodes, processed_seasons, seasons.len(), total_episodes
                 );
             } else {
                 tracing::info!("选中季度番剧全量获取完成：处理了 {} 个季度，共 {} 集内容", seasons.len(), total_episodes);
