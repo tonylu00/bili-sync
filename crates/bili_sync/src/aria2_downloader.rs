@@ -131,10 +131,10 @@ impl Aria2Downloader {
 
         // 检查是否启用aria2健康检查
         let config = crate::config::with_config(|bundle| bundle.config.clone());
-        
+
         if config.enable_aria2_health_check {
             info!("aria2健康检查已启用，启动监控任务");
-            
+
             // 智能健康检查监控任务
             let instances = Arc::clone(&downloader.aria2_instances);
             let instance_count = downloader.instance_count;
@@ -149,90 +149,91 @@ impl Aria2Downloader {
                 let enable_auto_restart = config.enable_aria2_auto_restart;
                 let check_interval = config.aria2_health_check_interval;
 
-            // 使用用户配置的检查间隔，并进行合理范围限制
-            let health_check_interval = check_interval.clamp(30, 600);
+                // 使用用户配置的检查间隔，并进行合理范围限制
+                let health_check_interval = check_interval.clamp(30, 600);
 
-            info!(
-                "健康检查间隔设置为 {} 秒（用户配置: {} 秒，自动重启: {}）",
-                health_check_interval, check_interval, enable_auto_restart
-            );
+                info!(
+                    "健康检查间隔设置为 {} 秒（用户配置: {} 秒，自动重启: {}）",
+                    health_check_interval, check_interval, enable_auto_restart
+                );
 
-            let mut interval = tokio::time::interval(Duration::from_secs(health_check_interval));
-            let mut last_check_time = std::time::Instant::now();
+                let mut interval = tokio::time::interval(Duration::from_secs(health_check_interval));
+                let mut last_check_time = std::time::Instant::now();
 
-            loop {
-                interval.tick().await;
+                loop {
+                    interval.tick().await;
 
-                // 检查任务暂停状态，暂停期间跳过健康检查
-                if crate::task::TASK_CONTROLLER.is_paused() {
-                    debug!("任务已暂停，跳过aria2健康检查");
-                    continue;
-                }
-
-                // 检查当前系统负载，避免在高负载时进行健康检查
-                let instances_guard = instances.lock().await;
-                let current_count = instances_guard.len();
-                let total_load: usize = instances_guard.iter().map(|i| i.get_load()).sum();
-                drop(instances_guard);
-
-                // 智能决策：只在系统相对空闲时进行全面健康检查
-                // 使用扫描间隔作为深度检查间隔，确保不会在扫描过程中干扰
-                if total_load == 0 && last_check_time.elapsed() > Duration::from_secs(scan_interval) {
-                    // 系统完全空闲，且距离上次检查超过扫描间隔，进行全面健康检查
-                    debug!(
-                        "系统空闲，执行全面健康检查（距离上次检查: {}秒）",
-                        last_check_time.elapsed().as_secs()
-                    );
-
-                    // 执行完整的智能健康检查
-                    if let Err(e) = Self::smart_health_check(&health_check_client, &instances, instance_count).await {
-                        warn!("全面健康检查失败: {:#}", e);
-                    } else {
-                        debug!("全面健康检查完成");
+                    // 检查任务暂停状态，暂停期间跳过健康检查
+                    if crate::task::TASK_CONTROLLER.is_paused() {
+                        debug!("任务已暂停，跳过aria2健康检查");
+                        continue;
                     }
 
-                    last_check_time = std::time::Instant::now();
-                } else if current_count < instance_count {
-                    // 实例数量不足，检查是否启用自动恢复
-                    if enable_auto_restart && total_load < 2 {
-                        // 启用自动重启且负载较低时立即尝试恢复
-                        warn!(
-                            "检测到aria2实例数量不足: {}/{} (当前负载: {})，立即尝试自动恢复",
-                            current_count, instance_count, total_load
+                    // 检查当前系统负载，避免在高负载时进行健康检查
+                    let instances_guard = instances.lock().await;
+                    let current_count = instances_guard.len();
+                    let total_load: usize = instances_guard.iter().map(|i| i.get_load()).sum();
+                    drop(instances_guard);
+
+                    // 智能决策：只在系统相对空闲时进行全面健康检查
+                    // 使用扫描间隔作为深度检查间隔，确保不会在扫描过程中干扰
+                    if total_load == 0 && last_check_time.elapsed() > Duration::from_secs(scan_interval) {
+                        // 系统完全空闲，且距离上次检查超过扫描间隔，进行全面健康检查
+                        debug!(
+                            "系统空闲，执行全面健康检查（距离上次检查: {}秒）",
+                            last_check_time.elapsed().as_secs()
                         );
 
-                        // 计算需要创建的实例数量
-                        let missing_count = instance_count - current_count;
+                        // 执行完整的智能健康检查
+                        if let Err(e) = Self::smart_health_check(&health_check_client, &instances, instance_count).await
+                        {
+                            warn!("全面健康检查失败: {:#}", e);
+                        } else {
+                            debug!("全面健康检查完成");
+                        }
 
-                        // 尝试创建缺失的实例
-                        for i in 0..missing_count {
-                            match Self::create_missing_instance(&instances).await {
-                                Ok(new_instance) => {
-                                    let mut instances_guard = instances.lock().await;
-                                    instances_guard.push(new_instance);
-                                    info!("成功恢复第{}个aria2实例", i + 1);
-                                }
-                                Err(e) => {
-                                    error!("恢复第{}个aria2实例失败: {:#}", i + 1, e);
-                                    // 记录详细的失败原因以便诊断
-                                    Self::log_startup_diagnostics().await;
+                        last_check_time = std::time::Instant::now();
+                    } else if current_count < instance_count {
+                        // 实例数量不足，检查是否启用自动恢复
+                        if enable_auto_restart && total_load < 2 {
+                            // 启用自动重启且负载较低时立即尝试恢复
+                            warn!(
+                                "检测到aria2实例数量不足: {}/{} (当前负载: {})，立即尝试自动恢复",
+                                current_count, instance_count, total_load
+                            );
+
+                            // 计算需要创建的实例数量
+                            let missing_count = instance_count - current_count;
+
+                            // 尝试创建缺失的实例
+                            for i in 0..missing_count {
+                                match Self::create_missing_instance(&instances).await {
+                                    Ok(new_instance) => {
+                                        let mut instances_guard = instances.lock().await;
+                                        instances_guard.push(new_instance);
+                                        info!("成功恢复第{}个aria2实例", i + 1);
+                                    }
+                                    Err(e) => {
+                                        error!("恢复第{}个aria2实例失败: {:#}", i + 1, e);
+                                        // 记录详细的失败原因以便诊断
+                                        Self::log_startup_diagnostics().await;
+                                    }
                                 }
                             }
+                        } else if !enable_auto_restart {
+                            debug!(
+                                "aria2实例数量不足: {}/{} (负载: {})，但自动重启已禁用",
+                                current_count, instance_count, total_load
+                            );
+                        } else {
+                            debug!(
+                                "aria2实例数量不足但系统忙碌: {}/{} (负载: {})，暂缓处理",
+                                current_count, instance_count, total_load
+                            );
                         }
-                    } else if !enable_auto_restart {
-                        debug!(
-                            "aria2实例数量不足: {}/{} (负载: {})，但自动重启已禁用",
-                            current_count, instance_count, total_load
-                        );
-                    } else {
-                        debug!(
-                            "aria2实例数量不足但系统忙碌: {}/{} (负载: {})，暂缓处理",
-                            current_count, instance_count, total_load
-                        );
                     }
                 }
-            }
-        });
+            });
 
             info!("aria2实例监控任务已启动");
         } else {

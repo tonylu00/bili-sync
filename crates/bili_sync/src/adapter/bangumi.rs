@@ -165,7 +165,7 @@ impl BangumiSource {
             // 已有记录，使用增量模式
             Some(self.latest_row_at.and_utc())
         };
-        
+
         let bangumi = Bangumi::new(
             bili_client,
             self.media_id.clone(),
@@ -174,18 +174,30 @@ impl BangumiSource {
         );
 
         let mode_desc = if latest_row_at.is_some() { "增量" } else { "全量" };
-        
+
         if self.download_all_seasons {
-            debug!("正在{}获取所有季度的番剧内容（时间过滤: {:?}）", mode_desc, latest_row_at);
+            debug!(
+                "正在{}获取所有季度的番剧内容（时间过滤: {:?}）",
+                mode_desc, latest_row_at
+            );
             Ok(Box::pin(bangumi.to_all_seasons_video_stream_incremental(latest_row_at)))
         } else if let Some(ref selected_seasons) = self.selected_seasons {
             // 如果有选中的季度，只下载选中的季度
-            debug!("正在{}获取选中的 {} 个季度的番剧内容（时间过滤: {:?}）", mode_desc, selected_seasons.len(), latest_row_at);
-            Ok(Box::pin(
-                bangumi.to_selected_seasons_video_stream_incremental(selected_seasons.clone(), latest_row_at),
-            ))
+            debug!(
+                "正在{}获取选中的 {} 个季度的番剧内容（时间过滤: {:?}）",
+                mode_desc,
+                selected_seasons.len(),
+                latest_row_at
+            );
+            Ok(Box::pin(bangumi.to_selected_seasons_video_stream_incremental(
+                selected_seasons.clone(),
+                latest_row_at,
+            )))
         } else {
-            debug!("正在{}获取当前季度的番剧内容（时间过滤: {:?}）", mode_desc, latest_row_at);
+            debug!(
+                "正在{}获取当前季度的番剧内容（时间过滤: {:?}）",
+                mode_desc, latest_row_at
+            );
             Ok(Box::pin(bangumi.to_video_stream_incremental(latest_row_at)))
         }
     }
