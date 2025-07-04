@@ -15,7 +15,7 @@ use tokio_util::sync::CancellationToken;
 use tracing::{debug, error, info, warn};
 
 use crate::adapter::{video_source_from, Args, VideoSource, VideoSourceEnum};
-use crate::bilibili::{BestStream, BiliClient, BiliError, Dimension, PageInfo, Video, VideoInfo};
+use crate::bilibili::{BestStream, BiliClient, BiliError, Dimension, PageInfo, Stream as VideoStream, Video, VideoInfo};
 use crate::config::ARGS;
 use crate::error::{DownloadAbortError, ExecutionStatus, ProcessPageError};
 use crate::task::{DeleteVideoTask, VIDEO_DELETE_TASK_QUEUE};
@@ -1552,20 +1552,21 @@ pub async fn fetch_page_video(
 
     let bili_video = Video::new(bili_client, video_model.bvid.clone());
 
-    // 获取视频流信息 - 根据视频类型选择不同的API
+    // 获取视频流信息 - 使用带回退机制的API调用
     let mut streams = tokio::select! {
         biased;
         _ = token.cancelled() => return Err(anyhow!("Download cancelled")),
         res = async {
             // 检查是否为番剧视频
             if video_model.source_type == Some(1) && video_model.ep_id.is_some() {
-                // 使用番剧专用API
+                // 使用番剧专用API的回退机制
                 let ep_id = video_model.ep_id.as_ref().unwrap();
-                debug!("使用番剧专用API获取播放地址: ep_id={}", ep_id);
-                bili_video.get_bangumi_page_analyzer(page_info, ep_id).await
+                debug!("使用带质量回退的番剧API获取播放地址: ep_id={}", ep_id);
+                bili_video.get_bangumi_page_analyzer_with_fallback(page_info, ep_id).await
             } else {
-                // 使用普通视频API
-                bili_video.get_page_analyzer(page_info).await
+                // 使用普通视频API的回退机制
+                debug!("使用带质量回退的视频API获取播放地址");
+                bili_video.get_page_analyzer_with_fallback(page_info).await
             }
         } => res
     }?;
@@ -1583,11 +1584,81 @@ pub async fn fetch_page_video(
     let config = crate::config::reload_config();
     let filter_option = &config.filter_option;
 
+    // 简化的配置调试日志
+    info!("=== 视频下载配置 ===");
+    info!("视频: {} ({})", video_model.name, video_model.bvid);
+    info!("分页: {} (cid: {})", page_info.name, page_info.cid);
+    info!("质量配置: {} - {} (最高-最低)", 
+        format!("{:?}({})", filter_option.video_max_quality, filter_option.video_max_quality as u32),
+        format!("{:?}({})", filter_option.video_min_quality, filter_option.video_min_quality as u32)
+    );
+    info!("音频配置: {} - {} (最高-最低)", 
+        format!("{:?}({})", filter_option.audio_max_quality, filter_option.audio_max_quality as u32),
+        format!("{:?}({})", filter_option.audio_min_quality, filter_option.audio_min_quality as u32)
+    );
+    info!("编码偏好: {:?}", filter_option.codecs);
+
+    // 会员状态检查
+    let credential = config.credential.load();
+    match credential.as_deref() {
+        Some(cred) => {
+            info!("用户认证: 已登录 (DedeUserID: {})", cred.dedeuserid);
+        }
+        None => {
+            warn!("用户认证: 未登录 - 高质量视频流可能不可用");
+        }
+    }
+    
+    // 高质量需求提醒
+    if filter_option.video_max_quality as u32 >= 120 { // 4K及以上
+        info!("⚠️  请求高质量视频(4K+)，需要大会员权限");
+    }
+    
+    info!("=== 配置调试结束 ===");
+
     // 记录开始时间
     let start_time = std::time::Instant::now();
 
     // 根据流类型进行不同处理
-    let total_bytes = match streams.best_stream(filter_option)? {
+    let best_stream_result = streams.best_stream(filter_option)?;
+    
+    // 添加流选择结果日志和质量分析
+    info!("=== 流选择结果 ===");
+    match &best_stream_result {
+        BestStream::Mixed(stream) => {
+            info!("选择了混合流: {:?}", stream);
+        }
+        BestStream::VideoAudio { video, audio } => {
+            if let VideoStream::DashVideo { quality, codecs, .. } = video {
+                let quality_value = *quality as u32;
+                let requested_quality = filter_option.video_max_quality as u32;
+                
+                info!("✓ 选择视频流: {:?}({}) {:?}", quality, quality_value, codecs);
+                
+                // 质量对比分析
+                if quality_value < requested_quality {
+                    let quality_gap = requested_quality - quality_value;
+                    if requested_quality >= 120 && quality_value < 120 {
+                        warn!("⚠️  未获得4K+质量(请求{}，实际{}) - 可能需要大会员权限", requested_quality, quality_value);
+                    } else if quality_gap >= 40 {
+                        warn!("⚠️  视频质量显著低于预期(请求{}，实际{}) - 视频源可能不支持更高质量", requested_quality, quality_value);
+                    } else {
+                        info!("ℹ️  视频质量略低于预期(请求{}，实际{}) - 已选择可用的最高质量", requested_quality, quality_value);
+                    }
+                } else {
+                    info!("✓ 获得预期质量或更高");
+                }
+            }
+            if let Some(VideoStream::DashAudio { quality, .. }) = audio {
+                info!("✓ 选择音频流: {:?}({})", quality, *quality as u32);
+            } else {
+                info!("ℹ️  无独立音频流(可能为混合流)");
+            }
+        }
+    }
+    info!("=== 流选择结束 ===");
+
+    let total_bytes = match best_stream_result {
         BestStream::Mixed(mix_stream) => {
             let urls = mix_stream.urls();
             download_stream(downloader, &urls, page_path).await?

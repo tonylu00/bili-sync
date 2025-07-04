@@ -1,4 +1,4 @@
-use anyhow::{bail, Context, Result};
+use anyhow::{anyhow, bail, Context, Result};
 use serde::{Deserialize, Serialize};
 
 use crate::bilibili::error::BiliError;
@@ -226,39 +226,125 @@ impl PageAnalyzer {
                     .to_string(),
             )]);
         }
+        
+        // 优化的B站API响应调试日志
+        tracing::info!("=== B站视频流分析 ===");
+        if let Some(video_array) = self.info.pointer("/dash/video").and_then(|v| v.as_array()) {
+            tracing::info!("API返回视频流数量: {}", video_array.len());
+            let mut available_qualities = Vec::new();
+            for video in video_array.iter() {
+                if let Some(quality_id) = video["id"].as_u64() {
+                    if let Some(quality) = VideoQuality::from_repr(quality_id as usize) {
+                        available_qualities.push(format!("{:?}({})", quality, quality_id));
+                    }
+                }
+            }
+            if !available_qualities.is_empty() {
+                tracing::info!("可用质量: [{}]", available_qualities.join(", "));
+            } else {
+                tracing::warn!("未找到有效的视频质量信息");
+            }
+        } else {
+            tracing::warn!("API响应中未找到dash/video数组");
+        }
+        
+        tracing::info!("筛选条件: {}({}) - {}({}), 编码: {:?}", 
+            format!("{:?}", filter_option.video_max_quality), filter_option.video_max_quality as u32,
+            format!("{:?}", filter_option.video_min_quality), filter_option.video_min_quality as u32,
+            filter_option.codecs);
+        tracing::info!("=== 开始筛选 ===");
+        
         let mut streams: Vec<Stream> = Vec::new();
-        for video in self
+        let mut filtered_count = 0;
+        for (idx, video) in self
             .info
             .pointer_mut("/dash/video")
             .and_then(|v| v.as_array_mut())
             .ok_or(BiliError::RiskControlOccurred)?
             .iter_mut()
+            .enumerate()
         {
-            let (Some(url), Some(quality), Some(codecs_id)) = (
+            let (Some(url), Some(quality_id), Some(codecs_id)) = (
                 video["baseUrl"].as_str(),
                 video["id"].as_u64(),
                 video["codecid"].as_u64(),
             ) else {
+                tracing::info!("流 {}: 跳过 - 缺少必要字段", idx + 1);
                 continue;
             };
-            let quality = VideoQuality::from_repr(quality as usize).context("invalid video stream quality")?;
-            let Ok(codecs) = codecs_id.try_into() else {
-                continue;
+            
+            let quality = match VideoQuality::from_repr(quality_id as usize) {
+                Some(q) => q,
+                None => {
+                    tracing::info!("流 {}: 跳过 - 无效的质量ID {}", idx + 1, quality_id);
+                    continue;
+                }
             };
-            if !filter_option.codecs.contains(&codecs)
-                || quality < filter_option.video_min_quality
-                || quality > filter_option.video_max_quality
-                || (quality == VideoQuality::QualityHdr && filter_option.no_hdr)
-                || (quality == VideoQuality::QualityDolby && filter_option.no_dolby_video)
-            {
+            
+            let codecs = match codecs_id.try_into() {
+                Ok(c) => c,
+                Err(_) => {
+                    tracing::info!("流 {}: 跳过 - 无效的编码ID {}", idx + 1, codecs_id);
+                    continue;
+                }
+            };
+            
+            // 筛选条件检查
+            let mut passed = true;
+            let mut filter_reason = String::new();
+            
+            if !filter_option.codecs.contains(&codecs) {
+                passed = false;
+                filter_reason = format!("编码{:?}不符", codecs);
+            } else if quality < filter_option.video_min_quality {
+                passed = false;
+                filter_reason = format!("质量过低(<{:?})", filter_option.video_min_quality);
+            } else if quality > filter_option.video_max_quality {
+                passed = false;
+                filter_reason = format!("质量过高(>{:?})", filter_option.video_max_quality);
+            } else if quality == VideoQuality::QualityHdr && filter_option.no_hdr {
+                passed = false;
+                filter_reason = "HDR被禁用".to_string();
+            } else if quality == VideoQuality::QualityDolby && filter_option.no_dolby_video {
+                passed = false;
+                filter_reason = "杜比视界被禁用".to_string();
+            }
+            
+            if !passed {
+                filtered_count += 1;
+                tracing::debug!("过滤: {:?}({}) - {}", quality, quality_id, filter_reason);
                 continue;
             }
+            
+            tracing::info!("✓ 接受: {:?}({}) {:?}", quality, quality_id, codecs);
+            
             streams.push(Stream::DashVideo {
                 url: url.to_string(),
                 backup_url: serde_json::from_value(video["backupUrl"].take()).unwrap_or_default(),
                 quality,
                 codecs,
             });
+        }
+        
+        let video_stream_count = streams.iter().filter(|s| matches!(s, Stream::DashVideo { .. })).count();
+        tracing::info!("=== 筛选结果: {}个通过, {}个过滤 ===", video_stream_count, filtered_count);
+        
+        if video_stream_count == 0 {
+            // 分析筛选失败的原因
+            let max_quality_requested = filter_option.video_max_quality as u32;
+            if max_quality_requested >= 120 {
+                tracing::error!("❌ 无可用视频流！请求4K+质量({})可能需要：", max_quality_requested);
+                tracing::error!("   1. 大会员权限");
+                tracing::error!("   2. 视频本身支持该质量");
+                tracing::error!("   3. 正确的登录状态");
+                tracing::error!("   建议：降低质量要求或检查会员状态");
+            } else {
+                tracing::error!("❌ 无可用视频流！可能原因：");
+                tracing::error!("   1. 网络问题或API访问失败");
+                tracing::error!("   2. 视频不存在或已删除");
+                tracing::error!("   3. 编码格式不匹配");
+                tracing::error!("   建议：检查网络连接和编码设置");
+            }
         }
         if let Some(audios) = self.info.pointer_mut("/dash/audio").and_then(|a| a.as_array_mut()) {
             for audio in audios.iter_mut() {
@@ -324,34 +410,57 @@ impl PageAnalyzer {
         }
         let (videos, audios): (Vec<Stream>, Vec<Stream>) =
             streams.into_iter().partition(|s| matches!(s, Stream::DashVideo { .. }));
-        Ok(BestStream::VideoAudio {
-            video: videos
-                .into_iter()
-                .max_by(|a, b| match (a, b) {
-                    (
-                        Stream::DashVideo {
-                            quality: a_quality,
-                            codecs: a_codecs,
-                            ..
-                        },
-                        Stream::DashVideo {
-                            quality: b_quality,
-                            codecs: b_codecs,
-                            ..
-                        },
-                    ) => {
-                        if a_quality != b_quality {
-                            return a_quality.cmp(b_quality);
-                        };
-                        filter_option
-                            .codecs
-                            .iter()
-                            .position(|c| c == b_codecs)
-                            .cmp(&filter_option.codecs.iter().position(|c| c == a_codecs))
+            
+        tracing::info!("=== 最佳流选择 ===");
+        if videos.is_empty() {
+            tracing::error!("错误: 没有可用的视频流！");
+            return Err(anyhow!("no video stream found"));
+        }
+        
+        tracing::info!("候选流: {}", videos.iter()
+            .filter_map(|s| match s {
+                Stream::DashVideo { quality, codecs, .. } => 
+                    Some(format!("{:?}({}):{:?}", quality, *quality as u32, codecs)),
+                _ => None
+            })
+            .collect::<Vec<_>>()
+            .join(", ")
+        );
+        
+        let selected_video = videos
+            .into_iter()
+            .max_by(|a, b| match (a, b) {
+                (
+                    Stream::DashVideo {
+                        quality: a_quality,
+                        codecs: a_codecs,
+                        ..
+                    },
+                    Stream::DashVideo {
+                        quality: b_quality,
+                        codecs: b_codecs,
+                        ..
+                    },
+                ) => {
+                    // 优先按质量选择
+                    if a_quality != b_quality {
+                        return a_quality.cmp(b_quality);
                     }
-                    _ => unreachable!(),
-                })
-                .context("no video stream found")?,
+                    // 质量相同时，按编码偏好选择
+                    let a_pos = filter_option.codecs.iter().position(|c| c == a_codecs);
+                    let b_pos = filter_option.codecs.iter().position(|c| c == b_codecs);
+                    b_pos.cmp(&a_pos) // 优先选择更靠前的编码
+                }
+                _ => unreachable!(),
+            })
+            .context("no video stream found")?;
+            
+        if let Stream::DashVideo { quality, codecs, .. } = &selected_video {
+            tracing::info!("✓ 最终选择: {:?}({}) {:?}", quality, *quality as u32, codecs);
+        }
+        
+        Ok(BestStream::VideoAudio {
+            video: selected_video,
             audio: audios.into_iter().max_by(|a, b| match (a, b) {
                 (Stream::DashAudio { quality: a_quality, .. }, Stream::DashAudio { quality: b_quality, .. }) => {
                     a_quality.cmp(b_quality)

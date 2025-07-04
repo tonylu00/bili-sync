@@ -227,27 +227,60 @@ impl<'a> Video<'a> {
         Ok(DmSegMobileReply::decode(res.bytes().await?)?.elems)
     }
 
-    pub async fn get_page_analyzer(&self, page: &PageInfo) -> Result<PageAnalyzer> {
-        let mut res = self
+    /// 带质量回退的页面分析器获取
+    pub async fn get_page_analyzer_with_fallback(&self, page: &PageInfo) -> Result<PageAnalyzer> {
+        // 质量回退列表：从最高到最低，恢复原始顺序
+        let quality_levels = ["127", "120", "116", "112", "80", "64", "32", "16"];
+        
+        for (attempt, qn) in quality_levels.iter().enumerate() {
+            tracing::info!("尝试获取视频流 (尝试 {}/{}): qn={}", attempt + 1, quality_levels.len(), qn);
+            
+            match self.get_page_analyzer_with_quality(page, qn).await {
+                Ok(analyzer) => {
+                    tracing::info!("✓ 成功获取视频流: qn={}", qn);
+                    return Ok(analyzer);
+                }
+                Err(e) => {
+                    tracing::warn!("× 质量 qn={} 获取失败: {}", qn, e);
+                    if attempt == quality_levels.len() - 1 {
+                        // 最后一次尝试也失败了
+                        tracing::error!("所有质量级别都获取失败");
+                        return Err(e);
+                    }
+                    // 继续尝试下一个质量级别
+                    continue;
+                }
+            }
+        }
+        
+        // 理论上不会到达这里
+        Err(anyhow!("无法获取任何质量的视频流"))
+    }
+
+    /// 使用指定质量获取页面分析器
+    async fn get_page_analyzer_with_quality(&self, page: &PageInfo, qn: &str) -> Result<PageAnalyzer> {
+        // 修复字符串生命周期问题
+        let cid_string = page.cid.to_string();
+        
+        // 恢复原始API参数配置，基于工作版本的设置
+        let params = vec![
+            ("avid", self.aid.as_str()),
+            ("cid", cid_string.as_str()),
+            ("qn", qn),                    // 使用指定的质量参数
+            ("otype", "json"),
+            ("fnval", "4048"),             // 恢复原始fnval值
+            ("fourk", "1"),                // 启用4K支持
+        ];
+
+        tracing::debug!("API参数: {:?}", params);
+        
+        let request_url = "https://api.bilibili.com/x/player/wbi/playurl";
+
+        let res = self
             .client
-            .request(Method::GET, "https://api.bilibili.com/x/player/wbi/playurl")
+            .request(Method::GET, request_url)
             .await
-            .query(&encoded_query(
-                vec![
-                    ("avid", self.aid.as_str()),
-                    ("cid", page.cid.to_string().as_str()),
-                    ("qn", "127"),
-                    ("otype", "json"),
-                    ("fnval", "4048"),
-                    ("fourk", "1"),
-                    // DRM绕过参数 - 添加会员相关参数
-                    ("try_look", "1"),         // 试看模式
-                    ("platform", "html5"),     // 平台类型
-                    ("high_quality", "1"),     // 高质量
-                    ("session", ""),           // 会话ID
-                ],
-                MIXIN_KEY.load().as_deref(),
-            ))
+            .query(&encoded_query(params, MIXIN_KEY.load().as_deref()))
             .header("Referer", "https://www.bilibili.com/")
             .header("Origin", "https://www.bilibili.com")
             .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36")
@@ -255,29 +288,219 @@ impl<'a> Video<'a> {
             .await?
             .error_for_status()?
             .json::<serde_json::Value>()
+            .await?;
+
+        // 检查API响应中的错误信息
+        if let Some(code) = res["code"].as_i64() {
+            if code != 0 {
+                let message = res["message"].as_str().unwrap_or("未知错误");
+                return Err(anyhow!("API返回错误 {}: {}", code, message));
+            }
+        }
+        
+        // 检查是否有可用的视频流
+        if res["data"]["dash"]["video"].as_array().map_or(true, |v| v.is_empty()) {
+            return Err(anyhow!("API返回的视频流为空"));
+        }
+
+        // 记录成功获取的质量信息
+        if let Some(quality) = res["data"]["quality"].as_u64() {
+            tracing::debug!("API返回的实际质量: {}", quality);
+        }
+        if let Some(accept_quality) = res["data"]["accept_quality"].as_array() {
+            let qualities: Vec<u64> = accept_quality.iter().filter_map(|v| v.as_u64()).collect();
+            tracing::debug!("可用质量列表: {:?}", qualities);
+        }
+
+        let mut validated_res = res.validate()?;
+        Ok(PageAnalyzer::new(validated_res["data"].take()))
+    }
+
+    pub async fn get_page_analyzer(&self, page: &PageInfo) -> Result<PageAnalyzer> {
+        // 修复字符串生命周期问题
+        let cid_string = page.cid.to_string();
+        
+        // 恢复原始API参数配置，基于工作版本的设置
+        let params = vec![
+            ("avid", self.aid.as_str()),
+            ("cid", cid_string.as_str()),
+            ("qn", "127"),                 // 恢复原始qn=127请求8K质量
+            ("otype", "json"),
+            ("fnval", "4048"),             // 恢复原始fnval值
+            ("fourk", "1"),                // 启用4K支持
+        ];
+
+        tracing::info!("=== API参数调试 ===");
+        tracing::info!("视频: {} (aid: {})", self.bvid, self.aid);
+        tracing::info!("分页: cid: {}", page.cid);
+        tracing::info!("请求参数: {:?}", params);
+        
+        let request_url = "https://api.bilibili.com/x/player/wbi/playurl";
+        tracing::info!("请求URL: {}", request_url);
+
+        let res = self
+            .client
+            .request(Method::GET, request_url)
+            .await
+            .query(&encoded_query(params, MIXIN_KEY.load().as_deref()))
+            .header("Referer", "https://www.bilibili.com/")
+            .header("Origin", "https://www.bilibili.com")
+            .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36")
+            .send()
             .await?
-            .validate()?;
-        Ok(PageAnalyzer::new(res["data"].take()))
+            .error_for_status()?
+            .json::<serde_json::Value>()
+            .await?;
+
+        // 增强的API响应调试信息
+        tracing::info!("=== API响应调试 ===");
+        if let Some(code) = res["code"].as_i64() {
+            tracing::info!("响应代码: {}", code);
+        }
+        if let Some(message) = res["message"].as_str() {
+            tracing::info!("响应消息: {}", message);
+        }
+        
+        // 记录视频质量信息
+        if let Some(quality) = res["data"]["quality"].as_u64() {
+            tracing::info!("API返回的当前质量: {}", quality);
+        }
+        if let Some(accept_quality) = res["data"]["accept_quality"].as_array() {
+            let qualities: Vec<u64> = accept_quality.iter().filter_map(|v| v.as_u64()).collect();
+            tracing::info!("API返回的可用质量列表: {:?}", qualities);
+        }
+        
+        // 检查是否存在VIP要求
+        if let Some(vip_status) = res["data"]["vip_status"].as_i64() {
+            tracing::info!("VIP状态要求: {}", vip_status);
+        }
+        if let Some(vip_type) = res["data"]["vip_type"].as_i64() {
+            tracing::info!("VIP类型: {}", vip_type);
+        }
+
+        tracing::info!("=== API响应调试结束 ===");
+
+        let mut validated_res = res.validate()?;
+        Ok(PageAnalyzer::new(validated_res["data"].take()))
+    }
+
+    /// 带质量回退的番剧页面分析器获取
+    pub async fn get_bangumi_page_analyzer_with_fallback(&self, page: &PageInfo, ep_id: &str) -> Result<PageAnalyzer> {
+        // 质量回退列表：从最高到最低，恢复原始顺序
+        let quality_levels = ["127", "120", "116", "112", "80", "64", "32", "16"];
+        
+        for (attempt, qn) in quality_levels.iter().enumerate() {
+            tracing::info!("尝试获取番剧视频流 (尝试 {}/{}): qn={}", attempt + 1, quality_levels.len(), qn);
+            
+            match self.get_bangumi_page_analyzer_with_quality(page, ep_id, qn).await {
+                Ok(analyzer) => {
+                    tracing::info!("✓ 成功获取番剧视频流: qn={}", qn);
+                    return Ok(analyzer);
+                }
+                Err(e) => {
+                    tracing::warn!("× 番剧质量 qn={} 获取失败: {}", qn, e);
+                    if attempt == quality_levels.len() - 1 {
+                        // 最后一次尝试也失败了
+                        tracing::error!("所有番剧质量级别都获取失败");
+                        return Err(e);
+                    }
+                    // 继续尝试下一个质量级别
+                    continue;
+                }
+            }
+        }
+        
+        // 理论上不会到达这里
+        Err(anyhow!("无法获取任何质量的番剧视频流"))
+    }
+
+    /// 使用指定质量获取番剧页面分析器
+    async fn get_bangumi_page_analyzer_with_quality(&self, page: &PageInfo, ep_id: &str, qn: &str) -> Result<PageAnalyzer> {
+        // 修复字符串生命周期问题
+        let cid_string = page.cid.to_string();
+        
+        // 恢复原始番剧API参数配置
+        let params = [
+            ("ep_id", ep_id),
+            ("cid", cid_string.as_str()),
+            ("qn", qn),                    // 使用指定的质量参数
+            ("otype", "json"),
+            ("fnval", "4048"),             // 恢复原始fnval值
+            ("fourk", "1"),                // 启用4K支持
+        ];
+
+        tracing::debug!("番剧API参数: {:?}", params);
+        
+        let request_url = "https://api.bilibili.com/pgc/player/web/playurl";
+
+        let res = self
+            .client
+            .request(Method::GET, request_url)
+            .await
+            .query(&params)
+            .header("Referer", "https://www.bilibili.com/")
+            .header("Origin", "https://www.bilibili.com")
+            .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36")
+            .send()
+            .await?
+            .error_for_status()?
+            .json::<serde_json::Value>()
+            .await?;
+
+        // 检查番剧API响应中的错误信息
+        if let Some(code) = res["code"].as_i64() {
+            if code != 0 {
+                let message = res["message"].as_str().unwrap_or("未知错误");
+                return Err(anyhow!("番剧API返回错误 {}: {}", code, message));
+            }
+        }
+        
+        // 检查是否有可用的番剧视频流
+        if res["result"]["dash"]["video"].as_array().map_or(true, |v| v.is_empty()) {
+            return Err(anyhow!("番剧API返回的视频流为空"));
+        }
+
+        // 记录成功获取的番剧质量信息
+        if let Some(quality) = res["result"]["quality"].as_u64() {
+            tracing::debug!("番剧API返回的实际质量: {}", quality);
+        }
+        if let Some(accept_quality) = res["result"]["accept_quality"].as_array() {
+            let qualities: Vec<u64> = accept_quality.iter().filter_map(|v| v.as_u64()).collect();
+            tracing::debug!("番剧可用质量列表: {:?}", qualities);
+        }
+
+        let mut validated_res = res.validate()?;
+        Ok(PageAnalyzer::new(validated_res["result"].take()))
     }
 
     /// 专门为番剧获取播放地址分析器
     pub async fn get_bangumi_page_analyzer(&self, page: &PageInfo, ep_id: &str) -> Result<PageAnalyzer> {
-        let mut res = self
+        // 修复字符串生命周期问题
+        let cid_string = page.cid.to_string();
+        
+        // 恢复原始番剧API参数配置
+        let params = [
+            ("ep_id", ep_id),
+            ("cid", cid_string.as_str()),
+            ("qn", "127"),                 // 恢复原始qn=127请求8K质量
+            ("otype", "json"),
+            ("fnval", "4048"),             // 恢复原始fnval值
+            ("fourk", "1"),                // 启用4K支持
+        ];
+
+        tracing::info!("=== 番剧API参数调试 ===");
+        tracing::info!("番剧EP: {}", ep_id);
+        tracing::info!("分页: cid: {}", page.cid);
+        tracing::info!("请求参数: {:?}", params);
+        
+        let request_url = "https://api.bilibili.com/pgc/player/web/playurl";
+        tracing::info!("请求URL: {}", request_url);
+
+        let res = self
             .client
-            .request(Method::GET, "https://api.bilibili.com/pgc/player/web/playurl")
+            .request(Method::GET, request_url)
             .await
-            .query(&[
-                ("ep_id", ep_id),
-                ("cid", &page.cid.to_string()),
-                ("qn", "127"),
-                ("otype", "json"),
-                ("fnval", "4048"),
-                ("fourk", "1"),
-                // 番剧特有参数
-                ("fnver", "0"),
-                ("platform", "html5"),
-                ("high_quality", "1"),
-            ])
+            .query(&params)
             .header("Referer", "https://www.bilibili.com/")
             .header("Origin", "https://www.bilibili.com")
             .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36")
@@ -285,9 +508,38 @@ impl<'a> Video<'a> {
             .await?
             .error_for_status()?
             .json::<serde_json::Value>()
-            .await?
-            .validate()?;
-        Ok(PageAnalyzer::new(res["result"].take()))
+            .await?;
+
+        // 增强的番剧API响应调试信息
+        tracing::info!("=== 番剧API响应调试 ===");
+        if let Some(code) = res["code"].as_i64() {
+            tracing::info!("响应代码: {}", code);
+        }
+        if let Some(message) = res["message"].as_str() {
+            tracing::info!("响应消息: {}", message);
+        }
+        
+        // 记录番剧视频质量信息
+        if let Some(quality) = res["result"]["quality"].as_u64() {
+            tracing::info!("番剧API返回的当前质量: {}", quality);
+        }
+        if let Some(accept_quality) = res["result"]["accept_quality"].as_array() {
+            let qualities: Vec<u64> = accept_quality.iter().filter_map(|v| v.as_u64()).collect();
+            tracing::info!("番剧API返回的可用质量列表: {:?}", qualities);
+        }
+        
+        // 检查番剧会员要求
+        if let Some(vip_status) = res["result"]["vip_status"].as_i64() {
+            tracing::info!("番剧VIP状态要求: {}", vip_status);
+        }
+        if let Some(vip_type) = res["result"]["vip_type"].as_i64() {
+            tracing::info!("番剧VIP类型: {}", vip_type);
+        }
+
+        tracing::info!("=== 番剧API响应调试结束 ===");
+
+        let mut validated_res = res.validate()?;
+        Ok(PageAnalyzer::new(validated_res["result"].take()))
     }
 
     pub async fn get_subtitles(&self, page: &PageInfo) -> Result<Vec<SubTitle>> {
