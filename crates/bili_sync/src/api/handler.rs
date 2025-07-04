@@ -22,15 +22,16 @@ use crate::api::auth::OpenAPIAuth;
 use crate::api::error::InnerApiError;
 use crate::api::request::{
     AddVideoSourceRequest, BatchUpdateConfigRequest, ConfigHistoryRequest, ResetSpecificTasksRequest,
-    ResetVideoSourcePathRequest, SetupAuthTokenRequest, UpdateConfigItemRequest, UpdateConfigRequest,
+    ResetVideoSourcePathRequest, SetupAuthTokenRequest, SubmissionVideosRequest, UpdateConfigItemRequest, UpdateConfigRequest,
     UpdateCredentialRequest, UpdateVideoStatusRequest, VideosRequest,
 };
 use crate::api::response::{
     AddVideoSourceResponse, BangumiSeasonInfo, ConfigChangeInfo, ConfigHistoryResponse, ConfigItemResponse,
     ConfigReloadResponse, ConfigResponse, ConfigValidationResponse, DeleteVideoResponse, DeleteVideoSourceResponse,
     HotReloadStatusResponse, InitialSetupCheckResponse, PageInfo, ResetAllVideosResponse, ResetVideoResponse,
-    ResetVideoSourcePathResponse, SetupAuthTokenResponse, UpdateConfigResponse, UpdateCredentialResponse,
-    UpdateVideoStatusResponse, VideoInfo, VideoResponse, VideoSource, VideoSourcesResponse, VideosResponse,
+    ResetVideoSourcePathResponse, SetupAuthTokenResponse, SubmissionVideosResponse, 
+    UpdateConfigResponse, UpdateCredentialResponse, UpdateVideoStatusResponse, VideoInfo, VideoResponse, VideoSource, 
+    VideoSourcesResponse, VideosResponse,
 };
 use crate::api::wrapper::{ApiError, ApiResponse};
 use crate::utils::status::{PageStatus, VideoStatus};
@@ -43,7 +44,7 @@ fn normalize_file_path(path: &str) -> String {
 
 #[derive(OpenApi)]
 #[openapi(
-    paths(get_video_sources, get_videos, get_video, reset_video, reset_all_videos, reset_specific_tasks, update_video_status, add_video_source, update_video_source_enabled, update_video_source_scan_deleted, reset_video_source_path, delete_video_source, reload_config, get_config, update_config, get_bangumi_seasons, search_bilibili, get_user_favorites, get_user_collections, get_user_followings, get_subscribed_collections, get_logs, get_queue_status, proxy_image, get_config_item, get_config_history, validate_config, get_hot_reload_status, check_initial_setup, setup_auth_token, update_credential, pause_scanning_endpoint, resume_scanning_endpoint, get_task_control_status, get_video_play_info, proxy_video_stream, validate_favorite, get_user_favorites_by_uid),
+    paths(get_video_sources, get_videos, get_video, reset_video, reset_all_videos, reset_specific_tasks, update_video_status, add_video_source, update_video_source_enabled, update_video_source_scan_deleted, reset_video_source_path, delete_video_source, reload_config, get_config, update_config, get_bangumi_seasons, search_bilibili, get_user_favorites, get_user_collections, get_user_followings, get_subscribed_collections, get_submission_videos, get_logs, get_queue_status, proxy_image, get_config_item, get_config_history, validate_config, get_hot_reload_status, check_initial_setup, setup_auth_token, update_credential, pause_scanning_endpoint, resume_scanning_endpoint, get_task_control_status, get_video_play_info, proxy_video_stream, validate_favorite, get_user_favorites_by_uid),
     modifiers(&OpenAPIAuth),
     security(
         ("Token" = []),
@@ -1166,6 +1167,10 @@ pub async fn add_video_source_internal(
                 latest_row_at: sea_orm::Set(chrono::NaiveDateTime::default()),
                 enabled: sea_orm::Set(true),
                 scan_deleted_videos: sea_orm::Set(false),
+                selected_videos: sea_orm::Set(
+                    params.selected_videos
+                        .map(|videos| serde_json::to_string(&videos).unwrap_or_default())
+                ),
             };
 
             let insert_result = submission::Entity::insert(submission).exec(&txn).await?;
@@ -5115,6 +5120,50 @@ pub async fn get_subscribed_collections() -> Result<ApiResponse<Vec<crate::api::
         Err(e) => {
             tracing::error!("获取订阅合集失败: {}", e);
             Err(ApiError::from(anyhow::anyhow!("获取订阅合集失败: {}", e)))
+        }
+    }
+}
+
+/// 获取UP主的历史投稿列表
+#[utoipa::path(
+    get,
+    path = "/api/submission/{up_id}/videos",
+    params(
+        ("up_id" = String, Path, description = "UP主ID"),
+        SubmissionVideosRequest,
+    ),
+    responses(
+        (status = 200, body = ApiResponse<SubmissionVideosResponse>),
+    )
+)]
+pub async fn get_submission_videos(
+    Path(up_id): Path<String>,
+    Query(params): Query<SubmissionVideosRequest>,
+) -> Result<ApiResponse<SubmissionVideosResponse>, ApiError> {
+    let bili_client = crate::bilibili::BiliClient::new(String::new());
+    
+    let page = params.page.unwrap_or(1);
+    let page_size = params.page_size.unwrap_or(50);
+    
+    // 验证UP主ID格式
+    let up_id_i64 = up_id.parse::<i64>()
+        .map_err(|_| ApiError::from(anyhow::anyhow!("无效的UP主ID格式")))?;
+    
+    // 获取UP主投稿列表
+    match bili_client.get_user_submission_videos(up_id_i64, page, page_size).await {
+        Ok((videos, total)) => {
+            let response = SubmissionVideosResponse {
+                videos,
+                total,
+                page,
+                page_size,
+            };
+            
+            Ok(ApiResponse::ok(response))
+        }
+        Err(e) => {
+            tracing::error!("获取UP主 {} 投稿列表失败: {}", up_id, e);
+            Err(ApiError::from(anyhow::anyhow!("获取UP主投稿列表失败: {}", e)))
         }
     }
 }

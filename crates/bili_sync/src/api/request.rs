@@ -15,6 +15,12 @@ pub struct VideosRequest {
     pub show_failed_only: Option<bool>,
 }
 
+#[derive(Deserialize, IntoParams)]
+pub struct SubmissionVideosRequest {
+    pub page: Option<i32>,
+    pub page_size: Option<i32>,
+}
+
 // 添加新视频源的请求结构体
 #[derive(Deserialize, IntoParams, ToSchema)]
 pub struct AddVideoSourceRequest {
@@ -37,6 +43,8 @@ pub struct AddVideoSourceRequest {
     pub download_all_seasons: Option<bool>,
     // 选中的季度ID列表，仅当source_type为"bangumi"且download_all_seasons为false时有效
     pub selected_seasons: Option<Vec<String>>,
+    // 选中的视频ID列表，仅当source_type为"submission"时有效，用于选择性下载历史投稿
+    pub selected_videos: Option<Vec<String>>,
 }
 
 // 删除视频源的请求结构体

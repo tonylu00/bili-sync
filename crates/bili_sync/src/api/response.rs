@@ -60,6 +60,26 @@ pub struct AddVideoSourceResponse {
 }
 
 #[derive(Serialize, ToSchema)]
+pub struct SubmissionVideosResponse {
+    pub videos: Vec<SubmissionVideoInfo>,
+    pub total: i64,
+    pub page: i32,
+    pub page_size: i32,
+}
+
+#[derive(Serialize, ToSchema)]
+pub struct SubmissionVideoInfo {
+    pub bvid: String,
+    pub title: String,
+    pub cover: String,
+    pub pubtime: String,
+    pub duration: i32,
+    pub view: i32,
+    pub danmaku: i32,
+    pub description: String,
+}
+
+#[derive(Serialize, ToSchema)]
 pub struct DeleteVideoSourceResponse {
     pub success: bool,
     pub source_id: i32,

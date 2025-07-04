@@ -6,6 +6,7 @@
 	import { Label } from '$lib/components/ui/label';
 	import { setBreadcrumb } from '$lib/stores/breadcrumb';
 	import type { SearchResultItem, VideoCategory } from '$lib/types';
+	import SubmissionVideoSelection from '$lib/components/submission-video-selection.svelte';
 	import { Search, X } from '@lucide/svelte';
 	import { onDestroy, onMount } from 'svelte';
 	import { toast } from 'svelte-sonner';
@@ -92,6 +93,11 @@
 	// 订阅的合集相关
 	let subscribedCollections: any[] = [];
 	let loadingSubscribedCollections = false;
+
+	// UP主投稿选择相关
+	let showSubmissionSelection = false;
+	let selectedVideos: string[] = [];
+	let selectedUpName = '';
 
 	onMount(() => {
 		setBreadcrumb([
@@ -233,6 +239,9 @@
 				if (result.mid) {
 					sourceId = result.mid.toString();
 					name = cleanTitle(result.title);
+					selectedUpName = cleanTitle(result.title);
+					// 打开投稿选择对话框
+					showSubmissionSelection = true;
 				}
 				break;
 			case 'bangumi':
@@ -362,6 +371,13 @@
 				}
 			}
 
+			if (sourceType === 'submission') {
+				// 如果有选择的视频，添加selected_videos参数
+				if (selectedVideos.length > 0) {
+					params.selected_videos = selectedVideos;
+				}
+			}
+
 			const result = await api.addVideoSource(params);
 
 			if (result.data.success) {
@@ -376,6 +392,8 @@
 				isManualInput = false;
 				bangumiSeasons = [];
 				selectedSeasons = [];
+				selectedVideos = [];
+				selectedUpName = '';
 				// 跳转到首页
 				goto('/');
 			} else {
@@ -811,6 +829,9 @@
 			case 'submission':
 				sourceId = following.mid.toString();
 				name = following.name;
+				selectedUpName = following.name;
+				// 打开投稿选择对话框
+				showSubmissionSelection = true;
 				toast.success('已填充UP主信息');
 				break;
 		}
@@ -851,6 +872,27 @@
 		upId = collection.up_mid.toString();
 		collectionType = collection.collection_type;
 		toast.success('已选择订阅合集', { description: collection.name });
+	}
+
+	// 处理投稿选择确认
+	function handleSubmissionSelectionConfirm(selectedBvids: string[]) {
+		selectedVideos = selectedBvids;
+		showSubmissionSelection = false;
+		if (selectedBvids.length > 0) {
+			toast.success('已选择投稿', { 
+				description: `选择了 ${selectedBvids.length} 个历史投稿，新投稿将自动下载` 
+			});
+		} else {
+			toast.info('未选择投稿', { 
+				description: '将下载所有历史投稿和新投稿' 
+			});
+		}
+	}
+
+	// 处理投稿选择取消
+	function handleSubmissionSelectionCancel() {
+		showSubmissionSelection = false;
+		// 保留已有的选择，不做清空
 	}
 </script>
 
@@ -1159,6 +1201,37 @@
 									{/if}
 								{:else if sourceType === 'bangumi' && sourceId && loadingSeasons}
 									<p class="mt-3 text-xs text-purple-600">正在获取季度信息...</p>
+								{/if}
+								
+								<!-- UP主投稿选择状态显示和控制（仅投稿类型时显示） -->
+								{#if sourceType === 'submission' && sourceId}
+									<div class="mt-3 rounded-lg border border-blue-200 bg-blue-50 p-3">
+										<div class="flex items-center justify-between">
+											<div>
+												<span class="text-sm font-medium text-blue-800">历史投稿选择</span>
+												<span class="ml-2 text-xs text-blue-600">
+													{#if selectedVideos.length > 0}
+														已选择 {selectedVideos.length} 个历史投稿
+													{:else}
+														未选择特定投稿（将下载全部）
+													{/if}
+												</span>
+											</div>
+											<Button
+												size="sm"
+												variant="outline"
+												onclick={() => {
+													showSubmissionSelection = true;
+												}}
+												class="text-blue-700 border-blue-300 hover:bg-blue-100"
+											>
+												{selectedVideos.length > 0 ? '重新选择' : '选择投稿'}
+											</Button>
+										</div>
+										<p class="mt-2 text-xs text-blue-600">
+											💡 您可以选择特定的历史投稿进行下载，未选择的视频将不会下载但会在数据库中记录。新发布的投稿会自动下载。
+										</p>
+									</div>
 								{/if}
 							</div>
 						{/if}
@@ -2026,3 +2099,12 @@
 		background: #a1a1a1;
 	}
 </style>
+
+<!-- UP主投稿选择对话框 -->
+<SubmissionVideoSelection
+	bind:isOpen={showSubmissionSelection}
+	upId={sourceId}
+	upName={selectedUpName}
+	on:confirm={(e) => handleSubmissionSelectionConfirm(e.detail)}
+	on:cancel={handleSubmissionSelectionCancel}
+/>

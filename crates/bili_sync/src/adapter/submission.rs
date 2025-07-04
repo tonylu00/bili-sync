@@ -40,6 +40,15 @@ impl VideoSource for submission::Model {
     }
 
     fn should_take(&self, release_datetime: &chrono::DateTime<Utc>, latest_row_at: &chrono::DateTime<Utc>) -> bool {
+        // 对于选择性下载，我们需要获取所有视频信息，然后在 create_videos 中进行过滤
+        // 所以这里保持原有的时间判断逻辑，但总是获取视频信息以便后续处理
+        
+        // 如果有选择的视频列表，我们需要获取所有历史投稿以便检查
+        if self.selected_videos.is_some() {
+            debug!("UP主「{}」选择性下载模式：获取所有视频信息以便检查选择列表", self.upper_name);
+            return true;
+        }
+        
         // 检查是否启用增量获取
         let current_config = crate::config::reload_config();
         if current_config.submission_risk_control.enable_incremental_fetch {
@@ -106,6 +115,29 @@ impl VideoSource for submission::Model {
     fn scan_deleted_videos(&self) -> bool {
         self.scan_deleted_videos
     }
+
+    fn get_selected_videos(&self) -> Option<Vec<String>> {
+        self.selected_videos.as_ref().and_then(|json_str| {
+            serde_json::from_str::<Vec<String>>(json_str)
+                .map_err(|e| {
+                    warn!("解析 selected_videos JSON 失败: {}", e);
+                    e
+                })
+                .ok()
+        })
+    }
+
+    fn get_created_at(&self) -> Option<chrono::DateTime<chrono::Utc>> {
+        // 解析 created_at 字符串为 DateTime
+        chrono::DateTime::parse_from_str(&self.created_at, "%Y-%m-%d %H:%M:%S%.f %z")
+            .or_else(|_| chrono::DateTime::parse_from_str(&self.created_at, "%Y-%m-%d %H:%M:%S"))
+            .map(|dt| dt.with_timezone(&chrono::Utc))
+            .map_err(|e| {
+                warn!("解析 created_at 时间失败: {}, 原始值: {}", e, self.created_at);
+                e
+            })
+            .ok()
+    }
 }
 
 #[allow(dead_code)]
@@ -150,6 +182,7 @@ pub async fn init_submission_sources(
                         latest_row_at: Set(chrono::NaiveDateTime::default()),
                         enabled: Set(true),
                         scan_deleted_videos: Set(false),
+                        selected_videos: Set(None),
                     };
 
                     // 插入数据库
@@ -172,6 +205,7 @@ pub async fn init_submission_sources(
                         latest_row_at: Set(chrono::NaiveDateTime::default()),
                         enabled: Set(true),
                         scan_deleted_videos: Set(false),
+                        selected_videos: Set(None),
                     };
 
                     let result = submission::Entity::insert(model)

@@ -3,7 +3,7 @@ use bili_sync_entity::*;
 use sea_orm::entity::prelude::*;
 use sea_orm::sea_query::{OnConflict, SimpleExpr};
 use sea_orm::DatabaseTransaction;
-use tracing::info;
+use tracing::{debug, info};
 
 use crate::adapter::{VideoSource, VideoSourceEnum};
 use crate::bilibili::{PageInfo, VideoInfo};
@@ -43,6 +43,7 @@ pub async fn filter_unfilled_videos(
                 .and(video::Column::Category.is_in([1, 2]))
                 .and(video::Column::SinglePage.is_null())
                 .and(video::Column::Deleted.eq(0))
+                .and(video::Column::AutoDownload.eq(true))  // 只处理设置为自动下载的视频
                 .and(additional_expr),
         )
         .all(conn)
@@ -63,6 +64,7 @@ pub async fn filter_unhandled_video_pages(
                 .and(video::Column::Category.is_in([1, 2]))
                 .and(video::Column::SinglePage.is_not_null())
                 .and(video::Column::Deleted.eq(0))
+                .and(video::Column::AutoDownload.eq(true))  // 只处理设置为自动下载的视频
                 .and(additional_expr),
         )
         .find_with_related(page::Entity)
@@ -87,6 +89,7 @@ pub async fn get_failed_videos_in_current_cycle(
                 .and(video::Column::Category.is_in([1, 2]))
                 .and(video::Column::SinglePage.is_not_null())
                 .and(video::Column::Deleted.eq(0))
+                .and(video::Column::AutoDownload.eq(true))  // 只处理设置为自动下载的视频
                 .and(additional_expr),
         )
         .find_with_related(page::Entity)
@@ -127,8 +130,54 @@ pub async fn create_videos(
     if scan_deleted {
         // 启用扫描已删除视频：需要特别处理已删除的视频
         for video_info in videos_info {
+            // 选择性下载逻辑：针对 submission 类型视频源 - 需要在 into_simple_model() 之前获取信息
+            let auto_download_value = if let Some(selected_videos) = video_source.get_selected_videos() {
+                // 获取创建时间来判断是否为新投稿
+                let is_new_submission = if let Some(created_at) = video_source.get_created_at() {
+                    // 如果视频发布时间晚于订阅创建时间，则为新投稿，自动下载
+                    video_info.release_datetime() > &created_at
+                } else {
+                    // 如果无法获取创建时间，保守地认为不是新投稿
+                    false
+                };
+                
+                // 获取视频的 BVID（从 VideoInfo 获取）
+                let video_bvid = match &video_info {
+                    crate::bilibili::VideoInfo::Submission { bvid, .. } => bvid,
+                    crate::bilibili::VideoInfo::Detail { bvid, .. } => bvid,
+                    crate::bilibili::VideoInfo::Favorite { bvid, .. } => bvid,
+                    crate::bilibili::VideoInfo::WatchLater { bvid, .. } => bvid,
+                    crate::bilibili::VideoInfo::Collection { bvid, .. } => bvid,
+                    crate::bilibili::VideoInfo::Bangumi { bvid, .. } => bvid,
+                };
+                
+                let auto_download = if is_new_submission {
+                    // 新投稿：自动下载
+                    true
+                } else {
+                    // 历史投稿：检查是否在选择列表中
+                    selected_videos.contains(video_bvid)
+                };
+                
+                debug!(
+                    "选择性下载检查(已删除扫描): BVID={}, 是否新投稿={}, 是否在选择列表中={}, auto_download={}",
+                    video_bvid,
+                    is_new_submission,
+                    selected_videos.contains(video_bvid),
+                    auto_download
+                );
+                
+                auto_download
+            } else {
+                // 没有选择性下载，默认自动下载所有视频
+                true
+            };
+
             let mut model = video_info.into_simple_model();
             video_source.set_relation_id(&mut model);
+            
+            // 设置 auto_download 字段
+            model.auto_download = Set(auto_download_value);
 
             // 查找是否存在已删除的同一视频
             let existing_video = video::Entity::find()
@@ -266,8 +315,54 @@ pub async fn create_videos(
     } else {
         // 未启用扫描已删除视频：使用原有逻辑，但增加 share_copy 更新检查
         for video_info in videos_info {
+            // 选择性下载逻辑：针对 submission 类型视频源 - 需要在 into_simple_model() 之前获取信息
+            let auto_download_value = if let Some(selected_videos) = video_source.get_selected_videos() {
+                // 获取创建时间来判断是否为新投稿
+                let is_new_submission = if let Some(created_at) = video_source.get_created_at() {
+                    // 如果视频发布时间晚于订阅创建时间，则为新投稿，自动下载
+                    video_info.release_datetime() > &created_at
+                } else {
+                    // 如果无法获取创建时间，保守地认为不是新投稿
+                    false
+                };
+                
+                // 获取视频的 BVID（从 VideoInfo 获取）
+                let video_bvid = match &video_info {
+                    crate::bilibili::VideoInfo::Submission { bvid, .. } => bvid,
+                    crate::bilibili::VideoInfo::Detail { bvid, .. } => bvid,
+                    crate::bilibili::VideoInfo::Favorite { bvid, .. } => bvid,
+                    crate::bilibili::VideoInfo::WatchLater { bvid, .. } => bvid,
+                    crate::bilibili::VideoInfo::Collection { bvid, .. } => bvid,
+                    crate::bilibili::VideoInfo::Bangumi { bvid, .. } => bvid,
+                };
+                
+                let auto_download = if is_new_submission {
+                    // 新投稿：自动下载
+                    true
+                } else {
+                    // 历史投稿：检查是否在选择列表中
+                    selected_videos.contains(video_bvid)
+                };
+                
+                debug!(
+                    "选择性下载检查(常规模式): BVID={}, 是否新投稿={}, 是否在选择列表中={}, auto_download={}",
+                    video_bvid,
+                    is_new_submission,
+                    selected_videos.contains(video_bvid),
+                    auto_download
+                );
+                
+                auto_download
+            } else {
+                // 没有选择性下载，默认自动下载所有视频
+                true
+            };
+
             let mut model = video_info.into_simple_model();
             video_source.set_relation_id(&mut model);
+            
+            // 设置 auto_download 字段
+            model.auto_download = Set(auto_download_value);
 
             // 先尝试插入，如果失败说明记录已存在
             let insert_result = video::Entity::insert(model.clone())

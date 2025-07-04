@@ -32,7 +32,9 @@ import type {
 	TaskControlStatusResponse,
 	TaskControlResponse,
 	VideoPlayInfoResponse,
-	ValidateFavoriteResponse
+	ValidateFavoriteResponse,
+	SubmissionVideosRequest,
+	SubmissionVideosResponse
 } from './types';
 import { ErrorType } from './types';
 
@@ -297,8 +299,8 @@ class ApiClient {
 		sourceType: string,
 		id: number,
 		scanDeleted: boolean
-	): Promise<ApiResponse<UpdateVideoSourceScanDeletedResponse>> {
-		return this.put<UpdateVideoSourceScanDeletedResponse>(
+	): Promise<ApiResponse<UpdateVideoSourceEnabledResponse>> {
+		return this.put<UpdateVideoSourceEnabledResponse>(
 			`/video-sources/${sourceType}/${id}/scan-deleted`,
 			{ scan_deleted_videos: scanDeleted }
 		);
@@ -487,6 +489,17 @@ class ApiClient {
 	getProxyStreamUrl(streamUrl: string): string {
 		const encodedUrl = encodeURIComponent(streamUrl);
 		return `${this.baseURL}/videos/proxy-stream?url=${encodedUrl}`;
+	}
+
+	/**
+	 * 获取UP主投稿列表
+	 * @param params 查询参数
+	 */
+	async getSubmissionVideos(params: SubmissionVideosRequest): Promise<ApiResponse<SubmissionVideosResponse>> {
+		return this.get<SubmissionVideosResponse>(`/submission/${params.up_id}/videos`, {
+			page: params.page,
+			page_size: params.page_size
+		});
 	}
 }
 
@@ -679,7 +692,12 @@ export const api = {
 	/**
 	 * 获取代理视频流URL
 	 */
-	getProxyStreamUrl: (streamUrl: string) => apiClient.getProxyStreamUrl(streamUrl)
+	getProxyStreamUrl: (streamUrl: string) => apiClient.getProxyStreamUrl(streamUrl),
+
+	/**
+	 * 获取UP主投稿列表
+	 */
+	getSubmissionVideos: (params: SubmissionVideosRequest) => apiClient.getSubmissionVideos(params)
 };
 
 // 默认导出

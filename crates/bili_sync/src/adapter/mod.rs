@@ -88,6 +88,17 @@ pub trait VideoSource {
 
     /// 获取是否扫描已删除视频的设置
     fn scan_deleted_videos(&self) -> bool;
+
+    /// 获取选择的视频列表，仅对 submission 类型有效
+    /// 返回 Some(Vec<String>) 表示有选择性下载列表，None 表示下载所有视频
+    fn get_selected_videos(&self) -> Option<Vec<String>> {
+        None // 默认实现：没有选择性下载
+    }
+
+    /// 获取创建时间，用于判断是否为新投稿
+    fn get_created_at(&self) -> Option<chrono::DateTime<chrono::Utc>> {
+        None // 默认实现：没有创建时间信息
+    }
 }
 
 #[derive(Clone, Debug)]

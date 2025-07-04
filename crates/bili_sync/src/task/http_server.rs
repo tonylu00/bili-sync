@@ -27,6 +27,7 @@ use crate::api::handler::{
     get_hot_reload_status,
     get_logs,
     get_queue_status,
+    get_submission_videos,
     get_subscribed_collections,
     get_task_control_status,
     get_user_collections,
@@ -137,6 +138,7 @@ pub async fn http_server(database_connection: Arc<DatabaseConnection>) -> Result
         .route("/api/user/collections/{mid}", get(get_user_collections))
         .route("/api/user/followings", get(get_user_followings))
         .route("/api/user/subscribed-collections", get(get_subscribed_collections))
+        .route("/api/submission/{up_id}/videos", get(get_submission_videos))
         .route("/api/logs", get(get_logs))
         .route("/api/queue-status", get(get_queue_status))
         .route("/api/proxy/image", get(proxy_image))

@@ -28,7 +28,7 @@ pub struct Credential {
     pub ac_time_value: String,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Clone, Deserialize)]
 pub struct WbiImg {
     img_url: String,
     sub_url: String,
@@ -46,6 +46,16 @@ impl From<WbiImg> for Option<String> {
         };
         let key = key.as_bytes();
         Some(MIXIN_KEY_ENC_TAB.iter().take(32).map(|&x| key[x] as char).collect())
+    }
+}
+
+impl WbiImg {
+    /// 对参数进行WBI签名
+    pub async fn sign_params(&self, params: std::collections::HashMap<String, String>) -> Result<Vec<(String, String)>> {
+        let mixin_key: Option<String> = self.clone().into();
+        let params_vec: Vec<(&str, String)> = params.iter().map(|(k, v)| (k.as_str(), v.clone())).collect();
+        let encoded = encoded_query(params_vec, mixin_key);
+        Ok(encoded.into_iter().map(|(k, v)| (k.to_string(), v.into_owned())).collect())
     }
 }
 

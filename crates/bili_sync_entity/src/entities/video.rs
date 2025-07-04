@@ -37,6 +37,7 @@ pub struct Model {
     pub deleted: i32,
     pub share_copy: Option<String>,
     pub show_season_type: Option<i32>,
+    pub auto_download: bool,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]

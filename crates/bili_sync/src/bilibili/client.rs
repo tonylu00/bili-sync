@@ -839,4 +839,93 @@ impl BiliClient {
 
         Ok(all_collections)
     }
+
+    /// 获取UP主投稿视频列表 - 用于选择性下载历史投稿
+    pub async fn get_user_submission_videos(
+        &self,
+        up_id: i64,
+        page: i32,
+        page_size: i32,
+    ) -> Result<(Vec<crate::api::response::SubmissionVideoInfo>, i64), anyhow::Error> {
+        use crate::bilibili::Validate;
+        use chrono::{TimeZone, Utc};
+
+        let url = "https://api.bilibili.com/x/space/wbi/arc/search";
+        
+        // 获取wbi签名参数
+        let wbi_img = self.wbi_img().await?;
+        let mut params = std::collections::HashMap::new();
+        params.insert("mid".to_string(), up_id.to_string());
+        params.insert("pn".to_string(), page.to_string());
+        params.insert("ps".to_string(), page_size.to_string());
+        params.insert("order".to_string(), "pubdate".to_string()); // 按发布时间排序
+        params.insert("order_avoided".to_string(), "true".to_string());
+        
+        // 对参数进行wbi签名
+        let signed_params = wbi_img.sign_params(params).await?;
+
+        let response = self
+            .request(Method::GET, url)
+            .await
+            .query(&signed_params)
+            .send()
+            .await?
+            .error_for_status()?
+            .json::<serde_json::Value>()
+            .await?
+            .validate()?;
+
+        // 解析视频列表
+        let video_list = response["data"]["list"]["vlist"]
+            .as_array()
+            .ok_or_else(|| anyhow!("无法获取投稿视频列表"))?;
+
+        // 获取总数
+        let total = response["data"]["page"]["count"].as_i64().unwrap_or(0);
+
+        let mut videos = Vec::new();
+        for video_item in video_list {
+            // 解析发布时间
+            let pubtime_timestamp = video_item["created"].as_i64().unwrap_or(0);
+            let pubtime = Utc.timestamp_opt(pubtime_timestamp, 0)
+                .single()
+                .unwrap_or_else(|| Utc::now())
+                .format("%Y-%m-%d %H:%M:%S")
+                .to_string();
+
+            let video_info = crate::api::response::SubmissionVideoInfo {
+                bvid: video_item["bvid"].as_str().unwrap_or("").to_string(),
+                title: video_item["title"].as_str().unwrap_or("").to_string(),
+                cover: video_item["pic"].as_str().unwrap_or("").to_string(),
+                pubtime,
+                duration: video_item["length"].as_str()
+                    .and_then(|s| {
+                        // 将 "mm:ss" 格式转换为秒数
+                        let parts: Vec<&str> = s.split(':').collect();
+                        match parts.len() {
+                            2 => {
+                                let minutes = parts[0].parse::<i32>().unwrap_or(0);
+                                let seconds = parts[1].parse::<i32>().unwrap_or(0);
+                                Some(minutes * 60 + seconds)
+                            }
+                            3 => {
+                                let hours = parts[0].parse::<i32>().unwrap_or(0);
+                                let minutes = parts[1].parse::<i32>().unwrap_or(0);
+                                let seconds = parts[2].parse::<i32>().unwrap_or(0);
+                                Some(hours * 3600 + minutes * 60 + seconds)
+                            }
+                            _ => None,
+                        }
+                    })
+                    .unwrap_or(0),
+                view: video_item["play"].as_i64().unwrap_or(0) as i32,
+                danmaku: video_item["video_review"].as_i64().unwrap_or(0) as i32,
+                description: video_item["description"].as_str().unwrap_or("").to_string(),
+            };
+
+            videos.push(video_info);
+        }
+
+        Ok((videos, total))
+    }
 }

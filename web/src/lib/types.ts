@@ -146,6 +146,7 @@ export interface AddVideoSourceRequest {
 	ep_id?: string;
 	download_all_seasons?: boolean;
 	selected_seasons?: string[];
+	selected_videos?: string[];
 }
 
 // 添加视频源响应类型
@@ -613,4 +614,31 @@ export interface ValidateFavoriteResponse {
 	fid: number;
 	title: string;
 	message: string;
+}
+
+// UP主投稿视频信息类型
+export interface SubmissionVideoInfo {
+	title: string;
+	bvid: string;
+	description: string;
+	cover: string;
+	pubtime: string;
+	view: number;
+	danmaku: number;
+	duration: number;
+}
+
+// 获取UP主投稿列表请求类型
+export interface SubmissionVideosRequest {
+	up_id: string;
+	page?: number;
+	page_size?: number;
+}
+
+// 获取UP主投稿列表响应类型
+export interface SubmissionVideosResponse {
+	videos: SubmissionVideoInfo[];
+	total: number;
+	page: number;
+	page_size: number;
 }

@@ -879,6 +879,7 @@ impl AddTaskQueue {
                 ep_id: task.ep_id.clone(),
                 download_all_seasons: task.download_all_seasons,
                 selected_seasons: task.selected_seasons.clone(),
+                selected_videos: None, // 任务队列中暂时不支持选择性视频
             };
 
             match add_video_source_internal(db.clone(), request).await {
