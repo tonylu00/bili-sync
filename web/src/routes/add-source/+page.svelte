@@ -103,7 +103,6 @@
 	let selectedSubmissionVideos: Set<string> = new Set();
 	let submissionLoading = false;
 	let submissionError: string | null = null;
-	let submissionCurrentPage = 1;
 	let submissionTotalCount = 0;
 	let submissionSearchQuery = '';
 	let filteredSubmissionVideos: SubmissionVideoInfo[] = [];
@@ -917,7 +916,6 @@
 		selectedSubmissionVideos = new Set();
 		submissionLoading = false;
 		submissionError = null;
-		submissionCurrentPage = 1;
 		submissionTotalCount = 0;
 		submissionSearchQuery = '';
 		filteredSubmissionVideos = [];
@@ -934,30 +932,55 @@
 		}
 	}
 
-	// 加载UP主投稿列表
+	// 加载UP主投稿列表（一次性获取全部）
 	async function loadSubmissionVideos() {
 		if (!sourceId) return;
 		
 		submissionLoading = true;
 		submissionError = null;
+		submissionVideos = [];
 		
 		try {
-			const response = await api.getSubmissionVideos({
+			// 先获取第一页以知道总数
+			const firstResponse = await api.getSubmissionVideos({
 				up_id: sourceId,
-				page: submissionCurrentPage,
+				page: 1,
 				page_size: SUBMISSION_PAGE_SIZE
 			});
 			
-			if (response.data && response.data.videos) {
-				if (submissionCurrentPage === 1) {
-					submissionVideos = response.data.videos;
-				} else {
-					submissionVideos = [...submissionVideos, ...response.data.videos];
-				}
-				submissionTotalCount = response.data.total;
-			} else {
+			if (!firstResponse.data || !firstResponse.data.videos) {
 				submissionError = '获取投稿列表失败';
+				return;
 			}
+			
+			submissionTotalCount = firstResponse.data.total;
+			let allVideos = [...firstResponse.data.videos];
+			
+			// 如果总数超过一页，获取剩余所有页面
+			if (submissionTotalCount > SUBMISSION_PAGE_SIZE) {
+				const totalPages = Math.ceil(submissionTotalCount / SUBMISSION_PAGE_SIZE);
+				const remainingPages = Array.from({ length: totalPages - 1 }, (_, i) => i + 2);
+				
+				// 并行获取剩余页面
+				const remainingResponses = await Promise.allSettled(
+					remainingPages.map(page => 
+						api.getSubmissionVideos({
+							up_id: sourceId,
+							page: page,
+							page_size: SUBMISSION_PAGE_SIZE
+						})
+					)
+				);
+				
+				// 合并所有成功的响应
+				remainingResponses.forEach((result, index) => {
+					if (result.status === 'fulfilled' && result.value.data?.videos) {
+						allVideos.push(...result.value.data.videos);
+					}
+				});
+			}
+			
+			submissionVideos = allVideos;
 		} catch (err) {
 			submissionError = err instanceof Error ? err.message : '网络请求失败';
 		} finally {
@@ -965,12 +988,6 @@
 		}
 	}
 
-	// 加载更多投稿
-	async function loadMoreSubmissions() {
-		if (submissionLoading || submissionVideos.length >= submissionTotalCount) return;
-		submissionCurrentPage++;
-		await loadSubmissionVideos();
-	}
 
 	// 处理视频选择
 	function toggleSubmissionVideo(bvid: string) {
@@ -1055,7 +1072,6 @@
 		filteredSubmissionVideos.some(video => video.bvid === bvid)
 	).length;
 
-	$: canLoadMoreSubmissions = submissionVideos.length < submissionTotalCount && !submissionLoading;
 </script>
 
 <svelte:head>
@@ -2044,7 +2060,7 @@
 								? ''
 								: 'h-full'} flex flex-col overflow-hidden {isMobile
 								? ''
-								: 'sticky top-6'} max-h-[calc(100vh-200px)]"
+								: 'sticky top-6'} max-h-[750px]"
 						>
 							<div class="flex items-center justify-between border-b bg-blue-50 p-4">
 								<div>
@@ -2170,73 +2186,48 @@
 											<div class="grid {isMobile ? 'grid-cols-1 gap-3' : 'grid-cols-3 gap-4'}">
 												{#each filteredSubmissionVideos as video (video.bvid)}
 													<div
-														class="relative rounded-lg border p-3 hover:bg-gray-50 {selectedSubmissionVideos.has(video.bvid) ? 'border-blue-300 bg-blue-50' : 'border-gray-200'}"
+														class="relative rounded-lg border p-4 transition-all duration-300 hover:bg-gray-50 hover:shadow-md {selectedSubmissionVideos.has(video.bvid) ? 'border-blue-300 bg-blue-50' : 'border-gray-200'} {isMobile ? 'h-auto' : 'h-[100px]'}"
 													>
-														<div class="absolute left-2 top-2 z-10">
-															<input
-																type="checkbox"
-																checked={selectedSubmissionVideos.has(video.bvid)}
-																onchange={() => toggleSubmissionVideo(video.bvid)}
-																class="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
-															/>
-														</div>
-														
-														<img
-															src={processBilibiliImageUrl(video.cover)}
-															alt={video.title}
-															class="w-full h-24 rounded object-cover"
-															loading="lazy"
-															crossorigin="anonymous"
-															referrerpolicy="no-referrer"
-															onerror={handleImageError}
-														/>
-														
-														<div class="mt-2">
-															<h4 class="text-sm font-medium text-gray-900 line-clamp-2 pr-6">
-																{video.title}
-															</h4>
-															<p class="mt-1 text-xs text-gray-600 line-clamp-2">
-																{video.description || '无简介'}
-															</p>
-															<div class="mt-2 text-xs text-gray-500 space-y-1">
-																<div class="flex items-center gap-2">
-																	<span>🎬 {formatSubmissionPlayCount(video.view)}</span>
-																	<span>💬 {formatSubmissionPlayCount(video.danmaku)}</span>
+														<div class="flex gap-3 h-full">
+															<div class="relative flex-shrink-0">
+																<img
+																	src={processBilibiliImageUrl(video.cover)}
+																	alt={video.title}
+																	class="w-28 h-[63px] rounded object-cover"
+																	loading="lazy"
+																	crossorigin="anonymous"
+																	referrerpolicy="no-referrer"
+																	onerror={handleImageError}
+																/>
+															</div>
+															<div class="min-w-0 flex-1 relative flex flex-col overflow-hidden">
+																<input
+																	type="checkbox"
+																	checked={selectedSubmissionVideos.has(video.bvid)}
+																	onchange={() => toggleSubmissionVideo(video.bvid)}
+																	class="absolute right-1 top-1 z-10 h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+																/>
+																<h4 class="text-sm font-medium text-gray-900 line-clamp-2 mb-1 pr-6 flex-shrink-0">
+																	{video.title}
+																</h4>
+																<p class="text-xs text-gray-600 line-clamp-1 mb-2 flex-shrink-0">
+																	{video.description || '无简介'}
+																</p>
+																<div class="text-xs text-gray-500 mt-auto">
+																	<div class="flex items-center gap-2 flex-wrap">
+																		<span>🎬 {formatSubmissionPlayCount(video.view)}</span>
+																		<span>💬 {formatSubmissionPlayCount(video.danmaku)}</span>
+																		<span>📅 {formatSubmissionDate(video.pubtime)}</span>
+																		<span class="font-mono text-xs">{video.bvid}</span>
+																	</div>
 																</div>
-																<div class="flex items-center gap-2">
-																	<span>📅 {formatSubmissionDate(video.pubtime)}</span>
-																</div>
-																<div class="font-mono text-xs">{video.bvid}</div>
 															</div>
 														</div>
 													</div>
 												{/each}
 											</div>
 											
-											{#if canLoadMoreSubmissions}
-												<div class="flex justify-center py-4">
-													<button
-														type="button"
-														class="rounded-md border border-blue-300 bg-blue-50 px-4 py-2 text-sm font-medium text-blue-700 hover:bg-blue-100 disabled:cursor-not-allowed disabled:opacity-50"
-														disabled={submissionLoading}
-														onclick={loadMoreSubmissions}
-													>
-														{#if submissionLoading}
-															<svg class="mr-2 inline h-4 w-4 animate-spin" fill="none" viewBox="0 0 24 24">
-																<circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
-																<path
-																	class="opacity-75"
-																	fill="currentColor"
-																	d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
-																></path>
-															</svg>
-															加载中...
-														{:else}
-															加载更多 ({submissionVideos.length}/{submissionTotalCount})
-														{/if}
-													</button>
-												</div>
-											{:else if submissionVideos.length > 0 && submissionVideos.length < submissionTotalCount}
+											{#if submissionVideos.length > 0 && submissionTotalCount > 0}
 												<div class="text-center py-4 text-sm text-gray-500">
 													已加载全部 {submissionTotalCount} 个视频
 												</div>
