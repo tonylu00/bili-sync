@@ -344,15 +344,13 @@ impl Bangumi {
                         title, skipped_episodes, new_episodes, total_episodes
                     );
                 }
+            } else if preview_episodes > 0 {
+                tracing::info!(
+                    "单季度番剧「{}」全量获取完成：跳过 {} 个预告片，处理 {} 集内容，总计 {} 集",
+                    title, preview_episodes, new_episodes, total_episodes
+                );
             } else {
-                if preview_episodes > 0 {
-                    tracing::info!(
-                        "单季度番剧「{}」全量获取完成：跳过 {} 个预告片，处理 {} 集内容，总计 {} 集",
-                        title, preview_episodes, new_episodes, total_episodes
-                    );
-                } else {
-                    tracing::info!("单季度番剧「{}」全量获取完成：处理 {} 集内容", title, total_episodes);
-                }
+                tracing::info!("单季度番剧「{}」全量获取完成：处理 {} 集内容", title, total_episodes);
             }
         })
     }
@@ -517,15 +515,13 @@ impl Bangumi {
                         skipped_episodes, new_episodes, processed_seasons, seasons.len(), total_episodes
                     );
                 }
+            } else if preview_episodes > 0 {
+                tracing::info!(
+                    "所有季度番剧全量获取完成：跳过 {} 个预告片，处理了 {} 个季度，共 {} 集内容，总计 {} 集",
+                    preview_episodes, seasons.len(), new_episodes, total_episodes
+                );
             } else {
-                if preview_episodes > 0 {
-                    tracing::info!(
-                        "所有季度番剧全量获取完成：跳过 {} 个预告片，处理了 {} 个季度，共 {} 集内容，总计 {} 集",
-                        preview_episodes, seasons.len(), new_episodes, total_episodes
-                    );
-                } else {
-                    tracing::info!("所有季度番剧全量获取完成：处理了 {} 个季度，共 {} 集内容", seasons.len(), total_episodes);
-                }
+                tracing::info!("所有季度番剧全量获取完成：处理了 {} 个季度，共 {} 集内容", seasons.len(), total_episodes);
             }
         })
     }
@@ -712,15 +708,13 @@ impl Bangumi {
                         skipped_episodes, new_episodes, processed_seasons, seasons.len(), total_episodes
                     );
                 }
+            } else if preview_episodes > 0 {
+                tracing::info!(
+                    "选中季度番剧全量获取完成：跳过 {} 个预告片，处理了 {} 个季度，共 {} 集内容，总计 {} 集",
+                    preview_episodes, seasons.len(), new_episodes, total_episodes
+                );
             } else {
-                if preview_episodes > 0 {
-                    tracing::info!(
-                        "选中季度番剧全量获取完成：跳过 {} 个预告片，处理了 {} 个季度，共 {} 集内容，总计 {} 集",
-                        preview_episodes, seasons.len(), new_episodes, total_episodes
-                    );
-                } else {
-                    tracing::info!("选中季度番剧全量获取完成：处理了 {} 个季度，共 {} 集内容", seasons.len(), total_episodes);
-                }
+                tracing::info!("选中季度番剧全量获取完成：处理了 {} 个季度，共 {} 集内容", seasons.len(), total_episodes);
             }
         })
     }
