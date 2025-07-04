@@ -5,8 +5,7 @@
 	import { Input } from '$lib/components/ui/input';
 	import { Label } from '$lib/components/ui/label';
 	import { setBreadcrumb } from '$lib/stores/breadcrumb';
-	import type { SearchResultItem, VideoCategory } from '$lib/types';
-	import SubmissionVideoSelection from '$lib/components/submission-video-selection.svelte';
+	import type { SearchResultItem, VideoCategory, SubmissionVideoInfo } from '$lib/types';
 	import { Search, X } from '@lucide/svelte';
 	import { onDestroy, onMount } from 'svelte';
 	import { toast } from 'svelte-sonner';
@@ -98,6 +97,18 @@
 	let showSubmissionSelection = false;
 	let selectedVideos: string[] = [];
 	let selectedUpName = '';
+	
+	// 投稿选择详细状态
+	let submissionVideos: SubmissionVideoInfo[] = [];
+	let selectedSubmissionVideos: Set<string> = new Set();
+	let submissionLoading = false;
+	let submissionError: string | null = null;
+	let submissionCurrentPage = 1;
+	let submissionTotalCount = 0;
+	let submissionSearchQuery = '';
+	let filteredSubmissionVideos: SubmissionVideoInfo[] = [];
+	
+	const SUBMISSION_PAGE_SIZE = 20;
 
 	onMount(() => {
 		setBreadcrumb([
@@ -894,6 +905,154 @@
 		showSubmissionSelection = false;
 		// 保留已有的选择，不做清空
 	}
+
+	// 投稿选择相关函数
+	
+	// 重置投稿选择状态
+	function resetSubmissionState() {
+		submissionVideos = [];
+		selectedSubmissionVideos = new Set();
+		submissionLoading = false;
+		submissionError = null;
+		submissionCurrentPage = 1;
+		submissionTotalCount = 0;
+		submissionSearchQuery = '';
+		filteredSubmissionVideos = [];
+	}
+
+	// 搜索过滤投稿
+	$: {
+		if (submissionSearchQuery.trim()) {
+			filteredSubmissionVideos = submissionVideos.filter(video => 
+				video.title.toLowerCase().includes(submissionSearchQuery.toLowerCase().trim())
+			);
+		} else {
+			filteredSubmissionVideos = submissionVideos;
+		}
+	}
+
+	// 加载UP主投稿列表
+	async function loadSubmissionVideos() {
+		if (!sourceId) return;
+		
+		submissionLoading = true;
+		submissionError = null;
+		
+		try {
+			const response = await api.getSubmissionVideos({
+				up_id: sourceId,
+				page: submissionCurrentPage,
+				page_size: SUBMISSION_PAGE_SIZE
+			});
+			
+			if (response.data && response.data.videos) {
+				if (submissionCurrentPage === 1) {
+					submissionVideos = response.data.videos;
+				} else {
+					submissionVideos = [...submissionVideos, ...response.data.videos];
+				}
+				submissionTotalCount = response.data.total;
+			} else {
+				submissionError = '获取投稿列表失败';
+			}
+		} catch (err) {
+			submissionError = err instanceof Error ? err.message : '网络请求失败';
+		} finally {
+			submissionLoading = false;
+		}
+	}
+
+	// 加载更多投稿
+	async function loadMoreSubmissions() {
+		if (submissionLoading || submissionVideos.length >= submissionTotalCount) return;
+		submissionCurrentPage++;
+		await loadSubmissionVideos();
+	}
+
+	// 处理视频选择
+	function toggleSubmissionVideo(bvid: string) {
+		if (selectedSubmissionVideos.has(bvid)) {
+			selectedSubmissionVideos.delete(bvid);
+		} else {
+			selectedSubmissionVideos.add(bvid);
+		}
+		selectedSubmissionVideos = selectedSubmissionVideos; // 触发响应式更新
+	}
+
+	// 全选投稿
+	function selectAllSubmissions() {
+		filteredSubmissionVideos.forEach(video => selectedSubmissionVideos.add(video.bvid));
+		selectedSubmissionVideos = selectedSubmissionVideos;
+	}
+
+	// 全不选投稿
+	function selectNoneSubmissions() {
+		filteredSubmissionVideos.forEach(video => selectedSubmissionVideos.delete(video.bvid));
+		selectedSubmissionVideos = selectedSubmissionVideos;
+	}
+
+	// 反选投稿
+	function invertSubmissionSelection() {
+		filteredSubmissionVideos.forEach(video => {
+			if (selectedSubmissionVideos.has(video.bvid)) {
+				selectedSubmissionVideos.delete(video.bvid);
+			} else {
+				selectedSubmissionVideos.add(video.bvid);
+			}
+		});
+		selectedSubmissionVideos = selectedSubmissionVideos;
+	}
+
+	// 确认投稿选择
+	function confirmSubmissionSelection() {
+		selectedVideos = Array.from(selectedSubmissionVideos);
+		showSubmissionSelection = false;
+		if (selectedVideos.length > 0) {
+			toast.success('已选择投稿', { 
+				description: `选择了 ${selectedVideos.length} 个历史投稿，新投稿将自动下载` 
+			});
+		} else {
+			toast.info('未选择投稿', { 
+				description: '将下载所有历史投稿和新投稿' 
+			});
+		}
+	}
+
+	// 取消投稿选择
+	function cancelSubmissionSelection() {
+		showSubmissionSelection = false;
+		// 保留已有的选择，不做清空
+	}
+
+	// 格式化时间
+	function formatSubmissionDate(pubtime: string): string {
+		try {
+			return new Date(pubtime).toLocaleDateString('zh-CN');
+		} catch (e) {
+			return pubtime;
+		}
+	}
+
+	// 格式化播放量
+	function formatSubmissionPlayCount(count: number): string {
+		if (count >= 10000) {
+			return (count / 10000).toFixed(1) + '万';
+		}
+		return count.toString();
+	}
+
+	// 当显示投稿选择且有sourceId时加载数据
+	$: if (showSubmissionSelection && sourceId && sourceType === 'submission') {
+		resetSubmissionState();
+		loadSubmissionVideos();
+	}
+
+	// 计算已选择的投稿数量
+	$: selectedSubmissionCount = Array.from(selectedSubmissionVideos).filter(bvid => 
+		filteredSubmissionVideos.some(video => video.bvid === bvid)
+	).length;
+
+	$: canLoadMoreSubmissions = submissionVideos.length < submissionTotalCount && !submissionLoading;
 </script>
 
 <svelte:head>
@@ -1873,6 +2032,235 @@
 						</div>
 					</div>
 				{/if}
+
+				<!-- UP主投稿选择面板（仅投稿类型时显示） -->
+				{#if sourceType === 'submission' && showSubmissionSelection}
+					<div class={isMobile ? 'mt-6 w-full' : 'flex-1'} transition:fly={{ x: 300, duration: 300 }}>
+						<div
+							class="rounded-lg border bg-white {isMobile
+								? ''
+								: 'h-full'} flex flex-col overflow-hidden {isMobile
+								? ''
+								: 'sticky top-6'} max-h-[calc(100vh-200px)]"
+						>
+							<div class="flex items-center justify-between border-b bg-blue-50 p-4">
+								<div>
+									<span class="text-base font-medium text-blue-800">选择历史投稿</span>
+									<span class="text-sm text-blue-600 {isMobile ? 'block' : 'ml-2'}">
+										{#if submissionLoading && submissionVideos.length === 0}
+											正在加载...
+										{:else if submissionTotalCount > 0}
+											共 {submissionTotalCount} 个投稿
+										{:else}
+											暂无投稿
+										{/if}
+									</span>
+								</div>
+								<button
+									onclick={cancelSubmissionSelection}
+									class="p-1 text-xl text-blue-500 hover:text-blue-700"
+								>
+									<X class="h-5 w-5" />
+								</button>
+							</div>
+
+							<div class="flex-1 overflow-hidden flex flex-col min-h-0">
+								{#if submissionError}
+									<div class="rounded-lg border border-red-200 bg-red-50 p-4 m-3">
+										<div class="flex items-center gap-2">
+											<svg class="h-5 w-5 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+												<path
+													stroke-linecap="round"
+													stroke-linejoin="round"
+													stroke-width="2"
+													d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
+												/>
+											</svg>
+											<span class="text-sm font-medium text-red-800">加载失败</span>
+										</div>
+										<p class="mt-1 text-sm text-red-700">{submissionError}</p>
+										<button
+											type="button"
+											class="mt-2 text-sm text-red-600 underline hover:text-red-800"
+											onclick={loadSubmissionVideos}
+										>
+											重试
+										</button>
+									</div>
+								{:else}
+									<!-- 说明信息 -->
+									<div class="rounded-lg border border-blue-200 bg-blue-50 p-3 m-3 mb-0">
+										<p class="text-sm font-medium text-blue-800">📹 投稿选择说明</p>
+										<p class="mt-1 text-xs text-blue-700">
+											选择您希望下载的历史投稿。未选择的视频不会下载和显示。新发布的投稿会自动下载。
+										</p>
+									</div>
+
+									<!-- 搜索和操作栏 -->
+									<div class="space-y-3 p-3 flex-shrink-0">
+										<div class="flex gap-2">
+											<input
+												type="text"
+												bind:value={submissionSearchQuery}
+												placeholder="搜索视频标题..."
+												class="flex-1 rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:ring-2 focus:ring-blue-500 focus:outline-none"
+											/>
+										</div>
+										
+										<div class="flex items-center justify-between">
+											<div class="flex gap-2">
+												<button
+													type="button"
+													class="rounded-md border border-gray-300 bg-white px-3 py-1 text-sm font-medium text-gray-700 hover:bg-gray-50"
+													onclick={selectAllSubmissions}
+													disabled={filteredSubmissionVideos.length === 0}
+												>
+													全选
+												</button>
+												<button
+													type="button"
+													class="rounded-md border border-gray-300 bg-white px-3 py-1 text-sm font-medium text-gray-700 hover:bg-gray-50"
+													onclick={selectNoneSubmissions}
+													disabled={selectedSubmissionCount === 0}
+												>
+													全不选
+												</button>
+												<button
+													type="button"
+													class="rounded-md border border-gray-300 bg-white px-3 py-1 text-sm font-medium text-gray-700 hover:bg-gray-50"
+													onclick={invertSubmissionSelection}
+													disabled={filteredSubmissionVideos.length === 0}
+												>
+													反选
+												</button>
+											</div>
+											
+											<div class="text-sm text-gray-600">
+												已选择 {selectedSubmissionCount} / {filteredSubmissionVideos.length} 个视频
+											</div>
+										</div>
+									</div>
+
+									<!-- 视频列表 -->
+									<div class="flex-1 overflow-y-auto min-h-0 p-3 pt-0">
+										{#if submissionLoading && submissionVideos.length === 0}
+											<div class="flex items-center justify-center py-8">
+												<svg class="h-8 w-8 animate-spin text-blue-600" fill="none" viewBox="0 0 24 24">
+													<circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+													<path
+														class="opacity-75"
+														fill="currentColor"
+														d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+													></path>
+												</svg>
+												<span class="ml-2 text-sm text-gray-600">加载中...</span>
+											</div>
+										{:else if filteredSubmissionVideos.length === 0}
+											<div class="flex flex-col items-center justify-center py-8 text-gray-500">
+												<svg class="h-12 w-12 mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+													<path
+														stroke-linecap="round"
+														stroke-linejoin="round"
+														stroke-width="2"
+														d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"
+													/>
+												</svg>
+												<p class="text-sm">没有找到视频</p>
+											</div>
+										{:else}
+											<div class="space-y-2">
+												{#each filteredSubmissionVideos as video (video.bvid)}
+													<div
+														class="flex items-center gap-3 rounded-lg border p-3 hover:bg-gray-50 {selectedSubmissionVideos.has(video.bvid) ? 'border-blue-300 bg-blue-50' : 'border-gray-200'}"
+													>
+														<input
+															type="checkbox"
+															checked={selectedSubmissionVideos.has(video.bvid)}
+															onchange={() => toggleSubmissionVideo(video.bvid)}
+															class="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+														/>
+														
+														<img
+															src={processBilibiliImageUrl(video.cover)}
+															alt={video.title}
+															class="h-16 w-28 rounded object-cover flex-shrink-0"
+															loading="lazy"
+															crossorigin="anonymous"
+															referrerpolicy="no-referrer"
+															onerror={handleImageError}
+														/>
+														
+														<div class="flex-1 min-w-0">
+															<h4 class="text-sm font-medium text-gray-900 line-clamp-2">
+																{video.title}
+															</h4>
+															<p class="mt-1 text-xs text-gray-600 line-clamp-2">
+																{video.description || '无简介'}
+															</p>
+															<div class="mt-2 flex items-center gap-4 text-xs text-gray-500">
+																<span>🎬 {formatSubmissionPlayCount(video.view)}</span>
+																<span>💬 {formatSubmissionPlayCount(video.danmaku)}</span>
+																<span>📅 {formatSubmissionDate(video.pubtime)}</span>
+																<span class="font-mono">{video.bvid}</span>
+															</div>
+														</div>
+													</div>
+												{/each}
+												
+												{#if canLoadMoreSubmissions}
+													<div class="flex justify-center py-4">
+														<button
+															type="button"
+															class="rounded-md border border-blue-300 bg-blue-50 px-4 py-2 text-sm font-medium text-blue-700 hover:bg-blue-100 disabled:cursor-not-allowed disabled:opacity-50"
+															disabled={submissionLoading}
+															onclick={loadMoreSubmissions}
+														>
+															{#if submissionLoading}
+																<svg class="mr-2 inline h-4 w-4 animate-spin" fill="none" viewBox="0 0 24 24">
+																	<circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+																	<path
+																		class="opacity-75"
+																		fill="currentColor"
+																		d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+																	></path>
+																</svg>
+																加载中...
+															{:else}
+																加载更多 ({submissionVideos.length}/{submissionTotalCount})
+															{/if}
+														</button>
+													</div>
+												{:else if submissionVideos.length > 0 && submissionVideos.length < submissionTotalCount}
+													<div class="text-center py-4 text-sm text-gray-500">
+														已加载全部 {submissionTotalCount} 个视频
+													</div>
+												{/if}
+											</div>
+										{/if}
+									</div>
+
+									<!-- 确认按钮 -->
+									<div class="border-t p-4 flex justify-end gap-3 flex-shrink-0">
+										<button
+											type="button"
+											class="rounded-md border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 focus:outline-none"
+											onclick={cancelSubmissionSelection}
+										>
+											取消
+										</button>
+										<button
+											type="button"
+											class="rounded-md border border-transparent bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 focus:outline-none"
+											onclick={confirmSubmissionSelection}
+										>
+											确认选择 ({selectedSubmissionVideos.size} 个视频)
+										</button>
+									</div>
+								{/if}
+							</div>
+						</div>
+					</div>
+				{/if}
 			</div>
 		</div>
 	</div>
@@ -2100,11 +2488,3 @@
 	}
 </style>
 
-<!-- UP主投稿选择对话框 -->
-<SubmissionVideoSelection
-	bind:isOpen={showSubmissionSelection}
-	upId={sourceId}
-	upName={selectedUpName}
-	on:confirm={(e) => handleSubmissionSelectionConfirm(e.detail)}
-	on:cancel={handleSubmissionSelectionCancel}
-/>
