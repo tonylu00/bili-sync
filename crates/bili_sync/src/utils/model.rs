@@ -117,6 +117,7 @@ pub async fn get_failed_videos_in_current_cycle(
 
 /// 尝试创建 Video Model，如果发生冲突则忽略
 /// 如果视频源启用了扫描已删除视频设置，则会恢复已删除的视频
+/// 对于选择性下载模式，只存储选中的视频到数据库
 pub async fn create_videos(
     videos_info: Vec<VideoInfo>,
     video_source: &VideoSourceEnum,
@@ -131,7 +132,7 @@ pub async fn create_videos(
         // 启用扫描已删除视频：需要特别处理已删除的视频
         for video_info in videos_info {
             // 选择性下载逻辑：针对 submission 类型视频源 - 需要在 into_simple_model() 之前获取信息
-            let auto_download_value = if let Some(selected_videos) = video_source.get_selected_videos() {
+            let should_store_video = if let Some(selected_videos) = video_source.get_selected_videos() {
                 // 获取创建时间来判断是否为新投稿
                 let is_new_submission = if let Some(created_at) = video_source.get_created_at() {
                     // 如果视频发布时间晚于订阅创建时间，则为新投稿，自动下载
@@ -151,33 +152,38 @@ pub async fn create_videos(
                     crate::bilibili::VideoInfo::Bangumi { bvid, .. } => bvid,
                 };
                 
-                let auto_download = if is_new_submission {
-                    // 新投稿：自动下载
+                let should_store = if is_new_submission {
+                    // 新投稿：存储到数据库并设置自动下载
                     true
                 } else {
-                    // 历史投稿：检查是否在选择列表中
+                    // 历史投稿：只有在选择列表中的才存储到数据库
                     selected_videos.contains(video_bvid)
                 };
                 
                 debug!(
-                    "选择性下载检查(已删除扫描): BVID={}, 是否新投稿={}, 是否在选择列表中={}, auto_download={}",
+                    "选择性下载检查(已删除扫描): BVID={}, 是否新投稿={}, 是否在选择列表中={}, 是否存储={}",
                     video_bvid,
                     is_new_submission,
                     selected_videos.contains(video_bvid),
-                    auto_download
+                    should_store
                 );
                 
-                auto_download
+                should_store
             } else {
-                // 没有选择性下载，默认自动下载所有视频
+                // 没有选择性下载，存储所有视频
                 true
             };
+
+            // 如果不应该存储此视频，则跳过
+            if !should_store_video {
+                continue;
+            }
 
             let mut model = video_info.into_simple_model();
             video_source.set_relation_id(&mut model);
             
-            // 设置 auto_download 字段
-            model.auto_download = Set(auto_download_value);
+            // 对于需要存储的视频，设置 auto_download 为 true
+            model.auto_download = Set(true);
 
             // 查找是否存在已删除的同一视频
             let existing_video = video::Entity::find()
@@ -316,7 +322,7 @@ pub async fn create_videos(
         // 未启用扫描已删除视频：使用原有逻辑，但增加 share_copy 更新检查
         for video_info in videos_info {
             // 选择性下载逻辑：针对 submission 类型视频源 - 需要在 into_simple_model() 之前获取信息
-            let auto_download_value = if let Some(selected_videos) = video_source.get_selected_videos() {
+            let should_store_video = if let Some(selected_videos) = video_source.get_selected_videos() {
                 // 获取创建时间来判断是否为新投稿
                 let is_new_submission = if let Some(created_at) = video_source.get_created_at() {
                     // 如果视频发布时间晚于订阅创建时间，则为新投稿，自动下载
@@ -336,33 +342,38 @@ pub async fn create_videos(
                     crate::bilibili::VideoInfo::Bangumi { bvid, .. } => bvid,
                 };
                 
-                let auto_download = if is_new_submission {
-                    // 新投稿：自动下载
+                let should_store = if is_new_submission {
+                    // 新投稿：存储到数据库并设置自动下载
                     true
                 } else {
-                    // 历史投稿：检查是否在选择列表中
+                    // 历史投稿：只有在选择列表中的才存储到数据库
                     selected_videos.contains(video_bvid)
                 };
                 
                 debug!(
-                    "选择性下载检查(常规模式): BVID={}, 是否新投稿={}, 是否在选择列表中={}, auto_download={}",
+                    "选择性下载检查(常规模式): BVID={}, 是否新投稿={}, 是否在选择列表中={}, 是否存储={}",
                     video_bvid,
                     is_new_submission,
                     selected_videos.contains(video_bvid),
-                    auto_download
+                    should_store
                 );
                 
-                auto_download
+                should_store
             } else {
-                // 没有选择性下载，默认自动下载所有视频
+                // 没有选择性下载，存储所有视频
                 true
             };
+
+            // 如果不应该存储此视频，则跳过
+            if !should_store_video {
+                continue;
+            }
 
             let mut model = video_info.into_simple_model();
             video_source.set_relation_id(&mut model);
             
-            // 设置 auto_download 字段
-            model.auto_download = Set(auto_download_value);
+            // 对于需要存储的视频，设置 auto_download 为 true
+            model.auto_download = Set(true);
 
             // 先尝试插入，如果失败说明记录已存在
             let insert_result = video::Entity::insert(model.clone())
