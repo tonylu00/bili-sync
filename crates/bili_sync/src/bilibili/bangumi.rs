@@ -10,6 +10,12 @@ use tracing;
 
 use super::{BiliClient, Validate, VideoInfo};
 
+/// 检测是否为预告片
+/// 根据用户确认，section_type: 1 是最可靠的预告片标识
+fn is_preview_episode(episode: &serde_json::Value) -> bool {
+    episode["section_type"].as_i64().unwrap_or(0) == 1
+}
+
 pub struct Bangumi {
     client: BiliClient,
     media_id: Option<String>,
@@ -228,6 +234,7 @@ impl Bangumi {
             let mut total_episodes = 0;
             let mut new_episodes = 0;
             let mut skipped_episodes = 0;
+            let mut preview_episodes = 0;
 
             // 直接从 season_info 中解析分集信息，避免重复API调用
             let episodes = season_info["episodes"]
@@ -235,8 +242,21 @@ impl Bangumi {
                 .ok_or_else(|| anyhow::anyhow!("Failed to get episodes from season info"))?;
             debug!("获取到 {} 集番剧内容", episodes.len());
 
+            // 获取当前配置
+            let config = crate::config::reload_config();
+
             for episode in episodes {
                 total_episodes += 1;
+                
+                // 检查是否为预告片并跳过
+                if config.skip_bangumi_preview && is_preview_episode(episode) {
+                    let episode_title_raw = episode["title"].as_str().unwrap_or_default().to_string();
+                    let show_title = episode["show_title"].as_str().unwrap_or_default().to_string();
+                    preview_episodes += 1;
+                    debug!("跳过预告片：{} ({})", show_title, episode_title_raw);
+                    continue;
+                }
+                
                 // 解析分集信息
                 let ep_id = episode["id"].as_i64().unwrap_or_default();
                 let aid = episode["aid"].as_i64().unwrap_or_default();
@@ -313,12 +333,26 @@ impl Bangumi {
 
             // 输出统计信息
             if latest_row_at.is_some() {
-                tracing::info!(
-                    "单季度番剧「{}」增量获取完成：跳过 {} 集旧内容，处理 {} 集新内容，总计 {} 集",
-                    title, skipped_episodes, new_episodes, total_episodes
-                );
+                if preview_episodes > 0 {
+                    tracing::info!(
+                        "单季度番剧「{}」增量获取完成：跳过 {} 集旧内容，跳过 {} 个预告片，处理 {} 集新内容，总计 {} 集",
+                        title, skipped_episodes, preview_episodes, new_episodes, total_episodes
+                    );
+                } else {
+                    tracing::info!(
+                        "单季度番剧「{}」增量获取完成：跳过 {} 集旧内容，处理 {} 集新内容，总计 {} 集",
+                        title, skipped_episodes, new_episodes, total_episodes
+                    );
+                }
             } else {
-                tracing::info!("单季度番剧「{}」全量获取完成：处理 {} 集内容", title, total_episodes);
+                if preview_episodes > 0 {
+                    tracing::info!(
+                        "单季度番剧「{}」全量获取完成：跳过 {} 个预告片，处理 {} 集内容，总计 {} 集",
+                        title, preview_episodes, new_episodes, total_episodes
+                    );
+                } else {
+                    tracing::info!("单季度番剧「{}」全量获取完成：处理 {} 集内容", title, total_episodes);
+                }
             }
         })
     }
@@ -351,6 +385,7 @@ impl Bangumi {
             let mut total_episodes = 0;
             let mut new_episodes = 0;
             let mut skipped_episodes = 0;
+            let mut preview_episodes = 0;
 
             // 对每个季度进行处理
             for (season_index, season) in seasons.iter().enumerate() {
@@ -374,9 +409,21 @@ impl Bangumi {
                 debug!("季度 {} (第{}季) 获取到 {} 集番剧内容", season.season_title, season_index + 1, episodes.len());
 
                 let mut season_has_new_episodes = false;
+                
+                // 获取当前配置
+                let config = crate::config::reload_config();
 
                 for episode in episodes {
                     total_episodes += 1;
+                    
+                    // 检查是否为预告片并跳过
+                    if config.skip_bangumi_preview && is_preview_episode(episode) {
+                        let episode_title_raw = episode["title"].as_str().unwrap_or_default().to_string();
+                        let show_title = episode["show_title"].as_str().unwrap_or_default().to_string();
+                        preview_episodes += 1;
+                        debug!("跳过预告片：{} ({}) - 季度: {}", show_title, episode_title_raw, season.season_title);
+                        continue;
+                    }
 
                     // 解析分集信息
                     let ep_id = episode["id"].as_i64().unwrap_or_default();
@@ -459,12 +506,26 @@ impl Bangumi {
             }
 
             if latest_row_at.is_some() {
-                tracing::info!(
-                    "所有季度番剧增量获取完成：跳过 {} 集旧内容，处理 {} 集新内容，涉及 {}/{} 个季度，总计 {} 集",
-                    skipped_episodes, new_episodes, processed_seasons, seasons.len(), total_episodes
-                );
+                if preview_episodes > 0 {
+                    tracing::info!(
+                        "所有季度番剧增量获取完成：跳过 {} 集旧内容，跳过 {} 个预告片，处理 {} 集新内容，涉及 {}/{} 个季度，总计 {} 集",
+                        skipped_episodes, preview_episodes, new_episodes, processed_seasons, seasons.len(), total_episodes
+                    );
+                } else {
+                    tracing::info!(
+                        "所有季度番剧增量获取完成：跳过 {} 集旧内容，处理 {} 集新内容，涉及 {}/{} 个季度，总计 {} 集",
+                        skipped_episodes, new_episodes, processed_seasons, seasons.len(), total_episodes
+                    );
+                }
             } else {
-                tracing::info!("所有季度番剧全量获取完成：处理了 {} 个季度，共 {} 集内容", seasons.len(), total_episodes);
+                if preview_episodes > 0 {
+                    tracing::info!(
+                        "所有季度番剧全量获取完成：跳过 {} 个预告片，处理了 {} 个季度，共 {} 集内容，总计 {} 集",
+                        preview_episodes, seasons.len(), new_episodes, total_episodes
+                    );
+                } else {
+                    tracing::info!("所有季度番剧全量获取完成：处理了 {} 个季度，共 {} 集内容", seasons.len(), total_episodes);
+                }
             }
         })
     }
@@ -507,6 +568,7 @@ impl Bangumi {
             let mut total_episodes = 0;
             let mut new_episodes = 0;
             let mut skipped_episodes = 0;
+            let mut preview_episodes = 0;
 
             // 对每个选中的季度进行处理
             for (season_index, season) in seasons.iter().enumerate() {
@@ -542,9 +604,21 @@ impl Bangumi {
                 debug!("季度 {} (第{}季) 获取到 {} 集番剧内容", season.season_title, season_number.unwrap_or(0), episodes.len());
 
                 let mut season_has_new_episodes = false;
+                
+                // 获取当前配置
+                let config = crate::config::reload_config();
 
                 for episode in episodes {
                     total_episodes += 1;
+                    
+                    // 检查是否为预告片并跳过
+                    if config.skip_bangumi_preview && is_preview_episode(episode) {
+                        let episode_title_raw = episode["title"].as_str().unwrap_or_default().to_string();
+                        let show_title = episode["show_title"].as_str().unwrap_or_default().to_string();
+                        preview_episodes += 1;
+                        debug!("跳过预告片：{} ({}) - 选中季度: {}", show_title, episode_title_raw, season.season_title);
+                        continue;
+                    }
 
                     // 解析分集信息
                     let ep_id = episode["id"].as_i64().unwrap_or_default();
@@ -627,12 +701,26 @@ impl Bangumi {
             }
 
             if latest_row_at.is_some() {
-                tracing::info!(
-                    "选中季度番剧增量获取完成：跳过 {} 集旧内容，处理 {} 集新内容，涉及 {}/{} 个季度，总计 {} 集",
-                    skipped_episodes, new_episodes, processed_seasons, seasons.len(), total_episodes
-                );
+                if preview_episodes > 0 {
+                    tracing::info!(
+                        "选中季度番剧增量获取完成：跳过 {} 集旧内容，跳过 {} 个预告片，处理 {} 集新内容，涉及 {}/{} 个季度，总计 {} 集",
+                        skipped_episodes, preview_episodes, new_episodes, processed_seasons, seasons.len(), total_episodes
+                    );
+                } else {
+                    tracing::info!(
+                        "选中季度番剧增量获取完成：跳过 {} 集旧内容，处理 {} 集新内容，涉及 {}/{} 个季度，总计 {} 集",
+                        skipped_episodes, new_episodes, processed_seasons, seasons.len(), total_episodes
+                    );
+                }
             } else {
-                tracing::info!("选中季度番剧全量获取完成：处理了 {} 个季度，共 {} 集内容", seasons.len(), total_episodes);
+                if preview_episodes > 0 {
+                    tracing::info!(
+                        "选中季度番剧全量获取完成：跳过 {} 个预告片，处理了 {} 个季度，共 {} 集内容，总计 {} 集",
+                        preview_episodes, seasons.len(), new_episodes, total_episodes
+                    );
+                } else {
+                    tracing::info!("选中季度番剧全量获取完成：处理了 {} 个季度，共 {} 集内容", seasons.len(), total_episodes);
+                }
             }
         })
     }
