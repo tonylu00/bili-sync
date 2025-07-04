@@ -51,11 +51,17 @@ impl From<WbiImg> for Option<String> {
 
 impl WbiImg {
     /// 对参数进行WBI签名
-    pub async fn sign_params(&self, params: std::collections::HashMap<String, String>) -> Result<Vec<(String, String)>> {
+    pub async fn sign_params(
+        &self,
+        params: std::collections::HashMap<String, String>,
+    ) -> Result<Vec<(String, String)>> {
         let mixin_key: Option<String> = self.clone().into();
         let params_vec: Vec<(&str, String)> = params.iter().map(|(k, v)| (k.as_str(), v.clone())).collect();
         let encoded = encoded_query(params_vec, mixin_key);
-        Ok(encoded.into_iter().map(|(k, v)| (k.to_string(), v.into_owned())).collect())
+        Ok(encoded
+            .into_iter()
+            .map(|(k, v)| (k.to_string(), v.into_owned()))
+            .collect())
     }
 }
 

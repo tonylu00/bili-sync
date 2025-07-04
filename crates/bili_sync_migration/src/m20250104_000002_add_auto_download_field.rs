@@ -14,10 +14,7 @@ impl MigrationTrait for Migration {
                 Table::alter()
                     .table(Video::Table)
                     .add_column(
-                        ColumnDef::new(Video::AutoDownload)
-                            .boolean()
-                            .not_null()
-                            .default(true), // 默认为true，保持现有行为
+                        ColumnDef::new(Video::AutoDownload).boolean().not_null().default(true), // 默认为true，保持现有行为
                     )
                     .to_owned(),
             )

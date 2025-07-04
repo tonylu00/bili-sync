@@ -851,7 +851,7 @@ impl BiliClient {
         use chrono::{TimeZone, Utc};
 
         let url = "https://api.bilibili.com/x/space/wbi/arc/search";
-        
+
         // 获取wbi签名参数
         let wbi_img = self.wbi_img().await?;
         let mut params = std::collections::HashMap::new();
@@ -860,7 +860,7 @@ impl BiliClient {
         params.insert("ps".to_string(), page_size.to_string());
         params.insert("order".to_string(), "pubdate".to_string()); // 按发布时间排序
         params.insert("order_avoided".to_string(), "true".to_string());
-        
+
         // 对参数进行wbi签名
         let signed_params = wbi_img.sign_params(params).await?;
 
@@ -887,9 +887,10 @@ impl BiliClient {
         for video_item in video_list {
             // 解析发布时间
             let pubtime_timestamp = video_item["created"].as_i64().unwrap_or(0);
-            let pubtime = Utc.timestamp_opt(pubtime_timestamp, 0)
+            let pubtime = Utc
+                .timestamp_opt(pubtime_timestamp, 0)
                 .single()
-                .unwrap_or_else(|| Utc::now())
+                .unwrap_or_else(Utc::now)
                 .format("%Y-%m-%d %H:%M:%S")
                 .to_string();
 
@@ -898,7 +899,8 @@ impl BiliClient {
                 title: video_item["title"].as_str().unwrap_or("").to_string(),
                 cover: video_item["pic"].as_str().unwrap_or("").to_string(),
                 pubtime,
-                duration: video_item["length"].as_str()
+                duration: video_item["length"]
+                    .as_str()
                     .and_then(|s| {
                         // 将 "mm:ss" 格式转换为秒数
                         let parts: Vec<&str> = s.split(':').collect();

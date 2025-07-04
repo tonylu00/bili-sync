@@ -15,7 +15,9 @@ use tokio_util::sync::CancellationToken;
 use tracing::{debug, error, info, warn};
 
 use crate::adapter::{video_source_from, Args, VideoSource, VideoSourceEnum};
-use crate::bilibili::{BestStream, BiliClient, BiliError, Dimension, PageInfo, Stream as VideoStream, Video, VideoInfo};
+use crate::bilibili::{
+    BestStream, BiliClient, BiliError, Dimension, PageInfo, Stream as VideoStream, Video, VideoInfo,
+};
 use crate::config::ARGS;
 use crate::error::{DownloadAbortError, ExecutionStatus, ProcessPageError};
 use crate::task::{DeleteVideoTask, VIDEO_DELETE_TASK_QUEUE};
@@ -1588,13 +1590,27 @@ pub async fn fetch_page_video(
     debug!("=== 视频下载配置 ===");
     debug!("视频: {} ({})", video_model.name, video_model.bvid);
     debug!("分页: {} (cid: {})", page_info.name, page_info.cid);
-    debug!("质量配置: {} - {} (最高-最低)", 
-        format!("{:?}({})", filter_option.video_max_quality, filter_option.video_max_quality as u32),
-        format!("{:?}({})", filter_option.video_min_quality, filter_option.video_min_quality as u32)
+    debug!(
+        "质量配置: {} - {} (最高-最低)",
+        format!(
+            "{:?}({})",
+            filter_option.video_max_quality, filter_option.video_max_quality as u32
+        ),
+        format!(
+            "{:?}({})",
+            filter_option.video_min_quality, filter_option.video_min_quality as u32
+        )
     );
-    debug!("音频配置: {} - {} (最高-最低)", 
-        format!("{:?}({})", filter_option.audio_max_quality, filter_option.audio_max_quality as u32),
-        format!("{:?}({})", filter_option.audio_min_quality, filter_option.audio_min_quality as u32)
+    debug!(
+        "音频配置: {} - {} (最高-最低)",
+        format!(
+            "{:?}({})",
+            filter_option.audio_max_quality, filter_option.audio_max_quality as u32
+        ),
+        format!(
+            "{:?}({})",
+            filter_option.audio_min_quality, filter_option.audio_min_quality as u32
+        )
     );
     debug!("编码偏好: {:?}", filter_option.codecs);
 
@@ -1608,12 +1624,13 @@ pub async fn fetch_page_video(
             debug!("用户认证: 未登录 - 高质量视频流可能不可用");
         }
     }
-    
+
     // 高质量需求提醒
-    if filter_option.video_max_quality as u32 >= 120 { // 4K及以上
+    if filter_option.video_max_quality as u32 >= 120 {
+        // 4K及以上
         debug!("⚠️  请求高质量视频(4K+)，需要大会员权限");
     }
-    
+
     debug!("=== 配置调试结束 ===");
 
     // 记录开始时间
@@ -1621,7 +1638,7 @@ pub async fn fetch_page_video(
 
     // 根据流类型进行不同处理
     let best_stream_result = streams.best_stream(filter_option)?;
-    
+
     // 添加流选择结果日志和质量分析
     debug!("=== 流选择结果 ===");
     match &best_stream_result {
@@ -1632,18 +1649,27 @@ pub async fn fetch_page_video(
             if let VideoStream::DashVideo { quality, codecs, .. } = video {
                 let quality_value = *quality as u32;
                 let requested_quality = filter_option.video_max_quality as u32;
-                
+
                 info!("✓ 选择视频流: {:?}({}) {:?}", quality, quality_value, codecs);
-                
+
                 // 质量对比分析
                 if quality_value < requested_quality {
                     let quality_gap = requested_quality - quality_value;
                     if requested_quality >= 120 && quality_value < 120 {
-                        warn!("⚠️  未获得4K+质量(请求{}，实际{}) - 可能需要大会员权限", requested_quality, quality_value);
+                        warn!(
+                            "⚠️  未获得4K+质量(请求{}，实际{}) - 可能需要大会员权限",
+                            requested_quality, quality_value
+                        );
                     } else if quality_gap >= 40 {
-                        warn!("⚠️  视频质量显著低于预期(请求{}，实际{}) - 视频源可能不支持更高质量", requested_quality, quality_value);
+                        warn!(
+                            "⚠️  视频质量显著低于预期(请求{}，实际{}) - 视频源可能不支持更高质量",
+                            requested_quality, quality_value
+                        );
                     } else {
-                        info!("ℹ️  视频质量略低于预期(请求{}，实际{}) - 已选择可用的最高质量", requested_quality, quality_value);
+                        info!(
+                            "ℹ️  视频质量略低于预期(请求{}，实际{}) - 已选择可用的最高质量",
+                            requested_quality, quality_value
+                        );
                     }
                 } else {
                     info!("✓ 获得预期质量或更高");

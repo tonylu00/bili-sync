@@ -141,7 +141,7 @@ pub async fn create_videos(
                     // 如果无法获取创建时间，保守地认为不是新投稿
                     false
                 };
-                
+
                 // 获取视频的 BVID（从 VideoInfo 获取）
                 let video_bvid = match &video_info {
                     crate::bilibili::VideoInfo::Submission { bvid, .. } => bvid,
@@ -151,7 +151,7 @@ pub async fn create_videos(
                     crate::bilibili::VideoInfo::Collection { bvid, .. } => bvid,
                     crate::bilibili::VideoInfo::Bangumi { bvid, .. } => bvid,
                 };
-                
+
                 let should_store = if is_new_submission {
                     // 新投稿：存储到数据库并设置自动下载
                     true
@@ -159,7 +159,7 @@ pub async fn create_videos(
                     // 历史投稿：只有在选择列表中的才存储到数据库
                     selected_videos.contains(video_bvid)
                 };
-                
+
                 debug!(
                     "选择性下载检查(已删除扫描): BVID={}, 是否新投稿={}, 是否在选择列表中={}, 是否存储={}",
                     video_bvid,
@@ -167,7 +167,7 @@ pub async fn create_videos(
                     selected_videos.contains(video_bvid),
                     should_store
                 );
-                
+
                 should_store
             } else {
                 // 没有选择性下载，存储所有视频
@@ -181,7 +181,7 @@ pub async fn create_videos(
 
             let mut model = video_info.into_simple_model();
             video_source.set_relation_id(&mut model);
-            
+
             // 对于需要存储的视频，设置 auto_download 为 true
             model.auto_download = Set(true);
 
@@ -331,7 +331,7 @@ pub async fn create_videos(
                     // 如果无法获取创建时间，保守地认为不是新投稿
                     false
                 };
-                
+
                 // 获取视频的 BVID（从 VideoInfo 获取）
                 let video_bvid = match &video_info {
                     crate::bilibili::VideoInfo::Submission { bvid, .. } => bvid,
@@ -341,7 +341,7 @@ pub async fn create_videos(
                     crate::bilibili::VideoInfo::Collection { bvid, .. } => bvid,
                     crate::bilibili::VideoInfo::Bangumi { bvid, .. } => bvid,
                 };
-                
+
                 let should_store = if is_new_submission {
                     // 新投稿：存储到数据库并设置自动下载
                     true
@@ -349,7 +349,7 @@ pub async fn create_videos(
                     // 历史投稿：只有在选择列表中的才存储到数据库
                     selected_videos.contains(video_bvid)
                 };
-                
+
                 debug!(
                     "选择性下载检查(常规模式): BVID={}, 是否新投稿={}, 是否在选择列表中={}, 是否存储={}",
                     video_bvid,
@@ -357,7 +357,7 @@ pub async fn create_videos(
                     selected_videos.contains(video_bvid),
                     should_store
                 );
-                
+
                 should_store
             } else {
                 // 没有选择性下载，存储所有视频
@@ -371,7 +371,7 @@ pub async fn create_videos(
 
             let mut model = video_info.into_simple_model();
             video_source.set_relation_id(&mut model);
-            
+
             // 对于需要存储的视频，设置 auto_download 为 true
             model.auto_download = Set(true);
 

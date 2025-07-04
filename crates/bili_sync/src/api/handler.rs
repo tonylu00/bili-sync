@@ -22,16 +22,16 @@ use crate::api::auth::OpenAPIAuth;
 use crate::api::error::InnerApiError;
 use crate::api::request::{
     AddVideoSourceRequest, BatchUpdateConfigRequest, ConfigHistoryRequest, ResetSpecificTasksRequest,
-    ResetVideoSourcePathRequest, SetupAuthTokenRequest, SubmissionVideosRequest, UpdateConfigItemRequest, UpdateConfigRequest,
-    UpdateCredentialRequest, UpdateVideoStatusRequest, VideosRequest,
+    ResetVideoSourcePathRequest, SetupAuthTokenRequest, SubmissionVideosRequest, UpdateConfigItemRequest,
+    UpdateConfigRequest, UpdateCredentialRequest, UpdateVideoStatusRequest, VideosRequest,
 };
 use crate::api::response::{
     AddVideoSourceResponse, BangumiSeasonInfo, ConfigChangeInfo, ConfigHistoryResponse, ConfigItemResponse,
     ConfigReloadResponse, ConfigResponse, ConfigValidationResponse, DeleteVideoResponse, DeleteVideoSourceResponse,
     HotReloadStatusResponse, InitialSetupCheckResponse, PageInfo, ResetAllVideosResponse, ResetVideoResponse,
-    ResetVideoSourcePathResponse, SetupAuthTokenResponse, SubmissionVideosResponse, 
-    UpdateConfigResponse, UpdateCredentialResponse, UpdateVideoStatusResponse, VideoInfo, VideoResponse, VideoSource, 
-    VideoSourcesResponse, VideosResponse,
+    ResetVideoSourcePathResponse, SetupAuthTokenResponse, SubmissionVideosResponse, UpdateConfigResponse,
+    UpdateCredentialResponse, UpdateVideoStatusResponse, VideoInfo, VideoResponse, VideoSource, VideoSourcesResponse,
+    VideosResponse,
 };
 use crate::api::wrapper::{ApiError, ApiResponse};
 use crate::utils::status::{PageStatus, VideoStatus};
@@ -1168,8 +1168,9 @@ pub async fn add_video_source_internal(
                 enabled: sea_orm::Set(true),
                 scan_deleted_videos: sea_orm::Set(false),
                 selected_videos: sea_orm::Set(
-                    params.selected_videos
-                        .map(|videos| serde_json::to_string(&videos).unwrap_or_default())
+                    params
+                        .selected_videos
+                        .map(|videos| serde_json::to_string(&videos).unwrap_or_default()),
                 ),
             };
 
@@ -5141,14 +5142,15 @@ pub async fn get_submission_videos(
     Query(params): Query<SubmissionVideosRequest>,
 ) -> Result<ApiResponse<SubmissionVideosResponse>, ApiError> {
     let bili_client = crate::bilibili::BiliClient::new(String::new());
-    
+
     let page = params.page.unwrap_or(1);
     let page_size = params.page_size.unwrap_or(50);
-    
+
     // 验证UP主ID格式
-    let up_id_i64 = up_id.parse::<i64>()
+    let up_id_i64 = up_id
+        .parse::<i64>()
         .map_err(|_| ApiError::from(anyhow::anyhow!("无效的UP主ID格式")))?;
-    
+
     // 获取UP主投稿列表
     match bili_client.get_user_submission_videos(up_id_i64, page, page_size).await {
         Ok((videos, total)) => {
@@ -5158,7 +5160,7 @@ pub async fn get_submission_videos(
                 page,
                 page_size,
             };
-            
+
             Ok(ApiResponse::ok(response))
         }
         Err(e) => {

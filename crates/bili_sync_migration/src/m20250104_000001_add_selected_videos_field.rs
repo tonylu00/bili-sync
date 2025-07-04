@@ -13,11 +13,7 @@ impl MigrationTrait for Migration {
             .alter_table(
                 Table::alter()
                     .table(Submission::Table)
-                    .add_column(
-                        ColumnDef::new(Submission::SelectedVideos)
-                            .text()
-                            .null(),
-                    )
+                    .add_column(ColumnDef::new(Submission::SelectedVideos).text().null())
                     .to_owned(),
             )
             .await

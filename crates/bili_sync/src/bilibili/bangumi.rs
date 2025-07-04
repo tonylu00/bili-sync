@@ -247,7 +247,7 @@ impl Bangumi {
 
             for episode in episodes {
                 total_episodes += 1;
-                
+
                 // 检查是否为预告片并跳过
                 if config.skip_bangumi_preview && is_preview_episode(episode) {
                     let episode_title_raw = episode["title"].as_str().unwrap_or_default().to_string();
@@ -256,7 +256,7 @@ impl Bangumi {
                     debug!("跳过预告片：{} ({})", show_title, episode_title_raw);
                     continue;
                 }
-                
+
                 // 解析分集信息
                 let ep_id = episode["id"].as_i64().unwrap_or_default();
                 let aid = episode["aid"].as_i64().unwrap_or_default();
@@ -407,13 +407,13 @@ impl Bangumi {
                 debug!("季度 {} (第{}季) 获取到 {} 集番剧内容", season.season_title, season_index + 1, episodes.len());
 
                 let mut season_has_new_episodes = false;
-                
+
                 // 获取当前配置
                 let config = crate::config::reload_config();
 
                 for episode in episodes {
                     total_episodes += 1;
-                    
+
                     // 检查是否为预告片并跳过
                     if config.skip_bangumi_preview && is_preview_episode(episode) {
                         let episode_title_raw = episode["title"].as_str().unwrap_or_default().to_string();
@@ -600,13 +600,13 @@ impl Bangumi {
                 debug!("季度 {} (第{}季) 获取到 {} 集番剧内容", season.season_title, season_number.unwrap_or(0), episodes.len());
 
                 let mut season_has_new_episodes = false;
-                
+
                 // 获取当前配置
                 let config = crate::config::reload_config();
 
                 for episode in episodes {
                     total_episodes += 1;
-                    
+
                     // 检查是否为预告片并跳过
                     if config.skip_bangumi_preview && is_preview_episode(episode) {
                         let episode_title_raw = episode["title"].as_str().unwrap_or_default().to_string();
