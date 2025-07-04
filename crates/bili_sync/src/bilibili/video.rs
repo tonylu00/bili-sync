@@ -233,11 +233,11 @@ impl<'a> Video<'a> {
         let quality_levels = ["127", "120", "116", "112", "80", "64", "32", "16"];
         
         for (attempt, qn) in quality_levels.iter().enumerate() {
-            tracing::info!("尝试获取视频流 (尝试 {}/{}): qn={}", attempt + 1, quality_levels.len(), qn);
+            tracing::debug!("尝试获取视频流 (尝试 {}/{}): qn={}", attempt + 1, quality_levels.len(), qn);
             
             match self.get_page_analyzer_with_quality(page, qn).await {
                 Ok(analyzer) => {
-                    tracing::info!("✓ 成功获取视频流: qn={}", qn);
+                    tracing::debug!("✓ 成功获取视频流: qn={}", qn);
                     return Ok(analyzer);
                 }
                 Err(e) => {
@@ -330,13 +330,13 @@ impl<'a> Video<'a> {
             ("fourk", "1"),                // 启用4K支持
         ];
 
-        tracing::info!("=== API参数调试 ===");
-        tracing::info!("视频: {} (aid: {})", self.bvid, self.aid);
-        tracing::info!("分页: cid: {}", page.cid);
-        tracing::info!("请求参数: {:?}", params);
+        tracing::debug!("=== API参数调试 ===");
+        tracing::debug!("视频: {} (aid: {})", self.bvid, self.aid);
+        tracing::debug!("分页: cid: {}", page.cid);
+        tracing::debug!("请求参数: {:?}", params);
         
         let request_url = "https://api.bilibili.com/x/player/wbi/playurl";
-        tracing::info!("请求URL: {}", request_url);
+        tracing::debug!("请求URL: {}", request_url);
 
         let res = self
             .client
@@ -353,32 +353,32 @@ impl<'a> Video<'a> {
             .await?;
 
         // 增强的API响应调试信息
-        tracing::info!("=== API响应调试 ===");
+        tracing::debug!("=== API响应调试 ===");
         if let Some(code) = res["code"].as_i64() {
-            tracing::info!("响应代码: {}", code);
+            tracing::debug!("响应代码: {}", code);
         }
         if let Some(message) = res["message"].as_str() {
-            tracing::info!("响应消息: {}", message);
+            tracing::debug!("响应消息: {}", message);
         }
         
         // 记录视频质量信息
         if let Some(quality) = res["data"]["quality"].as_u64() {
-            tracing::info!("API返回的当前质量: {}", quality);
+            tracing::debug!("API返回的当前质量: {}", quality);
         }
         if let Some(accept_quality) = res["data"]["accept_quality"].as_array() {
             let qualities: Vec<u64> = accept_quality.iter().filter_map(|v| v.as_u64()).collect();
-            tracing::info!("API返回的可用质量列表: {:?}", qualities);
+            tracing::debug!("API返回的可用质量列表: {:?}", qualities);
         }
         
         // 检查是否存在VIP要求
         if let Some(vip_status) = res["data"]["vip_status"].as_i64() {
-            tracing::info!("VIP状态要求: {}", vip_status);
+            tracing::debug!("VIP状态要求: {}", vip_status);
         }
         if let Some(vip_type) = res["data"]["vip_type"].as_i64() {
-            tracing::info!("VIP类型: {}", vip_type);
+            tracing::debug!("VIP类型: {}", vip_type);
         }
 
-        tracing::info!("=== API响应调试结束 ===");
+        tracing::debug!("=== API响应调试结束 ===");
 
         let mut validated_res = res.validate()?;
         Ok(PageAnalyzer::new(validated_res["data"].take()))
@@ -390,11 +390,11 @@ impl<'a> Video<'a> {
         let quality_levels = ["127", "120", "116", "112", "80", "64", "32", "16"];
         
         for (attempt, qn) in quality_levels.iter().enumerate() {
-            tracing::info!("尝试获取番剧视频流 (尝试 {}/{}): qn={}", attempt + 1, quality_levels.len(), qn);
+            tracing::debug!("尝试获取番剧视频流 (尝试 {}/{}): qn={}", attempt + 1, quality_levels.len(), qn);
             
             match self.get_bangumi_page_analyzer_with_quality(page, ep_id, qn).await {
                 Ok(analyzer) => {
-                    tracing::info!("✓ 成功获取番剧视频流: qn={}", qn);
+                    tracing::debug!("✓ 成功获取番剧视频流: qn={}", qn);
                     return Ok(analyzer);
                 }
                 Err(e) => {
@@ -488,13 +488,13 @@ impl<'a> Video<'a> {
             ("fourk", "1"),                // 启用4K支持
         ];
 
-        tracing::info!("=== 番剧API参数调试 ===");
-        tracing::info!("番剧EP: {}", ep_id);
-        tracing::info!("分页: cid: {}", page.cid);
-        tracing::info!("请求参数: {:?}", params);
+        tracing::debug!("=== 番剧API参数调试 ===");
+        tracing::debug!("番剧EP: {}", ep_id);
+        tracing::debug!("分页: cid: {}", page.cid);
+        tracing::debug!("请求参数: {:?}", params);
         
         let request_url = "https://api.bilibili.com/pgc/player/web/playurl";
-        tracing::info!("请求URL: {}", request_url);
+        tracing::debug!("请求URL: {}", request_url);
 
         let res = self
             .client
@@ -511,32 +511,32 @@ impl<'a> Video<'a> {
             .await?;
 
         // 增强的番剧API响应调试信息
-        tracing::info!("=== 番剧API响应调试 ===");
+        tracing::debug!("=== 番剧API响应调试 ===");
         if let Some(code) = res["code"].as_i64() {
-            tracing::info!("响应代码: {}", code);
+            tracing::debug!("响应代码: {}", code);
         }
         if let Some(message) = res["message"].as_str() {
-            tracing::info!("响应消息: {}", message);
+            tracing::debug!("响应消息: {}", message);
         }
         
         // 记录番剧视频质量信息
         if let Some(quality) = res["result"]["quality"].as_u64() {
-            tracing::info!("番剧API返回的当前质量: {}", quality);
+            tracing::debug!("番剧API返回的当前质量: {}", quality);
         }
         if let Some(accept_quality) = res["result"]["accept_quality"].as_array() {
             let qualities: Vec<u64> = accept_quality.iter().filter_map(|v| v.as_u64()).collect();
-            tracing::info!("番剧API返回的可用质量列表: {:?}", qualities);
+            tracing::debug!("番剧API返回的可用质量列表: {:?}", qualities);
         }
         
         // 检查番剧会员要求
         if let Some(vip_status) = res["result"]["vip_status"].as_i64() {
-            tracing::info!("番剧VIP状态要求: {}", vip_status);
+            tracing::debug!("番剧VIP状态要求: {}", vip_status);
         }
         if let Some(vip_type) = res["result"]["vip_type"].as_i64() {
-            tracing::info!("番剧VIP类型: {}", vip_type);
+            tracing::debug!("番剧VIP类型: {}", vip_type);
         }
 
-        tracing::info!("=== 番剧API响应调试结束 ===");
+        tracing::debug!("=== 番剧API响应调试结束 ===");
 
         let mut validated_res = res.validate()?;
         Ok(PageAnalyzer::new(validated_res["result"].take()))

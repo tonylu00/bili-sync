@@ -1585,36 +1585,36 @@ pub async fn fetch_page_video(
     let filter_option = &config.filter_option;
 
     // 简化的配置调试日志
-    info!("=== 视频下载配置 ===");
-    info!("视频: {} ({})", video_model.name, video_model.bvid);
-    info!("分页: {} (cid: {})", page_info.name, page_info.cid);
-    info!("质量配置: {} - {} (最高-最低)", 
+    debug!("=== 视频下载配置 ===");
+    debug!("视频: {} ({})", video_model.name, video_model.bvid);
+    debug!("分页: {} (cid: {})", page_info.name, page_info.cid);
+    debug!("质量配置: {} - {} (最高-最低)", 
         format!("{:?}({})", filter_option.video_max_quality, filter_option.video_max_quality as u32),
         format!("{:?}({})", filter_option.video_min_quality, filter_option.video_min_quality as u32)
     );
-    info!("音频配置: {} - {} (最高-最低)", 
+    debug!("音频配置: {} - {} (最高-最低)", 
         format!("{:?}({})", filter_option.audio_max_quality, filter_option.audio_max_quality as u32),
         format!("{:?}({})", filter_option.audio_min_quality, filter_option.audio_min_quality as u32)
     );
-    info!("编码偏好: {:?}", filter_option.codecs);
+    debug!("编码偏好: {:?}", filter_option.codecs);
 
     // 会员状态检查
     let credential = config.credential.load();
     match credential.as_deref() {
         Some(cred) => {
-            info!("用户认证: 已登录 (DedeUserID: {})", cred.dedeuserid);
+            debug!("用户认证: 已登录 (DedeUserID: {})", cred.dedeuserid);
         }
         None => {
-            warn!("用户认证: 未登录 - 高质量视频流可能不可用");
+            debug!("用户认证: 未登录 - 高质量视频流可能不可用");
         }
     }
     
     // 高质量需求提醒
     if filter_option.video_max_quality as u32 >= 120 { // 4K及以上
-        info!("⚠️  请求高质量视频(4K+)，需要大会员权限");
+        debug!("⚠️  请求高质量视频(4K+)，需要大会员权限");
     }
     
-    info!("=== 配置调试结束 ===");
+    debug!("=== 配置调试结束 ===");
 
     // 记录开始时间
     let start_time = std::time::Instant::now();
@@ -1623,10 +1623,10 @@ pub async fn fetch_page_video(
     let best_stream_result = streams.best_stream(filter_option)?;
     
     // 添加流选择结果日志和质量分析
-    info!("=== 流选择结果 ===");
+    debug!("=== 流选择结果 ===");
     match &best_stream_result {
         BestStream::Mixed(stream) => {
-            info!("选择了混合流: {:?}", stream);
+            debug!("选择了混合流: {:?}", stream);
         }
         BestStream::VideoAudio { video, audio } => {
             if let VideoStream::DashVideo { quality, codecs, .. } = video {
@@ -1650,13 +1650,13 @@ pub async fn fetch_page_video(
                 }
             }
             if let Some(VideoStream::DashAudio { quality, .. }) = audio {
-                info!("✓ 选择音频流: {:?}({})", quality, *quality as u32);
+                debug!("✓ 选择音频流: {:?}({})", quality, *quality as u32);
             } else {
-                info!("ℹ️  无独立音频流(可能为混合流)");
+                debug!("ℹ️  无独立音频流(可能为混合流)");
             }
         }
     }
-    info!("=== 流选择结束 ===");
+    debug!("=== 流选择结束 ===");
 
     let total_bytes = match best_stream_result {
         BestStream::Mixed(mix_stream) => {

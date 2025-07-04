@@ -228,9 +228,9 @@ impl PageAnalyzer {
         }
         
         // 优化的B站API响应调试日志
-        tracing::info!("=== B站视频流分析 ===");
+        tracing::debug!("=== B站视频流分析 ===");
         if let Some(video_array) = self.info.pointer("/dash/video").and_then(|v| v.as_array()) {
-            tracing::info!("API返回视频流数量: {}", video_array.len());
+            tracing::debug!("API返回视频流数量: {}", video_array.len());
             let mut available_qualities = Vec::new();
             for video in video_array.iter() {
                 if let Some(quality_id) = video["id"].as_u64() {
@@ -240,7 +240,7 @@ impl PageAnalyzer {
                 }
             }
             if !available_qualities.is_empty() {
-                tracing::info!("可用质量: [{}]", available_qualities.join(", "));
+                tracing::debug!("可用质量: [{}]", available_qualities.join(", "));
             } else {
                 tracing::warn!("未找到有效的视频质量信息");
             }
@@ -248,11 +248,11 @@ impl PageAnalyzer {
             tracing::warn!("API响应中未找到dash/video数组");
         }
         
-        tracing::info!("筛选条件: {}({}) - {}({}), 编码: {:?}", 
+        tracing::debug!("筛选条件: {}({}) - {}({}), 编码: {:?}", 
             format!("{:?}", filter_option.video_max_quality), filter_option.video_max_quality as u32,
             format!("{:?}", filter_option.video_min_quality), filter_option.video_min_quality as u32,
             filter_option.codecs);
-        tracing::info!("=== 开始筛选 ===");
+        tracing::debug!("=== 开始筛选 ===");
         
         let mut streams: Vec<Stream> = Vec::new();
         let mut filtered_count = 0;
@@ -269,14 +269,14 @@ impl PageAnalyzer {
                 video["id"].as_u64(),
                 video["codecid"].as_u64(),
             ) else {
-                tracing::info!("流 {}: 跳过 - 缺少必要字段", idx + 1);
+                tracing::debug!("流 {}: 跳过 - 缺少必要字段", idx + 1);
                 continue;
             };
             
             let quality = match VideoQuality::from_repr(quality_id as usize) {
                 Some(q) => q,
                 None => {
-                    tracing::info!("流 {}: 跳过 - 无效的质量ID {}", idx + 1, quality_id);
+                    tracing::debug!("流 {}: 跳过 - 无效的质量ID {}", idx + 1, quality_id);
                     continue;
                 }
             };
@@ -284,7 +284,7 @@ impl PageAnalyzer {
             let codecs = match codecs_id.try_into() {
                 Ok(c) => c,
                 Err(_) => {
-                    tracing::info!("流 {}: 跳过 - 无效的编码ID {}", idx + 1, codecs_id);
+                    tracing::debug!("流 {}: 跳过 - 无效的编码ID {}", idx + 1, codecs_id);
                     continue;
                 }
             };
@@ -316,7 +316,7 @@ impl PageAnalyzer {
                 continue;
             }
             
-            tracing::info!("✓ 接受: {:?}({}) {:?}", quality, quality_id, codecs);
+            tracing::debug!("✓ 接受: {:?}({}) {:?}", quality, quality_id, codecs);
             
             streams.push(Stream::DashVideo {
                 url: url.to_string(),
@@ -327,7 +327,7 @@ impl PageAnalyzer {
         }
         
         let video_stream_count = streams.iter().filter(|s| matches!(s, Stream::DashVideo { .. })).count();
-        tracing::info!("=== 筛选结果: {}个通过, {}个过滤 ===", video_stream_count, filtered_count);
+        tracing::debug!("=== 筛选结果: {}个通过, {}个过滤 ===", video_stream_count, filtered_count);
         
         if video_stream_count == 0 {
             // 分析筛选失败的原因
@@ -411,13 +411,13 @@ impl PageAnalyzer {
         let (videos, audios): (Vec<Stream>, Vec<Stream>) =
             streams.into_iter().partition(|s| matches!(s, Stream::DashVideo { .. }));
             
-        tracing::info!("=== 最佳流选择 ===");
+        tracing::debug!("=== 最佳流选择 ===");
         if videos.is_empty() {
             tracing::error!("错误: 没有可用的视频流！");
             return Err(anyhow!("no video stream found"));
         }
         
-        tracing::info!("候选流: {}", videos.iter()
+        tracing::debug!("候选流: {}", videos.iter()
             .filter_map(|s| match s {
                 Stream::DashVideo { quality, codecs, .. } => 
                     Some(format!("{:?}({}):{:?}", quality, *quality as u32, codecs)),
@@ -456,7 +456,7 @@ impl PageAnalyzer {
             .context("no video stream found")?;
             
         if let Stream::DashVideo { quality, codecs, .. } = &selected_video {
-            tracing::info!("✓ 最终选择: {:?}({}) {:?}", quality, *quality as u32, codecs);
+            tracing::debug!("✓ 最终选择: {:?}({}) {:?}", quality, *quality as u32, codecs);
         }
         
         Ok(BestStream::VideoAudio {
