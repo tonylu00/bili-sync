@@ -284,48 +284,44 @@ impl Bangumi {
                 let pub_time = DateTime::<Utc>::from_timestamp(pub_time_timestamp, 0)
                     .unwrap_or_else(Utc::now);
 
-                // 增量获取：跳过早于latest_row_at的集数
+                // 增量获取：检查旧集数是否需要字段更新
                 if let Some(latest_time) = latest_row_at {
                     if pub_time <= latest_time {
-                        tracing::trace!("跳过旧集数：{} (发布时间: {}, 最新时间: {})", episode_title_raw, pub_time, latest_time);
+                        tracing::trace!("检查旧集数字段更新需求：{} (发布时间: {}, 最新时间: {})", episode_title_raw, pub_time, latest_time);
+                        
+                        // 为旧集数构建 VideoInfo，用于后续的字段更新检查
+                        let episode_title = if !show_title.is_empty() {
+                            show_title.clone()
+                        } else {
+                            format!("{} - {}", title, episode_title_raw)
+                        };
 
-                        // 只有在需要actors字段初始化时才为旧内容生成VideoInfo
-                        // 通过检查配置确定是否需要处理
-                        let should_process_actors = crate::config::with_config(|config| !config.config.actors_field_initialized);
-                        if should_process_actors && actors.is_some() {
-                            let episode_title = if !show_title.is_empty() {
-                                show_title.clone()
-                            } else {
-                                format!("{} - {}", title, episode_title_raw)
-                            };
+                        let episode_number = episode_title_raw.parse::<i32>().ok();
+                        let episode_cover = if !episode_cover_url.is_empty() {
+                            episode_cover_url.clone()
+                        } else {
+                            cover.clone()
+                        };
 
-                            let episode_number = episode_title_raw.parse::<i32>().ok();
-                            let episode_cover = if !episode_cover_url.is_empty() {
-                                episode_cover_url.clone()
-                            } else {
-                                cover.clone()
-                            };
-
-                            tracing::debug!("为旧集数生成actors字段更新VideoInfo: {}, actors: {:?}", episode_title, actors);
-
-                            yield VideoInfo::Bangumi {
-                                title: episode_title,
-                                season_id: current_season_id.clone(),
-                                ep_id: ep_id.to_string(),
-                                bvid,
-                                cid: cid.to_string(),
-                                aid: aid.to_string(),
-                                cover: episode_cover,
-                                intro: intro.clone(),
-                                pubtime: pub_time,
-                                show_title: Some(show_title),
-                                season_number,
-                                episode_number,
-                                share_copy,
-                                show_season_type,
-                                actors: actors.clone(),
-                            }
-                        }
+                        // 生成 VideoInfo 用于字段更新检查
+                        // 注意：这里生成的 VideoInfo 会在上层的 create_videos 函数中进行字段更新检查
+                        yield VideoInfo::Bangumi {
+                            title: episode_title,
+                            season_id: current_season_id.clone(),
+                            ep_id: ep_id.to_string(),
+                            bvid,
+                            cid: cid.to_string(),
+                            aid: aid.to_string(),
+                            cover: episode_cover,
+                            intro: intro.clone(),
+                            pubtime: pub_time,
+                            show_title: Some(show_title),
+                            season_number,
+                            episode_number,
+                            share_copy,
+                            show_season_type,
+                            actors: actors.clone(),
+                        };
 
                         skipped_episodes += 1;
                         continue;
@@ -494,44 +490,40 @@ impl Bangumi {
                     // 增量获取：跳过早于latest_row_at的集数
                     if let Some(latest_time) = latest_row_at {
                         if pub_time <= latest_time {
-                            tracing::trace!("跳过旧集数：{} (发布时间: {}, 最新时间: {})", episode_title_raw, pub_time, latest_time);
+                            tracing::trace!("检查旧集数字段更新需求：{} (发布时间: {}, 最新时间: {})", episode_title_raw, pub_time, latest_time);
+                            
+                            // 为旧集数构建 VideoInfo，用于后续的字段更新检查
+                            let episode_title = if !show_title.is_empty() {
+                                show_title.clone()
+                            } else {
+                                format!("{} - {}", title, episode_title_raw)
+                            };
 
-                            // 只有在需要actors字段初始化时才为旧内容生成VideoInfo
-                            let should_process_actors = crate::config::with_config(|config| !config.config.actors_field_initialized);
-                            if should_process_actors && actors.is_some() {
-                                let episode_title = if !show_title.is_empty() {
-                                    show_title.clone()
-                                } else {
-                                    format!("{} - {}", title, episode_title_raw)
-                                };
+                            let episode_number = episode_title_raw.parse::<i32>().ok();
+                            let episode_cover = if !episode_cover_url.is_empty() {
+                                episode_cover_url.clone()
+                            } else {
+                                cover.clone()
+                            };
 
-                                let episode_number = episode_title_raw.parse::<i32>().ok();
-                                let episode_cover = if !episode_cover_url.is_empty() {
-                                    episode_cover_url.clone()
-                                } else {
-                                    cover.clone()
-                                };
-
-                                tracing::info!("检测到需要actors字段初始化，为旧集数生成VideoInfo: {}, actors: {:?}", episode_title, actors);
-
-                                yield VideoInfo::Bangumi {
-                                    title: episode_title,
-                                    season_id: season_id_clone.clone(),
-                                    ep_id: ep_id.to_string(),
-                                    bvid,
-                                    cid: cid.to_string(),
-                                    aid: aid.to_string(),
-                                    cover: episode_cover,
-                                    intro: intro.clone(),
-                                    pubtime: pub_time,
-                                    show_title: Some(show_title),
-                                    season_number,
-                                    episode_number,
-                                    share_copy,
-                                    show_season_type,
-                                    actors: actors.clone(),
-                                }
-                            }
+                            // 生成 VideoInfo 用于字段更新检查
+                            yield VideoInfo::Bangumi {
+                                title: episode_title,
+                                season_id: season_id_clone.clone(),
+                                ep_id: ep_id.to_string(),
+                                bvid,
+                                cid: cid.to_string(),
+                                aid: aid.to_string(),
+                                cover: episode_cover,
+                                intro: intro.clone(),
+                                pubtime: pub_time,
+                                show_title: Some(show_title),
+                                season_number,
+                                episode_number,
+                                share_copy,
+                                show_season_type,
+                                actors: actors.clone(),
+                            };
 
                             skipped_episodes += 1;
                             continue;
@@ -727,44 +719,40 @@ impl Bangumi {
                     // 增量获取：跳过早于latest_row_at的集数
                     if let Some(latest_time) = latest_row_at {
                         if pub_time <= latest_time {
-                            tracing::trace!("跳过旧集数：{} (发布时间: {}, 最新时间: {})", episode_title_raw, pub_time, latest_time);
+                            tracing::trace!("检查旧集数字段更新需求：{} (发布时间: {}, 最新时间: {})", episode_title_raw, pub_time, latest_time);
+                            
+                            // 为旧集数构建 VideoInfo，用于后续的字段更新检查
+                            let episode_title = if !show_title.is_empty() {
+                                show_title.clone()
+                            } else {
+                                format!("{} - {}", title, episode_title_raw)
+                            };
 
-                            // 只有在需要actors字段初始化时才为旧内容生成VideoInfo
-                            let should_process_actors = crate::config::with_config(|config| !config.config.actors_field_initialized);
-                            if should_process_actors && actors.is_some() {
-                                let episode_title = if !show_title.is_empty() {
-                                    show_title.clone()
-                                } else {
-                                    format!("{} - {}", title, episode_title_raw)
-                                };
+                            let episode_number = episode_title_raw.parse::<i32>().ok();
+                            let episode_cover = if !episode_cover_url.is_empty() {
+                                episode_cover_url.clone()
+                            } else {
+                                cover.clone()
+                            };
 
-                                let episode_number = episode_title_raw.parse::<i32>().ok();
-                                let episode_cover = if !episode_cover_url.is_empty() {
-                                    episode_cover_url.clone()
-                                } else {
-                                    cover.clone()
-                                };
-
-                                tracing::info!("检测到需要actors字段初始化，为旧集数生成VideoInfo: {}, actors: {:?}", episode_title, actors);
-
-                                yield VideoInfo::Bangumi {
-                                    title: episode_title,
-                                    season_id: season_id_clone.clone(),
-                                    ep_id: ep_id.to_string(),
-                                    bvid,
-                                    cid: cid.to_string(),
-                                    aid: aid.to_string(),
-                                    cover: episode_cover,
-                                    intro: intro.clone(),
-                                    pubtime: pub_time,
-                                    show_title: Some(show_title),
-                                    season_number,
-                                    episode_number,
-                                    share_copy,
-                                    show_season_type,
-                                    actors: actors.clone(),
-                                }
-                            }
+                            // 生成 VideoInfo 用于字段更新检查
+                            yield VideoInfo::Bangumi {
+                                title: episode_title,
+                                season_id: season_id_clone.clone(),
+                                ep_id: ep_id.to_string(),
+                                bvid,
+                                cid: cid.to_string(),
+                                aid: aid.to_string(),
+                                cover: episode_cover,
+                                intro: intro.clone(),
+                                pubtime: pub_time,
+                                show_title: Some(show_title),
+                                season_number,
+                                episode_number,
+                                share_copy,
+                                show_season_type,
+                                actors: actors.clone(),
+                            };
 
                             skipped_episodes += 1;
                             continue;

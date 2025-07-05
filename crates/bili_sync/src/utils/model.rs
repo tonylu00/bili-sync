@@ -3,78 +3,211 @@ use bili_sync_entity::*;
 use sea_orm::entity::prelude::*;
 use sea_orm::sea_query::{OnConflict, SimpleExpr};
 use sea_orm::DatabaseTransaction;
-use tracing::{debug, info, warn};
+use std::collections::HashMap;
+use tracing::{debug, info};
 
 use crate::adapter::{VideoSource, VideoSourceEnum};
 use crate::bilibili::{PageInfo, VideoInfo};
-use crate::config::with_config;
 use crate::utils::status::STATUS_COMPLETED;
 
-/// 检查actors字段是否需要初始化
-/// 返回 (需要初始化, 已有actors字段的视频数量, 总番剧视频数量)
-pub async fn check_actors_field_initialization_needed(connection: &DatabaseConnection) -> Result<(bool, i64, i64)> {
-    // 检查配置中的初始化标记
-    let config_initialized = with_config(|config| config.config.actors_field_initialized);
-
-    if config_initialized {
-        return Ok((false, 0, 0));
-    }
-
-    // 统计番剧视频的actors字段完成情况
-    let total_bangumi_count = video::Entity::find()
-        .filter(video::Column::Category.eq(1)) // 只统计番剧
-        .count(connection)
+/// 检查视频是否需要字段更新
+/// 
+/// 注意：此函数为字段更新检查提供了抽象接口，虽然当前未被使用，
+/// 但为未来的 API 扩展和代码重构保留了清晰的功能边界。
+/// 当前的字段更新逻辑直接在 create_videos() 中实现。
+#[allow(dead_code)]
+pub async fn check_video_needs_fields_update(
+    connection: &DatabaseConnection,
+    bvid: &str,
+    video_info: &VideoInfo,
+) -> Result<bool> {
+    // 首先查找数据库中的视频记录
+    let existing_video = video::Entity::find()
+        .filter(video::Column::Bvid.eq(bvid))
+        .one(connection)
         .await?;
 
-    let filled_actors_count = video::Entity::find()
-        .filter(video::Column::Category.eq(1))
-        .filter(video::Column::Actors.is_not_null())
-        .filter(video::Column::Actors.ne(""))
-        .count(connection)
-        .await?;
-
-    // 如果大部分番剧都有actors数据，认为已经初始化完成
-    let needs_init = if total_bangumi_count > 0 {
-        let completion_rate = filled_actors_count as f64 / total_bangumi_count as f64;
-        completion_rate < 0.8 // 少于80%的完成率时需要初始化
-    } else {
-        false // 没有番剧时不需要初始化
+    let Some(existing) = existing_video else {
+        // 如果视频不存在，则需要创建，返回 false 让正常流程处理
+        return Ok(false);
     };
 
-    info!(
-        "Actors字段初始化检查: 需要初始化={}, 已填充={}/{} ({:.1}%)",
-        needs_init,
-        filled_actors_count,
-        total_bangumi_count,
-        if total_bangumi_count > 0 {
-            filled_actors_count as f64 / total_bangumi_count as f64 * 100.0
-        } else {
-            0.0
-        }
-    );
+    // 检查不同类型的 VideoInfo 需要更新的字段
+    match video_info {
+        VideoInfo::Bangumi {
+            share_copy,
+            show_season_type,
+            actors,
+            season_number,
+            episode_number,
+            ..
+        } => {
+            // 检查 share_copy 字段
+            let share_copy_needs_update = match (existing.share_copy.as_ref(), share_copy.as_ref()) {
+                (None, Some(_)) => true,                    // 数据库为空，API有数据
+                (Some(db_val), Some(api_val)) => db_val != api_val, // 值不同
+                _ => false,
+            };
 
-    Ok((needs_init, filled_actors_count as i64, total_bangumi_count as i64))
+            // 检查 show_season_type 字段
+            let show_season_type_needs_update = match (existing.show_season_type, show_season_type) {
+                (None, Some(_)) => true,                    // 数据库为空，API有数据
+                (Some(db_val), Some(api_val)) => db_val != *api_val, // 值不同
+                _ => false,
+            };
+
+            // 检查 actors 字段
+            let actors_needs_update = match (existing.actors.as_ref(), actors.as_ref()) {
+                (None, Some(_)) => true,                    // 数据库为空，API有数据
+                (Some(db_val), Some(api_val)) => db_val != api_val, // 值不同
+                _ => false,
+            };
+
+            // 检查 season_number 字段
+            let season_number_needs_update = match (existing.season_number, season_number) {
+                (None, Some(_)) => true,                    // 数据库为空，API有数据
+                (Some(db_val), Some(api_val)) => db_val != *api_val, // 值不同
+                _ => false,
+            };
+
+            // 检查 episode_number 字段
+            let episode_number_needs_update = match (existing.episode_number, episode_number) {
+                (None, Some(_)) => true,                    // 数据库为空，API有数据
+                (Some(db_val), Some(api_val)) => db_val != *api_val, // 值不同
+                _ => false,
+            };
+
+            let needs_update = share_copy_needs_update 
+                || show_season_type_needs_update 
+                || actors_needs_update 
+                || season_number_needs_update 
+                || episode_number_needs_update;
+
+            if needs_update {
+                tracing::info!(
+                    "检测到番剧视频需要字段更新: {} (share_copy:{}, actors:{}, show_season_type:{}, season_number:{}, episode_number:{})",
+                    bvid,
+                    share_copy_needs_update,
+                    actors_needs_update,
+                    show_season_type_needs_update,
+                    season_number_needs_update,
+                    episode_number_needs_update
+                );
+            }
+
+            Ok(needs_update)
+        }
+        // 对于其他类型的 VideoInfo，目前主要检查基础字段
+        VideoInfo::Detail { .. } | 
+        VideoInfo::Favorite { .. } |
+        VideoInfo::WatchLater { .. } |
+        VideoInfo::Collection { .. } |
+        VideoInfo::Submission { .. } => {
+            // 对于普通视频，目前不需要特殊的字段更新检查
+            // 因为这些类型的 VideoInfo 主要包含基础字段，会在正常流程中处理
+            Ok(false)
+        }
+    }
 }
 
-/// 标记actors字段初始化完成
-pub async fn mark_actors_field_initialization_complete() -> Result<()> {
-    use crate::config::{get_config_manager, reload_config};
+/// 视频字段状态结构体
+/// 
+/// 用于批量字段状态查询和比较，为字段更新操作提供结构化的数据接口。
+/// 虽然当前未被使用，但为批量处理和 API 扩展保留了清晰的数据结构。
+#[allow(dead_code)]
+#[derive(Debug, Clone)]
+pub struct VideoFieldStatus {
+    pub bvid: String,
+    pub share_copy: Option<String>,
+    pub show_season_type: Option<i32>,
+    pub actors: Option<String>,
+    pub season_number: Option<i32>,
+    pub episode_number: Option<i32>,
+}
 
-    if let Some(config_manager) = get_config_manager() {
-        // 更新数据库中的配置
-        config_manager
-            .set_config_value("actors_field_initialized", &true)
-            .await?;
+/// 批量查询视频字段状态
+/// 
+/// 提供高效的批量字段状态查询，适用于大规模字段更新检查场景。
+/// 当前未被使用，但为性能优化和批量操作保留了高效的查询接口。
+#[allow(dead_code)]
+pub async fn get_videos_field_status(
+    connection: &DatabaseConnection,
+    bvids: &[String],
+) -> Result<HashMap<String, VideoFieldStatus>> {
+    let videos = video::Entity::find()
+        .filter(video::Column::Bvid.is_in(bvids.iter().cloned()))
+        .all(connection)
+        .await?;
 
-        // 重新加载配置以应用更改
-        reload_config();
-
-        info!("已标记actors字段初始化完成");
-    } else {
-        warn!("无法获取配置管理器，无法标记actors字段初始化完成");
+    let mut result = HashMap::new();
+    for video in videos {
+        let status = VideoFieldStatus {
+            bvid: video.bvid.clone(),
+            share_copy: video.share_copy.clone(),
+            show_season_type: video.show_season_type,
+            actors: video.actors.clone(),
+            season_number: video.season_number,
+            episode_number: video.episode_number,
+        };
+        result.insert(video.bvid, status);
     }
 
-    Ok(())
+    Ok(result)
+}
+
+/// 批量检查番剧视频是否需要字段更新
+/// 
+/// 提供纯函数式的字段比较逻辑，可用于批量处理场景。
+/// 当前未被使用，但为函数式编程风格和批量检查保留了无副作用的比较函数。
+#[allow(dead_code)]
+pub fn check_bangumi_needs_fields_update(
+    existing_status: &VideoFieldStatus,
+    api_share_copy: Option<&String>,
+    api_show_season_type: Option<i32>,
+    api_actors: Option<&String>,
+    api_season_number: Option<i32>,
+    api_episode_number: Option<i32>,
+) -> bool {
+    // 检查 share_copy 字段
+    let share_copy_needs_update = match (existing_status.share_copy.as_ref(), api_share_copy) {
+        (None, Some(_)) => true,
+        (Some(db_val), Some(api_val)) => db_val != api_val,
+        _ => false,
+    };
+
+    // 检查 show_season_type 字段
+    let show_season_type_needs_update = match (existing_status.show_season_type, api_show_season_type) {
+        (None, Some(_)) => true,
+        (Some(db_val), Some(api_val)) => db_val != api_val,
+        _ => false,
+    };
+
+    // 检查 actors 字段
+    let actors_needs_update = match (existing_status.actors.as_ref(), api_actors) {
+        (None, Some(_)) => true,
+        (Some(db_val), Some(api_val)) => db_val != api_val,
+        _ => false,
+    };
+
+    // 检查 season_number 字段
+    let season_number_needs_update = match (existing_status.season_number, api_season_number) {
+        (None, Some(_)) => true,
+        (Some(db_val), Some(api_val)) => db_val != api_val,
+        _ => false,
+    };
+
+    // 检查 episode_number 字段
+    let episode_number_needs_update = match (existing_status.episode_number, api_episode_number) {
+        (None, Some(_)) => true,
+        (Some(db_val), Some(api_val)) => db_val != api_val,
+        _ => false,
+    };
+
+    share_copy_needs_update 
+        || show_season_type_needs_update 
+        || actors_needs_update 
+        || season_number_needs_update 
+        || episode_number_needs_update
 }
 
 /// 根据show_season_type和其他字段重新计算番剧的智能命名

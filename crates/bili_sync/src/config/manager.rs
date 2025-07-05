@@ -166,6 +166,10 @@ impl ConfigManager {
     }
 
     /// 设置配置值的泛型方法
+    /// 
+    /// 提供类型安全的配置设置接口，支持任意可序列化类型。
+    /// 当前未被使用，但为未来的配置 API 和类型安全操作保留了泛型接口。
+    #[allow(dead_code)]
     pub async fn set_config_value<T: serde::Serialize>(&self, key: &str, value: &T) -> Result<()> {
         let json_value = serde_json::to_value(value)?;
         self.update_config_item(key, json_value).await

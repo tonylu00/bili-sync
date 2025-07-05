@@ -137,18 +137,9 @@ impl VideoInfo {
                 };
                 tracing::debug!("选择的intelligent_name: {}", intelligent_name);
 
-                // 只在actors字段有数据且需要初始化时输出调试日志
+                // 记录actors字段信息
                 if actors.is_some() {
-                    let should_log_actors =
-                        crate::config::with_config(|config| !config.config.actors_field_initialized);
-                    if should_log_actors {
-                        tracing::info!(
-                            "convert.rs - 检测到actors字段初始化需要，准备保存演员信息: {:?}",
-                            actors
-                        );
-                    } else {
-                        tracing::debug!("convert.rs - 准备保存的演员信息: {:?}", actors);
-                    }
+                    tracing::debug!("convert.rs - 准备保存的演员信息: {:?}", actors);
                 }
 
                 bili_sync_entity::video::ActiveModel {
