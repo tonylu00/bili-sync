@@ -18,12 +18,7 @@ impl MigrationTrait for Migration {
 
     async fn down(&self, manager: &SchemaManager) -> Result<(), DbErr> {
         manager
-            .alter_table(
-                Table::alter()
-                    .table(Video::Table)
-                    .drop_column(Video::Actors)
-                    .to_owned(),
-            )
+            .alter_table(Table::alter().table(Video::Table).drop_column(Video::Actors).to_owned())
             .await
     }
 }

@@ -18,7 +18,9 @@ pub use crate::config::global::{
     get_config_manager, init_config_with_database, reload_config, reload_config_bundle, with_config, ARGS, CONFIG_DIR,
 };
 use crate::config::item::ConcurrentLimit;
-pub use crate::config::item::{EmptyUpperStrategy, NFOConfig, NFOFormatType, NFOTimeType, PathSafeTemplate, RateLimit, SubmissionRiskControlConfig};
+pub use crate::config::item::{
+    EmptyUpperStrategy, NFOConfig, NFOFormatType, NFOTimeType, PathSafeTemplate, RateLimit, SubmissionRiskControlConfig,
+};
 pub use crate::config::manager::ConfigManager;
 
 // 移除不再需要的配置结构体，因为视频源现在存储在数据库中

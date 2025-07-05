@@ -288,7 +288,7 @@ impl Bangumi {
                 if let Some(latest_time) = latest_row_at {
                     if pub_time <= latest_time {
                         tracing::trace!("跳过旧集数：{} (发布时间: {}, 最新时间: {})", episode_title_raw, pub_time, latest_time);
-                        
+
                         // 只有在需要actors字段初始化时才为旧内容生成VideoInfo
                         // 通过检查配置确定是否需要处理
                         let should_process_actors = crate::config::with_config(|config| !config.config.actors_field_initialized);
@@ -298,16 +298,16 @@ impl Bangumi {
                             } else {
                                 format!("{} - {}", title, episode_title_raw)
                             };
-                            
+
                             let episode_number = episode_title_raw.parse::<i32>().ok();
                             let episode_cover = if !episode_cover_url.is_empty() {
                                 episode_cover_url.clone()
                             } else {
                                 cover.clone()
                             };
-                            
+
                             tracing::debug!("为旧集数生成actors字段更新VideoInfo: {}, actors: {:?}", episode_title, actors);
-                            
+
                             yield VideoInfo::Bangumi {
                                 title: episode_title,
                                 season_id: current_season_id.clone(),
@@ -326,7 +326,7 @@ impl Bangumi {
                                 actors: actors.clone(),
                             }
                         }
-                        
+
                         skipped_episodes += 1;
                         continue;
                     }
@@ -495,7 +495,7 @@ impl Bangumi {
                     if let Some(latest_time) = latest_row_at {
                         if pub_time <= latest_time {
                             tracing::trace!("跳过旧集数：{} (发布时间: {}, 最新时间: {})", episode_title_raw, pub_time, latest_time);
-                            
+
                             // 只有在需要actors字段初始化时才为旧内容生成VideoInfo
                             let should_process_actors = crate::config::with_config(|config| !config.config.actors_field_initialized);
                             if should_process_actors && actors.is_some() {
@@ -504,16 +504,16 @@ impl Bangumi {
                                 } else {
                                     format!("{} - {}", title, episode_title_raw)
                                 };
-                                
+
                                 let episode_number = episode_title_raw.parse::<i32>().ok();
                                 let episode_cover = if !episode_cover_url.is_empty() {
                                     episode_cover_url.clone()
                                 } else {
                                     cover.clone()
                                 };
-                                
+
                                 tracing::info!("检测到需要actors字段初始化，为旧集数生成VideoInfo: {}, actors: {:?}", episode_title, actors);
-                                
+
                                 yield VideoInfo::Bangumi {
                                     title: episode_title,
                                     season_id: season_id_clone.clone(),
@@ -532,7 +532,7 @@ impl Bangumi {
                                     actors: actors.clone(),
                                 }
                             }
-                            
+
                             skipped_episodes += 1;
                             continue;
                         }
@@ -728,7 +728,7 @@ impl Bangumi {
                     if let Some(latest_time) = latest_row_at {
                         if pub_time <= latest_time {
                             tracing::trace!("跳过旧集数：{} (发布时间: {}, 最新时间: {})", episode_title_raw, pub_time, latest_time);
-                            
+
                             // 只有在需要actors字段初始化时才为旧内容生成VideoInfo
                             let should_process_actors = crate::config::with_config(|config| !config.config.actors_field_initialized);
                             if should_process_actors && actors.is_some() {
@@ -737,16 +737,16 @@ impl Bangumi {
                                 } else {
                                     format!("{} - {}", title, episode_title_raw)
                                 };
-                                
+
                                 let episode_number = episode_title_raw.parse::<i32>().ok();
                                 let episode_cover = if !episode_cover_url.is_empty() {
                                     episode_cover_url.clone()
                                 } else {
                                     cover.clone()
                                 };
-                                
+
                                 tracing::info!("检测到需要actors字段初始化，为旧集数生成VideoInfo: {}, actors: {:?}", episode_title, actors);
-                                
+
                                 yield VideoInfo::Bangumi {
                                     title: episode_title,
                                     season_id: season_id_clone.clone(),
@@ -765,7 +765,7 @@ impl Bangumi {
                                     actors: actors.clone(),
                                 }
                             }
-                            
+
                             skipped_episodes += 1;
                             continue;
                         }
