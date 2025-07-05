@@ -62,7 +62,7 @@ pub struct TVShow<'a> {
     pub status: Option<&'a str>, // 播出状态：Continuing, Ended
     pub total_seasons: Option<i32>,
     pub total_episodes: Option<i32>,
-    pub duration: Option<i32>,       // 视频时长（分钟）
+    pub duration: Option<i32>, // 视频时长（分钟）
     pub view_count: Option<i64>,
     pub like_count: Option<i64>,
     pub category: i32,               // 视频分类（用于番剧检测）
@@ -1121,14 +1121,14 @@ impl<'a> Movie<'a> {
     #[allow(dead_code)]
     pub fn from_video_with_pages(video: &'a video::Model, pages: &[page::Model]) -> Self {
         let mut movie = Movie::from(video);
-        
+
         // 计算总时长（分钟）
         if !pages.is_empty() {
             let total_duration_seconds: u64 = pages.iter().map(|p| p.duration as u64).sum();
             let total_duration_minutes = (total_duration_seconds / 60) as i32;
             movie.duration = Some(total_duration_minutes);
         }
-        
+
         movie
     }
 }
@@ -1138,18 +1138,18 @@ impl<'a> TVShow<'a> {
     #[allow(dead_code)]
     pub fn from_video_with_pages(video: &'a video::Model, pages: &[page::Model]) -> Self {
         let mut tvshow = TVShow::from(video);
-        
+
         // 计算总时长（分钟）
         if !pages.is_empty() {
             let total_duration_seconds: u64 = pages.iter().map(|p| p.duration as u64).sum();
             let total_duration_minutes = (total_duration_seconds / 60) as i32;
             tvshow.duration = Some(total_duration_minutes);
         }
-        
+
         // 对于番剧，total_episodes应该是整个季的集数，而不是当前页面数
         // 这里暂时设为None，避免显示错误的"1集"信息
         tvshow.total_episodes = None;
-        
+
         tvshow
     }
 }
@@ -1188,14 +1188,14 @@ impl<'a> Episode<'a> {
             name: &page.name,
             original_title: &page.name,
             pid: page.pid.to_string(),
-            plot: None,                                // 分页没有单独简介
-            season: video.season_number.unwrap_or(1),  // 使用video的season_number
+            plot: None,                                               // 分页没有单独简介
+            season: video.season_number.unwrap_or(1),                 // 使用video的season_number
             episode_number: video.episode_number.unwrap_or(page.pid), // 使用video的episode_number
-            aired: None,                               // 分页没有单独播出时间
-            duration: Some(page.duration as i32 / 60), // 分页时长转换为分钟
-            user_rating: None,                         // 分页没有单独评分
-            director: None,                            // 分页没有单独导演信息
-            credits: None,                             // 分页没有单独创作人员信息
+            aired: None,                                              // 分页没有单独播出时间
+            duration: Some(page.duration as i32 / 60),                // 分页时长转换为分钟
+            user_rating: None,                                        // 分页没有单独评分
+            director: None,                                           // 分页没有单独导演信息
+            credits: None,                                            // 分页没有单独创作人员信息
         }
     }
 }

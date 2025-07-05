@@ -288,7 +288,7 @@ impl Bangumi {
                 if let Some(latest_time) = latest_row_at {
                     if pub_time <= latest_time {
                         tracing::trace!("检查旧集数字段更新需求：{} (发布时间: {}, 最新时间: {})", episode_title_raw, pub_time, latest_time);
-                        
+
                         // 为旧集数构建 VideoInfo，用于后续的字段更新检查
                         let episode_title = if !show_title.is_empty() {
                             show_title.clone()
@@ -491,7 +491,7 @@ impl Bangumi {
                     if let Some(latest_time) = latest_row_at {
                         if pub_time <= latest_time {
                             tracing::trace!("检查旧集数字段更新需求：{} (发布时间: {}, 最新时间: {})", episode_title_raw, pub_time, latest_time);
-                            
+
                             // 为旧集数构建 VideoInfo，用于后续的字段更新检查
                             let episode_title = if !show_title.is_empty() {
                                 show_title.clone()
@@ -720,7 +720,7 @@ impl Bangumi {
                     if let Some(latest_time) = latest_row_at {
                         if pub_time <= latest_time {
                             tracing::trace!("检查旧集数字段更新需求：{} (发布时间: {}, 最新时间: {})", episode_title_raw, pub_time, latest_time);
-                            
+
                             // 为旧集数构建 VideoInfo，用于后续的字段更新检查
                             let episode_title = if !show_title.is_empty() {
                                 show_title.clone()

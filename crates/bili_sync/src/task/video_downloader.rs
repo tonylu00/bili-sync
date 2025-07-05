@@ -419,4 +419,3 @@ pub async fn video_downloader(connection: Arc<DatabaseConnection>) {
         }
     }
 }
-

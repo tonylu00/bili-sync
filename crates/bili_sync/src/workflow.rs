@@ -1915,14 +1915,14 @@ pub async fn generate_page_nfo(
     }
     // 检查是否为番剧
     let is_bangumi = video_model.category == 1;
-    
+
     let nfo = match video_model.single_page {
         Some(single_page) => {
             if single_page {
                 if is_bangumi {
                     // 番剧单页生成TVShow以正确分类
                     use crate::utils::nfo::TVShow;
-                    
+
                     // 查询同一season_id的视频总数作为总集数
                     let total_episodes = if let Some(ref season_id) = video_model.season_id {
                         match video::Entity::find()
@@ -1940,7 +1940,7 @@ pub async fn generate_page_nfo(
                     } else {
                         None
                     };
-                    
+
                     let mut tvshow = TVShow::from_video_with_pages(video_model, &[page_model.clone()]);
                     tvshow.total_episodes = total_episodes;
                     NFO::TVShow(tvshow)
@@ -1957,7 +1957,7 @@ pub async fn generate_page_nfo(
         None => {
             use crate::utils::nfo::Episode;
             NFO::Episode(Episode::from_video_and_page(video_model, page_model))
-        },
+        }
     };
     generate_nfo(nfo, nfo_path).await?;
     Ok(ExecutionStatus::Succeeded)
