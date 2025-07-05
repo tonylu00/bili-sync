@@ -1278,7 +1278,7 @@ pub async fn download_page(
             &video_path,
             token.clone(),
         ),
-        generate_page_nfo(separate_status[2], video_model, &page_model, nfo_path,),
+        generate_page_nfo(separate_status[2], video_model, &page_model, nfo_path, connection),
         fetch_page_danmaku(
             separate_status[3],
             bili_client,
@@ -1908,6 +1908,7 @@ pub async fn generate_page_nfo(
     video_model: &video::Model,
     page_model: &page::Model,
     nfo_path: PathBuf,
+    connection: &DatabaseConnection,
 ) -> Result<ExecutionStatus> {
     if !should_run {
         return Ok(ExecutionStatus::Skipped);
@@ -1921,17 +1922,42 @@ pub async fn generate_page_nfo(
                 if is_bangumi {
                     // 番剧单页生成TVShow以正确分类
                     use crate::utils::nfo::TVShow;
-                    NFO::TVShow(TVShow::from_video_with_pages(video_model, &[page_model.clone()]))
+                    
+                    // 查询同一season_id的视频总数作为总集数
+                    let total_episodes = if let Some(ref season_id) = video_model.season_id {
+                        match video::Entity::find()
+                            .filter(video::Column::SeasonId.eq(season_id))
+                            .filter(video::Column::SourceType.eq(1))
+                            .count(connection)
+                            .await
+                        {
+                            Ok(count) => Some(count as i32),
+                            Err(e) => {
+                                warn!("查询番剧总集数失败: {:#}", e);
+                                None
+                            }
+                        }
+                    } else {
+                        None
+                    };
+                    
+                    let mut tvshow = TVShow::from_video_with_pages(video_model, &[page_model.clone()]);
+                    tvshow.total_episodes = total_episodes;
+                    NFO::TVShow(tvshow)
                 } else {
                     // 普通单页视频生成Movie
                     use crate::utils::nfo::Movie;
                     NFO::Movie(Movie::from_video_with_pages(video_model, &[page_model.clone()]))
                 }
             } else {
-                NFO::Episode(page_model.into())
+                use crate::utils::nfo::Episode;
+                NFO::Episode(Episode::from_video_and_page(video_model, page_model))
             }
         }
-        None => NFO::Episode(page_model.into()),
+        None => {
+            use crate::utils::nfo::Episode;
+            NFO::Episode(Episode::from_video_and_page(video_model, page_model))
+        },
     };
     generate_nfo(nfo, nfo_path).await?;
     Ok(ExecutionStatus::Succeeded)

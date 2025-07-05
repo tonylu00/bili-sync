@@ -1181,6 +1181,25 @@ impl<'a> From<&'a page::Model> for Episode<'a> {
     }
 }
 
+impl<'a> Episode<'a> {
+    /// 从视频模型和页面模型创建Episode，使用正确的episode_number
+    pub fn from_video_and_page(video: &'a video::Model, page: &'a page::Model) -> Self {
+        Self {
+            name: &page.name,
+            original_title: &page.name,
+            pid: page.pid.to_string(),
+            plot: None,                                // 分页没有单独简介
+            season: video.season_number.unwrap_or(1),  // 使用video的season_number
+            episode_number: video.episode_number.unwrap_or(page.pid), // 使用video的episode_number
+            aired: None,                               // 分页没有单独播出时间
+            duration: Some(page.duration as i32 / 60), // 分页时长转换为分钟
+            user_rating: None,                         // 分页没有单独评分
+            director: None,                            // 分页没有单独导演信息
+            credits: None,                             // 分页没有单独创作人员信息
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
