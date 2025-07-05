@@ -19,7 +19,7 @@ pub use crate::config::global::{
 };
 use crate::config::item::ConcurrentLimit;
 pub use crate::config::item::{
-    EmptyUpperStrategy, NFOConfig, NFOFormatType, NFOTimeType, PathSafeTemplate, RateLimit, SubmissionRiskControlConfig,
+    EmptyUpperStrategy, NFOConfig, NFOTimeType, PathSafeTemplate, RateLimit, SubmissionRiskControlConfig,
 };
 pub use crate::config::manager::ConfigManager;
 

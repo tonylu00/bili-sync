@@ -21,6 +21,7 @@ pub struct Movie<'a> {
     pub original_title: &'a str,
     pub intro: &'a str,
     pub bvid: &'a str,
+    #[allow(dead_code)]
     pub upper_id: i64,
     pub upper_name: &'a str,
     pub aired: NaiveDateTime,
@@ -47,6 +48,7 @@ pub struct TVShow<'a> {
     pub original_title: &'a str,
     pub intro: &'a str,
     pub bvid: &'a str,
+    #[allow(dead_code)]
     pub upper_id: i64,
     pub upper_name: &'a str,
     pub aired: NaiveDateTime,
@@ -822,6 +824,7 @@ impl NFO<'_> {
     }
 
     /// 从完整标题中提取集数信息
+    #[allow(dead_code)]
     fn extract_episode_info_from_full_name(full_name: &str) -> String {
         // 匹配 "第X话/集 副标题" 格式
         let pattern = regex::Regex::new(r"第(\d+)[话集]\s*(.*)").unwrap();
