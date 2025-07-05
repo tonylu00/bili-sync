@@ -41,6 +41,7 @@ pub struct Movie<'a> {
     pub set: Option<String>,         // 系列名称
     pub sorttitle: Option<String>,   // 排序标题
     pub actors_info: Option<String>, // 演员信息字符串（从API获取）
+    pub cover_url: &'a str,          // 封面图片URL
 }
 
 pub struct TVShow<'a> {
@@ -68,6 +69,7 @@ pub struct TVShow<'a> {
     pub set: Option<String>,         // 系列名称
     pub sorttitle: Option<String>,   // 排序标题
     pub actors_info: Option<String>, // 演员信息字符串（从API获取）
+    pub cover_url: &'a str,          // 封面图片URL
 }
 
 pub struct Upper {
@@ -375,6 +377,18 @@ impl NFO<'_> {
                     }
                 }
 
+                // 封面图信息
+                if !movie.cover_url.is_empty() {
+                    writer
+                        .create_element("thumb")
+                        .write_text_content_async(BytesText::new(movie.cover_url))
+                        .await?;
+                    writer
+                        .create_element("fanart")
+                        .write_text_content_async(BytesText::new(movie.cover_url))
+                        .await?;
+                }
+
                 Ok(writer)
             })
             .await?;
@@ -631,6 +645,18 @@ impl NFO<'_> {
                             .write_text_content_async(BytesText::new(&format!("点赞数: {}", like_count)))
                             .await?;
                     }
+                }
+
+                // 封面图信息
+                if !tvshow.cover_url.is_empty() {
+                    writer
+                        .create_element("thumb")
+                        .write_text_content_async(BytesText::new(tvshow.cover_url))
+                        .await?;
+                    writer
+                        .create_element("fanart")
+                        .write_text_content_async(BytesText::new(tvshow.cover_url))
+                        .await?;
                 }
 
                 Ok(writer)
@@ -986,6 +1012,7 @@ impl<'a> From<&'a video::Model> for Movie<'a> {
             set: set_name,
             sorttitle,
             actors_info: video.actors.clone(),
+            cover_url: &video.cover,
         }
     }
 }
@@ -1073,7 +1100,40 @@ impl<'a> From<&'a video::Model> for TVShow<'a> {
             set: set_name,
             sorttitle,
             actors_info: video.actors.clone(),
+            cover_url: &video.cover,
         }
+    }
+}
+
+// 带页面数据的转换实现，用于计算总时长
+impl<'a> Movie<'a> {
+    /// 从视频模型和页面数据创建Movie，包含计算得出的总时长
+    pub fn from_video_with_pages(video: &'a video::Model, pages: &[page::Model]) -> Self {
+        let mut movie = Movie::from(video);
+        
+        // 计算总时长（分钟）
+        if !pages.is_empty() {
+            let total_duration_seconds: u64 = pages.iter().map(|p| p.duration as u64).sum();
+            let total_duration_minutes = (total_duration_seconds / 60) as i32;
+            movie.duration = Some(total_duration_minutes);
+        }
+        
+        movie
+    }
+}
+
+impl<'a> TVShow<'a> {
+    /// 从视频模型和页面数据创建TVShow，包含计算得出的总时长
+    pub fn from_video_with_pages(video: &'a video::Model, pages: &[page::Model]) -> Self {
+        let mut tvshow = TVShow::from(video);
+        
+        // 对于TVShow，我们不设置总时长，因为剧集有各自的时长
+        // 但可以设置总集数
+        if !pages.is_empty() {
+            tvshow.total_episodes = Some(pages.len() as i32);
+        }
+        
+        tvshow
     }
 }
 
@@ -1115,6 +1175,7 @@ mod tests {
             name: "name".to_string(),
             upper_id: 1,
             upper_name: "upper_name".to_string(),
+            cover: "https://example.com/cover.jpg".to_string(),
             favtime: chrono::NaiveDateTime::new(
                 chrono::NaiveDate::from_ymd_opt(2022, 2, 2).unwrap(),
                 chrono::NaiveTime::from_hms_opt(2, 2, 2).unwrap(),
@@ -1136,6 +1197,8 @@ mod tests {
         assert!(generated_movie.contains("<country>中国</country>"));
         assert!(generated_movie.contains("<studio>哔哩哔哩</studio>"));
         assert!(generated_movie.contains("<role>创作者</role>"));
+        assert!(generated_movie.contains("<thumb>https://example.com/cover.jpg</thumb>"));
+        assert!(generated_movie.contains("<fanart>https://example.com/cover.jpg</fanart>"));
 
         let generated_tvshow = NFO::TVShow((&video).into()).generate_nfo().await.unwrap();
         // 检查TVShow的关键字段
@@ -1147,6 +1210,8 @@ mod tests {
         assert!(generated_tvshow.contains("<country>中国</country>"));
         assert!(generated_tvshow.contains("<studio>哔哩哔哩</studio>"));
         assert!(generated_tvshow.contains("<role>创作者</role>"));
+        assert!(generated_tvshow.contains("<thumb>https://example.com/cover.jpg</thumb>"));
+        assert!(generated_tvshow.contains("<fanart>https://example.com/cover.jpg</fanart>"));
 
         assert_eq!(
             NFO::Upper((&video).into()).generate_nfo().await.unwrap(),
@@ -1537,5 +1602,73 @@ mod tests {
         assert!(!movie_nfo.contains("<role>创作者</role>"));
 
         println!("真实演员信息NFO生成测试通过");
+    }
+
+    #[tokio::test]
+    async fn test_runtime_calculation() {
+        // 测试视频时长计算功能
+        let video = video::Model {
+            intro: "测试时长计算".to_string(),
+            name: "测试视频".to_string(),
+            upper_id: 123456,
+            upper_name: "测试UP主".to_string(),
+            cover: "https://example.com/cover.jpg".to_string(),
+            favtime: chrono::NaiveDateTime::new(
+                chrono::NaiveDate::from_ymd_opt(2023, 6, 15).unwrap(),
+                chrono::NaiveTime::from_hms_opt(14, 30, 0).unwrap(),
+            ),
+            pubtime: chrono::NaiveDateTime::new(
+                chrono::NaiveDate::from_ymd_opt(2023, 6, 15).unwrap(),
+                chrono::NaiveTime::from_hms_opt(14, 30, 0).unwrap(),
+            ),
+            bvid: "BV1234567890".to_string(),
+            tags: Some(serde_json::json!(["测试", "时长"])),
+            ..Default::default()
+        };
+
+        // 创建测试页面数据（3分钟 + 5分钟 = 8分钟总时长）
+        let pages = vec![
+            page::Model {
+                id: 1,
+                video_id: 1,
+                cid: 123,
+                pid: 1,
+                name: "第一页".to_string(),
+                duration: 180, // 3分钟 = 180秒
+                ..Default::default()
+            },
+            page::Model {
+                id: 2,
+                video_id: 1,
+                cid: 124,
+                pid: 2,
+                name: "第二页".to_string(),
+                duration: 300, // 5分钟 = 300秒
+                ..Default::default()
+            },
+        ];
+
+        // 测试带时长的Movie NFO生成
+        let movie_with_duration = Movie::from_video_with_pages(&video, &pages);
+        assert_eq!(movie_with_duration.duration, Some(8)); // 8分钟
+
+        let movie_nfo = NFO::Movie(movie_with_duration).generate_nfo().await.unwrap();
+        assert!(movie_nfo.contains("<runtime>8</runtime>"));
+        assert!(movie_nfo.contains("<thumb>https://example.com/cover.jpg</thumb>"));
+
+        // 测试带集数的TVShow NFO生成
+        let tvshow_with_episodes = TVShow::from_video_with_pages(&video, &pages);
+        assert_eq!(tvshow_with_episodes.total_episodes, Some(2)); // 2集
+
+        let tvshow_nfo = NFO::TVShow(tvshow_with_episodes).generate_nfo().await.unwrap();
+        assert!(tvshow_nfo.contains("<totalepisodes>2</totalepisodes>"));
+        assert!(tvshow_nfo.contains("<thumb>https://example.com/cover.jpg</thumb>"));
+
+        // 测试空页面数据的情况
+        let empty_pages: Vec<page::Model> = vec![];
+        let movie_no_duration = Movie::from_video_with_pages(&video, &empty_pages);
+        assert_eq!(movie_no_duration.duration, None);
+
+        println!("时长计算NFO生成测试通过");
     }
 }
