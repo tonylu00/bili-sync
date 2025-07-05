@@ -1915,7 +1915,9 @@ pub async fn generate_page_nfo(
     let nfo = match video_model.single_page {
         Some(single_page) => {
             if single_page {
-                NFO::Movie(video_model.into())
+                // 使用页面数据创建Movie以包含时长信息
+                use crate::utils::nfo::Movie;
+                NFO::Movie(Movie::from_video_with_pages(video_model, &[page_model.clone()]))
             } else {
                 NFO::Episode(page_model.into())
             }
