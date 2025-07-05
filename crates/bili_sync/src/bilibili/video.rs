@@ -230,7 +230,7 @@ impl<'a> Video<'a> {
     /// 带质量回退的页面分析器获取
     pub async fn get_page_analyzer_with_fallback(&self, page: &PageInfo) -> Result<PageAnalyzer> {
         // 质量回退列表：从最高到最低，恢复原始顺序
-        let quality_levels = ["127", "120", "116", "112", "80", "64", "32", "16"];
+        let quality_levels = ["127", "126", "125", "120", "116", "112", "80", "64", "32", "16"];
 
         for (attempt, qn) in quality_levels.iter().enumerate() {
             tracing::debug!(
@@ -392,7 +392,7 @@ impl<'a> Video<'a> {
     /// 带质量回退的番剧页面分析器获取
     pub async fn get_bangumi_page_analyzer_with_fallback(&self, page: &PageInfo, ep_id: &str) -> Result<PageAnalyzer> {
         // 质量回退列表：从最高到最低，恢复原始顺序
-        let quality_levels = ["127", "120", "116", "112", "80", "64", "32", "16"];
+        let quality_levels = ["127", "126", "125", "120", "116", "112", "80", "64", "32", "16"];
 
         for (attempt, qn) in quality_levels.iter().enumerate() {
             tracing::debug!(
