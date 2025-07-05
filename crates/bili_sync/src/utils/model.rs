@@ -3,11 +3,73 @@ use bili_sync_entity::*;
 use sea_orm::entity::prelude::*;
 use sea_orm::sea_query::{OnConflict, SimpleExpr};
 use sea_orm::DatabaseTransaction;
-use tracing::{debug, info};
+use tracing::{debug, info, warn};
 
 use crate::adapter::{VideoSource, VideoSourceEnum};
 use crate::bilibili::{PageInfo, VideoInfo};
+use crate::config::with_config;
 use crate::utils::status::STATUS_COMPLETED;
+
+/// 检查actors字段是否需要初始化
+/// 返回 (需要初始化, 已有actors字段的视频数量, 总番剧视频数量)
+pub async fn check_actors_field_initialization_needed(connection: &DatabaseConnection) -> Result<(bool, i64, i64)> {
+    // 检查配置中的初始化标记
+    let config_initialized = with_config(|config| config.config.actors_field_initialized);
+    
+    if config_initialized {
+        return Ok((false, 0, 0));
+    }
+    
+    // 统计番剧视频的actors字段完成情况
+    let total_bangumi_count = video::Entity::find()
+        .filter(video::Column::Category.eq(1)) // 只统计番剧
+        .count(connection)
+        .await?;
+    
+    let filled_actors_count = video::Entity::find()
+        .filter(video::Column::Category.eq(1))
+        .filter(video::Column::Actors.is_not_null())
+        .filter(video::Column::Actors.ne(""))
+        .count(connection)
+        .await?;
+    
+    // 如果大部分番剧都有actors数据，认为已经初始化完成
+    let needs_init = if total_bangumi_count > 0 {
+        let completion_rate = filled_actors_count as f64 / total_bangumi_count as f64;
+        completion_rate < 0.8 // 少于80%的完成率时需要初始化
+    } else {
+        false // 没有番剧时不需要初始化
+    };
+    
+    info!(
+        "Actors字段初始化检查: 需要初始化={}, 已填充={}/{} ({:.1}%)", 
+        needs_init, 
+        filled_actors_count, 
+        total_bangumi_count,
+        if total_bangumi_count > 0 { filled_actors_count as f64 / total_bangumi_count as f64 * 100.0 } else { 0.0 }
+    );
+    
+    Ok((needs_init, filled_actors_count as i64, total_bangumi_count as i64))
+}
+
+/// 标记actors字段初始化完成
+pub async fn mark_actors_field_initialization_complete() -> Result<()> {
+    use crate::config::{get_config_manager, reload_config};
+    
+    if let Some(config_manager) = get_config_manager() {
+        // 更新数据库中的配置
+        config_manager.set_config_value("actors_field_initialized", &true).await?;
+        
+        // 重新加载配置以应用更改
+        reload_config();
+        
+        info!("已标记actors字段初始化完成");
+    } else {
+        warn!("无法获取配置管理器，无法标记actors字段初始化完成");
+    }
+    
+    Ok(())
+}
 
 /// 根据show_season_type和其他字段重新计算番剧的智能命名
 fn recalculate_bangumi_name(
@@ -237,7 +299,33 @@ pub async fn create_videos(
                         false
                     };
 
-                    if share_copy_changed || show_season_type_changed {
+                    // 检查 actors 字段更新
+                    let actors_changed = match (&existing.actors, model.actors.as_ref()) {
+                        (None, Some(new_actors)) => {
+                            // 数据库为空，API有数据，需要更新
+                            tracing::info!("检测到actors字段从空值更新为有值: {:?}", new_actors);
+                            true
+                        },
+                        (Some(existing_actors), Some(new_actors)) => {
+                            // 两者都有值，比较是否不同
+                            let changed = existing_actors != new_actors;
+                            if changed {
+                                tracing::info!("检测到actors字段值发生变化: 原值={:?}, 新值={:?}", existing_actors, new_actors);
+                            }
+                            changed
+                        },
+                        (Some(_), None) => {
+                            // 数据库有值，API返回空，保持原值不变
+                            tracing::debug!("API未返回actors数据，保持数据库现有值");
+                            false
+                        },
+                        (None, None) => {
+                            // 两者都为空，无需更新
+                            false
+                        }
+                    };
+
+                    if share_copy_changed || show_season_type_changed || actors_changed {
                         needs_update = true;
                         should_recalculate_name = true;
 
@@ -251,6 +339,12 @@ pub async fn create_videos(
                             info!(
                                 "检测到需要更新show_season_type: 视频={}, 原值={:?}, 新值={:?}",
                                 existing.name, existing.show_season_type, model.show_season_type
+                            );
+                        }
+                        if actors_changed {
+                            info!(
+                                "检测到需要更新actors: 视频={}, 原值={:?}, 新值={:?}",
+                                existing.name, existing.actors, model.actors
                             );
                         }
                     }
@@ -292,19 +386,28 @@ pub async fn create_videos(
                             id: Unchanged(existing.id),
                             share_copy: model.share_copy.clone(),
                             show_season_type: model.show_season_type.clone(),
+                            actors: model.actors.clone(),
                             name: new_name,
                             intro: model.intro.clone(),
                             cover: model.cover.clone(),
                             ..Default::default()
                         };
+                        
+                        // 详细的数据库更新调试日志
+                        tracing::info!(
+                            "即将执行数据库更新(启用扫描删除): 视频={}, actors字段={:?}, share_copy={:?}, show_season_type={:?}",
+                            existing.name, update_model.actors, update_model.share_copy, update_model.show_season_type
+                        );
+                        
                         update_model.save(connection).await?;
                         info!("更新视频 {} 的字段完成", existing.name);
                     } else {
                         tracing::debug!(
-                            "字段无需更新: 视频={}, share_copy={:?}, show_season_type={:?}",
+                            "字段无需更新: 视频={}, share_copy={:?}, show_season_type={:?}, actors={:?}",
                             existing.name,
                             existing.share_copy,
-                            existing.show_season_type
+                            existing.show_season_type,
+                            existing.actors
                         );
                     }
                     continue;
@@ -403,8 +506,8 @@ pub async fn create_videos(
                         let mut should_recalculate_name = false;
 
                         // 检查 share_copy 字段更新
-                        let share_copy_changed = if let Some(_new_share_copy) = model.share_copy.as_ref() {
-                            existing.share_copy != model.share_copy.as_ref().clone()
+                        let share_copy_changed = if let Some(new_share_copy) = model.share_copy.as_ref() {
+                            existing.share_copy.as_ref() != Some(new_share_copy)
                         } else {
                             false
                         };
@@ -417,7 +520,33 @@ pub async fn create_videos(
                                 false
                             };
 
-                        if share_copy_changed || show_season_type_changed {
+                        // 检查 actors 字段更新
+                        let actors_changed = match (&existing.actors, model.actors.as_ref()) {
+                            (None, Some(new_actors)) => {
+                                // 数据库为空，API有数据，需要更新
+                                tracing::info!("检测到actors字段从空值更新为有值(未启用扫描删除): {:?}", new_actors);
+                                true
+                            },
+                            (Some(existing_actors), Some(new_actors)) => {
+                                // 两者都有值，比较是否不同
+                                let changed = existing_actors != new_actors;
+                                if changed {
+                                    tracing::info!("检测到actors字段值发生变化(未启用扫描删除): 原值={:?}, 新值={:?}", existing_actors, new_actors);
+                                }
+                                changed
+                            },
+                            (Some(_), None) => {
+                                // 数据库有值，API返回空，保持原值不变
+                                tracing::debug!("API未返回actors数据，保持数据库现有值(未启用扫描删除)");
+                                false
+                            },
+                            (None, None) => {
+                                // 两者都为空，无需更新
+                                false
+                            }
+                        };
+
+                        if share_copy_changed || show_season_type_changed || actors_changed {
                             needs_update = true;
                             should_recalculate_name = true;
 
@@ -431,6 +560,12 @@ pub async fn create_videos(
                                 info!(
                                     "检测到需要更新show_season_type(未启用扫描删除): 视频={}, 原值={:?}, 新值={:?}",
                                     existing.name, existing.show_season_type, model.show_season_type
+                                );
+                            }
+                            if actors_changed {
+                                info!(
+                                    "检测到需要更新actors(未启用扫描删除): 视频={}, 原值={:?}, 新值={:?}",
+                                    existing.name, existing.actors, model.actors
                                 );
                             }
                         }
@@ -472,19 +607,28 @@ pub async fn create_videos(
                                 id: Unchanged(existing.id),
                                 share_copy: model.share_copy.clone(),
                                 show_season_type: model.show_season_type.clone(),
+                                actors: model.actors.clone(),
                                 name: new_name,
                                 intro: model.intro.clone(),
                                 cover: model.cover.clone(),
                                 ..Default::default()
                             };
+                            
+                            // 详细的数据库更新调试日志
+                            tracing::info!(
+                                "即将执行数据库更新(未启用扫描删除): 视频={}, actors字段={:?}, share_copy={:?}, show_season_type={:?}",
+                                existing.name, update_model.actors, update_model.share_copy, update_model.show_season_type
+                            );
+                            
                             update_model.save(connection).await?;
                             info!("更新视频 {} 的字段完成(未启用扫描删除)", existing.name);
                         } else {
                             tracing::debug!(
-                                "字段无需更新(未启用扫描删除): 视频={}, share_copy={:?}, show_season_type={:?}",
+                                "字段无需更新(未启用扫描删除): 视频={}, share_copy={:?}, show_season_type={:?}, actors={:?}",
                                 existing.name,
                                 existing.share_copy,
-                                existing.show_season_type
+                                existing.show_season_type,
+                                existing.actors
                             );
                         }
                     }

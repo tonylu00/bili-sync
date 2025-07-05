@@ -158,5 +158,7 @@ pub enum VideoInfo {
         share_copy: Option<String>,
         /// 番剧季度类型，用于区分常规番剧(1)和番剧影视(2)
         show_season_type: Option<i32>,
+        /// 演员信息字符串，从API获取
+        actors: Option<String>,
     },
 }

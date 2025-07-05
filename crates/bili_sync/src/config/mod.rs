@@ -18,7 +18,7 @@ pub use crate::config::global::{
     get_config_manager, init_config_with_database, reload_config, reload_config_bundle, with_config, ARGS, CONFIG_DIR,
 };
 use crate::config::item::ConcurrentLimit;
-pub use crate::config::item::{NFOTimeType, PathSafeTemplate, RateLimit, SubmissionRiskControlConfig};
+pub use crate::config::item::{EmptyUpperStrategy, NFOConfig, NFOFormatType, NFOTimeType, PathSafeTemplate, RateLimit, SubmissionRiskControlConfig};
 pub use crate::config::manager::ConfigManager;
 
 // 移除不再需要的配置结构体，因为视频源现在存储在数据库中
@@ -146,6 +146,8 @@ pub struct Config {
     #[serde(default)]
     pub nfo_time_type: NFOTimeType,
     #[serde(default)]
+    pub nfo_config: NFOConfig,
+    #[serde(default)]
     pub concurrent_limit: ConcurrentLimit,
     #[serde(default = "default_time_format")]
     pub time_format: String,
@@ -167,6 +169,9 @@ pub struct Config {
     pub enable_aria2_auto_restart: bool,
     #[serde(default = "default_aria2_health_check_interval")]
     pub aria2_health_check_interval: u64,
+    // actors字段初始化状态标记
+    #[serde(default)]
+    pub actors_field_initialized: bool,
 }
 
 fn default_skip_bangumi_preview() -> bool {
@@ -217,6 +222,7 @@ impl Clone for Config {
             interval: self.interval,
             upper_path: self.upper_path.clone(),
             nfo_time_type: self.nfo_time_type.clone(),
+            nfo_config: self.nfo_config.clone(),
             concurrent_limit: self.concurrent_limit.clone(),
             time_format: self.time_format.clone(),
             cdn_sorting: self.cdn_sorting,
@@ -227,6 +233,7 @@ impl Clone for Config {
             enable_aria2_health_check: self.enable_aria2_health_check,
             enable_aria2_auto_restart: self.enable_aria2_auto_restart,
             aria2_health_check_interval: self.aria2_health_check_interval,
+            actors_field_initialized: self.actors_field_initialized,
         }
     }
 }
@@ -248,6 +255,7 @@ impl Default for Config {
             interval: 1200,
             upper_path: CONFIG_DIR.join("upper_face"),
             nfo_time_type: NFOTimeType::FavTime,
+            nfo_config: NFOConfig::default(),
             concurrent_limit: ConcurrentLimit::default(),
             time_format: default_time_format(),
             cdn_sorting: true,
@@ -258,6 +266,7 @@ impl Default for Config {
             enable_aria2_health_check: false,
             enable_aria2_auto_restart: false,
             aria2_health_check_interval: default_aria2_health_check_interval(),
+            actors_field_initialized: false,
         }
     }
 }

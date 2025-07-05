@@ -110,6 +110,7 @@ impl VideoInfo {
                 episode_number,
                 share_copy,
                 show_season_type,
+                actors,
                 ..
             } => {
                 // 对于番剧，智能选择最详细的标题作为name
@@ -135,6 +136,16 @@ impl VideoInfo {
                         .unwrap_or(&title)
                 };
                 tracing::debug!("选择的intelligent_name: {}", intelligent_name);
+                
+                // 只在actors字段有数据且需要初始化时输出调试日志
+                if actors.is_some() {
+                    let should_log_actors = crate::config::with_config(|config| !config.config.actors_field_initialized);
+                    if should_log_actors {
+                        tracing::info!("convert.rs - 检测到actors字段初始化需要，准备保存演员信息: {:?}", actors);
+                    } else {
+                        tracing::debug!("convert.rs - 准备保存的演员信息: {:?}", actors);
+                    }
+                }
 
                 bili_sync_entity::video::ActiveModel {
                     bvid: Set(bvid),
@@ -151,6 +162,7 @@ impl VideoInfo {
                     episode_number: Set(episode_number),
                     share_copy: Set(share_copy),
                     show_season_type: Set(show_season_type),
+                    actors: Set(actors),
                     ..default
                 }
             }

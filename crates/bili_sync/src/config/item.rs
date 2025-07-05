@@ -21,6 +21,120 @@ pub enum NFOTimeType {
     PubTime,
 }
 
+/// NFO 文件格式类型
+#[derive(Serialize, Deserialize, Default, Clone, PartialEq, Debug)]
+#[serde(rename_all = "lowercase")]
+pub enum NFOFormatType {
+    /// 标准 Kodi 格式（推荐）
+    #[default]
+    Kodi,
+    /// 简化格式（兼容旧版本）
+    Simple,
+    /// 详细格式（包含所有可用信息）
+    Detailed,
+}
+
+/// 空UP主信息处理策略
+#[derive(Serialize, Deserialize, Default, Clone, PartialEq, Debug)]
+#[serde(rename_all = "lowercase")]
+pub enum EmptyUpperStrategy {
+    /// 跳过演员信息（默认策略）
+    #[default]
+    Skip,
+    /// 使用占位符文本
+    Placeholder,
+    /// 使用默认UP主名称
+    Default,
+}
+
+/// NFO 生成配置
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct NFOConfig {
+    /// 是否生成 NFO 文件
+    #[serde(default = "default_nfo_enabled")]
+    pub enabled: bool,
+    /// NFO 文件格式类型
+    #[serde(default)]
+    pub format_type: NFOFormatType,
+    /// NFO 文件使用的时间类型
+    #[serde(default)]
+    pub time_type: NFOTimeType,
+    /// 是否包含B站特有信息（如播放量、点赞数等）
+    #[serde(default = "default_include_bilibili_info")]
+    pub include_bilibili_info: bool,
+    /// 是否生成演员信息（UP主作为创作者）
+    #[serde(default = "default_include_actor_info")]
+    pub include_actor_info: bool,
+    /// 默认国家（当视频信息中没有时使用）
+    #[serde(default = "default_default_country")]
+    pub default_country: String,
+    /// 默认制作公司（当视频信息中没有时使用）
+    #[serde(default = "default_default_studio")]
+    pub default_studio: String,
+    /// 番剧默认播出状态
+    #[serde(default = "default_tvshow_status")]
+    pub default_tvshow_status: String,
+    /// 空UP主信息处理策略
+    #[serde(default)]
+    pub empty_upper_strategy: EmptyUpperStrategy,
+    /// 空UP主的占位符文本（当策略为Placeholder时使用）
+    #[serde(default = "default_empty_upper_placeholder")]
+    pub empty_upper_placeholder: String,
+    /// 空UP主的默认名称（当策略为Default时使用）
+    #[serde(default = "default_empty_upper_default_name")]
+    pub empty_upper_default_name: String,
+}
+
+fn default_nfo_enabled() -> bool {
+    true
+}
+
+fn default_include_bilibili_info() -> bool {
+    true
+}
+
+fn default_include_actor_info() -> bool {
+    true
+}
+
+fn default_default_country() -> String {
+    "中国".to_string()
+}
+
+fn default_default_studio() -> String {
+    "哔哩哔哩".to_string()
+}
+
+fn default_tvshow_status() -> String {
+    "Continuing".to_string()
+}
+
+fn default_empty_upper_placeholder() -> String {
+    "官方内容".to_string()
+}
+
+fn default_empty_upper_default_name() -> String {
+    "哔哩哔哩".to_string()
+}
+
+impl Default for NFOConfig {
+    fn default() -> Self {
+        Self {
+            enabled: default_nfo_enabled(),
+            format_type: NFOFormatType::default(),
+            time_type: NFOTimeType::default(),
+            include_bilibili_info: default_include_bilibili_info(),
+            include_actor_info: default_include_actor_info(),
+            default_country: default_default_country(),
+            default_studio: default_default_studio(),
+            default_tvshow_status: default_tvshow_status(),
+            empty_upper_strategy: EmptyUpperStrategy::default(),
+            empty_upper_placeholder: default_empty_upper_placeholder(),
+            empty_upper_default_name: default_empty_upper_default_name(),
+        }
+    }
+}
+
 /// 多线程下载配置
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct ParallelDownloadConfig {

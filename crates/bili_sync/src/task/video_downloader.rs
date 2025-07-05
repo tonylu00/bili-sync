@@ -343,6 +343,11 @@ pub async fn video_downloader(connection: Arc<DatabaseConnection>) {
         // ========== 扫描后处理阶段 ==========
         // 只在未暂停时处理后续任务
         if !TASK_CONTROLLER.is_paused() {
+            // 检查并标记actors字段初始化完成
+            if let Err(e) = check_and_mark_actors_initialization_complete(&connection).await {
+                warn!("检查actors字段初始化状态失败: {:#}", e);
+            }
+            
             // 安全时机：扫描任务已完成，处理暂存的删除任务
             if let Err(e) = crate::task::process_delete_tasks(connection.clone()).await {
                 error!("处理删除任务队列失败: {:#}", e);
@@ -418,4 +423,24 @@ pub async fn video_downloader(connection: Arc<DatabaseConnection>) {
             }
         }
     }
+}
+
+/// 检查并标记actors字段初始化完成
+async fn check_and_mark_actors_initialization_complete(connection: &DatabaseConnection) -> Result<()> {
+    use crate::utils::model::{check_actors_field_initialization_needed, mark_actors_field_initialization_complete};
+    
+    let (needs_init, filled_count, total_count) = check_actors_field_initialization_needed(connection).await?;
+    
+    // 如果不需要初始化，说明已经完成或没有番剧
+    if !needs_init && total_count > 0 && filled_count as f64 / total_count as f64 >= 0.8 {
+        // 检查配置是否已标记完成
+        let config_marked = crate::config::with_config(|config| config.config.actors_field_initialized);
+        
+        if !config_marked {
+            info!("检测到actors字段初始化已基本完成（{}/{}），标记为完成状态", filled_count, total_count);
+            mark_actors_field_initialization_complete().await?;
+        }
+    }
+    
+    Ok(())
 }

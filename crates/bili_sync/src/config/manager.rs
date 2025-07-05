@@ -165,6 +165,12 @@ impl ConfigManager {
         Ok(())
     }
 
+    /// 设置配置值的泛型方法
+    pub async fn set_config_value<T: serde::Serialize>(&self, key: &str, value: &T) -> Result<()> {
+        let json_value = serde_json::to_value(value)?;
+        self.update_config_item(key, json_value).await
+    }
+
     /// 更新单个配置项
     pub async fn update_config_item(&self, key: &str, value: Value) -> Result<()> {
         let value_json = serde_json::to_string(&value)?;
