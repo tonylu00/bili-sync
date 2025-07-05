@@ -1108,6 +1108,7 @@ impl<'a> From<&'a video::Model> for TVShow<'a> {
 // 带页面数据的转换实现，用于计算总时长
 impl<'a> Movie<'a> {
     /// 从视频模型和页面数据创建Movie，包含计算得出的总时长
+    #[allow(dead_code)]
     pub fn from_video_with_pages(video: &'a video::Model, pages: &[page::Model]) -> Self {
         let mut movie = Movie::from(video);
         
@@ -1124,6 +1125,7 @@ impl<'a> Movie<'a> {
 
 impl<'a> TVShow<'a> {
     /// 从视频模型和页面数据创建TVShow，包含计算得出的总时长
+    #[allow(dead_code)]
     pub fn from_video_with_pages(video: &'a video::Model, pages: &[page::Model]) -> Self {
         let mut tvshow = TVShow::from(video);
         
