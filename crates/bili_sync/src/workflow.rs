@@ -1912,12 +1912,21 @@ pub async fn generate_page_nfo(
     if !should_run {
         return Ok(ExecutionStatus::Skipped);
     }
+    // 检查是否为番剧
+    let is_bangumi = video_model.category == 1;
+    
     let nfo = match video_model.single_page {
         Some(single_page) => {
             if single_page {
-                // 使用页面数据创建Movie以包含时长信息
-                use crate::utils::nfo::Movie;
-                NFO::Movie(Movie::from_video_with_pages(video_model, &[page_model.clone()]))
+                if is_bangumi {
+                    // 番剧单页生成TVShow以正确分类
+                    use crate::utils::nfo::TVShow;
+                    NFO::TVShow(TVShow::from_video_with_pages(video_model, &[page_model.clone()]))
+                } else {
+                    // 普通单页视频生成Movie
+                    use crate::utils::nfo::Movie;
+                    NFO::Movie(Movie::from_video_with_pages(video_model, &[page_model.clone()]))
+                }
             } else {
                 NFO::Episode(page_model.into())
             }

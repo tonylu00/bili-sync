@@ -62,6 +62,7 @@ pub struct TVShow<'a> {
     pub status: Option<&'a str>, // 播出状态：Continuing, Ended
     pub total_seasons: Option<i32>,
     pub total_episodes: Option<i32>,
+    pub duration: Option<i32>,       // 视频时长（分钟）
     pub view_count: Option<i64>,
     pub like_count: Option<i64>,
     pub category: i32,               // 视频分类（用于番剧检测）
@@ -630,6 +631,14 @@ impl NFO<'_> {
                     }
                 }
 
+                // 时长信息
+                if let Some(duration) = tvshow.duration {
+                    writer
+                        .create_element("runtime")
+                        .write_text_content_async(BytesText::new(&duration.to_string()))
+                        .await?;
+                }
+
                 // B站特有信息作为自定义标签
                 if config.include_bilibili_info {
                     if let Some(view_count) = tvshow.view_count {
@@ -1093,6 +1102,7 @@ impl<'a> From<&'a video::Model> for TVShow<'a> {
             status: Some("Continuing"), // 默认持续播出状态
             total_seasons: Some(1),     // 默认单季
             total_episodes: None,       // 从分页数量推断
+            duration: None,             // video模型中没有duration字段
             view_count: None,           // video模型中没有view_count字段
             like_count: None,           // video模型中没有like_count字段
             category: video.category,
@@ -1129,11 +1139,16 @@ impl<'a> TVShow<'a> {
     pub fn from_video_with_pages(video: &'a video::Model, pages: &[page::Model]) -> Self {
         let mut tvshow = TVShow::from(video);
         
-        // 对于TVShow，我们不设置总时长，因为剧集有各自的时长
-        // 但可以设置总集数
+        // 计算总时长（分钟）
         if !pages.is_empty() {
-            tvshow.total_episodes = Some(pages.len() as i32);
+            let total_duration_seconds: u64 = pages.iter().map(|p| p.duration as u64).sum();
+            let total_duration_minutes = (total_duration_seconds / 60) as i32;
+            tvshow.duration = Some(total_duration_minutes);
         }
+        
+        // 对于番剧，total_episodes应该是整个季的集数，而不是当前页面数
+        // 这里暂时设为None，避免显示错误的"1集"信息
+        tvshow.total_episodes = None;
         
         tvshow
     }
@@ -1658,13 +1673,15 @@ mod tests {
         assert!(movie_nfo.contains("<runtime>8</runtime>"));
         assert!(movie_nfo.contains("<thumb>https://example.com/cover.jpg</thumb>"));
 
-        // 测试带集数的TVShow NFO生成
-        let tvshow_with_episodes = TVShow::from_video_with_pages(&video, &pages);
-        assert_eq!(tvshow_with_episodes.total_episodes, Some(2)); // 2集
+        // 测试带时长的TVShow NFO生成
+        let tvshow_with_duration = TVShow::from_video_with_pages(&video, &pages);
+        assert_eq!(tvshow_with_duration.duration, Some(8)); // 8分钟时长
+        assert_eq!(tvshow_with_duration.total_episodes, None); // 总集数设为None避免显示错误信息
 
-        let tvshow_nfo = NFO::TVShow(tvshow_with_episodes).generate_nfo().await.unwrap();
-        assert!(tvshow_nfo.contains("<totalepisodes>2</totalepisodes>"));
+        let tvshow_nfo = NFO::TVShow(tvshow_with_duration).generate_nfo().await.unwrap();
+        assert!(tvshow_nfo.contains("<runtime>8</runtime>"));
         assert!(tvshow_nfo.contains("<thumb>https://example.com/cover.jpg</thumb>"));
+        assert!(!tvshow_nfo.contains("<totalepisodes>")); // 不应包含totalepisodes字段
 
         // 测试空页面数据的情况
         let empty_pages: Vec<page::Model> = vec![];
