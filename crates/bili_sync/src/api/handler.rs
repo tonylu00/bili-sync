@@ -17,6 +17,7 @@ use std::sync::Mutex;
 use tokio::sync::broadcast;
 use tracing::{debug, error, info, warn};
 use utoipa::OpenApi;
+use reqwest;
 
 use crate::api::auth::OpenAPIAuth;
 use crate::api::error::InnerApiError;
@@ -234,25 +235,56 @@ pub async fn get_videos(
         (1, 10)
     };
     Ok(ApiResponse::ok(VideosResponse {
-        videos: query
-            .order_by_desc(video::Column::Id)
-            .select_only()
-            .columns([
-                video::Column::Id,
-                video::Column::Name,
-                video::Column::UpperName,
-                video::Column::Path,
-                video::Column::Category,
-                video::Column::DownloadStatus,
-                video::Column::Cover,
-            ])
-            .into_tuple::<(i32, String, String, String, i32, u32, String)>()
-            .paginate(db.as_ref(), page_size)
-            .fetch_page(page)
-            .await?
-            .into_iter()
-            .map(VideoInfo::from)
-            .collect(),
+        videos: {
+            // 查询包含season_id和source_type字段，用于番剧标题获取
+            let raw_videos: Vec<(i32, String, String, String, i32, u32, String, Option<String>, Option<i32>)> = query
+                .order_by_desc(video::Column::Id)
+                .select_only()
+                .columns([
+                    video::Column::Id,
+                    video::Column::Name,
+                    video::Column::UpperName,
+                    video::Column::Path,
+                    video::Column::Category,
+                    video::Column::DownloadStatus,
+                    video::Column::Cover,
+                    video::Column::SeasonId,
+                    video::Column::SourceType,
+                ])
+                .into_tuple::<(i32, String, String, String, i32, u32, String, Option<String>, Option<i32>)>()
+                .paginate(db.as_ref(), page_size)
+                .fetch_page(page)
+                .await?;
+
+            // 转换为VideoInfo并填充番剧标题
+            let mut videos: Vec<VideoInfo> = raw_videos
+                .iter()
+                .map(|(id, name, upper_name, path, category, download_status, cover, _season_id, _source_type)| {
+                    VideoInfo::from((*id, name.clone(), upper_name.clone(), path.clone(), *category, *download_status, cover.clone()))
+                })
+                .collect();
+
+            // 为番剧类型的视频填充真实标题
+            for (i, (_id, _name, _upper_name, _path, _category, _download_status, _cover, season_id, source_type)) 
+                in raw_videos.iter().enumerate() {
+                if *source_type == Some(1) && season_id.is_some() {
+                    // 番剧类型且有season_id，尝试获取真实标题
+                    if let Some(ref season_id_str) = season_id {
+                        // 先从缓存获取
+                        if let Some(title) = get_cached_season_title(season_id_str).await {
+                            videos[i].bangumi_title = Some(title);
+                        } else {
+                            // 缓存中没有，尝试从API获取并存入缓存
+                            if let Some(title) = fetch_and_cache_season_title(season_id_str).await {
+                                videos[i].bangumi_title = Some(title);
+                            }
+                        }
+                    }
+                }
+            }
+
+            videos
+        },
         total_count,
     }))
 }
@@ -7731,4 +7763,56 @@ async fn reset_nfo_tasks_for_config_change(db: Arc<DatabaseConnection>) -> Resul
     );
 
     Ok((resetted_videos_count, resetted_pages_count))
+}
+
+/// 从全局缓存中获取番剧季标题
+/// 如果缓存中没有，返回None（避免在API响应中阻塞）
+async fn get_cached_season_title(season_id: &str) -> Option<String> {
+    // 引用workflow模块中的全局缓存
+    if let Ok(cache) = crate::workflow::SEASON_TITLE_CACHE.lock() {
+        cache.get(season_id).cloned()
+    } else {
+        None
+    }
+}
+
+/// 从API获取番剧标题并存入缓存
+/// 这是一个轻量级实现，用于在API响应时补充缺失的标题
+async fn fetch_and_cache_season_title(season_id: &str) -> Option<String> {
+    let url = format!("https://api.bilibili.com/pgc/view/web/season?season_id={}", season_id);
+    
+    // 使用reqwest进行简单的HTTP请求
+    let client = reqwest::Client::new();
+    
+    // 设置较短的超时时间，避免阻塞API响应
+    match tokio::time::timeout(
+        std::time::Duration::from_secs(3),
+        client.get(&url).send()
+    ).await {
+        Ok(Ok(response)) => {
+            if response.status().is_success() {
+                if let Ok(json) = response.json::<serde_json::Value>().await {
+                    if json["code"].as_i64().unwrap_or(-1) == 0 {
+                        if let Some(title) = json["result"]["title"].as_str() {
+                            let title = title.to_string();
+                            
+                            // 存入缓存
+                            if let Ok(mut cache) = crate::workflow::SEASON_TITLE_CACHE.lock() {
+                                cache.insert(season_id.to_string(), title.clone());
+                                debug!("缓存番剧标题: {} -> {}", season_id, title);
+                            }
+                            
+                            return Some(title);
+                        }
+                    }
+                }
+            }
+        }
+        _ => {
+            // 超时或请求失败，记录debug日志但不阻塞
+            debug!("获取番剧标题超时: season_id={}", season_id);
+        }
+    }
+    
+    None
 }

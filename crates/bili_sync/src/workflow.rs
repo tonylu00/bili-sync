@@ -17,7 +17,7 @@ use tracing::{debug, error, info, warn};
 
 // 全局番剧季度标题缓存
 lazy_static::lazy_static! {
-    static ref SEASON_TITLE_CACHE: Arc<Mutex<HashMap<String, String>>> = Arc::new(Mutex::new(HashMap::new()));
+    pub static ref SEASON_TITLE_CACHE: Arc<Mutex<HashMap<String, String>>> = Arc::new(Mutex::new(HashMap::new()));
 }
 
 use crate::adapter::{video_source_from, Args, VideoSource, VideoSourceEnum};

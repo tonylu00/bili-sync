@@ -148,6 +148,11 @@
 	// 获取番剧名称用于显示
 	function getBangumiName(video: VideoInfo): string {
 		if (isBangumiVideo(video)) {
+			// 优先使用API获取的真实番剧标题
+			if (video.bangumi_title) {
+				return video.bangumi_title;
+			}
+			// 回退到从路径提取
 			return extractBangumiName(video.path);
 		}
 		return '';
