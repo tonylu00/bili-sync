@@ -112,7 +112,7 @@ fn default_multi_page_name() -> Cow<'static, str> {
 }
 
 fn default_bangumi_name() -> Cow<'static, str> {
-    Cow::Borrowed("{{title}} S{{season_pad}}E{{pid_pad}} - {{ptitle}}")
+    Cow::Borrowed("S{{season_pad}}E{{pid_pad}}{{#if version}}-{{version}}{{/if}} - {{ptitle}}")
 }
 
 fn default_folder_structure() -> Cow<'static, str> {
@@ -120,7 +120,7 @@ fn default_folder_structure() -> Cow<'static, str> {
 }
 
 fn default_bangumi_folder_name() -> Cow<'static, str> {
-    Cow::Borrowed("{{title}}")
+    Cow::Borrowed("{{series_title}}")
 }
 
 fn default_collection_folder_mode() -> Cow<'static, str> {
@@ -260,7 +260,7 @@ impl Default for Config {
             multi_page_name: Cow::Borrowed("{{title}}/P{{pid_pad}}.{{ptitle}}"),
             bangumi_name: Cow::Borrowed("{{title}} S{{season_pad}}E{{pid_pad}} - {{ptitle}}"),
             folder_structure: Cow::Borrowed("Season {{season_pad}}"),
-            bangumi_folder_name: Cow::Borrowed("{{title}}"),
+            bangumi_folder_name: Cow::Borrowed("{{series_title}}"),
             collection_folder_mode: Cow::Borrowed("unified"),
             interval: 1200,
             upper_path: CONFIG_DIR.join("upper_face"),

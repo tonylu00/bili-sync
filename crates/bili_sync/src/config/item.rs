@@ -324,7 +324,7 @@ impl PathSafeTemplate for handlebars::Handlebars<'_> {
             .replace("\\\\", "__WIN_SEP__")   // 连续的Windows反斜杠当作一个分隔符
             .replace("//", "__UNIX_SEP__")    // 连续的Unix正斜杠当作一个分隔符
             .replace('/', "__UNIX_SEP__")     // 单个Unix风格正斜杠
-            .replace('\\', "__WIN_SEP__");    // 单个Windows风格反斜杠
+            .replace('\\', "__WIN_SEP__"); // 单个Windows风格反斜杠
         Ok(self.register_template_string(name, safe_template)?)
     }
 
@@ -333,16 +333,12 @@ impl PathSafeTemplate for handlebars::Handlebars<'_> {
         #[cfg(windows)]
         {
             // Windows系统下：Unix风格转为下划线，Windows风格保持为反斜杠
-            Ok(rendered
-                .replace("__UNIX_SEP__", "_")
-                .replace("__WIN_SEP__", "\\"))
+            Ok(rendered.replace("__UNIX_SEP__", "_").replace("__WIN_SEP__", "\\"))
         }
         #[cfg(not(windows))]
         {
             // 非Windows系统下：Unix风格转为正斜杠，Windows风格转为下划线
-            Ok(rendered
-                .replace("__UNIX_SEP__", "/")
-                .replace("__WIN_SEP__", "_"))
+            Ok(rendered.replace("__UNIX_SEP__", "/").replace("__WIN_SEP__", "_"))
         }
     }
 }

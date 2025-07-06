@@ -1,47 +1,379 @@
-use serde_json::json;
 use chrono::Datelike;
+use serde_json::json;
 
 use crate::config;
 
 /// 从番剧单集标题中提取系列标题
-/// 处理各种常见的番剧标题模式
+/// 处理各种常见的番剧标题模式，包括多版本番剧的合并
 fn extract_series_title(episode_title: &str) -> String {
+    let title = episode_title.trim();
+
+    // 移除开头的下划线（如果有）
+    let title = title.strip_prefix('_').unwrap_or(title);
+
+    // 处理纯版本标识的情况 - 这些需要特殊处理，可能需要与主番剧名称关联
+    // 对于纯版本标识，返回一个通用的可识别名称，避免创建"未知番剧"
+    if matches!(
+        title,
+        "中文" | "中配" | "原版" | "日配" | "国语" | "粤语" | "英文" | "日语"
+    ) {
+        return format!("多语言版本_{}", title);
+    }
+
+    // 处理以下划线分隔的标题模式，如 "_灵笼 第一季_第001话"
+    if let Some(last_underscore_pos) = title.rfind('_') {
+        let potential_series = &title[..last_underscore_pos];
+        let episode_part = &title[last_underscore_pos + 1..];
+
+        // 如果最后一部分是集数标识，则返回系列部分
+        if episode_part.starts_with("第") && (episode_part.contains("话") || episode_part.contains("集"))
+            || episode_part.contains("全片")
+            || episode_part.contains("中章")
+            || episode_part.contains("特别篇")
+            || episode_part.contains("终章 上")
+            || episode_part.contains("终章 下")
+            || episode_part == "上"
+            || episode_part == "下"
+            || (episode_part.contains("终章") && (episode_part.contains("上") || episode_part.contains("下")))
+        {
+            // 进一步检查系列部分是否包含版本信息
+            let series_clean = clean_version_info(potential_series);
+            return series_clean;
+        }
+    }
+
+    // 处理其他分隔符模式
+    if let Some(pos) = title.find(" 第") {
+        if title[pos..].contains("话") || title[pos..].contains("集") {
+            let series_clean = clean_version_info(&title[..pos]);
+            return series_clean;
+        }
+    }
+
+    // 如果没有匹配到特定模式，清理版本信息后返回
+    clean_version_info(title)
+}
+
+/// 清理标题中的版本信息，将不同版本合并到同一系列名下
+fn clean_version_info(title: &str) -> String {
+    let title = title.trim();
+
+    // 处理标题末尾的版本标识
+    let version_patterns = [
+        " 中文版",
+        " 原版",
+        " 日配版",
+        " 中配版",
+        " 国语版",
+        " 粤语版",
+        " 英文版",
+        " 中文",
+        " 原版",
+        " 日配",
+        " 中配",
+        " 国语",
+        " 粤语",
+        " 英文",
+        "（中文）",
+        "（原版）",
+        "（日配）",
+        "（中配）",
+        "（国语）",
+        "（粤语）",
+        "（英文）",
+        "(中文)",
+        "(原版)",
+        "(日配)",
+        "(中配)",
+        "(国语)",
+        "(粤语)",
+        "(英文)",
+    ];
+
+    for pattern in &version_patterns {
+        if let Some(pos) = title.rfind(pattern) {
+            // 确保这个模式在标题末尾
+            if pos + pattern.len() == title.len() {
+                return title[..pos].trim().to_string();
+            }
+        }
+    }
+
+    title.to_string()
+}
+
+/// 带上下文信息的番剧标题提取，优先使用API提供的真实标题
+fn extract_series_title_with_context(video_model: &bili_sync_entity::video::Model, api_title: Option<&str>) -> String {
+    // 最高优先级：使用API提供的真实番剧标题
+    if let Some(title) = api_title {
+        return title.to_string();
+    }
+    
+    let title = &video_model.name;
+    let clean_title = title.trim().strip_prefix('_').unwrap_or(title);
+    
+    // 检查是否为纯版本标识，如果是，则使用其他信息构建番剧标题
+    if matches!(clean_title, "中文" | "中配" | "原版" | "日配" | "国语" | "粤语" | "英文" | "日语") {
+        // 优先使用season_id构建标题
+        if let Some(ref season_id) = video_model.season_id {
+            return format!("番剧Season{}", season_id);
+        }
+        
+        // 尝试使用upper_name作为线索
+        if !video_model.upper_name.is_empty() && video_model.upper_name != "unknown" {
+            return format!("{}_作品", video_model.upper_name);
+        }
+        
+        // 使用分类信息构建名称
+        let category_name = match video_model.category {
+            1 => "动画",
+            177 => "纪录片", 
+            155 => "时尚",
+            _ => "番剧",
+        };
+        return format!("{}内容", category_name);
+    }
+    
+    // 回退到基础提取逻辑
+    let basic_title = extract_series_title(title);
+    
+    // 如果基础提取结果是多语言版本，尝试使用其他信息改进
+    if basic_title.starts_with("多语言版本_") {
+        // 优先使用season_id构建更好的标题
+        if let Some(ref season_id) = video_model.season_id {
+            return format!("番剧Season{}", season_id);
+        }
+        
+        // 尝试使用upper_name作为线索
+        if !video_model.upper_name.is_empty() && video_model.upper_name != "unknown" {
+            return format!("{}_作品", video_model.upper_name);
+        }
+        
+        // 使用分类信息构建名称
+        let category_name = match video_model.category {
+            1 => "动画",
+            177 => "纪录片", 
+            155 => "时尚",
+            _ => "番剧",
+        };
+        return format!("{}内容", category_name);
+    }
+    
+    basic_title
+}
+
+/// 从番剧标题中提取季度编号
+fn extract_season_number(episode_title: &str) -> i32 {
     let title = episode_title.trim();
     
     // 移除开头的下划线（如果有）
     let title = title.strip_prefix('_').unwrap_or(title);
     
-    // 处理常见的版本标识（可能是独立的版本，如"中文"、"原版"等）
+    // 查找季度标识的几种模式
+    // 模式1: "第X季"
+    if let Some(pos) = title.find("第") {
+        let after_di = &title[pos + "第".len()..];
+        if let Some(ji_pos) = after_di.find("季") {
+            let season_str = &after_di[..ji_pos];
+            // 尝试解析中文数字或阿拉伯数字
+            match season_str {
+                "一" => return 1,
+                "二" => return 2,
+                "三" => return 3,
+                "四" => return 4,
+                "五" => return 5,
+                "六" => return 6,
+                "七" => return 7,
+                "八" => return 8,
+                "九" => return 9,
+                "十" => return 10,
+                _ => {
+                    // 尝试解析阿拉伯数字
+                    if let Ok(season) = season_str.parse::<i32>() {
+                        if season > 0 && season <= 50 { // 合理的季度范围
+                            return season;
+                        }
+                    }
+                }
+            }
+        }
+    }
+    
+    // 模式2: "Season X" 或 "season X"
+    for pattern in ["Season ", "season "] {
+        if let Some(pos) = title.find(pattern) {
+            let after_season = &title[pos + pattern.len()..];
+            // 找到第一个非数字字符的位置
+            let season_end = after_season.find(|c: char| !c.is_ascii_digit()).unwrap_or(after_season.len());
+            let season_str = &after_season[..season_end];
+            if let Ok(season) = season_str.parse::<i32>() {
+                if season > 0 && season <= 50 {
+                    return season;
+                }
+            }
+        }
+    }
+    
+    // 默认返回1
+    1
+}
+
+/// 从视频标题中提取版本信息
+fn extract_version_info(video_title: &str) -> String {
+    let title = video_title.trim().strip_prefix('_').unwrap_or(video_title);
+    
+    // 检查是否为纯版本标识
     if matches!(title, "中文" | "中配" | "原版" | "日配" | "国语" | "粤语" | "英文" | "日语") {
         return title.to_string();
     }
     
-    // 处理以下划线分隔的标题模式，如 "_灵笼 第一季_第001话"
-    if let Some(last_underscore_pos) = title.rfind('_') {
-        let potential_series = &title[..last_underscore_pos];
-        let episode_part = &title[last_underscore_pos + 1..];
+    // 检查标题中是否包含版本信息
+    let version_patterns = [
+        " 中文版", " 原版", " 日配版", " 中配版", " 国语版", " 粤语版", " 英文版",
+        " 中文", " 原版", " 日配", " 中配", " 国语", " 粤语", " 英文",
+        "（中文）", "（原版）", "（日配）", "（中配）", "（国语）", "（粤语）", "（英文）",
+        "(中文)", "(原版)", "(日配)", "(中配)", "(国语)", "(粤语)", "(英文)",
+    ];
+    
+    for pattern in &version_patterns {
+        if let Some(pos) = title.rfind(pattern) {
+            if pos + pattern.len() == title.len() {
+                let version = pattern.trim_start_matches(' ')
+                    .trim_start_matches('（').trim_end_matches('）')
+                    .trim_start_matches('(').trim_end_matches(')');
+                return version.to_string();
+            }
+        }
+    }
+    
+    // 如果没有找到版本信息，返回空字符串
+    String::new()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_extract_series_title() {
+        // 测试常规集数
+        assert_eq!(extract_series_title("_灵笼 第一季_第001话"), "灵笼 第一季");
+        assert_eq!(extract_series_title("_灵笼 第一季_第002话"), "灵笼 第一季");
         
-        // 如果最后一部分是集数标识，则返回系列部分
-        if episode_part.starts_with("第") && (episode_part.contains("话") || episode_part.contains("集")) ||
-           episode_part.contains("全片") ||
-           episode_part.contains("中章") ||
-           episode_part.contains("特别篇") ||
-           episode_part.contains("终章") ||
-           episode_part.contains("上") ||
-           episode_part.contains("下") {
-            return potential_series.to_string();
-        }
+        // 测试特殊集数
+        assert_eq!(extract_series_title("_灵笼 第一季_中章"), "灵笼 第一季");
+        assert_eq!(extract_series_title("_灵笼 第一季_特别篇"), "灵笼 第一季");
+        assert_eq!(extract_series_title("_灵笼 第一季_终章 上"), "灵笼 第一季");
+        assert_eq!(extract_series_title("_灵笼 第一季_终章 下"), "灵笼 第一季");
+        
+        // 测试全片
+        assert_eq!(extract_series_title("_名侦探柯南 绯色的不在证明_全片"), "名侦探柯南 绯色的不在证明");
+        
+        // 测试版本标识
+        assert_eq!(extract_series_title("中文"), "多语言版本_中文");
+        assert_eq!(extract_series_title("中配"), "多语言版本_中配");
+        assert_eq!(extract_series_title("日配"), "多语言版本_日配");
+    }
+
+    #[test]
+    fn test_extract_season_number() {
+        // 测试中文季度标识
+        assert_eq!(extract_season_number("_灵笼 第一季_第001话"), 1);
+        assert_eq!(extract_season_number("_灵笼 第二季_第1话 末世桃源"), 2);
+        assert_eq!(extract_season_number("_灵笼 第三季_第001话"), 3);
+        
+        // 测试阿拉伯数字季度标识
+        assert_eq!(extract_season_number("_某番剧 第1季_第001话"), 1);
+        assert_eq!(extract_season_number("_某番剧 第2季_第001话"), 2);
+        
+        // 测试英文季度标识
+        assert_eq!(extract_season_number("_某番剧 Season 1_第001话"), 1);
+        assert_eq!(extract_season_number("_某番剧 Season 2_第001话"), 2);
+        
+        // 测试默认值
+        assert_eq!(extract_season_number("_某番剧_第001话"), 1);
+        assert_eq!(extract_season_number("_名侦探柯南 绯色的不在证明_全片"), 1);
+    }
+
+    #[test]
+    fn test_extract_series_title_with_context() {
+        use bili_sync_entity::video::Model;
+        use chrono::DateTime;
+        
+        // 创建测试用的video model
+        let test_time = DateTime::from_timestamp(1640995200, 0).unwrap().naive_utc();
+        let mut video_model = Model {
+            id: 1,
+            collection_id: None,
+            favorite_id: None,
+            watch_later_id: None,
+            submission_id: None,
+            source_id: None,
+            source_type: Some(1),
+            upper_id: 123456,
+            upper_name: "官方频道".to_string(),
+            upper_face: "".to_string(),
+            name: "中配".to_string(),
+            path: "".to_string(),
+            category: 1,
+            bvid: "BV1234567890".to_string(),
+            intro: "".to_string(),
+            cover: "".to_string(),
+            ctime: test_time,
+            pubtime: test_time,
+            favtime: test_time,
+            download_status: 0,
+            valid: true,
+            tags: None,
+            single_page: Some(true),
+            created_at: "2024-01-01 00:00:00".to_string(),
+            season_id: Some("12345".to_string()),
+            ep_id: None,
+            season_number: None,
+            episode_number: None,
+            deleted: 0,
+            share_copy: None,
+            show_season_type: None,
+            actors: None,
+            auto_download: false,
+        };
+        
+        // 测试使用API标题的情况
+        let result = extract_series_title_with_context(&video_model, Some("灵笼 第一季"));
+        assert_eq!(result, "灵笼 第一季");
+        
+        // 测试带season_id的情况（无API标题）
+        let result = extract_series_title_with_context(&video_model, None);
+        assert_eq!(result, "番剧Season12345");
+        
+        // 测试带上传者名称的情况
+        video_model.season_id = None;
+        let result = extract_series_title_with_context(&video_model, None);
+        assert_eq!(result, "官方频道_作品");
+        
+        // 测试常规标题
+        video_model.name = "_灵笼 第一季_第001话".to_string();
+        let result = extract_series_title_with_context(&video_model, None);
+        assert_eq!(result, "灵笼 第一季");
     }
     
-    // 处理其他分隔符模式
-    if let Some(pos) = title.find(" 第") {
-        if title[pos..].contains("话") || title[pos..].contains("集") {
-            return title[..pos].to_string();
-        }
+    #[test]
+    fn test_extract_version_info() {
+        // 测试纯版本标识
+        assert_eq!(extract_version_info("中文"), "中文");
+        assert_eq!(extract_version_info("_中配"), "中配");
+        assert_eq!(extract_version_info("原版"), "原版");
+        assert_eq!(extract_version_info("日配"), "日配");
+        
+        // 测试带版本后缀的标题
+        assert_eq!(extract_version_info("某番剧 中文版"), "中文版");
+        assert_eq!(extract_version_info("某番剧（原版）"), "原版");
+        assert_eq!(extract_version_info("某番剧(日配)"), "日配");
+        
+        // 测试没有版本信息的标题
+        assert_eq!(extract_version_info("_灵笼 第一季_第001话"), "");
+        assert_eq!(extract_version_info("名侦探柯南"), "");
     }
-    
-    // 如果没有匹配到特定模式，返回原标题
-    title.to_string()
 }
 
 pub fn video_format_args(video_model: &bili_sync_entity::video::Model) -> serde_json::Value {
@@ -61,17 +393,27 @@ pub fn video_format_args(video_model: &bili_sync_entity::video::Model) -> serde_
 pub fn bangumi_page_format_args(
     video_model: &bili_sync_entity::video::Model,
     page_model: &bili_sync_entity::page::Model,
+    api_title: Option<&str>,
 ) -> serde_json::Value {
     let current_config = config::reload_config();
 
     // 直接使用数据库中存储的集数，如果没有则使用page_model.pid
     let episode_number = video_model.episode_number.unwrap_or(page_model.pid);
 
-    // 使用数据库中存储的季度编号，如果没有则默认为1
-    let season_number = video_model.season_number.unwrap_or(1);
+    // 优先从标题中提取季度编号，如果提取失败则使用数据库中存储的值，最后默认为1
+    let season_number = match extract_season_number(&video_model.name) {
+        1 => video_model.season_number.unwrap_or(1), // 如果从标题提取到1，可能是默认值，使用数据库值
+        extracted => extracted, // 从标题提取到了明确的季度信息，使用提取的值
+    };
 
     // 从发布时间提取年份
     let year = video_model.pubtime.year();
+
+    // 提取番剧系列标题用于文件夹命名，优先使用API提供的真实标题
+    let series_title = extract_series_title_with_context(video_model, api_title);
+    
+    // 提取版本信息用于文件名区分
+    let version_info = extract_version_info(&video_model.name);
 
     // 生成分辨率信息
     let resolution = match (page_model.width, page_model.height) {
@@ -82,7 +424,7 @@ pub fn bangumi_page_format_args(
     // 内容类型判断
     let content_type = match video_model.category {
         1 => "动画",     // 动画分类
-        177 => "纪录片", // 纪录片分类  
+        177 => "纪录片", // 纪录片分类
         155 => "时尚",   // 时尚分类
         _ => "番剧",     // 默认为番剧
     };
@@ -118,7 +460,8 @@ pub fn bangumi_page_format_args(
         "fav_time": video_model.favtime.and_utc().format(&current_config.time_format).to_string(),
         // 添加更多文件夹命名可能用到的变量
         "show_title": &video_model.name, // 番剧标题（别名）
-        "series_title": &video_model.name, // 系列标题（别名）
+        "series_title": &series_title, // 系列标题，从单集标题中提取
+        "version": &version_info, // 版本信息（中文、原版、日配等）
     })
 }
 
@@ -138,7 +481,7 @@ pub fn page_format_args(
 
     // 对于番剧，使用专门的格式化函数
     if is_bangumi {
-        bangumi_page_format_args(video_model, page_model)
+        bangumi_page_format_args(video_model, page_model, None)
     } else if !is_single_page {
         // 对于多P视频（非番剧），使用番剧格式的命名，默认季度为1
         let season_number = 1;

@@ -70,7 +70,7 @@ impl BangumiSource {
             }
         }
 
-        let format_args = bangumi_page_format_args(video_model, page_model);
+        let format_args = bangumi_page_format_args(video_model, page_model, None);
 
         // 使用ConfigBundle的模板渲染功能以保持一致性
         let final_name = if template == current_config.bangumi_name {

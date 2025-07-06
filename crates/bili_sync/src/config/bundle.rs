@@ -60,10 +60,16 @@ impl ConfigBundle {
         // 区分Unix风格和Windows风格的路径分隔符
         let safe_video_name = video_name.replace('/', "__UNIX_SEP__").replace('\\', "__WIN_SEP__");
         let safe_page_name = page_name.replace('/', "__UNIX_SEP__").replace('\\', "__WIN_SEP__");
-        let safe_multi_page_name = multi_page_name.replace('/', "__UNIX_SEP__").replace('\\', "__WIN_SEP__");
+        let safe_multi_page_name = multi_page_name
+            .replace('/', "__UNIX_SEP__")
+            .replace('\\', "__WIN_SEP__");
         let safe_bangumi_name = bangumi_name.replace('/', "__UNIX_SEP__").replace('\\', "__WIN_SEP__");
-        let safe_folder_structure = folder_structure.replace('/', "__UNIX_SEP__").replace('\\', "__WIN_SEP__");
-        let safe_bangumi_folder_name = bangumi_folder_name.replace('/', "__UNIX_SEP__").replace('\\', "__WIN_SEP__");
+        let safe_folder_structure = folder_structure
+            .replace('/', "__UNIX_SEP__")
+            .replace('\\', "__WIN_SEP__");
+        let safe_bangumi_folder_name = bangumi_folder_name
+            .replace('/', "__UNIX_SEP__")
+            .replace('\\', "__WIN_SEP__");
 
         handlebars.register_template_string("video", safe_video_name)?;
         handlebars.register_template_string("page", safe_page_name)?;

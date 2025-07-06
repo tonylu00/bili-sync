@@ -1,6 +1,7 @@
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::pin::Pin;
+use std::sync::{Arc, Mutex};
 
 use anyhow::{anyhow, bail, Context, Result};
 use bili_sync_entity::*;
@@ -13,6 +14,11 @@ use tokio::fs;
 use tokio::sync::Semaphore;
 use tokio_util::sync::CancellationToken;
 use tracing::{debug, error, info, warn};
+
+// 全局番剧季度标题缓存
+lazy_static::lazy_static! {
+    static ref SEASON_TITLE_CACHE: Arc<Mutex<HashMap<String, String>>> = Arc::new(Mutex::new(HashMap::new()));
+}
 
 use crate::adapter::{video_source_from, Args, VideoSource, VideoSourceEnum};
 use crate::bilibili::{
@@ -721,7 +727,7 @@ pub async fn download_video_pages(
 
         // 为番剧创建独立的文件夹：配置路径 -> 番剧文件夹 -> Season文件夹
         let bangumi_root_path = bangumi_source.path();
-        
+
         // 创建临时的page模型来获取格式化参数（只创建一次，避免重复）
         let temp_page = bili_sync_entity::page::Model {
             id: 0,
@@ -738,17 +744,24 @@ pub async fn download_video_pages(
             created_at: chrono::Utc::now().to_rfc3339(),
         };
 
-        // 使用番剧格式化参数
-        let format_args = crate::utils::format_arg::bangumi_page_format_args(&video_model, &temp_page);
+        // 获取真实的番剧标题（从缓存或API）
+        let api_title = if let Some(ref season_id) = video_model.season_id {
+            get_cached_season_title(bili_client, season_id, token.clone()).await
+        } else {
+            None
+        };
         
+        // 使用番剧格式化参数，优先使用API提供的真实标题
+        let format_args = crate::utils::format_arg::bangumi_page_format_args(&video_model, &temp_page, api_title.as_deref());
+
         // 生成番剧文件夹名称
-        let bangumi_folder_name = crate::config::with_config(|bundle| {
-            bundle.render_bangumi_folder_template(&format_args)
-        }).map_err(|e| anyhow::anyhow!("渲染番剧文件夹模板失败: {}", e))?;
+        let bangumi_folder_name =
+            crate::config::with_config(|bundle| bundle.render_bangumi_folder_template(&format_args))
+                .map_err(|e| anyhow::anyhow!("渲染番剧文件夹模板失败: {}", e))?;
 
         // 番剧文件夹路径
         let bangumi_folder_path = bangumi_root_path.join(&bangumi_folder_name);
-        
+
         // 确保番剧文件夹存在
         if !bangumi_folder_path.exists() {
             fs::create_dir_all(&bangumi_folder_path).await?;
@@ -769,11 +782,15 @@ pub async fn download_video_pages(
 
         if should_create_season_folder && video_model.season_id.is_some() {
             // 使用配置的folder_structure模板生成季度文件夹名称（复用已有的format_args）
-            let season_folder_name = crate::config::with_config(|bundle| {
-                bundle.render_folder_structure_template(&format_args)
-            }).map_err(|e| anyhow::anyhow!("渲染季度文件夹模板失败: {}", e))?;
+            let season_folder_name =
+                crate::config::with_config(|bundle| bundle.render_folder_structure_template(&format_args))
+                    .map_err(|e| anyhow::anyhow!("渲染季度文件夹模板失败: {}", e))?;
 
-            (bangumi_folder_path.join(&season_folder_name), Some(season_folder_name), Some(bangumi_folder_path))
+            (
+                bangumi_folder_path.join(&season_folder_name),
+                Some(season_folder_name),
+                Some(bangumi_folder_path),
+            )
         } else {
             // 不启用下载所有季度且没有选中特定季度时，直接使用番剧文件夹路径
             (bangumi_folder_path.clone(), None, Some(bangumi_folder_path))
@@ -910,10 +927,10 @@ pub async fn download_video_pages(
         let poster_path = bangumi_path.join(format!("{}-poster.jpg", bangumi_base_name));
         let fanart_path = bangumi_path.join(format!("{}-fanart.jpg", bangumi_base_name));
         let nfo_path = bangumi_path.join("tvshow.nfo");
-        
+
         let poster_exists = poster_path.exists() && fanart_path.exists();
         let nfo_exists = nfo_path.exists();
-        
+
         (!poster_exists, !nfo_exists)
     } else {
         (false, false)
@@ -933,14 +950,20 @@ pub async fn download_video_pages(
             downloader,
             if is_bangumi && bangumi_folder_path.is_some() {
                 // 番剧封面放在番剧文件夹根目录
-                bangumi_folder_path.as_ref().unwrap().join(format!("{}-poster.jpg", bangumi_base_name))
+                bangumi_folder_path
+                    .as_ref()
+                    .unwrap()
+                    .join(format!("{}-poster.jpg", bangumi_base_name))
             } else {
                 // 普通视频封面放在视频文件夹
                 base_path.join(format!("{}-poster.jpg", video_base_name))
             },
             if is_bangumi && bangumi_folder_path.is_some() {
                 // 番剧fanart放在番剧文件夹根目录
-                bangumi_folder_path.as_ref().unwrap().join(format!("{}-fanart.jpg", bangumi_base_name))
+                bangumi_folder_path
+                    .as_ref()
+                    .unwrap()
+                    .join(format!("{}-fanart.jpg", bangumi_base_name))
             } else {
                 // 普通视频fanart放在视频文件夹
                 base_path.join(format!("{}-fanart.jpg", video_base_name))
@@ -2134,6 +2157,23 @@ async fn generate_nfo(nfo: NFO<'_>, nfo_path: PathBuf) -> Result<()> {
     Ok(())
 }
 
+/// 获取番剧季标题，优先从缓存获取，缓存未命中时从API获取
+async fn get_cached_season_title(
+    bili_client: &BiliClient,
+    season_id: &str,
+    token: CancellationToken,
+) -> Option<String> {
+    // 先检查缓存
+    if let Ok(cache) = SEASON_TITLE_CACHE.lock() {
+        if let Some(title) = cache.get(season_id) {
+            return Some(title.clone());
+        }
+    }
+    
+    // 缓存未命中，从API获取
+    get_season_title_from_api(bili_client, season_id, token).await
+}
+
 async fn get_season_title_from_api(
     bili_client: &BiliClient,
     season_id: &str,
@@ -2172,6 +2212,12 @@ async fn get_season_title_from_api(
                                 // 获取季度标题
                                 if let Some(title) = json["result"]["title"].as_str() {
                                     debug!("获取到季度标题: {} (尝试次数: {})", title, retry_count + 1);
+                                    
+                                    // 缓存番剧标题
+                                    if let Ok(mut cache) = SEASON_TITLE_CACHE.lock() {
+                                        cache.insert(season_id.to_string(), title.to_string());
+                                    }
+                                    
                                     return Some(title.to_string());
                                 }
                             } else {
@@ -2470,6 +2516,11 @@ async fn get_season_info_from_api(
         .as_str()
         .unwrap_or(&format!("番剧{}", season_id))
         .to_string();
+    
+    // 缓存番剧标题
+    if let Ok(mut cache) = SEASON_TITLE_CACHE.lock() {
+        cache.insert(season_id.to_string(), title.clone());
+    }
 
     let episodes: Vec<EpisodeInfo> = result["episodes"]
         .as_array()
