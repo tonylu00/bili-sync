@@ -38,16 +38,33 @@ use crate::utils::status::{PageStatus, VideoStatus, STATUS_OK};
 
 // 新增：番剧季信息结构体
 #[derive(Debug, Clone)]
-struct SeasonInfo {
-    title: String,
-    episodes: Vec<EpisodeInfo>,
+pub struct SeasonInfo {
+    pub title: String,
+    pub episodes: Vec<EpisodeInfo>,
+    // API扩展字段
+    pub alias: Option<String>,               // 别名
+    pub evaluate: Option<String>,            // 剧情简介
+    pub rating: Option<f32>,                 // 评分 (如9.6)
+    pub rating_count: Option<i64>,           // 评分人数
+    pub areas: Vec<String>,                  // 制作地区 (如"中国大陆")
+    pub actors: Option<String>,              // 声优演员信息 (格式化字符串)
+    pub styles: Vec<String>,                 // 类型标签 (如"科幻", "机战")
+    pub total_episodes: Option<i32>,         // 总集数
+    pub status: Option<String>,              // 播出状态 (如"完结", "连载中")
+    pub cover: Option<String>,               // 封面图URL
+    pub horizontal_cover: Option<String>,    // 横版封面URL
+    pub media_id: Option<i64>,               // 媒体ID
+    pub season_id: String,                   // 季度ID
+    pub publish_time: Option<String>,        // 发布时间
+    pub total_views: Option<i64>,            // 总播放量
+    pub total_favorites: Option<i64>,        // 总收藏数
 }
 
 #[derive(Debug, Clone)]
-struct EpisodeInfo {
-    ep_id: String,
-    cid: i64,
-    duration: u32, // 秒
+pub struct EpisodeInfo {
+    pub ep_id: String,
+    pub cid: i64,
+    pub duration: u32, // 秒
 }
 
 /// 创建一个配置了 truncate 辅助函数的 handlebars 实例
@@ -717,6 +734,24 @@ pub async fn download_video_pages(
 
     // 检查是否为番剧
     let is_bangumi = matches!(video_source, VideoSourceEnum::BangumiSource(_));
+    
+    // 为番剧获取API数据用于NFO生成
+    let season_info = if is_bangumi && video_model.season_id.is_some() {
+        let season_id = video_model.season_id.as_ref().unwrap();
+        match get_season_info_from_api(bili_client, season_id, token.clone()).await {
+            Ok(info) => {
+                debug!("成功获取番剧 {} 的API信息用于NFO生成", info.title);
+                Some(info)
+            }
+            Err(e) => {
+                warn!("获取番剧 {} (season_id: {}) 的API信息失败: {}", 
+                     video_model.name, season_id, e);
+                None
+            }
+        }
+    } else {
+        None
+    };
 
     // 获取番剧源和季度信息
     let (base_path, season_folder, bangumi_folder_path) = if is_bangumi {
@@ -947,7 +982,37 @@ pub async fn download_video_pages(
         (false, false)
     };
 
-    let (res_1, res_2, res_3, res_4, res_5) = tokio::join!(
+    // 先处理NFO生成（独立执行，避免tokio::join!类型问题）
+    let nfo_result = if is_bangumi && season_info.is_some() {
+        // 番剧且有API数据：使用API驱动的NFO生成
+        generate_bangumi_video_nfo(
+            separate_status[1] && bangumi_folder_path.is_some() && should_download_bangumi_nfo,
+            &video_model,
+            season_info.as_ref().unwrap(),
+            bangumi_folder_path.as_ref().unwrap().join("tvshow.nfo"),
+        ).await
+    } else {
+        // 普通视频或番剧无API数据：使用原有逻辑
+        generate_video_nfo(
+            if is_bangumi {
+                // 番剧：只有在文件不存在时才生成，放在番剧文件夹根目录
+                separate_status[1] && bangumi_folder_path.is_some() && should_download_bangumi_nfo
+            } else {
+                // 普通视频：只为多P视频生成nfo
+                separate_status[1] && !is_single_page
+            },
+            &video_model,
+            if is_bangumi && bangumi_folder_path.is_some() {
+                // 番剧tvshow.nfo放在番剧文件夹根目录，使用固定文件名
+                bangumi_folder_path.as_ref().unwrap().join("tvshow.nfo")
+            } else {
+                // 普通视频nfo放在视频文件夹
+                base_path.join(format!("{}.nfo", video_base_name))
+            },
+        ).await
+    };
+
+    let (res_1, res_3, res_4, res_5) = tokio::join!(
         // 下载视频封面（番剧和普通视频采用不同策略）
         fetch_video_poster(
             if is_bangumi {
@@ -981,24 +1046,6 @@ pub async fn download_video_pages(
             },
             token.clone(),
         ),
-        // 生成视频信息的 nfo（番剧和普通视频采用不同策略）
-        generate_video_nfo(
-            if is_bangumi {
-                // 番剧：只有在文件不存在时才生成，放在番剧文件夹根目录
-                separate_status[1] && bangumi_folder_path.is_some() && should_download_bangumi_nfo
-            } else {
-                // 普通视频：只为多P视频生成nfo
-                separate_status[1] && !is_single_page
-            },
-            &video_model,
-            if is_bangumi && bangumi_folder_path.is_some() {
-                // 番剧tvshow.nfo放在番剧文件夹根目录，使用固定文件名
-                bangumi_folder_path.as_ref().unwrap().join("tvshow.nfo")
-            } else {
-                // 普通视频nfo放在视频文件夹
-                base_path.join(format!("{}.nfo", video_base_name))
-            },
-        ),
         // 下载 Up 主头像（番剧跳过，因为番剧没有UP主信息）
         fetch_upper_face(
             separate_status[2] && should_download_upper && !is_bangumi,
@@ -1030,7 +1077,7 @@ pub async fn download_video_pages(
         )
     );
 
-    let results = [res_1, res_2, res_3, res_4, res_5]
+    let results = [res_1, nfo_result, res_3, res_4, res_5]
         .into_iter()
         .map(Into::into)
         .collect::<Vec<_>>();
@@ -2151,6 +2198,22 @@ pub async fn generate_video_nfo(
     Ok(ExecutionStatus::Succeeded)
 }
 
+/// 为番剧生成带有API数据的TVShow NFO
+pub async fn generate_bangumi_video_nfo(
+    should_run: bool,
+    video_model: &video::Model,
+    season_info: &SeasonInfo,
+    nfo_path: PathBuf,
+) -> Result<ExecutionStatus> {
+    if !should_run {
+        return Ok(ExecutionStatus::Skipped);
+    }
+    use crate::utils::nfo::TVShow;
+    let tvshow = TVShow::from_season_info(video_model, season_info);
+    generate_nfo(NFO::TVShow(tvshow), nfo_path).await?;
+    Ok(ExecutionStatus::Succeeded)
+}
+
 async fn generate_nfo(nfo: NFO<'_>, nfo_path: PathBuf) -> Result<()> {
     if let Some(parent) = nfo_path.parent() {
         fs::create_dir_all(parent).await?;
@@ -2513,6 +2576,7 @@ async fn get_season_info_from_api(
     }
 
     let result = &json["result"];
+    
     // 获取番剧标题
     let title = result["title"]
         .as_str()
@@ -2523,6 +2587,70 @@ async fn get_season_info_from_api(
     if let Ok(mut cache) = SEASON_TITLE_CACHE.lock() {
         cache.insert(season_id.to_string(), title.clone());
     }
+
+    // 提取API中的丰富元数据
+    let alias = result["alias"].as_str().map(|s| s.to_string());
+    let evaluate = result["evaluate"].as_str().map(|s| s.to_string());
+    
+    // 评分信息
+    let rating = result["rating"]["score"].as_f64().map(|r| r as f32);
+    let rating_count = result["rating"]["count"].as_i64();
+    
+    // 制作地区
+    let areas: Vec<String> = result["areas"]
+        .as_array()
+        .unwrap_or(&vec![])
+        .iter()
+        .filter_map(|area| area["name"].as_str().map(|s| s.to_string()))
+        .collect();
+    
+    // 声优演员信息（格式化为字符串）
+    let actors = if let Some(actors_array) = result["actors"].as_array() {
+        let actor_list: Vec<String> = actors_array
+            .iter()
+            .filter_map(|actor| {
+                let character = actor["title"].as_str()?;
+                let actor_name = actor["actor"].as_str()?;
+                Some(format!("{}：{}", character, actor_name))
+            })
+            .collect();
+        
+        if !actor_list.is_empty() {
+            Some(actor_list.join("\n"))
+        } else {
+            None
+        }
+    } else {
+        None
+    };
+    
+    // 类型标签
+    let styles: Vec<String> = result["styles"]
+        .as_array()
+        .unwrap_or(&vec![])
+        .iter()
+        .filter_map(|style| style["name"].as_str().map(|s| s.to_string()))
+        .collect();
+    
+    // 播出状态
+    let status = result["publish"]["pub_time_show"].as_str().map(|s| {
+        if s.contains("完结") || s.contains("全") {
+            "Ended".to_string()
+        } else if s.contains("更新") || s.contains("连载") {
+            "Continuing".to_string()
+        } else {
+            "Ended".to_string() // 默认为完结
+        }
+    });
+    
+    // 其他元数据
+    let total_episodes = result["total"].as_i64().map(|t| t as i32);
+    let cover = result["cover"].as_str().map(|s| s.to_string());
+    let horizontal_cover = result["horizontal_picture"].as_str().map(|s| s.to_string());
+    let media_id = result["media_id"].as_i64();
+    let publish_time = result["publish"]["pub_time_show"].as_str().map(|s| s.to_string());
+    let total_views = result["stat"]["views"].as_i64();
+    let total_favorites = result["stat"]["favorites"].as_i64();
 
     let episodes: Vec<EpisodeInfo> = result["episodes"]
         .as_array()
@@ -2539,13 +2667,35 @@ async fn get_season_info_from_api(
         .collect();
 
     info!(
-        "成功获取番剧季 {} 「{}」信息，包含 {} 集",
+        "成功获取番剧季 {} 「{}」完整信息：{} 集，评分 {:?}，制作地区 {:?}，类型 {:?}",
         season_id,
         title,
-        episodes.len()
+        episodes.len(),
+        rating,
+        areas,
+        styles
     );
 
-    Ok(SeasonInfo { title, episodes })
+    Ok(SeasonInfo { 
+        title, 
+        episodes,
+        alias,
+        evaluate,
+        rating,
+        rating_count,
+        areas,
+        actors,
+        styles,
+        total_episodes,
+        status,
+        cover,
+        horizontal_cover,
+        media_id,
+        season_id: season_id.to_string(),
+        publish_time,
+        total_views,
+        total_favorites,
+    })
 }
 
 /// 处理单个番剧视频
