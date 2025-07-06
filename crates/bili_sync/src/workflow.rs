@@ -750,9 +750,10 @@ pub async fn download_video_pages(
         } else {
             None
         };
-        
+
         // 使用番剧格式化参数，优先使用API提供的真实标题
-        let format_args = crate::utils::format_arg::bangumi_page_format_args(&video_model, &temp_page, api_title.as_deref());
+        let format_args =
+            crate::utils::format_arg::bangumi_page_format_args(&video_model, &temp_page, api_title.as_deref());
 
         // 检查是否有有效的series_title，如果没有则跳过番剧处理
         let series_title = format_args["series_title"].as_str().unwrap_or("");
@@ -1159,7 +1160,19 @@ pub async fn download_video_pages(
     }
     let mut video_active_model: video::ActiveModel = video_model.into();
     video_active_model.download_status = Set(status.into());
-    video_active_model.path = Set(base_path.to_string_lossy().to_string());
+
+    // 对于番剧，保存番剧文件夹路径而不是Season文件夹路径
+    let path_to_save = if is_bangumi {
+        if let Some(ref bangumi_folder_path) = bangumi_folder_path {
+            bangumi_folder_path.to_string_lossy().to_string()
+        } else {
+            base_path.to_string_lossy().to_string()
+        }
+    } else {
+        base_path.to_string_lossy().to_string()
+    };
+
+    video_active_model.path = Set(path_to_save);
     Ok(video_active_model)
 }
 
@@ -2179,7 +2192,7 @@ async fn get_cached_season_title(
             return Some(title.clone());
         }
     }
-    
+
     // 缓存未命中，从API获取
     get_season_title_from_api(bili_client, season_id, token).await
 }
@@ -2222,12 +2235,12 @@ async fn get_season_title_from_api(
                                 // 获取季度标题
                                 if let Some(title) = json["result"]["title"].as_str() {
                                     debug!("获取到季度标题: {} (尝试次数: {})", title, retry_count + 1);
-                                    
+
                                     // 缓存番剧标题
                                     if let Ok(mut cache) = SEASON_TITLE_CACHE.lock() {
                                         cache.insert(season_id.to_string(), title.to_string());
                                     }
-                                    
+
                                     return Some(title.to_string());
                                 }
                             } else {
@@ -2526,7 +2539,7 @@ async fn get_season_info_from_api(
         .as_str()
         .unwrap_or(&format!("番剧{}", season_id))
         .to_string();
-    
+
     // 缓存番剧标题
     if let Ok(mut cache) = SEASON_TITLE_CACHE.lock() {
         cache.insert(season_id.to_string(), title.clone());

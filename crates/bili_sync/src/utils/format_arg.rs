@@ -242,6 +242,14 @@ pub fn bangumi_page_format_args(
     
     // 提取版本信息用于文件名区分
     let version_info = extract_version_info(&video_model.name);
+    
+    // 智能处理版本信息重复问题
+    // 如果page_model.name就是版本信息，那么在version字段中不重复显示
+    let final_version = if !version_info.is_empty() && page_model.name.trim() == version_info {
+        String::new() // 避免重复，清空version字段
+    } else {
+        version_info
+    };
 
     // 生成分辨率信息
     let resolution = match (page_model.width, page_model.height) {
@@ -289,7 +297,7 @@ pub fn bangumi_page_format_args(
         // 添加更多文件夹命名可能用到的变量
         "show_title": &video_model.name, // 番剧标题（别名）
         "series_title": &series_title, // 系列标题，从单集标题中提取
-        "version": &version_info, // 版本信息（中文、原版、日配等）
+        "version": &final_version, // 版本信息（智能处理重复）
     })
 }
 
