@@ -99,6 +99,8 @@ pub struct UpdateConfigRequest {
     pub bangumi_name: Option<String>,
     // 文件夹结构模板
     pub folder_structure: Option<String>,
+    // 番剧文件夹命名模板
+    pub bangumi_folder_name: Option<String>,
     // 合集文件夹模式
     pub collection_folder_mode: Option<String>,
     // 时间格式

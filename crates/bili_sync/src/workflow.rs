@@ -713,14 +713,47 @@ pub async fn download_video_pages(
     let is_bangumi = matches!(video_source, VideoSourceEnum::BangumiSource(_));
 
     // 获取番剧源和季度信息
-    let (base_path, season_folder) = if is_bangumi {
+    let (base_path, season_folder, bangumi_folder_path) = if is_bangumi {
         let bangumi_source = match video_source {
             VideoSourceEnum::BangumiSource(source) => source,
             _ => unreachable!(),
         };
 
-        // 番剧直接使用配置的路径，不创建额外的视频标题文件夹
-        let base_path = bangumi_source.path();
+        // 为番剧创建独立的文件夹：配置路径 -> 番剧文件夹 -> Season文件夹
+        let bangumi_root_path = bangumi_source.path();
+        
+        // 创建临时的page模型来获取格式化参数（只创建一次，避免重复）
+        let temp_page = bili_sync_entity::page::Model {
+            id: 0,
+            video_id: video_model.id,
+            cid: 0,
+            pid: 1,
+            name: "temp".to_string(),
+            width: None,
+            height: None,
+            duration: 0,
+            path: None,
+            image: None,
+            download_status: 0,
+            created_at: chrono::Utc::now().to_rfc3339(),
+        };
+
+        // 使用番剧格式化参数
+        let format_args = crate::utils::format_arg::bangumi_page_format_args(&video_model, &temp_page);
+        
+        // 生成番剧文件夹名称
+        let bangumi_folder_name = crate::config::with_config(|bundle| {
+            bundle.render_bangumi_folder_template(&format_args)
+        }).map_err(|e| anyhow::anyhow!("渲染番剧文件夹模板失败: {}", e))?;
+
+        // 番剧文件夹路径
+        let bangumi_folder_path = bangumi_root_path.join(&bangumi_folder_name);
+        
+        // 确保番剧文件夹存在
+        if !bangumi_folder_path.exists() {
+            fs::create_dir_all(&bangumi_folder_path).await?;
+            info!("创建番剧文件夹: {}", bangumi_folder_path.display());
+        }
 
         // 目录创建策略：
         // 1. 如果启用了下载所有季度 -> 创建季度子目录
@@ -735,28 +768,15 @@ pub async fn download_video_pages(
             || video_model.season_id.is_some(); // 单季度番剧：如果有season_id就创建目录
 
         if should_create_season_folder && video_model.season_id.is_some() {
-            let season_id = video_model
-                .season_id
-                .as_ref()
-                .context("season_id should not be None when downloading multiple seasons")?;
+            // 使用配置的folder_structure模板生成季度文件夹名称（复用已有的format_args）
+            let season_folder_name = crate::config::with_config(|bundle| {
+                bundle.render_folder_structure_template(&format_args)
+            }).map_err(|e| anyhow::anyhow!("渲染季度文件夹模板失败: {}", e))?;
 
-            // 从API获取季度标题
-            let season_title = match get_season_title_from_api(bili_client, season_id, token.clone()).await {
-                Some(title) => title,
-                None => {
-                    // API请求失败，使用安全的回退策略
-                    error!("无法获取season_id={}的标题，跳过创建季度文件夹", season_id);
-                    return Err(anyhow::anyhow!(
-                        "无法获取番剧季度信息 (season_id: {})，请检查网络连接或番剧是否存在",
-                        season_id
-                    ));
-                }
-            };
-
-            (base_path.join(&season_title), Some(season_title))
+            (bangumi_folder_path.join(&season_folder_name), Some(season_folder_name), Some(bangumi_folder_path))
         } else {
-            // 不启用下载所有季度且没有选中特定季度时，直接使用配置路径
-            (base_path.to_path_buf(), None)
+            // 不启用下载所有季度且没有选中特定季度时，直接使用番剧文件夹路径
+            (bangumi_folder_path.clone(), None, Some(bangumi_folder_path))
         }
     } else {
         // 非番剧使用原来的逻辑，但对合集进行特殊处理
@@ -821,15 +841,25 @@ pub async fn download_video_pages(
                 video_source.path().join(&base_folder_name)
             }
         };
-        (path, None)
+        (path, None, None)
     };
 
-    // 确保季度文件夹存在
+    // 确保季度文件夹存在（番剧和非番剧采用不同的处理方式）
     if let Some(season_folder_name) = &season_folder {
-        let season_path = video_source.path().join(season_folder_name);
-        if !season_path.exists() {
-            fs::create_dir_all(&season_path).await?;
-            info!("创建季度文件夹: {}", season_path.display());
+        if is_bangumi {
+            // 对于番剧，Season文件夹的创建已经在上面的逻辑中处理了
+            // base_path 已经是完整的路径（番剧文件夹/Season文件夹）
+            if !base_path.exists() {
+                fs::create_dir_all(&base_path).await?;
+                info!("创建季度文件夹: {}", base_path.display());
+            }
+        } else {
+            // 对于非番剧，使用原来的逻辑
+            let season_path = video_source.path().join(season_folder_name);
+            if !season_path.exists() {
+                fs::create_dir_all(&season_path).await?;
+                info!("创建季度文件夹: {}", season_path.display());
+            }
         }
     }
 
@@ -850,6 +880,21 @@ pub async fn download_video_pages(
         String::new() // 单P视频不需要这些文件
     };
 
+    // 为番剧生成番剧文件夹级别的文件名前缀
+    let bangumi_base_name = if is_bangumi {
+        if let Some(ref bangumi_folder_path) = bangumi_folder_path {
+            // 使用番剧文件夹名称作为前缀
+            bangumi_folder_path
+                .file_name()
+                .map(|name| name.to_string_lossy().to_string())
+                .unwrap_or_else(|| "bangumi".to_string())
+        } else {
+            "bangumi".to_string()
+        }
+    } else {
+        String::new()
+    };
+
     // 对于单页视频，page 的下载已经足够
     // 对于多页视频，page 下载仅包含了分集内容，需要额外补上视频的 poster 的 tvshow.nfo
     // 使用 tokio::join! 替代装箱的 Future，零分配并行执行
@@ -859,21 +904,66 @@ pub async fn download_video_pages(
         return Err(anyhow!("Download cancelled"));
     }
 
+    // 为番剧检查元数据文件是否已存在，避免重复下载
+    let (should_download_bangumi_poster, should_download_bangumi_nfo) = if is_bangumi && bangumi_folder_path.is_some() {
+        let bangumi_path = bangumi_folder_path.as_ref().unwrap();
+        let poster_path = bangumi_path.join(format!("{}-poster.jpg", bangumi_base_name));
+        let fanart_path = bangumi_path.join(format!("{}-fanart.jpg", bangumi_base_name));
+        let nfo_path = bangumi_path.join("tvshow.nfo");
+        
+        let poster_exists = poster_path.exists() && fanart_path.exists();
+        let nfo_exists = nfo_path.exists();
+        
+        (!poster_exists, !nfo_exists)
+    } else {
+        (false, false)
+    };
+
     let (res_1, res_2, res_3, res_4, res_5) = tokio::join!(
-        // 下载视频封面
+        // 下载视频封面（番剧和普通视频采用不同策略）
         fetch_video_poster(
-            separate_status[0] && !is_single_page,
+            if is_bangumi {
+                // 番剧：只有在文件不存在时才下载，放在番剧文件夹根目录
+                separate_status[0] && bangumi_folder_path.is_some() && should_download_bangumi_poster
+            } else {
+                // 普通视频：只为多P视频生成封面
+                separate_status[0] && !is_single_page
+            },
             &video_model,
             downloader,
-            base_path.join(format!("{}-poster.jpg", video_base_name)),
-            base_path.join(format!("{}-fanart.jpg", video_base_name)),
+            if is_bangumi && bangumi_folder_path.is_some() {
+                // 番剧封面放在番剧文件夹根目录
+                bangumi_folder_path.as_ref().unwrap().join(format!("{}-poster.jpg", bangumi_base_name))
+            } else {
+                // 普通视频封面放在视频文件夹
+                base_path.join(format!("{}-poster.jpg", video_base_name))
+            },
+            if is_bangumi && bangumi_folder_path.is_some() {
+                // 番剧fanart放在番剧文件夹根目录
+                bangumi_folder_path.as_ref().unwrap().join(format!("{}-fanart.jpg", bangumi_base_name))
+            } else {
+                // 普通视频fanart放在视频文件夹
+                base_path.join(format!("{}-fanart.jpg", video_base_name))
+            },
             token.clone(),
         ),
-        // 生成视频信息的 nfo
+        // 生成视频信息的 nfo（番剧和普通视频采用不同策略）
         generate_video_nfo(
-            separate_status[1] && !is_single_page,
+            if is_bangumi {
+                // 番剧：只有在文件不存在时才生成，放在番剧文件夹根目录
+                separate_status[1] && bangumi_folder_path.is_some() && should_download_bangumi_nfo
+            } else {
+                // 普通视频：只为多P视频生成nfo
+                separate_status[1] && !is_single_page
+            },
             &video_model,
-            base_path.join(format!("{}.nfo", video_base_name)),
+            if is_bangumi && bangumi_folder_path.is_some() {
+                // 番剧tvshow.nfo放在番剧文件夹根目录，使用固定文件名
+                bangumi_folder_path.as_ref().unwrap().join("tvshow.nfo")
+            } else {
+                // 普通视频nfo放在视频文件夹
+                base_path.join(format!("{}.nfo", video_base_name))
+            },
         ),
         // 下载 Up 主头像（番剧跳过，因为番剧没有UP主信息）
         fetch_upper_face(

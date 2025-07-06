@@ -8,9 +8,11 @@ macro_rules! regex {
 pub fn filenamify<S: AsRef<str>>(input: S) -> String {
     let mut input = input.as_ref().to_string();
 
-    // 保护 __SEP__ 标记，避免被处理
-    let sep_placeholder = "🔒SEP_PROTECTED🔒";
-    input = input.replace("__SEP__", sep_placeholder);
+    // 保护路径分隔符标记，避免被处理
+    let unix_sep_placeholder = "🔒UNIX_SEP_PROTECTED🔒";
+    let win_sep_placeholder = "🔒WIN_SEP_PROTECTED🔒";
+    input = input.replace("__UNIX_SEP__", unix_sep_placeholder);
+    input = input.replace("__WIN_SEP__", win_sep_placeholder);
 
     // Windows不允许的字符：< > : " / \ | ? *
     // Unicode控制字符：\u{0000}-\u{001F} \u{007F} \u{0080}-\u{009F}
@@ -92,8 +94,9 @@ pub fn filenamify<S: AsRef<str>>(input: S) -> String {
         input = input.trim_matches(|c| c == ' ' || c == '_').to_string();
     }
 
-    // 11. 恢复 __SEP__ 占位符
-    input = input.replace(sep_placeholder, "__SEP__");
+    // 11. 恢复路径分隔符占位符
+    input = input.replace(unix_sep_placeholder, "__UNIX_SEP__");
+    input = input.replace(win_sep_placeholder, "__WIN_SEP__");
 
     input
 }

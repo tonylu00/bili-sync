@@ -202,6 +202,7 @@ pub struct ConfigResponse {
     pub multi_page_name: String,
     pub bangumi_name: String,
     pub folder_structure: String,
+    pub bangumi_folder_name: String,
     pub collection_folder_mode: String,
     pub time_format: String,
     pub interval: u64,

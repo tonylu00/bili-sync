@@ -34,7 +34,6 @@ impl ConfigBundle {
 
     /// 构建 Handlebars 模板引擎
     fn build_handlebars(config: &Config) -> Result<Handlebars<'static>> {
-        use crate::config::PathSafeTemplate;
         use handlebars::handlebars_helper;
 
         let mut handlebars = Handlebars::new();
@@ -55,11 +54,23 @@ impl ConfigBundle {
         let page_name = Box::leak(config.page_name.to_string().into_boxed_str());
         let multi_page_name = Box::leak(config.multi_page_name.to_string().into_boxed_str());
         let bangumi_name = Box::leak(config.bangumi_name.to_string().into_boxed_str());
+        let folder_structure = Box::leak(config.folder_structure.to_string().into_boxed_str());
+        let bangumi_folder_name = Box::leak(config.bangumi_folder_name.to_string().into_boxed_str());
 
-        handlebars.path_safe_register("video", video_name)?;
-        handlebars.path_safe_register("page", page_name)?;
-        handlebars.path_safe_register("multi_page", multi_page_name)?;
-        handlebars.path_safe_register("bangumi", bangumi_name)?;
+        // 区分Unix风格和Windows风格的路径分隔符
+        let safe_video_name = video_name.replace('/', "__UNIX_SEP__").replace('\\', "__WIN_SEP__");
+        let safe_page_name = page_name.replace('/', "__UNIX_SEP__").replace('\\', "__WIN_SEP__");
+        let safe_multi_page_name = multi_page_name.replace('/', "__UNIX_SEP__").replace('\\', "__WIN_SEP__");
+        let safe_bangumi_name = bangumi_name.replace('/', "__UNIX_SEP__").replace('\\', "__WIN_SEP__");
+        let safe_folder_structure = folder_structure.replace('/', "__UNIX_SEP__").replace('\\', "__WIN_SEP__");
+        let safe_bangumi_folder_name = bangumi_folder_name.replace('/', "__UNIX_SEP__").replace('\\', "__WIN_SEP__");
+
+        handlebars.register_template_string("video", safe_video_name)?;
+        handlebars.register_template_string("page", safe_page_name)?;
+        handlebars.register_template_string("multi_page", safe_multi_page_name)?;
+        handlebars.register_template_string("bangumi", safe_bangumi_name)?;
+        handlebars.register_template_string("folder_structure", safe_folder_structure)?;
+        handlebars.register_template_string("bangumi_folder", safe_bangumi_folder_name)?;
 
         Ok(handlebars)
     }
@@ -124,7 +135,18 @@ impl ConfigBundle {
 
         // 直接使用handlebars的render方法，然后手动处理分隔符
         let rendered = self.handlebars.render(template_name, data)?;
-        Ok(filenamify(&rendered).replace("__SEP__", std::path::MAIN_SEPARATOR_STR))
+        #[cfg(windows)]
+        {
+            Ok(filenamify(&rendered)
+                .replace("__UNIX_SEP__", "_")
+                .replace("__WIN_SEP__", "\\"))
+        }
+        #[cfg(not(windows))]
+        {
+            Ok(filenamify(&rendered)
+                .replace("__UNIX_SEP__", "/")
+                .replace("__WIN_SEP__", "_"))
+        }
     }
 
     /// 渲染视频名称模板的便捷方法
@@ -132,7 +154,18 @@ impl ConfigBundle {
         use crate::utils::filenamify::filenamify;
 
         let rendered = self.handlebars.render("video", data)?;
-        Ok(filenamify(&rendered).replace("__SEP__", std::path::MAIN_SEPARATOR_STR))
+        #[cfg(windows)]
+        {
+            Ok(filenamify(&rendered)
+                .replace("__UNIX_SEP__", "_")
+                .replace("__WIN_SEP__", "\\"))
+        }
+        #[cfg(not(windows))]
+        {
+            Ok(filenamify(&rendered)
+                .replace("__UNIX_SEP__", "/")
+                .replace("__WIN_SEP__", "_"))
+        }
     }
 
     /// 渲染分页名称模板的便捷方法
@@ -140,7 +173,18 @@ impl ConfigBundle {
         use crate::utils::filenamify::filenamify;
 
         let rendered = self.handlebars.render("page", data)?;
-        Ok(filenamify(&rendered).replace("__SEP__", std::path::MAIN_SEPARATOR_STR))
+        #[cfg(windows)]
+        {
+            Ok(filenamify(&rendered)
+                .replace("__UNIX_SEP__", "_")
+                .replace("__WIN_SEP__", "\\"))
+        }
+        #[cfg(not(windows))]
+        {
+            Ok(filenamify(&rendered)
+                .replace("__UNIX_SEP__", "/")
+                .replace("__WIN_SEP__", "_"))
+        }
     }
 
     /// 渲染多P视频分页名称模板的便捷方法
@@ -148,7 +192,18 @@ impl ConfigBundle {
         use crate::utils::filenamify::filenamify;
 
         let rendered = self.handlebars.render("multi_page", data)?;
-        Ok(filenamify(&rendered).replace("__SEP__", std::path::MAIN_SEPARATOR_STR))
+        #[cfg(windows)]
+        {
+            Ok(filenamify(&rendered)
+                .replace("__UNIX_SEP__", "_")
+                .replace("__WIN_SEP__", "\\"))
+        }
+        #[cfg(not(windows))]
+        {
+            Ok(filenamify(&rendered)
+                .replace("__UNIX_SEP__", "/")
+                .replace("__WIN_SEP__", "_"))
+        }
     }
 
     /// 渲染番剧名称模板的便捷方法
@@ -157,7 +212,56 @@ impl ConfigBundle {
         use crate::utils::filenamify::filenamify;
 
         let rendered = self.handlebars.render("bangumi", data)?;
-        Ok(filenamify(&rendered).replace("__SEP__", std::path::MAIN_SEPARATOR_STR))
+        #[cfg(windows)]
+        {
+            Ok(filenamify(&rendered)
+                .replace("__UNIX_SEP__", "_")
+                .replace("__WIN_SEP__", "\\"))
+        }
+        #[cfg(not(windows))]
+        {
+            Ok(filenamify(&rendered)
+                .replace("__UNIX_SEP__", "/")
+                .replace("__WIN_SEP__", "_"))
+        }
+    }
+
+    /// 渲染番剧文件夹名称模板的便捷方法
+    pub fn render_bangumi_folder_template(&self, data: &serde_json::Value) -> Result<String> {
+        use crate::utils::filenamify::filenamify;
+
+        let rendered = self.handlebars.render("bangumi_folder", data)?;
+        #[cfg(windows)]
+        {
+            Ok(filenamify(&rendered)
+                .replace("__UNIX_SEP__", "_")
+                .replace("__WIN_SEP__", "\\"))
+        }
+        #[cfg(not(windows))]
+        {
+            Ok(filenamify(&rendered)
+                .replace("__UNIX_SEP__", "/")
+                .replace("__WIN_SEP__", "_"))
+        }
+    }
+
+    /// 渲染文件夹结构模板的便捷方法
+    pub fn render_folder_structure_template(&self, data: &serde_json::Value) -> Result<String> {
+        use crate::utils::filenamify::filenamify;
+
+        let rendered = self.handlebars.render("folder_structure", data)?;
+        #[cfg(windows)]
+        {
+            Ok(filenamify(&rendered)
+                .replace("__UNIX_SEP__", "_")
+                .replace("__WIN_SEP__", "\\"))
+        }
+        #[cfg(not(windows))]
+        {
+            Ok(filenamify(&rendered)
+                .replace("__UNIX_SEP__", "/")
+                .replace("__WIN_SEP__", "_"))
+        }
     }
 }
 

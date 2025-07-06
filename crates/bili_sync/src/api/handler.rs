@@ -3297,6 +3297,7 @@ pub async fn get_config() -> Result<ApiResponse<crate::api::response::ConfigResp
         multi_page_name: config.multi_page_name.to_string(),
         bangumi_name: config.bangumi_name.to_string(),
         folder_structure: config.folder_structure.to_string(),
+        bangumi_folder_name: config.bangumi_folder_name.to_string(),
         collection_folder_mode: config.collection_folder_mode.to_string(),
         time_format: config.time_format.clone(),
         interval: config.interval,
@@ -3393,6 +3394,7 @@ pub async fn update_config(
             multi_page_name: params.multi_page_name.clone(),
             bangumi_name: params.bangumi_name.clone(),
             folder_structure: params.folder_structure.clone(),
+            bangumi_folder_name: params.bangumi_folder_name.clone(),
             collection_folder_mode: params.collection_folder_mode.clone(),
             time_format: params.time_format.clone(),
             interval: params.interval,
@@ -3570,6 +3572,13 @@ pub async fn update_config_internal(
         if !bangumi_name.trim().is_empty() && bangumi_name != original_bangumi_name.as_ref() {
             config.bangumi_name = Cow::Owned(bangumi_name);
             updated_fields.push("bangumi_name");
+        }
+    }
+
+    if let Some(bangumi_folder_name) = params.bangumi_folder_name {
+        if !bangumi_folder_name.trim().is_empty() && bangumi_folder_name != config.bangumi_folder_name.as_ref() {
+            config.bangumi_folder_name = Cow::Owned(bangumi_folder_name);
+            updated_fields.push("bangumi_folder_name");
         }
     }
 
@@ -4008,6 +4017,7 @@ pub async fn update_config_internal(
         "multi_page_name",
         "bangumi_name",
         "folder_structure",
+        "bangumi_folder_name",
     ];
     let should_rename = updated_fields.iter().any(|field| naming_fields.contains(field));
 

@@ -52,7 +52,7 @@ impl BangumiSource {
         } else if let Some(ref page_name) = self.page_name_template {
             page_name.clone()
         } else {
-            "S{{season_pad}}E{{pid_pad}}-{{pid_pad}}".to_string()
+            "{{title}} S{{season_pad}}E{{pid_pad}} - {{ptitle}}".to_string()
         };
 
         // 智能检测：检查同一番剧源的同一集是否有多个不同版本
@@ -70,35 +70,39 @@ impl BangumiSource {
             }
         }
 
-        // 创建配置了辅助函数的 handlebars 实例
-        let mut handlebars = handlebars::Handlebars::new();
-        // 注册 truncate 辅助函数
-        handlebars.register_helper(
-            "truncate",
-            Box::new(
-                |h: &handlebars::Helper,
-                 _: &handlebars::Handlebars,
-                 _: &handlebars::Context,
-                 _: &mut handlebars::RenderContext,
-                 out: &mut dyn handlebars::Output|
-                 -> handlebars::HelperResult {
-                    let s = h.param(0).and_then(|v| v.value().as_str()).unwrap_or("");
-                    let len = h.param(1).and_then(|v| v.value().as_u64()).unwrap_or(0) as usize;
-                    let result = if s.chars().count() > len {
-                        s.chars().take(len).collect::<String>()
-                    } else {
-                        s.to_string()
-                    };
-                    out.write(&result)?;
-                    Ok(())
-                },
-            ),
-        );
-
         let format_args = bangumi_page_format_args(video_model, page_model);
 
-        // 使用最终模板渲染
-        let final_name = crate::utils::filenamify::filenamify(&handlebars.render_template(&template, &format_args)?);
+        // 使用ConfigBundle的模板渲染功能以保持一致性
+        let final_name = if template == current_config.bangumi_name {
+            // 如果使用的是全局配置的模板，直接使用ConfigBundle渲染
+            crate::config::with_config(|bundle| bundle.render_bangumi_template(&format_args))?
+        } else {
+            // 如果使用的是自定义模板，创建临时的handlebars实例
+            let mut handlebars = handlebars::Handlebars::new();
+            // 注册 truncate 辅助函数
+            handlebars.register_helper(
+                "truncate",
+                Box::new(
+                    |h: &handlebars::Helper,
+                     _: &handlebars::Handlebars,
+                     _: &handlebars::Context,
+                     _: &mut handlebars::RenderContext,
+                     out: &mut dyn handlebars::Output|
+                     -> handlebars::HelperResult {
+                        let s = h.param(0).and_then(|v| v.value().as_str()).unwrap_or("");
+                        let len = h.param(1).and_then(|v| v.value().as_u64()).unwrap_or(0) as usize;
+                        let result = if s.chars().count() > len {
+                            s.chars().take(len).collect::<String>()
+                        } else {
+                            s.to_string()
+                        };
+                        out.write(&result)?;
+                        Ok(())
+                    },
+                ),
+            );
+            crate::utils::filenamify::filenamify(&handlebars.render_template(&template, &format_args)?)
+        };
 
         Ok(final_name)
     }

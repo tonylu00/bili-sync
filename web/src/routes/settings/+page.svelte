@@ -107,8 +107,9 @@
 	let videoName = '{{upper_name}}';
 	let pageName = '{{pubtime}}-{{bvid}}-{{truncate title 20}}';
 	let multiPageName = '{{title}}/P{{pid_pad}}.{{ptitle}}';
-	let bangumiName = '第{{pid_pad}}集';
-	let folderStructure = 'Season 1';
+	let bangumiName = '{{title}} S{{season_pad}}E{{pid_pad}} - {{ptitle}}';
+	let folderStructure = 'Season {{season_pad}}';
+	let bangumiFolderName = '{{title}}';
 	let collectionFolderMode = 'unified';
 	let timeFormat = '%Y-%m-%d';
 	let interval = 1200;
@@ -211,6 +212,11 @@
 			{ name: '{{pid_pad}}', desc: '补零的分页页号（如001、002）' },
 			{ name: '{{season}}', desc: '季度号' },
 			{ name: '{{season_pad}}', desc: '补零的季度号（如01、02）' },
+			{ name: '{{year}}', desc: '番剧发布年份' },
+			{ name: '{{studio}}', desc: '制作公司（UP主名称）' },
+			{ name: '{{actors}}', desc: '演员信息' },
+			{ name: '{{category}}', desc: '番剧分类' },
+			{ name: '{{resolution}}', desc: '视频分辨率（如1920x1080）' },
 			{ name: '{{duration}}', desc: '视频时长（秒）' },
 			{ name: '{{width}}', desc: '视频宽度' },
 			{ name: '{{height}}', desc: '视频高度' }
@@ -356,6 +362,7 @@
 			multiPageName = config.multi_page_name || '';
 			bangumiName = config.bangumi_name || '';
 			folderStructure = config.folder_structure || '';
+			bangumiFolderName = config.bangumi_folder_name || '{{title}}';
 			collectionFolderMode = config.collection_folder_mode || 'separate';
 			timeFormat = config.time_format || '';
 			interval = config.interval || 1200;
@@ -506,6 +513,7 @@
 				multi_page_name: multiPageName,
 				bangumi_name: bangumiName,
 				folder_structure: folderStructure,
+				bangumi_folder_name: bangumiFolderName,
 				collection_folder_mode: collectionFolderMode,
 				time_format: timeFormat,
 				interval: interval,
@@ -1076,6 +1084,12 @@
 								<Label for="bangumi-name">番剧文件名模板</Label>
 								<Input id="bangumi-name" bind:value={bangumiName} placeholder={`第{{pid_pad}}集`} />
 								<p class="text-muted-foreground text-xs">控制番剧的季度文件夹和集数文件名</p>
+							</div>
+
+							<div class="space-y-2">
+								<Label for="bangumi-folder-name">番剧文件夹名模板</Label>
+								<Input id="bangumi-folder-name" bind:value={bangumiFolderName} placeholder={`{{title}}`} />
+								<p class="text-muted-foreground text-xs">控制番剧主文件夹的命名，包含元数据文件</p>
 							</div>
 						</div>
 

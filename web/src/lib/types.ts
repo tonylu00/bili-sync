@@ -176,6 +176,7 @@ export interface ConfigResponse {
 	multi_page_name?: string;
 	bangumi_name?: string;
 	folder_structure: string;
+	bangumi_folder_name?: string;
 	collection_folder_mode?: string;
 	time_format: string;
 	interval: number;
@@ -251,6 +252,7 @@ export interface UpdateConfigRequest {
 	multi_page_name?: string;
 	bangumi_name?: string;
 	folder_structure?: string;
+	bangumi_folder_name?: string;
 	collection_folder_mode?: string;
 	time_format?: string;
 	interval?: number;
