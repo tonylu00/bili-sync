@@ -2044,7 +2044,7 @@ pub async fn generate_page_nfo(
     video_model: &video::Model,
     page_model: &page::Model,
     nfo_path: PathBuf,
-    connection: &DatabaseConnection,
+    _connection: &DatabaseConnection,
 ) -> Result<ExecutionStatus> {
     if !should_run {
         return Ok(ExecutionStatus::Skipped);
@@ -2056,30 +2056,9 @@ pub async fn generate_page_nfo(
         Some(single_page) => {
             if single_page {
                 if is_bangumi {
-                    // 番剧单页生成TVShow以正确分类
-                    use crate::utils::nfo::TVShow;
-
-                    // 查询同一season_id的视频总数作为总集数
-                    let total_episodes = if let Some(ref season_id) = video_model.season_id {
-                        match video::Entity::find()
-                            .filter(video::Column::SeasonId.eq(season_id))
-                            .filter(video::Column::SourceType.eq(1))
-                            .count(connection)
-                            .await
-                        {
-                            Ok(count) => Some(count as i32),
-                            Err(e) => {
-                                warn!("查询番剧总集数失败: {:#}", e);
-                                None
-                            }
-                        }
-                    } else {
-                        None
-                    };
-
-                    let mut tvshow = TVShow::from_video_with_pages(video_model, &[page_model.clone()]);
-                    tvshow.total_episodes = total_episodes;
-                    NFO::TVShow(tvshow)
+                    // 番剧单页也应使用Episode格式，符合Emby标准
+                    use crate::utils::nfo::Episode;
+                    NFO::Episode(Episode::from_video_and_page(video_model, page_model))
                 } else {
                     // 普通单页视频生成Movie
                     use crate::utils::nfo::Movie;

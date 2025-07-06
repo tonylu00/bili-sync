@@ -81,6 +81,7 @@ pub struct Upper {
 pub struct Episode<'a> {
     pub name: &'a str,
     pub original_title: &'a str,
+    #[allow(dead_code)]
     pub pid: String,
     pub plot: Option<&'a str>,
     pub season: i32,
@@ -90,6 +91,14 @@ pub struct Episode<'a> {
     pub user_rating: Option<f32>,
     pub director: Option<&'a str>,
     pub credits: Option<&'a str>,
+    pub bvid: &'a str,           // B站视频ID
+    pub category: i32,           // 视频分类（用于番剧检测）
+    pub mpaa: Option<&'a str>,   // 年龄分级
+    pub country: Option<&'a str>, // 国家
+    pub studio: Option<&'a str>, // 制作工作室
+    pub genres: Option<Vec<String>>, // 类型标签
+    pub thumb_url: Option<&'a str>, // 缩略图URL
+    pub fanart_url: Option<&'a str>, // 背景图URL
 }
 
 impl NFO<'_> {
@@ -705,7 +714,7 @@ impl NFO<'_> {
     async fn write_episode_nfo(
         mut writer: Writer<&mut BufWriter<&mut Vec<u8>>>,
         episode: Episode<'_>,
-        _config: &NFOConfig,
+        config: &NFOConfig,
     ) -> Result<()> {
         writer
             .create_element("episodedetails")
@@ -715,9 +724,18 @@ impl NFO<'_> {
                     .create_element("title")
                     .write_text_content_async(BytesText::new(episode.name))
                     .await?;
+                
+                // 从标题中清理语言标识，作为原始标题
+                let binding = episode.original_title
+                    .replace("-中配", "")
+                    .replace("-日配", "")
+                    .replace("-国语", "")
+                    .replace("-粤语", "");
+                let cleaned_original_title = binding.trim();
+                
                 writer
                     .create_element("originaltitle")
-                    .write_text_content_async(BytesText::new(episode.original_title))
+                    .write_text_content_async(BytesText::new(cleaned_original_title))
                     .await?;
 
                 // 剧情简介
@@ -740,6 +758,77 @@ impl NFO<'_> {
                     .create_element("episode")
                     .write_text_content_async(BytesText::new(&episode.episode_number.to_string()))
                     .await?;
+
+                // 唯一标识符
+                let unique_id = if episode.bvid.starts_with("BV") && episode.bvid.len() > 10 && episode.bvid != "BV0000000000" {
+                    episode.bvid
+                } else {
+                    &episode.pid
+                };
+                writer
+                    .create_element("uniqueid")
+                    .with_attribute(("type", "bilibili"))
+                    .with_attribute(("default", "true"))
+                    .write_text_content_async(BytesText::new(unique_id))
+                    .await?;
+
+                // 类型标签
+                if let Some(ref genres) = episode.genres {
+                    for genre in genres {
+                        writer
+                            .create_element("genre")
+                            .write_text_content_async(BytesText::new(genre))
+                            .await?;
+                    }
+                }
+
+                // 为番剧添加默认类型标签
+                if Self::is_bangumi_video(episode.category) {
+                    writer
+                        .create_element("genre")
+                        .write_text_content_async(BytesText::new("动画"))
+                        .await?;
+                }
+
+                // 国家信息
+                if let Some(country) = episode.country {
+                    writer
+                        .create_element("country")
+                        .write_text_content_async(BytesText::new(country))
+                        .await?;
+                } else {
+                    writer
+                        .create_element("country")
+                        .write_text_content_async(BytesText::new(&config.default_country))
+                        .await?;
+                }
+
+                // 分级信息
+                if let Some(mpaa) = episode.mpaa {
+                    writer
+                        .create_element("mpaa")
+                        .write_text_content_async(BytesText::new(mpaa))
+                        .await?;
+                } else {
+                    // 番剧默认分级为PG
+                    writer
+                        .create_element("mpaa")
+                        .write_text_content_async(BytesText::new("PG"))
+                        .await?;
+                }
+
+                // 制作工作室
+                if let Some(studio) = episode.studio {
+                    writer
+                        .create_element("studio")
+                        .write_text_content_async(BytesText::new(studio))
+                        .await?;
+                } else {
+                    writer
+                        .create_element("studio")
+                        .write_text_content_async(BytesText::new(&config.default_studio))
+                        .await?;
+                }
 
                 // 播出时间
                 if let Some(aired) = episode.aired {
@@ -780,13 +869,21 @@ impl NFO<'_> {
                         .await?;
                 }
 
-                // 唯一标识符
-                writer
-                    .create_element("uniqueid")
-                    .with_attribute(("type", "bilibili"))
-                    .with_attribute(("default", "true"))
-                    .write_text_content_async(BytesText::new(&episode.pid))
-                    .await?;
+                // 缩略图（本地文件路径优先）
+                if let Some(thumb_url) = episode.thumb_url {
+                    writer
+                        .create_element("thumb")
+                        .write_text_content_async(BytesText::new(thumb_url))
+                        .await?;
+                }
+
+                // 背景图（本地文件路径优先）
+                if let Some(fanart_url) = episode.fanart_url {
+                    writer
+                        .create_element("fanart")
+                        .write_text_content_async(BytesText::new(fanart_url))
+                        .await?;
+                }
 
                 Ok(writer)
             })
@@ -1177,6 +1274,14 @@ impl<'a> From<&'a page::Model> for Episode<'a> {
             user_rating: None,                         // 分页没有单独评分
             director: None,                            // 分页没有单独导演信息
             credits: None,                             // 分页没有单独创作人员信息
+            bvid: "BV0000000000",                      // 默认BVID
+            category: 0,                               // 默认分类
+            mpaa: None,                                // 使用默认分级
+            country: None,                             // 使用默认国家
+            studio: None,                              // 使用默认制作工作室
+            genres: None,                              // 无类型标签
+            thumb_url: None,                           // 暂不设置本地路径
+            fanart_url: None,                          // 暂不设置本地路径
         }
     }
 }
@@ -1188,14 +1293,24 @@ impl<'a> Episode<'a> {
             name: &page.name,
             original_title: &page.name,
             pid: page.pid.to_string(),
-            plot: None,                                               // 分页没有单独简介
+            plot: Some(&video.intro),                                 // 使用视频简介
             season: video.season_number.unwrap_or(1),                 // 使用video的season_number
             episode_number: video.episode_number.unwrap_or(page.pid), // 使用video的episode_number
-            aired: None,                                              // 分页没有单独播出时间
+            aired: Some(video.pubtime),                               // 使用视频发布时间
             duration: Some(page.duration as i32 / 60),                // 分页时长转换为分钟
             user_rating: None,                                        // 分页没有单独评分
             director: None,                                           // 分页没有单独导演信息
             credits: None,                                            // 分页没有单独创作人员信息
+            bvid: &video.bvid,                                        // B站视频ID
+            category: video.category,                                 // 视频分类
+            mpaa: None,                                               // 使用默认分级（PG）
+            country: None,                                            // 使用默认国家
+            studio: None,                                             // 使用默认制作工作室
+            genres: video.tags.as_ref().and_then(|tags| {
+                serde_json::from_value(tags.clone()).ok()
+            }),                                                      // 从视频标签提取类型
+            thumb_url: None,                                          // 暂不设置本地路径
+            fanart_url: None,                                         // 暂不设置本地路径
         }
     }
 }
