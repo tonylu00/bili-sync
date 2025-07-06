@@ -754,6 +754,16 @@ pub async fn download_video_pages(
         // 使用番剧格式化参数，优先使用API提供的真实标题
         let format_args = crate::utils::format_arg::bangumi_page_format_args(&video_model, &temp_page, api_title.as_deref());
 
+        // 检查是否有有效的series_title，如果没有则跳过番剧处理
+        let series_title = format_args["series_title"].as_str().unwrap_or("");
+        if series_title.is_empty() {
+            return Err(anyhow::anyhow!(
+                "番剧 {} (BVID: {}) 缺少API标题数据，无法创建番剧文件夹",
+                video_model.name,
+                video_model.bvid
+            ));
+        }
+
         // 生成番剧文件夹名称
         let bangumi_folder_name =
             crate::config::with_config(|bundle| bundle.render_bangumi_folder_template(&format_args))

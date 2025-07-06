@@ -3,166 +3,26 @@ use serde_json::json;
 
 use crate::config;
 
-/// 从番剧单集标题中提取系列标题
-/// 处理各种常见的番剧标题模式，包括多版本番剧的合并
-fn extract_series_title(episode_title: &str) -> String {
-    let title = episode_title.trim();
 
-    // 移除开头的下划线（如果有）
-    let title = title.strip_prefix('_').unwrap_or(title);
-
-    // 处理纯版本标识的情况 - 这些需要特殊处理，可能需要与主番剧名称关联
-    // 对于纯版本标识，返回一个通用的可识别名称，避免创建"未知番剧"
-    if matches!(
-        title,
-        "中文" | "中配" | "原版" | "日配" | "国语" | "粤语" | "英文" | "日语"
-    ) {
-        return format!("多语言版本_{}", title);
-    }
-
-    // 处理以下划线分隔的标题模式，如 "_灵笼 第一季_第001话"
-    if let Some(last_underscore_pos) = title.rfind('_') {
-        let potential_series = &title[..last_underscore_pos];
-        let episode_part = &title[last_underscore_pos + 1..];
-
-        // 如果最后一部分是集数标识，则返回系列部分
-        if episode_part.starts_with("第") && (episode_part.contains("话") || episode_part.contains("集"))
-            || episode_part.contains("全片")
-            || episode_part.contains("中章")
-            || episode_part.contains("特别篇")
-            || episode_part.contains("终章 上")
-            || episode_part.contains("终章 下")
-            || episode_part == "上"
-            || episode_part == "下"
-            || (episode_part.contains("终章") && (episode_part.contains("上") || episode_part.contains("下")))
-        {
-            // 进一步检查系列部分是否包含版本信息
-            let series_clean = clean_version_info(potential_series);
-            return series_clean;
-        }
-    }
-
-    // 处理其他分隔符模式
-    if let Some(pos) = title.find(" 第") {
-        if title[pos..].contains("话") || title[pos..].contains("集") {
-            let series_clean = clean_version_info(&title[..pos]);
-            return series_clean;
-        }
-    }
-
-    // 如果没有匹配到特定模式，清理版本信息后返回
-    clean_version_info(title)
-}
-
-/// 清理标题中的版本信息，将不同版本合并到同一系列名下
-fn clean_version_info(title: &str) -> String {
-    let title = title.trim();
-
-    // 处理标题末尾的版本标识
-    let version_patterns = [
-        " 中文版",
-        " 原版",
-        " 日配版",
-        " 中配版",
-        " 国语版",
-        " 粤语版",
-        " 英文版",
-        " 中文",
-        " 原版",
-        " 日配",
-        " 中配",
-        " 国语",
-        " 粤语",
-        " 英文",
-        "（中文）",
-        "（原版）",
-        "（日配）",
-        "（中配）",
-        "（国语）",
-        "（粤语）",
-        "（英文）",
-        "(中文)",
-        "(原版)",
-        "(日配)",
-        "(中配)",
-        "(国语)",
-        "(粤语)",
-        "(英文)",
-    ];
-
-    for pattern in &version_patterns {
-        if let Some(pos) = title.rfind(pattern) {
-            // 确保这个模式在标题末尾
-            if pos + pattern.len() == title.len() {
-                return title[..pos].trim().to_string();
-            }
-        }
-    }
-
-    title.to_string()
-}
-
-/// 带上下文信息的番剧标题提取，优先使用API提供的真实标题
-fn extract_series_title_with_context(video_model: &bili_sync_entity::video::Model, api_title: Option<&str>) -> String {
-    // 最高优先级：使用API提供的真实番剧标题
+/// 完全基于API的番剧标题提取，无硬编码回退逻辑
+fn extract_series_title_with_context(video_model: &bili_sync_entity::video::Model, api_title: Option<&str>) -> Option<String> {
+    // 只使用API提供的真实番剧标题，无回退逻辑
     if let Some(title) = api_title {
-        return title.to_string();
+        return Some(title.to_string());
     }
     
-    let title = &video_model.name;
-    let clean_title = title.trim().strip_prefix('_').unwrap_or(title);
+    // 如果没有API标题，记录警告并返回None
+    tracing::warn!(
+        "番剧视频 {} (BVID: {}) 缺少API标题，将跳过处理",
+        video_model.name, 
+        video_model.bvid
+    );
     
-    // 检查是否为纯版本标识，如果是，则使用其他信息构建番剧标题
-    if matches!(clean_title, "中文" | "中配" | "原版" | "日配" | "国语" | "粤语" | "英文" | "日语") {
-        // 优先使用season_id构建标题
-        if let Some(ref season_id) = video_model.season_id {
-            return format!("番剧Season{}", season_id);
-        }
-        
-        // 尝试使用upper_name作为线索
-        if !video_model.upper_name.is_empty() && video_model.upper_name != "unknown" {
-            return format!("{}_作品", video_model.upper_name);
-        }
-        
-        // 使用分类信息构建名称
-        let category_name = match video_model.category {
-            1 => "动画",
-            177 => "纪录片", 
-            155 => "时尚",
-            _ => "番剧",
-        };
-        return format!("{}内容", category_name);
-    }
-    
-    // 回退到基础提取逻辑
-    let basic_title = extract_series_title(title);
-    
-    // 如果基础提取结果是多语言版本，尝试使用其他信息改进
-    if basic_title.starts_with("多语言版本_") {
-        // 优先使用season_id构建更好的标题
-        if let Some(ref season_id) = video_model.season_id {
-            return format!("番剧Season{}", season_id);
-        }
-        
-        // 尝试使用upper_name作为线索
-        if !video_model.upper_name.is_empty() && video_model.upper_name != "unknown" {
-            return format!("{}_作品", video_model.upper_name);
-        }
-        
-        // 使用分类信息构建名称
-        let category_name = match video_model.category {
-            1 => "动画",
-            177 => "纪录片", 
-            155 => "时尚",
-            _ => "番剧",
-        };
-        return format!("{}内容", category_name);
-    }
-    
-    basic_title
+    None
 }
 
-/// 从番剧标题中提取季度编号
+/// 从番剧标题中提取季度编号（应优先使用API数据）
+/// 注意：理想情况下应该使用API中的season信息
 fn extract_season_number(episode_title: &str) -> i32 {
     let title = episode_title.trim();
     
@@ -218,35 +78,18 @@ fn extract_season_number(episode_title: &str) -> i32 {
     1
 }
 
-/// 从视频标题中提取版本信息
+/// 从视频标题中提取版本信息（纯API方案，不使用硬编码）
+/// 注意：理想情况下版本信息应该从API episode数据中获取
+/// 这里只做最基础的提取，避免硬编码模式匹配
 fn extract_version_info(video_title: &str) -> String {
     let title = video_title.trim().strip_prefix('_').unwrap_or(video_title);
     
-    // 检查是否为纯版本标识
-    if matches!(title, "中文" | "中配" | "原版" | "日配" | "国语" | "粤语" | "英文" | "日语") {
+    // 如果标题很短且不包含常见的番剧标识符，可能是版本标识
+    if title.len() <= 6 && !title.contains("第") && !title.contains("话") && !title.contains("集") {
         return title.to_string();
     }
     
-    // 检查标题中是否包含版本信息
-    let version_patterns = [
-        " 中文版", " 原版", " 日配版", " 中配版", " 国语版", " 粤语版", " 英文版",
-        " 中文", " 原版", " 日配", " 中配", " 国语", " 粤语", " 英文",
-        "（中文）", "（原版）", "（日配）", "（中配）", "（国语）", "（粤语）", "（英文）",
-        "(中文)", "(原版)", "(日配)", "(中配)", "(国语)", "(粤语)", "(英文)",
-    ];
-    
-    for pattern in &version_patterns {
-        if let Some(pos) = title.rfind(pattern) {
-            if pos + pattern.len() == title.len() {
-                let version = pattern.trim_start_matches(' ')
-                    .trim_start_matches('（').trim_end_matches('）')
-                    .trim_start_matches('(').trim_end_matches(')');
-                return version.to_string();
-            }
-        }
-    }
-    
-    // 如果没有找到版本信息，返回空字符串
+    // 其他情况返回空字符串，依赖API数据
     String::new()
 }
 
@@ -254,26 +97,6 @@ fn extract_version_info(video_title: &str) -> String {
 mod tests {
     use super::*;
 
-    #[test]
-    fn test_extract_series_title() {
-        // 测试常规集数
-        assert_eq!(extract_series_title("_灵笼 第一季_第001话"), "灵笼 第一季");
-        assert_eq!(extract_series_title("_灵笼 第一季_第002话"), "灵笼 第一季");
-        
-        // 测试特殊集数
-        assert_eq!(extract_series_title("_灵笼 第一季_中章"), "灵笼 第一季");
-        assert_eq!(extract_series_title("_灵笼 第一季_特别篇"), "灵笼 第一季");
-        assert_eq!(extract_series_title("_灵笼 第一季_终章 上"), "灵笼 第一季");
-        assert_eq!(extract_series_title("_灵笼 第一季_终章 下"), "灵笼 第一季");
-        
-        // 测试全片
-        assert_eq!(extract_series_title("_名侦探柯南 绯色的不在证明_全片"), "名侦探柯南 绯色的不在证明");
-        
-        // 测试版本标识
-        assert_eq!(extract_series_title("中文"), "多语言版本_中文");
-        assert_eq!(extract_series_title("中配"), "多语言版本_中配");
-        assert_eq!(extract_series_title("日配"), "多语言版本_日配");
-    }
 
     #[test]
     fn test_extract_season_number() {
@@ -340,39 +163,32 @@ mod tests {
         
         // 测试使用API标题的情况
         let result = extract_series_title_with_context(&video_model, Some("灵笼 第一季"));
-        assert_eq!(result, "灵笼 第一季");
+        assert_eq!(result, Some("灵笼 第一季".to_string()));
         
-        // 测试带season_id的情况（无API标题）
+        // 测试无API数据的情况
         let result = extract_series_title_with_context(&video_model, None);
-        assert_eq!(result, "番剧Season12345");
+        assert_eq!(result, None);
         
-        // 测试带上传者名称的情况
-        video_model.season_id = None;
-        let result = extract_series_title_with_context(&video_model, None);
-        assert_eq!(result, "官方频道_作品");
-        
-        // 测试常规标题
-        video_model.name = "_灵笼 第一季_第001话".to_string();
-        let result = extract_series_title_with_context(&video_model, None);
-        assert_eq!(result, "灵笼 第一季");
+        // 测试空字符串API数据
+        let result = extract_series_title_with_context(&video_model, Some(""));
+        assert_eq!(result, Some("".to_string()));
     }
     
     #[test]
     fn test_extract_version_info() {
-        // 测试纯版本标识
+        // 测试短标题（可能是版本标识）
         assert_eq!(extract_version_info("中文"), "中文");
         assert_eq!(extract_version_info("_中配"), "中配");
         assert_eq!(extract_version_info("原版"), "原版");
         assert_eq!(extract_version_info("日配"), "日配");
         
-        // 测试带版本后缀的标题
-        assert_eq!(extract_version_info("某番剧 中文版"), "中文版");
-        assert_eq!(extract_version_info("某番剧（原版）"), "原版");
-        assert_eq!(extract_version_info("某番剧(日配)"), "日配");
-        
-        // 测试没有版本信息的标题
+        // 测试包含番剧标识符的标题（不应被识别为版本）
         assert_eq!(extract_version_info("_灵笼 第一季_第001话"), "");
-        assert_eq!(extract_version_info("名侦探柯南"), "");
+        assert_eq!(extract_version_info("名侦探柯南 第1集"), "");
+        assert_eq!(extract_version_info("某番剧 第1话"), "");
+        
+        // 测试长标题（应该返回空）
+        assert_eq!(extract_version_info("很长的番剧标题名称"), "");
     }
 }
 
@@ -409,8 +225,20 @@ pub fn bangumi_page_format_args(
     // 从发布时间提取年份
     let year = video_model.pubtime.year();
 
-    // 提取番剧系列标题用于文件夹命名，优先使用API提供的真实标题
-    let series_title = extract_series_title_with_context(video_model, api_title);
+    // 提取番剧系列标题用于文件夹命名，完全依赖API数据
+    let series_title = match extract_series_title_with_context(video_model, api_title) {
+        Some(title) => title,
+        None => {
+            // 无API数据时记录警告，使用空字符串作为series_title
+            // 这样调用方可以根据空字符串判断是否缺少API数据
+            tracing::warn!(
+                "番剧视频 {} (BVID: {}) 缺少API标题，series_title将为空",
+                video_model.name, 
+                video_model.bvid
+            );
+            String::new()
+        }
+    };
     
     // 提取版本信息用于文件名区分
     let version_info = extract_version_info(&video_model.name);
