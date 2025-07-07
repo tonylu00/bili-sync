@@ -3409,6 +3409,8 @@ pub async fn get_config() -> Result<ApiResponse<crate::api::response::ConfigResp
         enable_aria2_health_check: config.enable_aria2_health_check,
         enable_aria2_auto_restart: config.enable_aria2_auto_restart,
         aria2_health_check_interval: config.aria2_health_check_interval,
+        // 多P视频目录结构配置
+        multi_page_use_season_structure: config.multi_page_use_season_structure,
         // B站凭证信息
         credential: {
             let credential = config.credential.load();
@@ -3501,6 +3503,8 @@ pub async fn update_config(
             enable_auto_backoff: params.enable_auto_backoff,
             auto_backoff_base_seconds: params.auto_backoff_base_seconds,
             auto_backoff_max_multiplier: params.auto_backoff_max_multiplier,
+            // 多P视频目录结构配置
+            multi_page_use_season_structure: params.multi_page_use_season_structure,
             task_id: task_id.clone(),
         };
 
@@ -4029,6 +4033,14 @@ pub async fn update_config_internal(
         if multiplier != config.submission_risk_control.auto_backoff_max_multiplier {
             config.submission_risk_control.auto_backoff_max_multiplier = multiplier;
             updated_fields.push("auto_backoff_max_multiplier");
+        }
+    }
+
+    // 处理多P视频目录结构配置
+    if let Some(use_season_structure) = params.multi_page_use_season_structure {
+        if use_season_structure != config.multi_page_use_season_structure {
+            config.multi_page_use_season_structure = use_season_structure;
+            updated_fields.push("multi_page_use_season_structure");
         }
     }
 

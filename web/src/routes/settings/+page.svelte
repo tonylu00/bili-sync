@@ -180,6 +180,9 @@
 	let enableAria2HealthCheck = false;
 	let enableAria2AutoRestart = false;
 	let aria2HealthCheckInterval = 300;
+	
+	// 多P视频目录结构配置
+	let multiPageUseSeasonStructure = false;
 
 	// 显示帮助信息的状态（在文件命名抽屉中使用）
 	let showHelp = false;
@@ -432,6 +435,9 @@
 			enableAria2HealthCheck = config.enable_aria2_health_check ?? false;
 			enableAria2AutoRestart = config.enable_aria2_auto_restart ?? false;
 			aria2HealthCheckInterval = config.aria2_health_check_interval ?? 300;
+			
+			// 多P视频目录结构配置
+			multiPageUseSeasonStructure = config.multi_page_use_season_structure ?? false;
 		} catch (error: any) {
 			console.error('加载配置失败:', error);
 			toast.error('加载配置失败', { description: error.message });
@@ -569,7 +575,9 @@
 				// aria2监控配置
 				enable_aria2_health_check: enableAria2HealthCheck,
 				enable_aria2_auto_restart: enableAria2AutoRestart,
-				aria2_health_check_interval: aria2HealthCheckInterval
+				aria2_health_check_interval: aria2HealthCheckInterval,
+				// 多P视频目录结构配置
+				multi_page_use_season_structure: multiPageUseSeasonStructure
 			};
 
 			const response = await api.updateConfig(params);
@@ -1080,6 +1088,27 @@
 								</p>
 							</div>
 
+							<!-- 多P视频Season结构设置 -->
+							<div class="space-y-2">
+								<div class="flex items-center space-x-2">
+									<input
+										type="checkbox"
+										id="multi-page-season"
+										bind:checked={multiPageUseSeasonStructure}
+										class="text-primary focus:ring-primary h-4 w-4 rounded border-gray-300"
+									/>
+									<Label
+										for="multi-page-season"
+										class="text-sm leading-none font-medium peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
+									>
+										多P视频使用Season文件夹结构
+									</Label>
+								</div>
+								<p class="text-muted-foreground text-xs">
+									启用后将为多P视频创建"Season 01"子文件夹，提升媒体库兼容性（如Emby/Jellyfin）
+								</p>
+							</div>
+
 							<div class="space-y-2">
 								<Label for="bangumi-name">番剧文件名模板</Label>
 								<Input id="bangumi-name" bind:value={bangumiName} placeholder={`第{{pid_pad}}集`} />
@@ -1579,6 +1608,7 @@
 								</Label>
 							</div>
 
+
 							{#if parallelDownloadEnabled}
 								<div class="ml-6 space-y-2">
 									<Label for="threads">下载线程数</Label>
@@ -1659,6 +1689,17 @@
 									<strong>请求频率限制：</strong>防止API请求过频繁导致风控，调小limit可减少被限制
 								</p>
 								<p><strong>总并行度：</strong>约等于 视频并发数 × 分页并发数</p>
+							</div>
+						</div>
+
+						<div class="mt-6 rounded-lg border border-green-200 bg-green-50 p-3">
+							<h5 class="mb-2 font-medium text-green-800">多P视频Season结构说明</h5>
+							<div class="space-y-1 text-sm text-green-700">
+								<p><strong>启用后：</strong>多P视频将采用与番剧相同的目录结构</p>
+								<p><strong>目录层级：</strong>视频名称/Season 01/分P文件</p>
+								<p><strong>媒体库兼容：</strong>Emby/Jellyfin能正确识别为TV Show剧集</p>
+								<p><strong>文件命名：</strong>保持现有的multi_page_name模板不变</p>
+								<p class="text-green-600"><strong>注意：</strong>默认关闭保持向后兼容，启用后新下载的多P视频将使用新结构</p>
 							</div>
 						</div>
 					</div>

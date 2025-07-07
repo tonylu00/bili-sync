@@ -164,6 +164,8 @@ pub struct UpdateConfigRequest {
     pub enable_aria2_health_check: Option<bool>,
     pub enable_aria2_auto_restart: Option<bool>,
     pub aria2_health_check_interval: Option<u64>,
+    // 多P视频目录结构配置
+    pub multi_page_use_season_structure: Option<bool>,
 }
 
 #[derive(Debug, Deserialize, ToSchema)]

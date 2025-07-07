@@ -180,6 +180,9 @@ pub struct Config {
     // actors字段初始化状态标记
     #[serde(default)]
     pub actors_field_initialized: bool,
+    // 多P视频是否使用Season文件夹结构
+    #[serde(default = "default_multi_page_use_season_structure")]
+    pub multi_page_use_season_structure: bool,
 }
 
 fn default_skip_bangumi_preview() -> bool {
@@ -188,6 +191,10 @@ fn default_skip_bangumi_preview() -> bool {
 
 fn default_aria2_health_check_interval() -> u64 {
     300 // 默认5分钟
+}
+
+fn default_multi_page_use_season_structure() -> bool {
+    false // 默认不使用Season结构，保持向后兼容
 }
 
 impl Clone for Config {
@@ -243,6 +250,7 @@ impl Clone for Config {
             enable_aria2_auto_restart: self.enable_aria2_auto_restart,
             aria2_health_check_interval: self.aria2_health_check_interval,
             actors_field_initialized: self.actors_field_initialized,
+            multi_page_use_season_structure: self.multi_page_use_season_structure,
         }
     }
 }
@@ -277,6 +285,7 @@ impl Default for Config {
             enable_aria2_auto_restart: false,
             aria2_health_check_interval: default_aria2_health_check_interval(),
             actors_field_initialized: false,
+            multi_page_use_season_structure: default_multi_page_use_season_structure(),
         }
     }
 }

@@ -236,6 +236,8 @@ export interface ConfigResponse {
 	enable_aria2_health_check?: boolean;
 	enable_aria2_auto_restart?: boolean;
 	aria2_health_check_interval?: number;
+	// 多P视频目录结构配置
+	multi_page_use_season_structure?: boolean;
 	// B站凭证信息
 	credential?: {
 		sessdata: string;
@@ -312,6 +314,8 @@ export interface UpdateConfigRequest {
 	enable_aria2_health_check?: boolean;
 	enable_aria2_auto_restart?: boolean;
 	aria2_health_check_interval?: number;
+	// 多P视频目录结构配置
+	multi_page_use_season_structure?: boolean;
 }
 
 // 更新配置响应类型
