@@ -398,13 +398,29 @@
 				const taskIndexes = [];
 
 				// 根据选择的选项确定要重置的任务索引
-				if (resetOptions.videoCover) taskIndexes.push(0); // 视频封面
-				if (resetOptions.videoContent) taskIndexes.push(1); // 视频内容
-				if (resetOptions.videoInfo) taskIndexes.push(2); // 视频信息
-				if (resetOptions.videoDanmaku) taskIndexes.push(3); // 视频弹幕
-				if (resetOptions.videoSubtitle) taskIndexes.push(4); // 视频字幕
+				// 注意：一个task_index会同时影响VideoStatus和PageStatus的相同索引
+				//
+				// 后端状态定义：
+				// VideoStatus: [视频封面(0), 视频信息(1), Up主头像(2), Up主信息(3), 分P下载(4)]
+				// PageStatus: [视频封面(0), 视频内容(1), 视频信息(2), 视频弹幕(3), 视频字幕(4)]
+				//
+				// 最终修复的索引映射关系：
+				// index 0: Video封面 + Page封面 → 封面图片文件
+				// index 1: Video信息(普通视频) + Page内容 → 视频文件(.mp4)，番剧无NFO副作用
+				// index 2: Video信息(番剧tvshow.nfo) + Page信息 → tvshow.nfo + 单集NFO文件
+				// index 3: Video Up主信息 + Page弹幕 → Up主信息 + 弹幕文件(.ass)
+				// index 4: Video 分P下载 + Page字幕 → 分P下载 + 字幕文件
+				
+				if (resetOptions.videoCover) taskIndexes.push(0);     // 重置封面文件
+				if (resetOptions.videoContent) taskIndexes.push(1);   // 重置视频内容 (纯视频文件，番剧无NFO)
+				if (resetOptions.videoInfo) taskIndexes.push(2);      // 重置视频信息 (tvshow.nfo + 单集NFO)
+				if (resetOptions.videoDanmaku) taskIndexes.push(3);   // 重置弹幕文件 (弹幕 + Up主信息)
+				if (resetOptions.videoSubtitle) taskIndexes.push(4);  // 重置字幕文件 (字幕 + 分P下载)
 
-				if (taskIndexes.length === 0) {
+				// 去重任务索引
+				const uniqueTaskIndexes = [...new Set(taskIndexes)];
+
+				if (uniqueTaskIndexes.length === 0) {
 					toast.error('请至少选择一个要重置的任务');
 					return;
 				}
@@ -415,7 +431,7 @@
 							[currentFilter.type]: parseInt(currentFilter.id)
 						}
 					: undefined;
-				result = await api.resetSpecificTasks(taskIndexes, filterParams);
+				result = await api.resetSpecificTasks(uniqueTaskIndexes, filterParams);
 			}
 
 			const data = result.data;

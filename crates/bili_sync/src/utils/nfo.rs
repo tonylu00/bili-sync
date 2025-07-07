@@ -71,6 +71,8 @@ pub struct TVShow<'a> {
     pub sorttitle: Option<String>,   // 排序标题
     pub actors_info: Option<String>, // 演员信息字符串（从API获取）
     pub cover_url: &'a str,          // 封面图片URL
+    pub season_id: Option<String>,   // 番剧季度ID（从API获取）
+    pub media_id: Option<i64>,       // 媒体ID（从API获取）
 }
 
 pub struct Upper {
@@ -510,6 +512,24 @@ impl NFO<'_> {
                     .with_attribute(("default", "true"))
                     .write_text_content_async(BytesText::new(tvshow.bvid))
                     .await?;
+                
+                // 添加番剧季度ID作为额外的uniqueid
+                if let Some(ref season_id) = tvshow.season_id {
+                    writer
+                        .create_element("uniqueid")
+                        .with_attribute(("type", "bilibili_season"))
+                        .write_text_content_async(BytesText::new(season_id))
+                        .await?;
+                }
+                
+                // 添加媒体ID作为额外的uniqueid
+                if let Some(media_id) = tvshow.media_id {
+                    writer
+                        .create_element("uniqueid")
+                        .with_attribute(("type", "bilibili_media"))
+                        .write_text_content_async(BytesText::new(&media_id.to_string()))
+                        .await?;
+                }
 
                 // 类型标签
                 if let Some(tags) = tvshow.tags {
@@ -1208,6 +1228,8 @@ impl<'a> From<&'a video::Model> for TVShow<'a> {
             sorttitle,
             actors_info: video.actors.clone(),
             cover_url: &video.cover,
+            season_id: None,            // 普通视频没有season_id
+            media_id: None,             // 普通视频没有media_id
         }
     }
 }
@@ -1255,9 +1277,26 @@ impl<'a> TVShow<'a> {
         // 使用动态配置而非静态CONFIG
         let config = crate::config::reload_config();
 
-        let aired_time = match config.nfo_config.time_type {
-            crate::config::NFOTimeType::FavTime => video.favtime,
-            crate::config::NFOTimeType::PubTime => video.pubtime,
+        // 优先使用API的发布时间，如果没有则使用配置的时间类型
+        let aired_time = if let Some(ref publish_time) = season_info.publish_time {
+            // 尝试解析API提供的发布时间
+            if let Ok(parsed_time) = chrono::NaiveDateTime::parse_from_str(publish_time, "%Y-%m-%d %H:%M:%S") {
+                parsed_time
+            } else if let Ok(parsed_time) = chrono::NaiveDate::parse_from_str(publish_time, "%Y-%m-%d") {
+                parsed_time.and_hms_opt(0, 0, 0).unwrap_or(video.pubtime)
+            } else {
+                // 解析失败，使用配置的时间类型
+                match config.nfo_config.time_type {
+                    crate::config::NFOTimeType::FavTime => video.favtime,
+                    crate::config::NFOTimeType::PubTime => video.pubtime,
+                }
+            }
+        } else {
+            // 没有API时间，使用配置的时间类型
+            match config.nfo_config.time_type {
+                crate::config::NFOTimeType::FavTime => video.favtime,
+                crate::config::NFOTimeType::PubTime => video.pubtime,
+            }
         };
 
         // 使用API提供的信息
@@ -1276,6 +1315,13 @@ impl<'a> TVShow<'a> {
         } else {
             // 备选：使用video中的tags
             video.tags.as_ref().and_then(|tags| serde_json::from_value(tags.clone()).ok())
+        };
+
+        // 构建用户评分信息，包含评分人数（作为标签使用）
+        let _rating_info = if let (Some(rating), Some(rating_count)) = (season_info.rating, season_info.rating_count) {
+            Some(format!("{:.1}分，{}人评价", rating, rating_count))
+        } else {
+            season_info.rating.map(|r| format!("{:.1}分", r))
         };
 
         Self {
@@ -1304,6 +1350,9 @@ impl<'a> TVShow<'a> {
             sorttitle: Some(season_info.title.clone()),
             actors_info: season_info.actors.clone(),
             cover_url: season_info.cover.as_deref().or(season_info.horizontal_cover.as_deref()).unwrap_or(&video.cover),
+            // 使用season_id和media_id作为额外的uniqueid（通过扩展字段传递）
+            season_id: Some(season_info.season_id.clone()),
+            media_id: season_info.media_id,
         }
     }
 }

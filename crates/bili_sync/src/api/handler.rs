@@ -237,7 +237,8 @@ pub async fn get_videos(
     Ok(ApiResponse::ok(VideosResponse {
         videos: {
             // 查询包含season_id和source_type字段，用于番剧标题获取
-            let raw_videos: Vec<(i32, String, String, String, i32, u32, String, Option<String>, Option<i32>)> = query
+            type RawVideoTuple = (i32, String, String, String, i32, u32, String, Option<String>, Option<i32>);
+            let raw_videos: Vec<RawVideoTuple> = query
                 .order_by_desc(video::Column::Id)
                 .select_only()
                 .columns([
@@ -7442,12 +7443,17 @@ async fn rename_bangumi_files_in_directory(
 fn parse_and_rename_bangumi_file(old_file_name: &str, video: &video::Model, pages: &[page::Model]) -> Option<String> {
     // 尝试匹配各种番剧文件名模式
 
-    // 1. 视频级文件 (tvshow.nfo, poster.jpg, fanart.jpg)
-    if matches!(old_file_name, "tvshow.nfo" | "poster.jpg" | "fanart.jpg") {
+    // 1. NFO信息文件 (需要支持重置重新生成)
+    if matches!(old_file_name, "tvshow.nfo") {
+        return Some(old_file_name.to_string()); // NFO文件保持原名但支持重置
+    }
+
+    // 2. 媒体文件 (不需要重新生成)
+    if matches!(old_file_name, "poster.jpg" | "fanart.jpg") {
         return Some(old_file_name.to_string()); // 这些文件不需要重命名
     }
 
-    // 2. 分页相关文件模式匹配
+    // 3. 分页相关文件模式匹配
     // 支持的格式：S01E01-中配.mp4, S01E01-中配-poster.jpg, 第1集-日配-fanart.jpg 等
     if let Some((episode_part, suffix)) = parse_episode_file_name(old_file_name) {
         // 重新生成集数格式

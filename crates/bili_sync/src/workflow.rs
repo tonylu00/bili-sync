@@ -986,7 +986,7 @@ pub async fn download_video_pages(
     let nfo_result = if is_bangumi && season_info.is_some() {
         // 番剧且有API数据：使用API驱动的NFO生成
         generate_bangumi_video_nfo(
-            separate_status[1] && bangumi_folder_path.is_some() && should_download_bangumi_nfo,
+            separate_status[2] && bangumi_folder_path.is_some() && should_download_bangumi_nfo,
             &video_model,
             season_info.as_ref().unwrap(),
             bangumi_folder_path.as_ref().unwrap().join("tvshow.nfo"),
@@ -996,15 +996,20 @@ pub async fn download_video_pages(
         generate_video_nfo(
             if is_bangumi {
                 // 番剧：只有在文件不存在时才生成，放在番剧文件夹根目录
-                separate_status[1] && bangumi_folder_path.is_some() && should_download_bangumi_nfo
+                separate_status[2] && bangumi_folder_path.is_some() && should_download_bangumi_nfo
             } else {
                 // 普通视频：只为多P视频生成nfo
                 separate_status[1] && !is_single_page
             },
             &video_model,
-            if is_bangumi && bangumi_folder_path.is_some() {
-                // 番剧tvshow.nfo放在番剧文件夹根目录，使用固定文件名
-                bangumi_folder_path.as_ref().unwrap().join("tvshow.nfo")
+            if let Some(ref bangumi_path) = bangumi_folder_path {
+                if is_bangumi {
+                    // 番剧tvshow.nfo放在番剧文件夹根目录，使用固定文件名
+                    bangumi_path.join("tvshow.nfo")
+                } else {
+                    // 普通视频nfo放在视频文件夹
+                    base_path.join(format!("{}.nfo", video_base_name))
+                }
             } else {
                 // 普通视频nfo放在视频文件夹
                 base_path.join(format!("{}.nfo", video_base_name))
