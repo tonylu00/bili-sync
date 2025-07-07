@@ -1326,7 +1326,7 @@ impl<'a> TVShow<'a> {
 
         Self {
             name: nfo_title,
-            original_title: &video.name,
+            original_title: season_info.alias.as_deref().unwrap_or(&season_info.title),
             intro: evaluate,
             bvid: &video.bvid,
             upper_id: video.upper_id,

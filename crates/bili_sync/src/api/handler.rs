@@ -302,7 +302,7 @@ pub async fn get_video(
     Path(id): Path<i32>,
     Extension(db): Extension<Arc<DatabaseConnection>>,
 ) -> Result<ApiResponse<VideoResponse>, ApiError> {
-    let video_info = video::Entity::find_by_id(id)
+    let raw_video = video::Entity::find_by_id(id)
         .select_only()
         .columns([
             video::Column::Id,
@@ -312,14 +312,35 @@ pub async fn get_video(
             video::Column::Category,
             video::Column::DownloadStatus,
             video::Column::Cover,
+            video::Column::SeasonId,
+            video::Column::SourceType,
         ])
-        .into_tuple::<(i32, String, String, String, i32, u32, String)>()
+        .into_tuple::<(i32, String, String, String, i32, u32, String, Option<String>, Option<i32>)>()
         .one(db.as_ref())
-        .await?
-        .map(VideoInfo::from);
-    let Some(video_info) = video_info else {
+        .await?;
+    
+    let Some((_id, name, upper_name, path, category, download_status, cover, season_id, source_type)) = raw_video else {
         return Err(InnerApiError::NotFound(id).into());
     };
+    
+    // 创建VideoInfo并填充bangumi_title
+    let mut video_info = VideoInfo::from((_id, name, upper_name, path, category, download_status, cover));
+    
+    // 为番剧类型的视频填充真实标题
+    if source_type == Some(1) && season_id.is_some() {
+        // 番剧类型且有season_id，尝试获取真实标题
+        if let Some(ref season_id_str) = season_id {
+            // 先从缓存获取
+            if let Some(title) = get_cached_season_title(season_id_str).await {
+                video_info.bangumi_title = Some(title);
+            } else {
+                // 缓存中没有，尝试从API获取并存入缓存
+                if let Some(title) = fetch_and_cache_season_title(season_id_str).await {
+                    video_info.bangumi_title = Some(title);
+                }
+            }
+        }
+    }
     let pages = page::Entity::find()
         .filter(page::Column::VideoId.eq(id))
         .order_by_asc(page::Column::Pid)

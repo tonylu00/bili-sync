@@ -31,6 +31,20 @@
 	let deleteDialogOpen = false;
 	let deleting = false;
 
+	// 根据视频类型动态生成任务名称
+	$: videoTaskNames = (() => {
+		if (!videoData?.video) return ['视频封面', '视频信息', 'UP主头像', 'UP主信息', '分P下载'];
+		
+		const isBangumi = videoData.video.bangumi_title !== undefined;
+		if (isBangumi) {
+			// 番剧任务名称：VideoStatus[2] 对应 tvshow.nfo 生成
+			return ['视频封面', '视频信息', 'tvshow.nfo', 'UP主信息', '分P下载'];
+		} else {
+			// 普通视频任务名称：VideoStatus[2] 对应 UP主头像下载
+			return ['视频封面', '视频信息', 'UP主头像', 'UP主信息', '分P下载'];
+		}
+	})();
+
 	// 检查视频是否可播放（分P下载任务已完成）
 	function isVideoPlayable(video: any): boolean {
 		if (video && video.download_status && Array.isArray(video.download_status)) {
@@ -345,13 +359,14 @@
 					path: videoData.video.path,
 					category: videoData.video.category,
 					cover: videoData.video.cover || '',
-					download_status: videoData.video.download_status
+					download_status: videoData.video.download_status,
+					bangumi_title: videoData.video.bangumi_title
 				}}
 				mode="detail"
 				showActions={true}
 				progressHeight="h-3"
 				gap="gap-2"
-				taskNames={['视频封面', '视频信息', 'UP主头像', 'UP主信息', '分P下载()']}
+				taskNames={videoTaskNames}
 			/>
 		</div>
 
