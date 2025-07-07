@@ -51,7 +51,7 @@ pub struct SeasonInfo {
     pub styles: Vec<String>,              // 类型标签 (如"科幻", "机战")
     pub total_episodes: Option<i32>,      // 总集数
     pub status: Option<String>,           // 播出状态 (如"完结", "连载中")
-    pub cover: Option<String>,            // 封面图URL
+    pub cover: Option<String>,            // 季度封面图URL
     pub horizontal_cover: Option<String>, // 横版封面URL
     pub media_id: Option<i64>,            // 媒体ID
     pub season_id: String,                // 季度ID
@@ -1054,6 +1054,12 @@ pub async fn download_video_pages(
                 base_path.join(format!("{}-fanart.jpg", video_base_name))
             },
             token.clone(),
+            // 番剧使用季度封面，普通视频使用默认封面
+            if is_bangumi && season_info.is_some() {
+                season_info.as_ref().unwrap().cover.as_deref()
+            } else {
+                None
+            },
         ),
         // 下载 Up 主头像（番剧跳过，因为番剧没有UP主信息）
         fetch_upper_face(
@@ -2141,11 +2147,12 @@ pub async fn fetch_video_poster(
     poster_path: PathBuf,
     fanart_path: PathBuf,
     token: CancellationToken,
+    custom_cover_url: Option<&str>,
 ) -> Result<ExecutionStatus> {
     if !should_run {
         return Ok(ExecutionStatus::Skipped);
     }
-    let cover_url = video_model.cover.as_str();
+    let cover_url = custom_cover_url.unwrap_or(video_model.cover.as_str());
     let urls = vec![cover_url];
     tokio::select! {
         biased;
