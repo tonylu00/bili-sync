@@ -93,13 +93,13 @@ pub struct Episode<'a> {
     pub user_rating: Option<f32>,
     pub director: Option<&'a str>,
     pub credits: Option<&'a str>,
-    pub bvid: &'a str,           // B站视频ID
-    pub category: i32,           // 视频分类（用于番剧检测）
-    pub mpaa: Option<&'a str>,   // 年龄分级
-    pub country: Option<&'a str>, // 国家
-    pub studio: Option<&'a str>, // 制作工作室
+    pub bvid: &'a str,               // B站视频ID
+    pub category: i32,               // 视频分类（用于番剧检测）
+    pub mpaa: Option<&'a str>,       // 年龄分级
+    pub country: Option<&'a str>,    // 国家
+    pub studio: Option<&'a str>,     // 制作工作室
     pub genres: Option<Vec<String>>, // 类型标签
-    pub thumb_url: Option<&'a str>, // 缩略图URL
+    pub thumb_url: Option<&'a str>,  // 缩略图URL
     pub fanart_url: Option<&'a str>, // 背景图URL
 }
 
@@ -512,7 +512,7 @@ impl NFO<'_> {
                     .with_attribute(("default", "true"))
                     .write_text_content_async(BytesText::new(tvshow.bvid))
                     .await?;
-                
+
                 // 添加番剧季度ID作为额外的uniqueid
                 if let Some(ref season_id) = tvshow.season_id {
                     writer
@@ -521,7 +521,7 @@ impl NFO<'_> {
                         .write_text_content_async(BytesText::new(season_id))
                         .await?;
                 }
-                
+
                 // 添加媒体ID作为额外的uniqueid
                 if let Some(media_id) = tvshow.media_id {
                     writer
@@ -744,15 +744,16 @@ impl NFO<'_> {
                     .create_element("title")
                     .write_text_content_async(BytesText::new(episode.name))
                     .await?;
-                
+
                 // 从标题中清理语言标识，作为原始标题
-                let binding = episode.original_title
+                let binding = episode
+                    .original_title
                     .replace("-中配", "")
                     .replace("-日配", "")
                     .replace("-国语", "")
                     .replace("-粤语", "");
                 let cleaned_original_title = binding.trim();
-                
+
                 writer
                     .create_element("originaltitle")
                     .write_text_content_async(BytesText::new(cleaned_original_title))
@@ -780,11 +781,12 @@ impl NFO<'_> {
                     .await?;
 
                 // 唯一标识符
-                let unique_id = if episode.bvid.starts_with("BV") && episode.bvid.len() > 10 && episode.bvid != "BV0000000000" {
-                    episode.bvid
-                } else {
-                    &episode.pid
-                };
+                let unique_id =
+                    if episode.bvid.starts_with("BV") && episode.bvid.len() > 10 && episode.bvid != "BV0000000000" {
+                        episode.bvid
+                    } else {
+                        &episode.pid
+                    };
                 writer
                     .create_element("uniqueid")
                     .with_attribute(("type", "bilibili"))
@@ -1228,8 +1230,8 @@ impl<'a> From<&'a video::Model> for TVShow<'a> {
             sorttitle,
             actors_info: video.actors.clone(),
             cover_url: &video.cover,
-            season_id: None,            // 普通视频没有season_id
-            media_id: None,             // 普通视频没有media_id
+            season_id: None, // 普通视频没有season_id
+            media_id: None,  // 普通视频没有media_id
         }
     }
 }
@@ -1302,19 +1304,22 @@ impl<'a> TVShow<'a> {
         // 使用API提供的信息
         let nfo_title = &season_info.title;
         let evaluate = season_info.evaluate.as_deref().unwrap_or(&video.intro);
-        
+
         // 制作地区处理（使用第一个地区或默认值）
         let country = season_info.areas.first().map(|s| s.as_str());
-        
+
         // 播出状态
         let status = season_info.status.as_deref();
-        
+
         // 类型标签
         let genres: Option<Vec<String>> = if !season_info.styles.is_empty() {
             Some(season_info.styles.clone())
         } else {
             // 备选：使用video中的tags
-            video.tags.as_ref().and_then(|tags| serde_json::from_value(tags.clone()).ok())
+            video
+                .tags
+                .as_ref()
+                .and_then(|tags| serde_json::from_value(tags.clone()).ok())
         };
 
         // 构建用户评分信息，包含评分人数（作为标签使用）
@@ -1335,21 +1340,25 @@ impl<'a> TVShow<'a> {
             premiered: aired_time,
             tags: genres,
             user_rating: season_info.rating,
-            mpaa: None,  // 可以从API的"分级"字段获取，但目前API中没有
+            mpaa: None, // 可以从API的"分级"字段获取，但目前API中没有
             country,
-            studio: None,  // 可以从制作公司获取，但API中暂无此字段
+            studio: None, // 可以从制作公司获取，但API中暂无此字段
             status,
-            total_seasons: Some(1),  // 默认单季，可能需要从更复杂的逻辑推导
+            total_seasons: Some(1), // 默认单季，可能需要从更复杂的逻辑推导
             total_episodes: season_info.total_episodes,
-            duration: None,  // 单集平均时长，需要计算
+            duration: None, // 单集平均时长，需要计算
             view_count: season_info.total_views,
             like_count: season_info.total_favorites,
             category: video.category,
             tagline: season_info.alias.as_deref().map(|s| s.to_string()),
-            set: Some(season_info.title.clone()),  // 系列名称
+            set: Some(season_info.title.clone()), // 系列名称
             sorttitle: Some(season_info.title.clone()),
             actors_info: season_info.actors.clone(),
-            cover_url: season_info.cover.as_deref().or(season_info.horizontal_cover.as_deref()).unwrap_or(&video.cover),
+            cover_url: season_info
+                .cover
+                .as_deref()
+                .or(season_info.horizontal_cover.as_deref())
+                .unwrap_or(&video.cover),
             // 使用season_id和media_id作为额外的uniqueid（通过扩展字段传递）
             season_id: Some(season_info.season_id.clone()),
             media_id: season_info.media_id,
@@ -1412,9 +1421,10 @@ impl<'a> Episode<'a> {
             mpaa: None,                                               // 使用默认分级（PG）
             country: None,                                            // 使用默认国家
             studio: None,                                             // 使用默认制作工作室
-            genres: video.tags.as_ref().and_then(|tags| {
-                serde_json::from_value(tags.clone()).ok()
-            }),                                                      // 从视频标签提取类型
+            genres: video
+                .tags
+                .as_ref()
+                .and_then(|tags| serde_json::from_value(tags.clone()).ok()), // 从视频标签提取类型
             thumb_url: None,                                          // 暂不设置本地路径
             fanart_url: None,                                         // 暂不设置本地路径
         }

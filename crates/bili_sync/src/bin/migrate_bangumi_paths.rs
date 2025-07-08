@@ -1,9 +1,9 @@
-use std::collections::HashMap;
 use anyhow::Result;
 use bili_sync_entity::*;
-use sea_orm::*;
-use tracing::{info, warn, error};
 use reqwest::Client;
+use sea_orm::*;
+use std::collections::HashMap;
+use tracing::{error, info, warn};
 
 /// 番剧路径迁移工具
 /// 修复数据库中存储的番剧路径，从错误的版本路径更新为正确的番剧文件夹路径
@@ -11,17 +11,16 @@ use reqwest::Client;
 async fn main() -> Result<()> {
     // 初始化日志
     tracing_subscriber::fmt::init();
-    
+
     info!("开始番剧路径迁移工具");
-    
+
     // 直接连接数据库
-    let database_url = std::env::var("DATABASE_URL")
-        .unwrap_or_else(|_| "sqlite://./config/data.db".to_string());
+    let database_url = std::env::var("DATABASE_URL").unwrap_or_else(|_| "sqlite://./config/data.db".to_string());
     let db = Database::connect(&database_url).await?;
-    
+
     // 创建HTTP客户端
     let client = Client::new();
-    
+
     // 查找所有番剧视频
     info!("查询数据库中的番剧视频...");
     let bangumi_videos = video::Entity::find()
@@ -29,9 +28,9 @@ async fn main() -> Result<()> {
         .filter(video::Column::SeasonId.is_not_null()) // 有season_id
         .all(&db)
         .await?;
-    
+
     info!("找到 {} 个番剧视频记录", bangumi_videos.len());
-    
+
     // 按season_id分组
     let mut videos_by_season: HashMap<String, Vec<video::Model>> = HashMap::new();
     for video in bangumi_videos {
@@ -39,24 +38,24 @@ async fn main() -> Result<()> {
             videos_by_season.entry(season_id.clone()).or_default().push(video);
         }
     }
-    
+
     info!("发现 {} 个不同的番剧季度", videos_by_season.len());
-    
+
     // 处理每个季度
     let mut updated_count = 0;
     for (season_id, videos) in videos_by_season {
         info!("处理番剧季度: {}", season_id);
-        
+
         // 从API获取真实的番剧标题
         let season_title = get_season_title_from_api(&client, &season_id).await;
-        
+
         if let Some(title) = season_title {
             info!("获取到番剧标题: \"{}\"", title);
-            
+
             // 构造正确的番剧文件夹路径
             let first_video = &videos[0];
             let old_path = &first_video.path;
-            
+
             // 从旧路径中提取根目录（去掉最后的部分）
             let root_path = if let Some(parent_parts) = extract_root_path(old_path) {
                 parent_parts
@@ -64,18 +63,18 @@ async fn main() -> Result<()> {
                 warn!("无法解析路径: {}", old_path);
                 continue;
             };
-            
+
             // 构造新的番剧文件夹路径
             let new_bangumi_path = format!("{}/{}", root_path, title);
-            
+
             info!("准备更新路径: {} -> {}", old_path, new_bangumi_path);
-            
+
             // 更新该季度的所有视频
             for video in videos {
                 let video_id = video.id;
                 let mut video_active: video::ActiveModel = video.into();
                 video_active.path = Set(new_bangumi_path.clone());
-                
+
                 match video_active.update(&db).await {
                     Ok(_) => {
                         updated_count += 1;
@@ -85,23 +84,19 @@ async fn main() -> Result<()> {
                     }
                 }
             }
-            
         } else {
             warn!("无法获取季度 {} 的标题，跳过", season_id);
         }
     }
-    
+
     info!("路径迁移完成，共更新 {} 个视频记录", updated_count);
     Ok(())
 }
 
 /// 从API获取番剧季标题
-async fn get_season_title_from_api(
-    client: &Client,
-    season_id: &str,
-) -> Option<String> {
+async fn get_season_title_from_api(client: &Client, season_id: &str) -> Option<String> {
     let url = format!("https://api.bilibili.com/pgc/view/web/season?season_id={}", season_id);
-    
+
     match client.get(&url).send().await {
         Ok(response) => {
             if response.status().is_success() {
@@ -127,7 +122,7 @@ async fn get_season_title_from_api(
             error!("发送API请求失败: {}", e);
         }
     }
-    
+
     None
 }
 
@@ -135,40 +130,40 @@ async fn get_season_title_from_api(
 /// 例如: "D:/Downloads/番剧\中文\Season 1" -> "D:/Downloads/番剧"
 fn extract_root_path(path: &str) -> Option<String> {
     let path_parts: Vec<&str> = path.split(['/', '\\']).collect();
-    
+
     // 找到"番剧"这个目录
     if let Some(bangumi_index) = path_parts.iter().position(|&part| part.contains("番剧")) {
         // 包含番剧目录在内的路径部分
         let root_parts = &path_parts[..=bangumi_index];
         return Some(root_parts.join("/"));
     }
-    
+
     // 如果没找到"番剧"目录，尝试从路径结构推断
     if path_parts.len() >= 2 {
         // 去掉最后两个部分（版本文件夹和Season文件夹）
-        let root_parts = &path_parts[..path_parts.len()-2];
+        let root_parts = &path_parts[..path_parts.len() - 2];
         return Some(root_parts.join("/"));
     }
-    
+
     None
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    
+
     #[test]
     fn test_extract_root_path() {
         assert_eq!(
             extract_root_path("D:/Downloads/番剧\\中文\\Season 1"),
             Some("D:/Downloads/番剧".to_string())
         );
-        
+
         assert_eq!(
             extract_root_path("D:/Downloads/番剧\\日配\\Season 1"),
             Some("D:/Downloads/番剧".to_string())
         );
-        
+
         assert_eq!(
             extract_root_path("D:/Downloads/番剧/测试/Season 1"),
             Some("D:/Downloads/番剧".to_string())

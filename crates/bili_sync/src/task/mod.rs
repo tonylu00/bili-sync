@@ -112,6 +112,8 @@ pub struct UpdateConfigTask {
     pub auto_backoff_max_multiplier: Option<u64>,
     // 多P视频目录结构配置
     pub multi_page_use_season_structure: Option<bool>,
+    // 合集目录结构配置
+    pub collection_use_season_structure: Option<bool>,
     pub task_id: String, // 唯一任务ID，用于追踪
 }
 
@@ -1333,6 +1335,8 @@ impl ConfigTaskQueue {
                 aria2_health_check_interval: None,
                 // 多P视频目录结构配置
                 multi_page_use_season_structure: task.multi_page_use_season_structure,
+                // 合集目录结构配置
+                collection_use_season_structure: task.collection_use_season_structure,
             };
 
             match update_config_internal(db.clone(), request).await {

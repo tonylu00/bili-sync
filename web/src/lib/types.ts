@@ -238,6 +238,8 @@ export interface ConfigResponse {
 	aria2_health_check_interval?: number;
 	// 多P视频目录结构配置
 	multi_page_use_season_structure?: boolean;
+	// 合集目录结构配置
+	collection_use_season_structure?: boolean;
 	// B站凭证信息
 	credential?: {
 		sessdata: string;
@@ -316,6 +318,8 @@ export interface UpdateConfigRequest {
 	aria2_health_check_interval?: number;
 	// 多P视频目录结构配置
 	multi_page_use_season_structure?: boolean;
+	// 合集目录结构配置
+	collection_use_season_structure?: boolean;
 }
 
 // 更新配置响应类型

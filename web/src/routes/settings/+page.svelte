@@ -183,6 +183,9 @@
 	
 	// 多P视频目录结构配置
 	let multiPageUseSeasonStructure = false;
+	
+	// 合集目录结构配置
+	let collectionUseSeasonStructure = false;
 
 	// 显示帮助信息的状态（在文件命名抽屉中使用）
 	let showHelp = false;
@@ -438,6 +441,9 @@
 			
 			// 多P视频目录结构配置
 			multiPageUseSeasonStructure = config.multi_page_use_season_structure ?? false;
+			
+			// 合集目录结构配置
+			collectionUseSeasonStructure = config.collection_use_season_structure ?? false;
 		} catch (error: any) {
 			console.error('加载配置失败:', error);
 			toast.error('加载配置失败', { description: error.message });
@@ -577,7 +583,9 @@
 				enable_aria2_auto_restart: enableAria2AutoRestart,
 				aria2_health_check_interval: aria2HealthCheckInterval,
 				// 多P视频目录结构配置
-				multi_page_use_season_structure: multiPageUseSeasonStructure
+				multi_page_use_season_structure: multiPageUseSeasonStructure,
+				// 合集目录结构配置
+				collection_use_season_structure: collectionUseSeasonStructure
 			};
 
 			const response = await api.updateConfig(params);
@@ -1106,6 +1114,27 @@
 								</div>
 								<p class="text-muted-foreground text-xs">
 									启用后将为多P视频创建"Season 01"子文件夹，提升媒体库兼容性（如Emby/Jellyfin）
+								</p>
+							</div>
+
+							<!-- 合集Season结构设置 -->
+							<div class="space-y-2">
+								<div class="flex items-center space-x-2">
+									<input
+										type="checkbox"
+										id="collection-season"
+										bind:checked={collectionUseSeasonStructure}
+										class="text-primary focus:ring-primary h-4 w-4 rounded border-gray-300"
+									/>
+									<Label
+										for="collection-season"
+										class="text-sm leading-none font-medium peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
+									>
+										合集使用Season文件夹结构
+									</Label>
+								</div>
+								<p class="text-muted-foreground text-xs">
+									启用后将为合集创建"Season 01"子文件夹，与多P视频相同的媒体库结构
 								</p>
 							</div>
 

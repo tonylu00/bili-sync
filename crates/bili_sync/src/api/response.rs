@@ -267,6 +267,8 @@ pub struct ConfigResponse {
     pub aria2_health_check_interval: u64,
     // 多P视频目录结构配置
     pub multi_page_use_season_structure: bool,
+    // 合集目录结构配置
+    pub collection_use_season_structure: bool,
     // B站凭证信息
     pub credential: Option<CredentialInfo>,
 }

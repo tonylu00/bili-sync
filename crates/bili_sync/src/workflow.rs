@@ -735,6 +735,9 @@ pub async fn download_video_pages(
     // 检查是否为番剧
     let is_bangumi = matches!(video_source, VideoSourceEnum::BangumiSource(_));
 
+    // 检查是否为合集
+    let is_collection = matches!(video_source, VideoSourceEnum::Collection(_));
+
     // 为番剧获取API数据用于NFO生成
     let season_info = if is_bangumi && video_model.season_id.is_some() {
         let season_id = video_model.season_id.as_ref().unwrap();
@@ -906,12 +909,15 @@ pub async fn download_video_pages(
                 video_source.path().join(&base_folder_name)
             }
         };
-        
+
         // 检查是否为多P视频且启用了Season结构
         let config = crate::config::reload_config();
         let is_single_page = video_model.single_page.unwrap_or(true);
-        if !is_single_page && config.multi_page_use_season_structure {
-            // 为多P视频创建Season文件夹结构
+
+        if (!is_single_page && config.multi_page_use_season_structure)
+            || (is_collection && config.collection_use_season_structure)
+        {
+            // 为多P视频或合集创建Season文件夹结构
             let season_folder_name = "Season 01".to_string();
             let season_path = path.join(&season_folder_name);
             (season_path, Some(season_folder_name), Some(path))
@@ -920,7 +926,7 @@ pub async fn download_video_pages(
         }
     };
 
-    // 确保季度文件夹存在（番剧和非番剧采用不同的处理方式）
+    // 确保季度文件夹存在（番剧、多P视频、合集采用不同的处理方式）
     if let Some(_season_folder_name) = &season_folder {
         if is_bangumi {
             // 对于番剧，Season文件夹的创建已经在上面的逻辑中处理了
@@ -930,10 +936,14 @@ pub async fn download_video_pages(
                 info!("创建季度文件夹: {}", base_path.display());
             }
         } else {
-            // 对于多P视频，base_path 已经是完整的路径（视频文件夹/Season文件夹）
+            // 对于多P视频或合集，base_path 已经是完整的路径（视频文件夹/Season文件夹）
             if !base_path.exists() {
                 fs::create_dir_all(&base_path).await?;
-                info!("创建多P视频Season文件夹: {}", base_path.display());
+                if is_collection {
+                    info!("创建合集Season文件夹: {}", base_path.display());
+                } else {
+                    info!("创建多P视频Season文件夹: {}", base_path.display());
+                }
             }
         }
     }
@@ -951,6 +961,19 @@ pub async fn download_video_pages(
         // 使用video_name模板渲染视频名称
         crate::config::with_config(|bundle| bundle.render_video_template(&video_format_args(&video_model)))
             .map_err(|e| anyhow::anyhow!("模板渲染失败: {}", e))?
+    } else if is_collection {
+        // 合集中的单页视频：检查是否启用Season结构
+        let config = crate::config::reload_config();
+        if config.collection_use_season_structure {
+            // 合集启用Season结构时，使用合集名称作为文件名前缀
+            if let VideoSourceEnum::Collection(collection_source) = video_source {
+                collection_source.name.clone()
+            } else {
+                String::new()
+            }
+        } else {
+            String::new() // 合集不使用Season结构时不需要
+        }
     } else {
         String::new() // 单P视频不需要这些文件
     };
@@ -1011,8 +1034,9 @@ pub async fn download_video_pages(
                 // 番剧：只有在文件不存在时才生成，放在番剧文件夹根目录
                 separate_status[2] && bangumi_folder_path.is_some() && should_download_bangumi_nfo
             } else {
-                // 普通视频：只为多P视频生成nfo
-                separate_status[1] && !is_single_page
+                // 普通视频：为多P视频或启用Season结构的合集生成nfo
+                let config = crate::config::reload_config();
+                separate_status[2] && (!is_single_page || (is_collection && config.collection_use_season_structure))
             },
             &video_model,
             if let Some(ref bangumi_path) = bangumi_folder_path {
@@ -1020,8 +1044,12 @@ pub async fn download_video_pages(
                     // 番剧tvshow.nfo放在番剧文件夹根目录，使用固定文件名
                     bangumi_path.join("tvshow.nfo")
                 } else {
-                    // 多P视频使用Season结构时，tvshow.nfo放在视频根目录
-                    if season_folder.is_some() {
+                    // 多P视频或合集使用Season结构时，tvshow.nfo放在视频根目录
+                    let config = crate::config::reload_config();
+                    if ((!is_single_page && config.multi_page_use_season_structure)
+                        || (is_collection && config.collection_use_season_structure))
+                        && season_folder.is_some()
+                    {
                         bangumi_path.join("tvshow.nfo")
                     } else {
                         // 不使用Season结构时，保持原有逻辑
@@ -1029,11 +1057,15 @@ pub async fn download_video_pages(
                     }
                 }
             } else {
-                // 多P视频使用Season结构时，tvshow.nfo放在视频根目录
+                // 多P视频或合集使用Season结构时，tvshow.nfo放在视频根目录
                 let config = crate::config::reload_config();
-                if !is_single_page && config.multi_page_use_season_structure && season_folder.is_some() {
+                if ((!is_single_page && config.multi_page_use_season_structure)
+                    || (is_collection && config.collection_use_season_structure))
+                    && season_folder.is_some()
+                {
                     // 需要从base_path（Season文件夹）回到父目录（视频根目录）
-                    base_path.parent()
+                    base_path
+                        .parent()
                         .map(|parent| parent.join("tvshow.nfo"))
                         .unwrap_or_else(|| base_path.join("tvshow.nfo"))
                 } else {
@@ -1052,8 +1084,9 @@ pub async fn download_video_pages(
                 // 番剧：只有在文件不存在时才下载，放在番剧文件夹根目录
                 separate_status[0] && bangumi_folder_path.is_some() && should_download_bangumi_poster
             } else {
-                // 普通视频：只为多P视频生成封面
-                separate_status[0] && !is_single_page
+                // 普通视频：为多P视频或启用Season结构的合集生成封面
+                let config = crate::config::reload_config();
+                separate_status[0] && (!is_single_page || (is_collection && config.collection_use_season_structure))
             },
             &video_model,
             downloader,
@@ -1064,11 +1097,14 @@ pub async fn download_video_pages(
                     .unwrap()
                     .join(format!("{}-poster.jpg", bangumi_base_name))
             } else {
-                // 多P视频使用Season结构时，封面放在视频根目录
+                // 多P视频或合集使用Season结构时，封面放在视频根目录
                 let config = crate::config::reload_config();
-                if !is_single_page && config.multi_page_use_season_structure && season_folder.is_some() {
+                if (!is_single_page && config.multi_page_use_season_structure && season_folder.is_some())
+                    || (is_collection && config.collection_use_season_structure && season_folder.is_some())
+                {
                     // 需要从base_path（Season文件夹）回到父目录（视频根目录）
-                    base_path.parent()
+                    base_path
+                        .parent()
                         .map(|parent| parent.join(format!("{}-poster.jpg", video_base_name)))
                         .unwrap_or_else(|| base_path.join(format!("{}-poster.jpg", video_base_name)))
                 } else {
@@ -1083,11 +1119,14 @@ pub async fn download_video_pages(
                     .unwrap()
                     .join(format!("{}-fanart.jpg", bangumi_base_name))
             } else {
-                // 多P视频使用Season结构时，fanart放在视频根目录
+                // 多P视频或合集使用Season结构时，fanart放在视频根目录
                 let config = crate::config::reload_config();
-                if !is_single_page && config.multi_page_use_season_structure && season_folder.is_some() {
+                if (!is_single_page && config.multi_page_use_season_structure && season_folder.is_some())
+                    || (is_collection && config.collection_use_season_structure && season_folder.is_some())
+                {
                     // 需要从base_path（Season文件夹）回到父目录（视频根目录）
-                    base_path.parent()
+                    base_path
+                        .parent()
                         .map(|parent| parent.join(format!("{}-fanart.jpg", video_base_name)))
                         .unwrap_or_else(|| base_path.join(format!("{}-fanart.jpg", video_base_name)))
                 } else {
@@ -1277,7 +1316,8 @@ pub async fn download_video_pages(
         let config = crate::config::reload_config();
         if !is_single_page && config.multi_page_use_season_structure && season_folder.is_some() {
             // 对于多P视频使用Season结构时，保存视频根目录路径
-            base_path.parent()
+            base_path
+                .parent()
                 .map(|parent| parent.to_string_lossy().to_string())
                 .unwrap_or_else(|| base_path.to_string_lossy().to_string())
         } else {
