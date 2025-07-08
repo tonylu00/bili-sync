@@ -660,7 +660,7 @@ async fn delete_video_files_from_pages_task(
         .await
         .map_err(|e| anyhow::anyhow!("查询视频信息失败: {}", e))?;
 
-    if let Some(_video) = video {
+    if let Some(video) = video {
         // 重新获取页面信息来删除基于视频文件名的相关文件
         let pages_for_cleanup = page::Entity::find()
             .filter(page::Column::VideoId.eq(video_id))
@@ -668,7 +668,7 @@ async fn delete_video_files_from_pages_task(
             .await
             .map_err(|e| anyhow::anyhow!("查询页面信息失败: {}", e))?;
 
-        for page in pages_for_cleanup {
+        for page in &pages_for_cleanup {
             if let Some(file_path) = &page.path {
                 let video_file = std::path::Path::new(file_path);
                 if let Some(parent_dir) = video_file.parent() {
@@ -726,6 +726,93 @@ async fn delete_video_files_from_pages_task(
                                     Err(e) => {
                                         warn!("删除弹幕文件失败: {:?} - {}", danmaku_path, e);
                                     }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // Season结构检测和根目录元数据文件删除
+        if !pages_for_cleanup.is_empty() {
+            // 检测是否使用Season结构：比较video.path和page.path
+            if let Some(first_page) = pages_for_cleanup.first() {
+                if let Some(page_path) = &first_page.path {
+                    let video_path = std::path::Path::new(&video.path);
+                    let page_path = std::path::Path::new(page_path);
+                    
+                    // 如果page路径包含Season文件夹，说明使用了Season结构
+                    let uses_season_structure = page_path.components()
+                        .any(|component| {
+                            if let std::path::Component::Normal(name) = component {
+                                name.to_string_lossy().starts_with("Season ")
+                            } else {
+                                false
+                            }
+                        });
+
+                    if uses_season_structure {
+                        debug!("检测到Season结构，删除根目录元数据文件");
+                        
+                        // 获取配置以确定video_base_name生成规则
+                        let config = crate::config::reload_config();
+                        
+                        // 确定是否为合集或多P视频
+                        let is_collection = video.collection_id.is_some();
+                        let is_single_page = video.single_page.unwrap_or(true);
+                        
+                        // 检查是否需要处理
+                        let should_process = (is_collection && config.collection_use_season_structure)
+                            || (!is_single_page && config.multi_page_use_season_structure);
+                        
+                        if should_process {
+                            let video_base_name = if is_collection && config.collection_use_season_structure {
+                                // 合集：使用合集名称
+                                if let Ok(collection) = bili_sync_entity::collection::Entity::find_by_id(video.collection_id.unwrap_or(0))
+                                    .one(db.as_ref())
+                                    .await
+                                {
+                                    if let Some(coll) = collection {
+                                        coll.name
+                                    } else {
+                                        "collection".to_string()
+                                    }
+                                } else {
+                                    "collection".to_string()
+                                }
+                            } else {
+                                // 多P视频：使用视频名称模板
+                                use crate::utils::format_arg::video_format_args;
+                                match crate::config::with_config(|bundle| {
+                                    bundle.render_video_template(&video_format_args(&video))
+                                }) {
+                                    Ok(name) => name,
+                                    Err(_) => video.name.clone(),
+                                }
+                            };
+
+                            // 删除根目录的元数据文件
+                            let metadata_files = [
+                                "tvshow.nfo".to_string(),
+                                format!("{}-poster.jpg", video_base_name),
+                                format!("{}-fanart.jpg", video_base_name),
+                            ];
+
+                            for metadata_file in &metadata_files {
+                                let metadata_path = video_path.join(metadata_file);
+                                if metadata_path.exists() {
+                                    match fs::remove_file(&metadata_path).await {
+                                        Ok(_) => {
+                                            info!("已删除Season结构根目录元数据文件: {:?}", metadata_path);
+                                            deleted_count += 1;
+                                        }
+                                        Err(e) => {
+                                            warn!("删除Season结构根目录元数据文件失败: {:?} - {}", metadata_path, e);
+                                        }
+                                    }
+                                } else {
+                                    debug!("Season结构根目录元数据文件不存在: {:?}", metadata_path);
                                 }
                             }
                         }

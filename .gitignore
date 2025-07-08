@@ -36,6 +36,7 @@ CLAUDE.MD
 *~
 
 # 操作系统文件
+/issues
 .DS_Store
 .DS_Store?
 ._*
@@ -75,7 +76,7 @@ bilibili-api-main/
 bili-sync-source-*
 temp_package/
 
-# Version records and temporary dirs  
+# Version records and temporary dirs
 版本记录/
 未修复PR*/
 数据库文件/

@@ -1312,10 +1312,12 @@ pub async fn download_video_pages(
             base_path.to_string_lossy().to_string()
         }
     } else {
-        // 检查是否为多P视频且启用了Season结构
+        // 检查是否为多P视频或合集且启用了Season结构
         let config = crate::config::reload_config();
-        if !is_single_page && config.multi_page_use_season_structure && season_folder.is_some() {
-            // 对于多P视频使用Season结构时，保存视频根目录路径
+        if (!is_single_page && config.multi_page_use_season_structure && season_folder.is_some())
+            || (is_collection && config.collection_use_season_structure && season_folder.is_some())
+        {
+            // 对于多P视频或合集使用Season结构时，保存根目录路径而不是Season子文件夹路径
             base_path
                 .parent()
                 .map(|parent| parent.to_string_lossy().to_string())
