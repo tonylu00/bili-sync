@@ -16,6 +16,7 @@
 	import type { ApiError } from '$lib/types';
 	import { page } from '$app/stores';
 	import { Plus, Settings, LogOut } from '@lucide/svelte';
+	import ResponsiveButton from '$lib/components/responsive-button.svelte';
 
 	let dataLoaded = false;
 	let isAuthenticated = false;
@@ -71,7 +72,7 @@
 <Toaster />
 
 <Sidebar.Provider>
-	<div class="flex h-screen w-full overflow-hidden">
+	<div class="flex h-screen w-full overflow-hidden prevent-horizontal-scroll">
 		{#if isAuthenticated}
 			<div data-sidebar="sidebar">
 				<AppSidebar />
@@ -89,70 +90,37 @@
 						</div>
 						<div class="flex items-center gap-1 sm:gap-2">
 							{#if isHomePage}
-								<Button
+								<ResponsiveButton
 									size="sm"
 									variant="outline"
 									onclick={() => goto('/add-source')}
-									class="hidden items-center gap-2 sm:flex"
-								>
-									<Plus class="h-4 w-4" />
-									添加视频源
-								</Button>
-								<!-- 移动端只显示图标 -->
-								<Button
-									size="sm"
-									variant="outline"
-									onclick={() => goto('/add-source')}
-									class="flex items-center justify-center sm:hidden"
+									icon={Plus}
+									text="添加视频源"
 									title="添加视频源"
-								>
-									<Plus class="h-4 w-4" />
-								</Button>
+								/>
 							{/if}
-							<Button
+							<ResponsiveButton
 								size="sm"
 								variant="outline"
 								onclick={() => goto('/settings')}
-								class="hidden items-center gap-2 sm:flex"
-							>
-								<Settings class="h-4 w-4" />
-								配置
-							</Button>
-							<!-- 移动端只显示图标 -->
-							<Button
-								size="sm"
-								variant="outline"
-								onclick={() => goto('/settings')}
-								class="flex items-center justify-center sm:hidden"
+								icon={Settings}
+								text="配置"
 								title="配置"
-							>
-								<Settings class="h-4 w-4" />
-							</Button>
-							<Button
+							/>
+							<ResponsiveButton
 								size="sm"
 								variant="outline"
 								onclick={handleLogout}
-								class="hidden items-center gap-2 sm:flex"
-							>
-								<LogOut class="h-4 w-4" />
-								退出
-							</Button>
-							<!-- 移动端只显示图标 -->
-							<Button
-								size="sm"
-								variant="outline"
-								onclick={handleLogout}
-								class="flex items-center justify-center sm:hidden"
+								icon={LogOut}
+								text="退出"
 								title="退出"
-							>
-								<LogOut class="h-4 w-4" />
-							</Button>
+							/>
 						</div>
 					</div>
 				</div>
 			{/if}
-			<div class="bg-background flex-1 overflow-auto">
-				<div class="w-full px-6 py-6">
+			<div class="bg-background flex-1 overflow-auto smooth-scroll">
+				<div class="w-full px-4 py-4 sm:px-6 sm:py-6">
 					{#if isAuthenticated && $breadcrumbStore.length > 0}
 						<div class="mb-6">
 							<BreadCrumb items={$breadcrumbStore} />

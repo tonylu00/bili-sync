@@ -565,7 +565,7 @@
 
 	<!-- 统计信息和操作按钮 -->
 	{#if videosData}
-		<div class="mb-6 space-y-4 sm:flex sm:items-center sm:justify-between sm:space-y-0">
+		<div class="mb-6 space-y-4 lg:flex lg:items-center lg:justify-between lg:space-y-0">
 			<!-- 统计信息 -->
 			<div class="flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-4">
 				<div class="text-muted-foreground text-sm">
@@ -581,7 +581,7 @@
 			</div>
 
 			<!-- 操作按钮区域 -->
-			<div class="flex flex-col items-start gap-3 sm:flex-row sm:items-center sm:gap-2">
+			<div class="flex flex-col items-start gap-3 sm:flex-row sm:items-center sm:flex-wrap lg:flex-nowrap sm:gap-2">
 				<!-- 页面大小控制 -->
 				<div class="flex items-center gap-2">
 					<label for="page-size-select" class="text-muted-foreground text-sm whitespace-nowrap"
@@ -671,11 +671,9 @@
 			<div class="text-muted-foreground">加载中...</div>
 		</div>
 	{:else if videosData?.videos.length}
-		<div
-			style="display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 16px; width: 100%; max-width: none; justify-items: start;"
-		>
+		<div class="grid w-full gap-4 grid-cols-1 xs:grid-cols-2 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6">
 			{#each videosData.videos as video (video.id)}
-				<div style="max-width: 400px; width: 100%;">
+				<div class="w-full">
 					<VideoCard {video} />
 				</div>
 			{/each}

@@ -643,7 +643,7 @@
 				</div>
 			{:else}
 				<!-- 设置分类卡片列表 -->
-				<div class="grid gap-4 {isMobile ? 'grid-cols-1' : 'grid-cols-2 lg:grid-cols-3'}">
+				<div class="grid gap-4 grid-cols-1 {isMobile ? 'xs:grid-cols-1' : 'sm:grid-cols-2 lg:grid-cols-3'}">
 					{#each settingCategories as category}
 						<Card
 							class="hover:border-primary/50 cursor-pointer transition-all hover:shadow-md"
@@ -678,7 +678,7 @@
 	<SheetContent
 		side={isMobile ? 'bottom' : 'right'}
 		class="{isMobile
-			? 'h-[85vh] max-h-[85vh]'
+			? 'h-[90vh] max-h-[90vh] w-full max-w-none overflow-hidden'
 			: '!inset-y-0 !right-0 !h-screen !w-screen !max-w-none'} [&>button]:hidden"
 	>
 		{#if !isMobile && randomCovers.length > 0}
@@ -701,10 +701,10 @@
 		<div class="flex h-full items-center justify-center {isMobile ? '' : 'p-8'} relative z-10">
 			<div
 				class="{isMobile
-					? 'bg-background h-full w-full'
+					? 'bg-background h-full w-full max-w-none'
 					: 'bg-card/95 w-full max-w-4xl rounded-lg border shadow-2xl backdrop-blur-sm'} relative"
 			>
-				<SheetHeader class="{isMobile ? '' : 'border-b p-6'} relative">
+				<SheetHeader class="{isMobile ? 'p-4 border-b' : 'border-b p-6'} relative">
 					<SheetTitle>文件命名设置</SheetTitle>
 					<SheetDescription>配置视频、分页、番剧等文件命名模板</SheetDescription>
 					<!-- 自定义关闭按钮 -->
@@ -729,9 +729,9 @@
 						e.preventDefault();
 						saveConfig();
 					}}
-					class="flex flex-col {isMobile ? 'h-[calc(100vh-10rem)]' : 'h-[calc(100vh-12rem)]'}"
+					class="flex flex-col {isMobile ? 'h-[calc(90vh-8rem)]' : 'h-[calc(100vh-12rem)]'}"
 				>
-					<div class="min-h-0 flex-1 space-y-6 overflow-y-auto px-6 py-6">
+					<div class="min-h-0 flex-1 space-y-6 overflow-y-auto {isMobile ? 'px-4 py-4' : 'px-6 py-6'}">
 						<div class="flex items-center justify-between">
 							<h3 class="text-base font-semibold">文件命名模板</h3>
 							<button
@@ -745,7 +745,7 @@
 
 						{#if showHelp}
 							<div class="rounded-lg border border-blue-200 bg-blue-50 p-4">
-								<div class="grid grid-cols-1 gap-4 text-sm md:grid-cols-2">
+								<div class="grid grid-cols-1 gap-4 text-sm {isMobile ? 'sm:grid-cols-1' : 'md:grid-cols-2'}">
 									<div>
 										<h4 class="mb-2 font-medium text-blue-900">视频变量</h4>
 										<div class="space-y-1">
@@ -878,7 +878,7 @@
 										</div>
 									</div>
 
-									<div class="grid grid-cols-1 gap-3 md:grid-cols-2">
+									<div class="grid grid-cols-1 gap-3 {isMobile ? 'sm:grid-cols-1' : 'md:grid-cols-2'}">
 										<div class="rounded-md border border-blue-300 bg-white p-3">
 											<p class="mb-2 font-medium text-blue-900">
 												📁 <strong>视频文件名模板</strong>
@@ -1031,7 +1031,7 @@
 							</div>
 						{/if}
 
-						<div class="grid grid-cols-1 gap-4 md:grid-cols-2">
+						<div class="grid grid-cols-1 gap-4 {isMobile ? 'sm:grid-cols-1' : 'md:grid-cols-2'}">
 							<div class="space-y-2">
 								<Label for="video-name">视频文件名模板</Label>
 								<Input
@@ -1128,7 +1128,7 @@
 							<p class="text-muted-foreground text-sm">定义视频文件的文件夹层级结构</p>
 						</div>
 
-						<div class="grid grid-cols-1 gap-4 md:grid-cols-2">
+						<div class="grid grid-cols-1 gap-4 {isMobile ? 'sm:grid-cols-1' : 'md:grid-cols-2'}">
 							<div class="space-y-2">
 								<Label for="collection-folder-mode">合集文件夹模式</Label>
 								<select
@@ -1200,7 +1200,7 @@
 							</div>
 
 							{#if showVariableHelp}
-								<div class="grid grid-cols-1 gap-4 pb-4 text-sm text-orange-700 md:grid-cols-2">
+								<div class="grid grid-cols-1 gap-4 pb-4 text-sm text-orange-700 {isMobile ? 'sm:grid-cols-1' : 'md:grid-cols-2'}">
 									<div>
 										<p class="mb-2 font-medium">📊 基础变量</p>
 										<div class="space-y-1 pl-2">
@@ -1253,7 +1253,7 @@
 							{/if}
 						</div>
 					</div>
-					<SheetFooter class="pb-safe border-t pt-4">
+					<SheetFooter class="{isMobile ? 'pb-safe border-t pt-3 px-4' : 'pb-safe border-t pt-4'}">
 						<Button type="submit" disabled={saving || !pageNameValid} class="w-full">
 							{saving ? '保存中...' : '保存设置'}
 						</Button>
@@ -1277,7 +1277,7 @@
 	<SheetContent
 		side={isMobile ? 'bottom' : 'right'}
 		class="{isMobile
-			? 'h-[85vh] max-h-[85vh]'
+			? 'h-[90vh] max-h-[90vh] w-full max-w-none overflow-hidden'
 			: '!inset-y-0 !right-0 !h-screen !w-screen !max-w-none'} [&>button]:hidden"
 	>
 		{#if !isMobile && randomCovers.length > 0}
@@ -1299,10 +1299,10 @@
 		<div class="flex h-full items-center justify-center {isMobile ? '' : 'p-8'} relative z-10">
 			<div
 				class="{isMobile
-					? 'bg-background h-full w-full'
+					? 'bg-background h-full w-full max-w-none'
 					: 'bg-card/95 w-full max-w-4xl rounded-lg border shadow-2xl backdrop-blur-sm'} relative overflow-hidden"
 			>
-				<SheetHeader class="{isMobile ? '' : 'border-b p-6'} relative">
+				<SheetHeader class="{isMobile ? 'p-4 border-b' : 'border-b p-6'} relative">
 					<SheetTitle>视频质量设置</SheetTitle>
 					<SheetDescription>设置视频/音频质量、编解码器等参数</SheetDescription>
 					<!-- 自定义关闭按钮 -->
@@ -1327,10 +1327,10 @@
 						e.preventDefault();
 						saveConfig();
 					}}
-					class="flex flex-col {isMobile ? 'h-[calc(100%-5rem)]' : 'h-[calc(100%-8rem)]'}"
+					class="flex flex-col {isMobile ? 'h-[calc(90vh-8rem)]' : 'h-[calc(100vh-12rem)]'}"
 				>
-					<div class="flex-1 space-y-6 overflow-y-auto px-6 py-6">
-						<div class="grid grid-cols-1 gap-4 md:grid-cols-2">
+					<div class="flex-1 space-y-6 overflow-y-auto {isMobile ? 'px-4 py-4' : 'px-6 py-6'}">
+						<div class="grid grid-cols-1 gap-4 {isMobile ? 'sm:grid-cols-1' : 'md:grid-cols-2'}">
 							<div class="space-y-2">
 								<Label for="video-max-quality">视频最高质量</Label>
 								<select
@@ -1474,7 +1474,7 @@
 							</div>
 						</div>
 
-						<div class="grid grid-cols-1 gap-4 md:grid-cols-2">
+						<div class="grid grid-cols-1 gap-4 {isMobile ? 'sm:grid-cols-1' : 'md:grid-cols-2'}">
 							<div class="flex items-center space-x-2">
 								<input
 									type="checkbox"
@@ -1516,7 +1516,7 @@
 							</div>
 						</div>
 					</div>
-					<SheetFooter class="pb-safe border-t pt-4">
+					<SheetFooter class="{isMobile ? 'pb-safe border-t pt-3 px-4' : 'pb-safe border-t pt-4'}">
 						<Button type="submit" disabled={saving} class="w-full">
 							{saving ? '保存中...' : '保存设置'}
 						</Button>
@@ -1537,7 +1537,7 @@
 	<SheetContent
 		side={isMobile ? 'bottom' : 'right'}
 		class="{isMobile
-			? 'h-[85vh] max-h-[85vh]'
+			? 'h-[90vh] max-h-[90vh] w-full max-w-none overflow-hidden'
 			: '!inset-y-0 !right-0 !h-screen !w-screen !max-w-none'} [&>button]:hidden"
 	>
 		{#if !isMobile && randomCovers.length > 0}
@@ -1559,10 +1559,10 @@
 		<div class="flex h-full items-center justify-center {isMobile ? '' : 'p-8'} relative z-10">
 			<div
 				class="{isMobile
-					? 'bg-background h-full w-full'
+					? 'bg-background h-full w-full max-w-none'
 					: 'bg-card/95 w-full max-w-4xl rounded-lg border shadow-2xl backdrop-blur-sm'} relative overflow-hidden"
 			>
-				<SheetHeader class="{isMobile ? '' : 'border-b p-6'} relative">
+				<SheetHeader class="{isMobile ? 'p-4 border-b' : 'border-b p-6'} relative">
 					<SheetTitle>下载设置</SheetTitle>
 					<SheetDescription>并行下载、并发控制、速率限制配置</SheetDescription>
 					<!-- 自定义关闭按钮 -->
@@ -1587,9 +1587,9 @@
 						e.preventDefault();
 						saveConfig();
 					}}
-					class="flex flex-col {isMobile ? 'h-[calc(100%-5rem)]' : 'h-[calc(100%-8rem)]'}"
+					class="flex flex-col {isMobile ? 'h-[calc(90vh-8rem)]' : 'h-[calc(100vh-12rem)]'}"
 				>
-					<div class="flex-1 space-y-6 overflow-y-auto px-6 py-6">
+					<div class="flex-1 space-y-6 overflow-y-auto {isMobile ? 'px-4 py-4' : 'px-6 py-6'}">
 						<div class="mt-6 space-y-6">
 							<h3 class="text-base font-semibold">下载配置</h3>
 
@@ -1627,7 +1627,7 @@
 						<div class="mt-6 space-y-6">
 							<h3 class="text-base font-semibold">并发控制</h3>
 
-							<div class="grid grid-cols-1 gap-4 md:grid-cols-2">
+							<div class="grid grid-cols-1 gap-4 {isMobile ? 'sm:grid-cols-1' : 'md:grid-cols-2'}">
 								<div class="space-y-2">
 									<Label for="concurrent-video">同时处理视频数</Label>
 									<Input
@@ -1703,7 +1703,7 @@
 							</div>
 						</div>
 					</div>
-					<SheetFooter class="pb-safe border-t pt-4">
+					<SheetFooter class="{isMobile ? 'pb-safe border-t pt-3 px-4' : 'pb-safe border-t pt-4'}">
 						<Button type="submit" disabled={saving} class="w-full">
 							{saving ? '保存中...' : '保存设置'}
 						</Button>
@@ -1724,7 +1724,7 @@
 	<SheetContent
 		side={isMobile ? 'bottom' : 'right'}
 		class="{isMobile
-			? 'h-[85vh] max-h-[85vh]'
+			? 'h-[90vh] max-h-[90vh] w-full max-w-none overflow-hidden'
 			: '!inset-y-0 !right-0 !h-screen !w-screen !max-w-none'} [&>button]:hidden"
 	>
 		{#if !isMobile && randomCovers.length > 0}
@@ -1746,10 +1746,10 @@
 		<div class="flex h-full items-center justify-center {isMobile ? '' : 'p-8'} relative z-10">
 			<div
 				class="{isMobile
-					? 'bg-background h-full w-full'
+					? 'bg-background h-full w-full max-w-none'
 					: 'bg-card/95 w-full max-w-4xl rounded-lg border shadow-2xl backdrop-blur-sm'} relative overflow-hidden"
 			>
-				<SheetHeader class="{isMobile ? '' : 'border-b p-6'} relative">
+				<SheetHeader class="{isMobile ? 'p-4 border-b' : 'border-b p-6'} relative">
 					<SheetTitle>弹幕设置</SheetTitle>
 					<SheetDescription>弹幕显示样式和布局参数</SheetDescription>
 					<!-- 自定义关闭按钮 -->
@@ -1774,10 +1774,10 @@
 						e.preventDefault();
 						saveConfig();
 					}}
-					class="flex flex-col {isMobile ? 'h-[calc(100%-5rem)]' : 'h-[calc(100%-8rem)]'}"
+					class="flex flex-col {isMobile ? 'h-[calc(90vh-8rem)]' : 'h-[calc(100vh-12rem)]'}"
 				>
-					<div class="flex-1 space-y-6 overflow-y-auto px-6 py-6">
-						<div class="grid grid-cols-1 gap-4 md:grid-cols-2">
+					<div class="flex-1 space-y-6 overflow-y-auto {isMobile ? 'px-4 py-4' : 'px-6 py-6'}">
+						<div class="grid grid-cols-1 gap-4 {isMobile ? 'sm:grid-cols-1' : 'md:grid-cols-2'}">
 							<div class="space-y-2">
 								<Label for="danmaku-duration">弹幕持续时间（秒）</Label>
 								<Input
@@ -1930,7 +1930,7 @@
 							</div>
 						</div>
 					</div>
-					<SheetFooter class="pb-safe border-t pt-4">
+					<SheetFooter class="{isMobile ? 'pb-safe border-t pt-3 px-4' : 'pb-safe border-t pt-4'}">
 						<Button type="submit" disabled={saving} class="w-full">
 							{saving ? '保存中...' : '保存设置'}
 						</Button>
@@ -1951,7 +1951,7 @@
 	<SheetContent
 		side={isMobile ? 'bottom' : 'right'}
 		class="{isMobile
-			? 'h-[85vh] max-h-[85vh]'
+			? 'h-[90vh] max-h-[90vh] w-full max-w-none overflow-hidden'
 			: '!inset-y-0 !right-0 !h-screen !w-screen !max-w-none'} [&>button]:hidden"
 	>
 		{#if !isMobile && randomCovers.length > 0}
@@ -1973,10 +1973,10 @@
 		<div class="flex h-full items-center justify-center {isMobile ? '' : 'p-8'} relative z-10">
 			<div
 				class="{isMobile
-					? 'bg-background h-full w-full'
+					? 'bg-background h-full w-full max-w-none'
 					: 'bg-card/95 w-full max-w-4xl rounded-lg border shadow-2xl backdrop-blur-sm'} relative overflow-hidden"
 			>
-				<SheetHeader class="{isMobile ? '' : 'border-b p-6'} relative">
+				<SheetHeader class="{isMobile ? 'p-4 border-b' : 'border-b p-6'} relative">
 					<SheetTitle>B站凭证设置</SheetTitle>
 					<SheetDescription>配置B站登录凭证信息</SheetDescription>
 					<!-- 自定义关闭按钮 -->
@@ -2001,9 +2001,9 @@
 						e.preventDefault();
 						saveCredential();
 					}}
-					class="flex flex-col {isMobile ? 'h-[calc(100%-5rem)]' : 'h-[calc(100%-8rem)]'}"
+					class="flex flex-col {isMobile ? 'h-[calc(90vh-8rem)]' : 'h-[calc(100vh-12rem)]'}"
 				>
-					<div class="flex-1 space-y-6 overflow-y-auto px-6 py-6">
+					<div class="flex-1 space-y-6 overflow-y-auto {isMobile ? 'px-4 py-4' : 'px-6 py-6'}">
 						<div class="rounded-lg border border-amber-200 bg-amber-50 p-4">
 							<div class="space-y-2 text-sm text-amber-800">
 								<div class="font-medium">🔐 如何获取B站登录凭证：</div>
@@ -2020,7 +2020,7 @@
 							</div>
 						</div>
 
-						<div class="grid grid-cols-1 gap-4 md:grid-cols-2">
+						<div class="grid grid-cols-1 gap-4 {isMobile ? 'sm:grid-cols-1' : 'md:grid-cols-2'}">
 							<div class="space-y-2">
 								<Label for="sessdata">SESSDATA *</Label>
 								<Input
@@ -2074,7 +2074,7 @@
 							</div>
 						</div>
 					</div>
-					<SheetFooter class="pb-safe border-t pt-4">
+					<SheetFooter class="{isMobile ? 'pb-safe border-t pt-3 px-4' : 'pb-safe border-t pt-4'}">
 						<Button type="submit" disabled={credentialSaving} class="w-full">
 							{credentialSaving ? '保存中...' : '保存凭证'}
 						</Button>
@@ -2095,7 +2095,7 @@
 	<SheetContent
 		side={isMobile ? 'bottom' : 'right'}
 		class="{isMobile
-			? 'h-[85vh] max-h-[85vh]'
+			? 'h-[90vh] max-h-[90vh] w-full max-w-none overflow-hidden'
 			: '!inset-y-0 !right-0 !h-screen !w-screen !max-w-none'} [&>button]:hidden"
 	>
 		{#if !isMobile && randomCovers.length > 0}
@@ -2117,10 +2117,10 @@
 		<div class="flex h-full items-center justify-center {isMobile ? '' : 'p-8'} relative z-10">
 			<div
 				class="{isMobile
-					? 'bg-background h-full w-full'
+					? 'bg-background h-full w-full max-w-none'
 					: 'bg-card/95 w-full max-w-4xl rounded-lg border shadow-2xl backdrop-blur-sm'} relative overflow-hidden"
 			>
-				<SheetHeader class="{isMobile ? '' : 'border-b p-6'} relative">
+				<SheetHeader class="{isMobile ? 'p-4 border-b' : 'border-b p-6'} relative">
 					<SheetTitle>风控配置</SheetTitle>
 					<SheetDescription>UP主投稿获取风控策略，用于优化大量视频UP主的获取</SheetDescription>
 					<!-- 自定义关闭按钮 -->
@@ -2145,13 +2145,13 @@
 						e.preventDefault();
 						saveConfig();
 					}}
-					class="flex flex-col {isMobile ? 'h-[calc(100%-5rem)]' : 'h-[calc(100%-8rem)]'}"
+					class="flex flex-col {isMobile ? 'h-[calc(90vh-8rem)]' : 'h-[calc(100vh-12rem)]'}"
 				>
-					<div class="flex-1 space-y-6 overflow-y-auto px-6 py-6">
+					<div class="flex-1 space-y-6 overflow-y-auto {isMobile ? 'px-4 py-4' : 'px-6 py-6'}">
 						<!-- 基础优化配置 -->
 						<div class="rounded-lg border border-blue-200 bg-blue-50 p-4">
 							<h3 class="mb-3 text-sm font-medium text-blue-800">🎯 基础优化配置</h3>
-							<div class="grid grid-cols-1 gap-4 md:grid-cols-2">
+							<div class="grid grid-cols-1 gap-4 {isMobile ? 'sm:grid-cols-1' : 'md:grid-cols-2'}">
 								<div class="space-y-2">
 									<Label for="large-submission-threshold">大量视频UP主阈值</Label>
 									<Input
@@ -2269,7 +2269,7 @@
 								</div>
 
 								{#if enableBatchProcessing}
-									<div class="grid grid-cols-1 gap-4 md:grid-cols-2">
+									<div class="grid grid-cols-1 gap-4 {isMobile ? 'sm:grid-cols-1' : 'md:grid-cols-2'}">
 										<div class="space-y-2">
 											<Label for="batch-size">分批大小（页数）</Label>
 											<Input
@@ -2316,7 +2316,7 @@
 								</div>
 
 								{#if enableAutoBackoff}
-									<div class="grid grid-cols-1 gap-4 md:grid-cols-2">
+									<div class="grid grid-cols-1 gap-4 {isMobile ? 'sm:grid-cols-1' : 'md:grid-cols-2'}">
 										<div class="space-y-2">
 											<Label for="auto-backoff-base-seconds">自动退避基础时间（秒）</Label>
 											<Input
@@ -2361,7 +2361,7 @@
 							</div>
 						</div>
 					</div>
-					<SheetFooter class="pb-safe border-t pt-4">
+					<SheetFooter class="{isMobile ? 'pb-safe border-t pt-3 px-4' : 'pb-safe border-t pt-4'}">
 						<Button type="submit" disabled={saving} class="w-full">
 							{saving ? '保存中...' : '保存设置'}
 						</Button>
@@ -2382,7 +2382,7 @@
 	<SheetContent
 		side={isMobile ? 'bottom' : 'right'}
 		class="{isMobile
-			? 'h-[85vh] max-h-[85vh]'
+			? 'h-[90vh] max-h-[90vh] w-full max-w-none overflow-hidden'
 			: '!inset-y-0 !right-0 !h-screen !w-screen !max-w-none'} [&>button]:hidden"
 	>
 		{#if !isMobile && randomCovers.length > 0}
@@ -2404,10 +2404,10 @@
 		<div class="flex h-full items-center justify-center {isMobile ? '' : 'p-8'} relative z-10">
 			<div
 				class="{isMobile
-					? 'bg-background h-full w-full'
+					? 'bg-background h-full w-full max-w-none'
 					: 'bg-card/95 w-full max-w-4xl rounded-lg border shadow-2xl backdrop-blur-sm'} relative overflow-hidden"
 			>
-				<SheetHeader class="{isMobile ? '' : 'border-b p-6'} relative">
+				<SheetHeader class="{isMobile ? 'p-4 border-b' : 'border-b p-6'} relative">
 					<SheetTitle>Aria2监控设置</SheetTitle>
 					<SheetDescription>下载器健康检查和自动重启配置</SheetDescription>
 					<!-- 自定义关闭按钮 -->
@@ -2432,9 +2432,9 @@
 						e.preventDefault();
 						saveConfig();
 					}}
-					class="flex flex-col {isMobile ? 'h-[calc(100%-5rem)]' : 'h-[calc(100%-8rem)]'}"
+					class="flex flex-col {isMobile ? 'h-[calc(90vh-8rem)]' : 'h-[calc(100vh-12rem)]'}"
 				>
-					<div class="flex-1 space-y-6 overflow-y-auto px-6 py-6">
+					<div class="flex-1 space-y-6 overflow-y-auto {isMobile ? 'px-4 py-4' : 'px-6 py-6'}">
 						<!-- Aria2监控配置 -->
 						<div class="rounded-lg border border-blue-200 bg-blue-50 p-4">
 							<h3 class="mb-3 text-sm font-medium text-blue-800">🔍 健康检查配置</h3>
@@ -2544,7 +2544,7 @@
 							</div>
 						</div>
 					</div>
-					<SheetFooter class="pb-safe border-t pt-4">
+					<SheetFooter class="{isMobile ? 'pb-safe border-t pt-3 px-4' : 'pb-safe border-t pt-4'}">
 						<Button type="submit" disabled={saving} class="w-full">
 							{saving ? '保存中...' : '保存设置'}
 						</Button>
@@ -2565,7 +2565,7 @@
 	<SheetContent
 		side={isMobile ? 'bottom' : 'right'}
 		class="{isMobile
-			? 'h-[85vh] max-h-[85vh]'
+			? 'h-[90vh] max-h-[90vh] w-full max-w-none overflow-hidden'
 			: '!inset-y-0 !right-0 !h-screen !w-screen !max-w-none'} [&>button]:hidden"
 	>
 		{#if !isMobile && randomCovers.length > 0}
@@ -2587,10 +2587,10 @@
 		<div class="flex h-full items-center justify-center {isMobile ? '' : 'p-8'} relative z-10">
 			<div
 				class="{isMobile
-					? 'bg-background h-full w-full'
+					? 'bg-background h-full w-full max-w-none'
 					: 'bg-card/95 w-full max-w-4xl rounded-lg border shadow-2xl backdrop-blur-sm'} relative overflow-hidden"
 			>
-				<SheetHeader class="{isMobile ? '' : 'border-b p-6'} relative">
+				<SheetHeader class="{isMobile ? 'p-4 border-b' : 'border-b p-6'} relative">
 					<SheetTitle>系统设置</SheetTitle>
 					<SheetDescription>时区、扫描间隔等其他设置</SheetDescription>
 					<!-- 自定义关闭按钮 -->
@@ -2615,9 +2615,9 @@
 						e.preventDefault();
 						saveConfig();
 					}}
-					class="flex flex-col {isMobile ? 'h-[calc(100%-5rem)]' : 'h-[calc(100%-8rem)]'}"
+					class="flex flex-col {isMobile ? 'h-[calc(90vh-8rem)]' : 'h-[calc(100vh-12rem)]'}"
 				>
-					<div class="flex-1 space-y-6 overflow-y-auto px-6 py-6">
+					<div class="flex-1 space-y-6 overflow-y-auto {isMobile ? 'px-4 py-4' : 'px-6 py-6'}">
 						<!-- Basic System Settings -->
 						<div class="mt-6 space-y-6">
 							<h3 class="text-base font-semibold">基本系统设置</h3>
@@ -2687,7 +2687,7 @@
 							</div>
 						</div>
 					</div>
-					<SheetFooter class="pb-safe border-t pt-4">
+					<SheetFooter class="{isMobile ? 'pb-safe border-t pt-3 px-4' : 'pb-safe border-t pt-4'}">
 						<Button type="submit" disabled={saving} class="w-full">
 							{saving ? '保存中...' : '保存设置'}
 						</Button>

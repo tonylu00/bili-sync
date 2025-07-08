@@ -225,7 +225,7 @@
 			<img
 				src={getProxiedImageUrl(video.cover)}
 				alt={displayTitle}
-				class="aspect-square w-full object-contain transition-transform duration-200 group-hover:scale-105"
+				class="aspect-[4/3] w-full object-cover transition-transform duration-200 group-hover:scale-105"
 				loading="lazy"
 				on:error={(e) => {
 					// 封面加载失败时隐藏整个封面容器
