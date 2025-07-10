@@ -7355,7 +7355,7 @@ async fn extract_video_files_by_database(
         // 检查目录是否为空
         match std::fs::read_dir(&source_dir) {
             Ok(entries) => {
-                let remaining_files: Vec<_> = entries.collect();
+                let remaining_files: Vec<_> = entries.flatten().collect();
                 if remaining_files.is_empty() {
                     info!("   📁 目录为空，尝试删除: {:?}", source_dir);
                     // 目录为空，尝试删除
