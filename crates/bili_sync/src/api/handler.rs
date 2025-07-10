@@ -4469,10 +4469,13 @@ async fn rename_existing_files(
         // 检查视频类型，决定是否需要重命名
         let is_single_page = video.single_page.unwrap_or(true);
         let is_bangumi = video.source_type == Some(1);
+        let is_collection = video.collection_id.is_some();
 
         // 根据视频类型和配置更新情况决定是否跳过
         let should_process_video = if is_bangumi {
             rename_bangumi // 番剧视频只在bangumi_name或video_name更新时处理
+        } else if is_collection {
+            rename_multi_page // 合集视频使用多P视频的重命名逻辑，但需要特殊处理
         } else if is_single_page {
             rename_single_page // 单P视频只在page_name或video_name更新时处理
         } else {
@@ -4482,6 +4485,8 @@ async fn rename_existing_files(
         if !should_process_video {
             let video_type = if is_bangumi {
                 "番剧"
+            } else if is_collection {
+                "合集"
             } else if is_single_page {
                 "单P"
             } else {
@@ -4493,8 +4498,40 @@ async fn rename_existing_files(
 
         // 构建模板数据
         let mut template_data = std::collections::HashMap::new();
-        template_data.insert("title".to_string(), serde_json::Value::String(video.name.clone()));
-        template_data.insert("show_title".to_string(), serde_json::Value::String(video.name.clone()));
+        
+        // 对于合集视频，需要获取合集名称
+        let collection_name = if is_collection {
+            if let Some(collection_id) = video.collection_id {
+                match bili_sync_entity::collection::Entity::find_by_id(collection_id)
+                    .one(db.as_ref())
+                    .await
+                {
+                    Ok(Some(collection)) => Some(collection.name),
+                    Ok(None) => {
+                        warn!("合集ID {} 不存在", collection_id);
+                        None
+                    }
+                    Err(e) => {
+                        error!("查询合集信息失败: {}", e);
+                        None
+                    }
+                }
+            } else {
+                None
+            }
+        } else {
+            None
+        };
+        
+        // 设置title: 合集使用合集名称，其他使用视频名称
+        let display_title = if let Some(ref coll_name) = collection_name {
+            coll_name.clone()
+        } else {
+            video.name.clone()
+        };
+        
+        template_data.insert("title".to_string(), serde_json::Value::String(display_title.clone()));
+        template_data.insert("show_title".to_string(), serde_json::Value::String(display_title));
         template_data.insert("bvid".to_string(), serde_json::Value::String(video.bvid.clone()));
         template_data.insert(
             "upper_name".to_string(),
@@ -4504,6 +4541,12 @@ async fn rename_existing_files(
             "upper_mid".to_string(),
             serde_json::Value::String(video.upper_id.to_string()),
         );
+        
+        // 为合集添加额外的模板变量
+        if let Some(ref coll_name) = collection_name {
+            template_data.insert("collection_name".to_string(), serde_json::Value::String(coll_name.clone()));
+            template_data.insert("video_name".to_string(), serde_json::Value::String(video.name.clone()));
+        }
 
         // 格式化时间
         let formatted_pubtime = video.pubtime.format(&config.time_format).to_string();
@@ -4568,8 +4611,33 @@ async fn rename_existing_files(
                 // 如果模板包含会产生相同名称的变量（如upper_name），则不使用智能去重
                 // 如果模板包含会产生不同名称的变量（如title），则使用智能去重避免冲突
                 let video_template = config.video_name.as_ref();
-                let needs_deduplication = video_template.contains("title")
+                let basic_needs_deduplication = video_template.contains("title")
                     || video_template.contains("name") && !video_template.contains("upper_name");
+                
+                // **修复：为合集和多P视频的Season结构添加例外处理**
+                // 对于启用Season结构的合集和多P视频，相同路径是期望行为，不应该被当作冲突
+                let should_skip_deduplication = {
+                    // 合集视频且启用合集Season结构
+                    if is_collection && config.collection_use_season_structure {
+                        true
+                    }
+                    // 多P视频且启用多P Season结构
+                    else if !is_single_page && config.multi_page_use_season_structure {
+                        true
+                    }
+                    else {
+                        false
+                    }
+                };
+                
+                let needs_deduplication = basic_needs_deduplication && !should_skip_deduplication;
+                
+                if should_skip_deduplication {
+                    info!("🔧 跳过冲突检测: 视频 {} (合集: {}, 多P Season: {}, 合集 Season: {})", 
+                          video.bvid, is_collection, 
+                          !is_single_page && config.multi_page_use_season_structure,
+                          is_collection && config.collection_use_season_structure);
+                }
 
                 let expected_new_path = if needs_deduplication {
                     // 使用智能去重生成唯一文件夹名
