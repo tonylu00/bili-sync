@@ -269,6 +269,8 @@ pub struct ConfigResponse {
     pub multi_page_use_season_structure: bool,
     // 合集目录结构配置
     pub collection_use_season_structure: bool,
+    // 番剧目录结构配置
+    pub bangumi_use_season_structure: bool,
     // B站凭证信息
     pub credential: Option<CredentialInfo>,
 }

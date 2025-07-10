@@ -1,3 +1,4 @@
+pub mod bangumi_name_extractor;
 pub mod convert;
 pub mod filenamify;
 pub mod format_arg;

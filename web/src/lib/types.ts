@@ -240,6 +240,8 @@ export interface ConfigResponse {
 	multi_page_use_season_structure?: boolean;
 	// 合集目录结构配置
 	collection_use_season_structure?: boolean;
+	// 番剧目录结构配置
+	bangumi_use_season_structure?: boolean;
 	// B站凭证信息
 	credential?: {
 		sessdata: string;
@@ -320,6 +322,8 @@ export interface UpdateConfigRequest {
 	multi_page_use_season_structure?: boolean;
 	// 合集目录结构配置
 	collection_use_season_structure?: boolean;
+	// 番剧目录结构配置
+	bangumi_use_season_structure?: boolean;
 }
 
 // 更新配置响应类型

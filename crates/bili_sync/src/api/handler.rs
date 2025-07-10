@@ -3562,6 +3562,8 @@ pub async fn get_config() -> Result<ApiResponse<crate::api::response::ConfigResp
         multi_page_use_season_structure: config.multi_page_use_season_structure,
         // 合集目录结构配置
         collection_use_season_structure: config.collection_use_season_structure,
+        // 番剧目录结构配置
+        bangumi_use_season_structure: config.bangumi_use_season_structure,
         // B站凭证信息
         credential: {
             let credential = config.credential.load();
@@ -3658,6 +3660,8 @@ pub async fn update_config(
             multi_page_use_season_structure: params.multi_page_use_season_structure,
             // 合集目录结构配置
             collection_use_season_structure: params.collection_use_season_structure,
+            // 番剧目录结构配置
+            bangumi_use_season_structure: params.bangumi_use_season_structure,
             task_id: task_id.clone(),
         };
 
@@ -4202,6 +4206,14 @@ pub async fn update_config_internal(
         if use_season_structure != config.collection_use_season_structure {
             config.collection_use_season_structure = use_season_structure;
             updated_fields.push("collection_use_season_structure");
+        }
+    }
+
+    // 处理番剧目录结构配置
+    if let Some(use_season_structure) = params.bangumi_use_season_structure {
+        if use_season_structure != config.bangumi_use_season_structure {
+            config.bangumi_use_season_structure = use_season_structure;
+            updated_fields.push("bangumi_use_season_structure");
         }
     }
 
