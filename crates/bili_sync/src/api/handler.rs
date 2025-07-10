@@ -7109,14 +7109,7 @@ async fn extract_video_files_by_database(
             match std::fs::read_dir(page_dir) {
                 Ok(entries) => {
                     info!("   ✅ 成功读取目录，开始扫描文件");
-                },
-                Err(e) => {
-                    warn!("   ❌ 无法读取目录 {:?}: {}", page_dir, e);
-                    continue;
-                }
-            }
-            if let Ok(entries) = std::fs::read_dir(page_dir) {
-                for entry in entries.flatten() {
+                    for entry in entries.flatten() {
                     let file_path = entry.path();
 
                     // 检查文件是否属于当前页面
@@ -7244,6 +7237,11 @@ async fn extract_video_files_by_database(
                             debug!("       🔍 文件不匹配基础名，跳过: {:?} (基础名: {})", file_path, original_base_name);
                         }
                     }
+                }
+                }
+                Err(e) => {
+                    warn!("   ❌ 无法读取目录 {:?}: {}", page_dir, e);
+                    continue;
                 }
             }
         }
