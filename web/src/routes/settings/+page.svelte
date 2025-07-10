@@ -180,21 +180,21 @@
 	let enableAria2HealthCheck = false;
 	let enableAria2AutoRestart = false;
 	let aria2HealthCheckInterval = 300;
-	
+
 	// 多P视频目录结构配置
 	let multiPageUseSeasonStructure = false;
-	
+
 	// 合集目录结构配置
 	let collectionUseSeasonStructure = false;
 
 	// 显示帮助信息的状态（在文件命名抽屉中使用）
 	let showHelp = false;
-	let showNamingHelp = false;
-	let showVariableHelp = false;
 
 	// 验证相关状态
 	let pageNameError = '';
 	let pageNameValid = true;
+	let multiPageNameError = '';
+	let multiPageNameValid = true;
 
 	// 互斥逻辑：视频文件名模板 vs 多P视频文件名模板
 	let videoNameHasPath = false;
@@ -438,10 +438,10 @@
 			enableAria2HealthCheck = config.enable_aria2_health_check ?? false;
 			enableAria2AutoRestart = config.enable_aria2_auto_restart ?? false;
 			aria2HealthCheckInterval = config.aria2_health_check_interval ?? 300;
-			
+
 			// 多P视频目录结构配置
 			multiPageUseSeasonStructure = config.multi_page_use_season_structure ?? false;
-			
+
 			// 合集目录结构配置
 			collectionUseSeasonStructure = config.collection_use_season_structure ?? false;
 		} catch (error: any) {
@@ -469,6 +469,18 @@
 		return true;
 	}
 
+	// 验证多P视频文件名模板
+	function validateMultiPageName(value: string) {
+		if (value.includes('/') || value.includes('\\')) {
+			multiPageNameError = '多P视频文件名模板不应包含路径分隔符 / 或 \\';
+			multiPageNameValid = false;
+			return false;
+		}
+		multiPageNameError = '';
+		multiPageNameValid = true;
+		return true;
+	}
+
 	// 互斥逻辑处理
 	function handleVideoNameChange(value: string) {
 		videoNameHasPath = hasPathSeparator(value);
@@ -486,6 +498,7 @@
 	}
 
 	function handleMultiPageNameChange(value: string) {
+		validateMultiPageName(value);
 		multiPageNameHasPath = hasPathSeparator(value);
 		if (multiPageNameHasPath && videoNameHasPath) {
 			// 如果多P模板设置了路径，清空视频文件名模板中的路径
@@ -505,6 +518,9 @@
 		if (pageName) {
 			validatePageName(pageName);
 		}
+		if (multiPageName) {
+			validateMultiPageName(multiPageName);
+		}
 		videoNameHasPath = hasPathSeparator(videoName);
 		multiPageNameHasPath = hasPathSeparator(multiPageName);
 	}
@@ -515,6 +531,12 @@
 			// 保存前验证
 			if (!validatePageName(pageName)) {
 				toast.error('配置验证失败', { description: pageNameError });
+				saving = false;
+				return;
+			}
+
+			if (!validateMultiPageName(multiPageName)) {
+				toast.error('配置验证失败', { description: multiPageNameError });
 				saving = false;
 				return;
 			}
@@ -651,7 +673,11 @@
 				</div>
 			{:else}
 				<!-- 设置分类卡片列表 -->
-				<div class="grid gap-4 grid-cols-1 {isMobile ? 'xs:grid-cols-1' : 'sm:grid-cols-2 lg:grid-cols-3'}">
+				<div
+					class="grid grid-cols-1 gap-4 {isMobile
+						? 'xs:grid-cols-1'
+						: 'sm:grid-cols-2 lg:grid-cols-3'}"
+				>
 					{#each settingCategories as category}
 						<Card
 							class="hover:border-primary/50 cursor-pointer transition-all hover:shadow-md"
@@ -712,13 +738,13 @@
 					? 'bg-background h-full w-full max-w-none'
 					: 'bg-card/95 w-full max-w-4xl rounded-lg border shadow-2xl backdrop-blur-sm'} relative"
 			>
-				<SheetHeader class="{isMobile ? 'p-4 border-b' : 'border-b p-6'} relative">
+				<SheetHeader class="{isMobile ? 'border-b p-4' : 'border-b p-6'} relative">
 					<SheetTitle>文件命名设置</SheetTitle>
 					<SheetDescription>配置视频、分页、番剧等文件命名模板</SheetDescription>
 					<!-- 自定义关闭按钮 -->
 					<button
 						onclick={() => (openSheet = null)}
-						class="ring-offset-background focus:ring-ring absolute top-2 right-2 rounded-sm p-1 opacity-70 transition-opacity hover:bg-gray-100 hover:opacity-100 focus:ring-2 focus:ring-offset-2 focus:outline-none disabled:pointer-events-none"
+						class="ring-offset-background focus:ring-ring absolute right-2 top-2 rounded-sm p-1 opacity-70 transition-opacity hover:bg-gray-100 hover:opacity-100 focus:outline-none focus:ring-2 focus:ring-offset-2 disabled:pointer-events-none"
 						type="button"
 					>
 						<svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -739,7 +765,9 @@
 					}}
 					class="flex flex-col {isMobile ? 'h-[calc(90vh-8rem)]' : 'h-[calc(100vh-12rem)]'}"
 				>
-					<div class="min-h-0 flex-1 space-y-6 overflow-y-auto {isMobile ? 'px-4 py-4' : 'px-6 py-6'}">
+					<div
+						class="min-h-0 flex-1 space-y-6 overflow-y-auto {isMobile ? 'px-4 py-4' : 'px-6 py-6'}"
+					>
 						<div class="flex items-center justify-between">
 							<h3 class="text-base font-semibold">文件命名模板</h3>
 							<button
@@ -753,7 +781,11 @@
 
 						{#if showHelp}
 							<div class="rounded-lg border border-blue-200 bg-blue-50 p-4">
-								<div class="grid grid-cols-1 gap-4 text-sm {isMobile ? 'sm:grid-cols-1' : 'md:grid-cols-2'}">
+								<div
+									class="grid grid-cols-1 gap-4 text-sm {isMobile
+										? 'sm:grid-cols-1'
+										: 'md:grid-cols-2'}"
+								>
 									<div>
 										<h4 class="mb-2 font-medium text-blue-900">视频变量</h4>
 										<div class="space-y-1">
@@ -779,7 +811,7 @@
 												</div>
 											{/each}
 										</div>
-										<h4 class="mt-4 mb-2 font-medium text-blue-900">通用函数</h4>
+										<h4 class="mb-2 mt-4 font-medium text-blue-900">通用函数</h4>
 										<div class="space-y-1">
 											{#each variableHelp.common as item}
 												<div class="flex">
@@ -808,32 +840,8 @@
 							</div>
 						{/if}
 
-						<!-- 文件命名模板说明按钮 -->
-						<div class="mb-4 flex items-center justify-between">
+						<div class="mb-4">
 							<h4 class="text-lg font-medium">文件命名设置</h4>
-							<Button
-								variant="outline"
-								size="sm"
-								onclick={() => (showNamingHelp = !showNamingHelp)}
-								class="h-8"
-							>
-								{showNamingHelp ? '隐藏' : '显示'}说明
-								<svg
-									class="ml-1 h-4 w-4 transform transition-transform {showNamingHelp
-										? 'rotate-180'
-										: ''}"
-									fill="none"
-									stroke="currentColor"
-									viewBox="0 0 24 24"
-								>
-									<path
-										stroke-linecap="round"
-										stroke-linejoin="round"
-										stroke-width="2"
-										d="M19 9l-7 7-7-7"
-									/>
-								</svg>
-							</Button>
 						</div>
 
 						<!-- 互斥提示面板 -->
@@ -857,187 +865,6 @@
 								• 推荐在"视频文件名模板"中设置UP主分类，在"多P模板"中只设置文件名
 							</p>
 						</div>
-
-						{#if showNamingHelp}
-							<div class="mb-4 rounded-lg border border-blue-200 bg-blue-50 p-4">
-								<h5 class="mb-3 font-medium text-blue-800">📝 文件命名模板详细说明</h5>
-								<div class="space-y-4 text-sm text-blue-700">
-									<div class="rounded-md bg-blue-100 p-3">
-										<p class="mb-2 font-semibold text-blue-900">⚠️ 重要声明</p>
-										<div class="space-y-1 text-sm">
-											<p>
-												• <strong
-													>要实现按UP主分类的文件夹结构，请在"视频文件名模板"中设置路径！</strong
-												>
-											</p>
-											<p>
-												• <strong class="text-red-700"
-													>"单P视频文件名模板"严禁使用路径分隔符 / 或 \</strong
-												>，仅控制最终文件名
-											</p>
-											<p>• 路径分隔符 <code>/</code> 会自动创建对应的文件夹层级结构</p>
-											<p>
-												• 非法字符（如 <code>:</code> <code>*</code> <code>?</code>
-												<code>&lt;</code> <code>&gt;</code> <code>|</code>）会自动替换为
-												<code>_</code>
-											</p>
-											<p>• 模板变量区分大小写，请确保变量名拼写正确</p>
-											<p>• 变量不存在或为空时，会显示为空字符串</p>
-										</div>
-									</div>
-
-									<div class="grid grid-cols-1 gap-3 {isMobile ? 'sm:grid-cols-1' : 'md:grid-cols-2'}">
-										<div class="rounded-md border border-blue-300 bg-white p-3">
-											<p class="mb-2 font-medium text-blue-900">
-												📁 <strong>视频文件名模板</strong>
-											</p>
-											<p>• <strong>主要作用</strong>：控制文件夹层级结构和主路径</p>
-											<p>• <strong>支持功能</strong>：使用 <code>/</code> 创建子目录结构</p>
-											<p>
-												• <strong>推荐设置</strong>：<code
-													>{`{{upper_name}}/{{pubdate}}-{{title}}`}</code
-												>
-											</p>
-											<p class="mt-1 text-xs text-blue-600">👆 这样设置会按UP主名称创建文件夹</p>
-										</div>
-										<div class="rounded-md border border-red-300 bg-red-50 p-3">
-											<p class="mb-2 font-medium text-red-900">
-												🎬 <strong>单P视频文件名模板</strong>
-											</p>
-											<p>• <strong>主要作用</strong>：控制最终的视频文件名</p>
-											<p>
-												• <strong class="text-red-700">严格限制</strong>：严禁使用路径分隔符
-												<code>/</code>
-												或 <code>\</code>
-											</p>
-											<p>
-												• <strong>推荐设置</strong>：<code>{`{{title}}`}</code> 或
-												<code>{`{{bvid}}-{{title}}`}</code>
-											</p>
-											<p class="mt-1 text-xs text-red-600">⚠️ 使用路径分隔符会导致文件夹嵌套混乱</p>
-										</div>
-										<div class="rounded-md border border-blue-300 bg-white p-3">
-											<p class="mb-2 font-medium text-blue-900">
-												📺 <strong>多P视频文件名模板</strong>
-											</p>
-											<p>• <strong>主要作用</strong>：控制多分P视频的组织方式</p>
-											<p>
-												• <strong>重要提醒</strong>：<span class="text-orange-600"
-													>不要重复使用UP主路径，避免嵌套</span
-												>
-											</p>
-											<p>
-												• <strong>推荐设置</strong>：<code
-													>{`{{title}}/P{{pid_pad}}.{{ptitle}}`}</code
-												>
-											</p>
-											<p class="mt-1 text-xs text-blue-600">👆 这样会在视频文件夹下创建分P文件</p>
-										</div>
-										<div class="rounded-md border border-blue-300 bg-white p-3">
-											<p class="mb-2 font-medium text-blue-900">
-												🎭 <strong>番剧文件名模板</strong>
-											</p>
-											<p>• <strong>主要作用</strong>：控制番剧的季度文件夹结构</p>
-											<p>• <strong>支持功能</strong>：季集编号自动格式化</p>
-											<p>
-												• <strong>推荐设置</strong>：<code
-													>{`{{title}}/Season {{season_pad}}/S{{season_pad}}E{{pid_pad}}`}</code
-												>
-											</p>
-											<p class="mt-1 text-xs text-blue-600">👆 标准的番剧组织结构</p>
-										</div>
-									</div>
-
-									<div class="rounded-md border border-amber-300 bg-amber-100 p-3">
-										<p class="mb-2 font-semibold text-amber-800">❓ 常见问题解答</p>
-										<div class="space-y-2 text-sm text-amber-700">
-											<div>
-												<p class="font-medium">Q: 为什么我设置了路径但还是生成单文件夹？</p>
-												<p>
-													A: 请检查您是否在正确的字段中设置了路径。要创建子文件夹，需要在<strong
-														>"视频文件名模板"</strong
-													>中使用 <code>/</code>。
-												</p>
-											</div>
-											<div>
-												<p class="font-medium">Q: 文件名太长被截断怎么办？</p>
-												<p>
-													A: 使用 <code>{`{{truncate title 20}}`}</code> 限制标题长度，或者调整模板减少不必要的信息。
-												</p>
-											</div>
-											<div>
-												<p class="font-medium">Q: 时间格式如何自定义？</p>
-												<p>
-													A: 在"时间格式"字段中设置，如 <code>%Y-%m-%d</code> 生成 2025-04-29 格式。
-												</p>
-											</div>
-											<div>
-												<p class="font-medium">Q: 如何避免文件名中的特殊字符？</p>
-												<p>A: 系统会自动将不安全字符替换为下划线，无需手动处理。</p>
-											</div>
-										</div>
-									</div>
-
-									<div class="rounded-md border border-green-300 bg-green-100 p-3">
-										<p class="mb-2 font-semibold text-green-800">✅ 推荐配置方案</p>
-										<div class="space-y-3 text-sm">
-											<div class="rounded border border-green-200 bg-white p-2">
-												<p class="font-medium text-green-800">方案一：视频模板控制路径 🎯 推荐</p>
-												<p>
-													<strong>视频文件名模板</strong>：<code>{`{{upper_name}}`}</code>
-												</p>
-												<p>
-													<strong>单P视频文件名模板</strong>：<code
-														>{`{{pubtime}}-{{bvid}}-{{truncate title 20}}`}</code
-													>
-												</p>
-												<p>
-													<strong>多P视频文件名模板</strong>：<code
-														>{`{{title}}/P{{pid_pad}}.{{ptitle}}`}</code
-													>
-												</p>
-												<p class="mt-1 text-xs text-green-600">
-													📂 结果：庄心妍/视频标题/P01.分集标题.mp4
-												</p>
-											</div>
-											<div class="rounded border border-blue-200 bg-blue-50 p-2">
-												<p class="font-medium text-blue-800">方案二：多P模板控制路径</p>
-												<p>
-													<strong>视频文件名模板</strong>：<code>{`{{title}}`}</code>
-												</p>
-												<p>
-													<strong>单P视频文件名模板</strong>：<code
-														>{`{{pubtime}}-{{bvid}}-{{truncate title 20}}`}</code
-													>
-												</p>
-												<p>
-													<strong>多P视频文件名模板</strong>：<code
-														>{`{{upper_name}}/{{title}}/P{{pid_pad}}.{{ptitle}}`}</code
-													>
-												</p>
-												<p class="mt-1 text-xs text-blue-600">
-													📂 结果：庄心妍/视频标题/P01.分集标题.mp4
-												</p>
-											</div>
-											<div class="rounded border border-red-200 bg-red-50 p-2">
-												<p class="font-medium text-red-800">❌ 错误示例：双重路径</p>
-												<p>
-													<strong>视频文件名模板</strong>：<code>{`{{upper_name}}/{{title}}`}</code>
-												</p>
-												<p>
-													<strong>多P视频文件名模板</strong>：<code
-														>{`{{upper_name}}/{{title}}/P{{pid_pad}}`}</code
-													>
-												</p>
-												<p class="mt-1 text-xs text-red-600">
-													📂 错误结果：庄心妍/视频标题/庄心妍/视频标题/P01.mp4 （重复嵌套）
-												</p>
-											</div>
-										</div>
-									</div>
-								</div>
-							</div>
-						{/if}
 
 						<div class="grid grid-cols-1 gap-4 {isMobile ? 'sm:grid-cols-1' : 'md:grid-cols-2'}">
 							<div class="space-y-2">
@@ -1082,17 +909,25 @@
 									id="multi-page-name"
 									bind:value={multiPageName}
 									placeholder={`{{title}}/P{{pid_pad}}.{{ptitle}}`}
-									class={videoNameHasPath ? 'border-orange-400 bg-orange-50' : ''}
+									class={!multiPageNameValid
+										? 'border-red-500 focus:border-red-500'
+										: videoNameHasPath && multiPageNameHasPath
+											? 'border-orange-400 bg-orange-50'
+											: ''}
 									oninput={(e) =>
 										handleMultiPageNameChange((e.target as HTMLInputElement)?.value || '')}
 								/>
-								{#if videoNameHasPath && multiPageNameHasPath}
+								{#if multiPageNameError}
+									<p class="text-xs text-red-500">{multiPageNameError}</p>
+								{/if}
+								{#if !multiPageNameError && videoNameHasPath && multiPageNameHasPath}
 									<p class="text-xs text-orange-600">
-										⚠️ 视频模板已设置路径，此模板将自动移除路径设置避免冲突
+										⚠️ 检测到路径冲突：视频文件名模板和多P模板都包含路径，系统将自动调整避免冲突
 									</p>
 								{/if}
 								<p class="text-muted-foreground text-xs">
-									控制多P视频的文件夹和文件名结构，<strong>不要重复使用UP主路径</strong>
+									控制多P视频的具体文件名，<strong>不允许使用路径分隔符 / 或 \</strong>。
+									如果需要目录结构，请在视频文件名模板中设置，避免与视频文件名模板冲突。
 								</p>
 							</div>
 
@@ -1107,7 +942,7 @@
 									/>
 									<Label
 										for="multi-page-season"
-										class="text-sm leading-none font-medium peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
+										class="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
 									>
 										多P视频使用Season文件夹结构
 									</Label>
@@ -1128,7 +963,7 @@
 									/>
 									<Label
 										for="collection-season"
-										class="text-sm leading-none font-medium peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
+										class="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
 									>
 										合集使用Season文件夹结构
 									</Label>
@@ -1146,7 +981,11 @@
 
 							<div class="space-y-2">
 								<Label for="bangumi-folder-name">番剧文件夹名模板</Label>
-								<Input id="bangumi-folder-name" bind:value={bangumiFolderName} placeholder={`{{title}}`} />
+								<Input
+									id="bangumi-folder-name"
+									bind:value={bangumiFolderName}
+									placeholder={`{{title}}`}
+								/>
 								<p class="text-muted-foreground text-xs">控制番剧主文件夹的命名，包含元数据文件</p>
 							</div>
 						</div>
@@ -1163,7 +1002,7 @@
 								<select
 									id="collection-folder-mode"
 									bind:value={collectionFolderMode}
-									class="border-input bg-background ring-offset-background focus-visible:ring-ring flex h-10 w-full rounded-md border px-3 py-2 text-sm focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:outline-none"
+									class="border-input bg-background ring-offset-background focus-visible:ring-ring flex h-10 w-full rounded-md border px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2"
 								>
 									<option value="separate">分离模式</option>
 									<option value="unified" selected>统一模式</option>
@@ -1186,7 +1025,7 @@
 							<select
 								id="nfo-time-type"
 								bind:value={nfoTimeType}
-								class="border-input bg-background ring-offset-background focus-visible:ring-ring flex h-10 w-full rounded-md border px-3 py-2 text-sm focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:outline-none"
+								class="border-input bg-background ring-offset-background focus-visible:ring-ring flex h-10 w-full rounded-md border px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2"
 							>
 								{#each nfoTimeTypeOptions as option}
 									<option value={option.value}>{option.label}</option>
@@ -1198,91 +1037,8 @@
 								更改此设置后，系统会自动重置所有NFO相关任务状态，并立即开始重新生成NFO文件以应用新的时间类型。
 							</p>
 						</div>
-
-						<!-- 变量参考面板 -->
-						<div class="rounded-lg border border-orange-200 bg-orange-50 p-4">
-							<div class="mb-3 flex items-center justify-between">
-								<h5 class="font-medium text-orange-800">🔧 模板变量参考</h5>
-								<Button
-									variant="ghost"
-									size="sm"
-									onclick={() => (showVariableHelp = !showVariableHelp)}
-									class="h-6 text-orange-600 hover:text-orange-800"
-								>
-									{showVariableHelp ? '收起' : '展开'}
-									<svg
-										class="ml-1 h-3 w-3 transform transition-transform {showVariableHelp
-											? 'rotate-180'
-											: ''}"
-										fill="none"
-										stroke="currentColor"
-										viewBox="0 0 24 24"
-									>
-										<path
-											stroke-linecap="round"
-											stroke-linejoin="round"
-											stroke-width="2"
-											d="M19 9l-7 7-7-7"
-										/>
-									</svg>
-								</Button>
-							</div>
-
-							{#if showVariableHelp}
-								<div class="grid grid-cols-1 gap-4 pb-4 text-sm text-orange-700 {isMobile ? 'sm:grid-cols-1' : 'md:grid-cols-2'}">
-									<div>
-										<p class="mb-2 font-medium">📊 基础变量</p>
-										<div class="space-y-1 pl-2">
-											<p>• <code>{`{{title}}`}</code> - 视频标题</p>
-											<p>• <code>{`{{show_title}}`}</code> - 节目标题</p>
-											<p>• <code>{`{{bvid}}`}</code> - 视频BV号</p>
-											<p>• <code>{`{{upper_name}}`}</code> - UP主名称</p>
-											<p>• <code>{`{{upper_mid}}`}</code> - UP主ID</p>
-										</div>
-									</div>
-									<div>
-										<p class="mb-2 font-medium">⏰ 时间变量</p>
-										<div class="space-y-1 pl-2">
-											<p>• <code>{`{{pubtime}}`}</code> - 发布时间</p>
-											<p>• <code>{`{{fav_time}}`}</code> - 收藏时间</p>
-											<p>• <code>{`{{ctime}}`}</code> - 创建时间</p>
-										</div>
-									</div>
-									<div>
-										<p class="mb-2 font-medium">📚 多P/番剧变量</p>
-										<div class="space-y-1 pl-2">
-											<p>• <code>{`{{pid}}`}</code> - 分P序号</p>
-											<p>• <code>{`{{pid_pad}}`}</code> - 分P序号(补零)</p>
-											<p>• <code>{`{{ptitle}}`}</code> - 分P标题</p>
-											<p>• <code>{`{{season}}`}</code> - 季度编号</p>
-											<p>• <code>{`{{season_pad}}`}</code> - 季度编号(补零)</p>
-											<p>• <code>{`{{duration}}`}</code> - 视频时长</p>
-											<p>• <code>{`{{width}}`}</code> - 视频宽度</p>
-											<p>• <code>{`{{height}}`}</code> - 视频高度</p>
-										</div>
-									</div>
-									<div>
-										<p class="mb-2 font-medium">🛠️ 高级功能</p>
-										<div class="space-y-1 pl-2">
-											<p>• <code>{`{{truncate title 20}}`}</code> - 截断标题</p>
-											<p>• 使用 <code>/</code> 创建子文件夹</p>
-											<p>• 非法字符自动替换为 <code>_</code></p>
-											<p>• 时间格式由"时间格式"设置控制</p>
-										</div>
-									</div>
-								</div>
-								<div class="mt-4 rounded-md bg-orange-100 p-3">
-									<p class="mb-1 font-medium text-orange-800">💡 配置建议</p>
-									<p class="text-sm text-orange-700">
-										• 要按UP主分类，在"视频文件名模板"中使用：<code>{`{{upper_name}}`}</code><br />
-										• "单P视频文件名模板"<strong class="text-red-700">严禁使用路径分隔符</strong
-										>，推荐：<code>{`{{pubtime}}-{{bvid}}-{{truncate title 20}}`}</code>
-									</p>
-								</div>
-							{/if}
-						</div>
 					</div>
-					<SheetFooter class="{isMobile ? 'pb-safe border-t pt-3 px-4' : 'pb-safe border-t pt-4'}">
+					<SheetFooter class={isMobile ? 'pb-safe border-t px-4 pt-3' : 'pb-safe border-t pt-4'}>
 						<Button type="submit" disabled={saving || !pageNameValid} class="w-full">
 							{saving ? '保存中...' : '保存设置'}
 						</Button>
@@ -1331,13 +1087,13 @@
 					? 'bg-background h-full w-full max-w-none'
 					: 'bg-card/95 w-full max-w-4xl rounded-lg border shadow-2xl backdrop-blur-sm'} relative overflow-hidden"
 			>
-				<SheetHeader class="{isMobile ? 'p-4 border-b' : 'border-b p-6'} relative">
+				<SheetHeader class="{isMobile ? 'border-b p-4' : 'border-b p-6'} relative">
 					<SheetTitle>视频质量设置</SheetTitle>
 					<SheetDescription>设置视频/音频质量、编解码器等参数</SheetDescription>
 					<!-- 自定义关闭按钮 -->
 					<button
 						onclick={() => (openSheet = null)}
-						class="ring-offset-background focus:ring-ring absolute top-2 right-2 rounded-sm p-1 opacity-70 transition-opacity hover:bg-gray-100 hover:opacity-100 focus:ring-2 focus:ring-offset-2 focus:outline-none disabled:pointer-events-none"
+						class="ring-offset-background focus:ring-ring absolute right-2 top-2 rounded-sm p-1 opacity-70 transition-opacity hover:bg-gray-100 hover:opacity-100 focus:outline-none focus:ring-2 focus:ring-offset-2 disabled:pointer-events-none"
 						type="button"
 					>
 						<svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -1365,7 +1121,7 @@
 								<select
 									id="video-max-quality"
 									bind:value={videoMaxQuality}
-									class="border-input bg-background ring-offset-background focus-visible:ring-ring flex h-10 w-full rounded-md border px-3 py-2 text-sm focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:outline-none"
+									class="border-input bg-background ring-offset-background focus-visible:ring-ring flex h-10 w-full rounded-md border px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2"
 								>
 									{#each videoQualityOptions as option}
 										<option value={option.value}>{option.label}</option>
@@ -1378,7 +1134,7 @@
 								<select
 									id="video-min-quality"
 									bind:value={videoMinQuality}
-									class="border-input bg-background ring-offset-background focus-visible:ring-ring flex h-10 w-full rounded-md border px-3 py-2 text-sm focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:outline-none"
+									class="border-input bg-background ring-offset-background focus-visible:ring-ring flex h-10 w-full rounded-md border px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2"
 								>
 									{#each videoQualityOptions as option}
 										<option value={option.value}>{option.label}</option>
@@ -1391,7 +1147,7 @@
 								<select
 									id="audio-max-quality"
 									bind:value={audioMaxQuality}
-									class="border-input bg-background ring-offset-background focus-visible:ring-ring flex h-10 w-full rounded-md border px-3 py-2 text-sm focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:outline-none"
+									class="border-input bg-background ring-offset-background focus-visible:ring-ring flex h-10 w-full rounded-md border px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2"
 								>
 									{#each audioQualityOptions as option}
 										<option value={option.value}>{option.label}</option>
@@ -1404,7 +1160,7 @@
 								<select
 									id="audio-min-quality"
 									bind:value={audioMinQuality}
-									class="border-input bg-background ring-offset-background focus-visible:ring-ring flex h-10 w-full rounded-md border px-3 py-2 text-sm focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:outline-none"
+									class="border-input bg-background ring-offset-background focus-visible:ring-ring flex h-10 w-full rounded-md border px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2"
 								>
 									{#each audioQualityOptions as option}
 										<option value={option.value}>{option.label}</option>
@@ -1545,7 +1301,7 @@
 							</div>
 						</div>
 					</div>
-					<SheetFooter class="{isMobile ? 'pb-safe border-t pt-3 px-4' : 'pb-safe border-t pt-4'}">
+					<SheetFooter class={isMobile ? 'pb-safe border-t px-4 pt-3' : 'pb-safe border-t pt-4'}>
 						<Button type="submit" disabled={saving} class="w-full">
 							{saving ? '保存中...' : '保存设置'}
 						</Button>
@@ -1591,13 +1347,13 @@
 					? 'bg-background h-full w-full max-w-none'
 					: 'bg-card/95 w-full max-w-4xl rounded-lg border shadow-2xl backdrop-blur-sm'} relative overflow-hidden"
 			>
-				<SheetHeader class="{isMobile ? 'p-4 border-b' : 'border-b p-6'} relative">
+				<SheetHeader class="{isMobile ? 'border-b p-4' : 'border-b p-6'} relative">
 					<SheetTitle>下载设置</SheetTitle>
 					<SheetDescription>并行下载、并发控制、速率限制配置</SheetDescription>
 					<!-- 自定义关闭按钮 -->
 					<button
 						onclick={() => (openSheet = null)}
-						class="ring-offset-background focus:ring-ring absolute top-2 right-2 rounded-sm p-1 opacity-70 transition-opacity hover:bg-gray-100 hover:opacity-100 focus:ring-2 focus:ring-offset-2 focus:outline-none disabled:pointer-events-none"
+						class="ring-offset-background focus:ring-ring absolute right-2 top-2 rounded-sm p-1 opacity-70 transition-opacity hover:bg-gray-100 hover:opacity-100 focus:outline-none focus:ring-2 focus:ring-offset-2 disabled:pointer-events-none"
 						type="button"
 					>
 						<svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -1631,12 +1387,11 @@
 								/>
 								<Label
 									for="parallel-download"
-									class="text-sm leading-none font-medium peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
+									class="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
 								>
 									启用多线程下载
 								</Label>
 							</div>
-
 
 							{#if parallelDownloadEnabled}
 								<div class="ml-6 space-y-2">
@@ -1728,11 +1483,13 @@
 								<p><strong>目录层级：</strong>视频名称/Season 01/分P文件</p>
 								<p><strong>媒体库兼容：</strong>Emby/Jellyfin能正确识别为TV Show剧集</p>
 								<p><strong>文件命名：</strong>保持现有的multi_page_name模板不变</p>
-								<p class="text-green-600"><strong>注意：</strong>默认关闭保持向后兼容，启用后新下载的多P视频将使用新结构</p>
+								<p class="text-green-600">
+									<strong>注意：</strong>默认关闭保持向后兼容，启用后新下载的多P视频将使用新结构
+								</p>
 							</div>
 						</div>
 					</div>
-					<SheetFooter class="{isMobile ? 'pb-safe border-t pt-3 px-4' : 'pb-safe border-t pt-4'}">
+					<SheetFooter class={isMobile ? 'pb-safe border-t px-4 pt-3' : 'pb-safe border-t pt-4'}>
 						<Button type="submit" disabled={saving} class="w-full">
 							{saving ? '保存中...' : '保存设置'}
 						</Button>
@@ -1778,13 +1535,13 @@
 					? 'bg-background h-full w-full max-w-none'
 					: 'bg-card/95 w-full max-w-4xl rounded-lg border shadow-2xl backdrop-blur-sm'} relative overflow-hidden"
 			>
-				<SheetHeader class="{isMobile ? 'p-4 border-b' : 'border-b p-6'} relative">
+				<SheetHeader class="{isMobile ? 'border-b p-4' : 'border-b p-6'} relative">
 					<SheetTitle>弹幕设置</SheetTitle>
 					<SheetDescription>弹幕显示样式和布局参数</SheetDescription>
 					<!-- 自定义关闭按钮 -->
 					<button
 						onclick={() => (openSheet = null)}
-						class="ring-offset-background focus:ring-ring absolute top-2 right-2 rounded-sm p-1 opacity-70 transition-opacity hover:bg-gray-100 hover:opacity-100 focus:ring-2 focus:ring-offset-2 focus:outline-none disabled:pointer-events-none"
+						class="ring-offset-background focus:ring-ring absolute right-2 top-2 rounded-sm p-1 opacity-70 transition-opacity hover:bg-gray-100 hover:opacity-100 focus:outline-none focus:ring-2 focus:ring-offset-2 disabled:pointer-events-none"
 						type="button"
 					>
 						<svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -1959,7 +1716,7 @@
 							</div>
 						</div>
 					</div>
-					<SheetFooter class="{isMobile ? 'pb-safe border-t pt-3 px-4' : 'pb-safe border-t pt-4'}">
+					<SheetFooter class={isMobile ? 'pb-safe border-t px-4 pt-3' : 'pb-safe border-t pt-4'}>
 						<Button type="submit" disabled={saving} class="w-full">
 							{saving ? '保存中...' : '保存设置'}
 						</Button>
@@ -2005,13 +1762,13 @@
 					? 'bg-background h-full w-full max-w-none'
 					: 'bg-card/95 w-full max-w-4xl rounded-lg border shadow-2xl backdrop-blur-sm'} relative overflow-hidden"
 			>
-				<SheetHeader class="{isMobile ? 'p-4 border-b' : 'border-b p-6'} relative">
+				<SheetHeader class="{isMobile ? 'border-b p-4' : 'border-b p-6'} relative">
 					<SheetTitle>B站凭证设置</SheetTitle>
 					<SheetDescription>配置B站登录凭证信息</SheetDescription>
 					<!-- 自定义关闭按钮 -->
 					<button
 						onclick={() => (openSheet = null)}
-						class="ring-offset-background focus:ring-ring absolute top-2 right-2 rounded-sm p-1 opacity-70 transition-opacity hover:bg-gray-100 hover:opacity-100 focus:ring-2 focus:ring-offset-2 focus:outline-none disabled:pointer-events-none"
+						class="ring-offset-background focus:ring-ring absolute right-2 top-2 rounded-sm p-1 opacity-70 transition-opacity hover:bg-gray-100 hover:opacity-100 focus:outline-none focus:ring-2 focus:ring-offset-2 disabled:pointer-events-none"
 						type="button"
 					>
 						<svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -2103,7 +1860,7 @@
 							</div>
 						</div>
 					</div>
-					<SheetFooter class="{isMobile ? 'pb-safe border-t pt-3 px-4' : 'pb-safe border-t pt-4'}">
+					<SheetFooter class={isMobile ? 'pb-safe border-t px-4 pt-3' : 'pb-safe border-t pt-4'}>
 						<Button type="submit" disabled={credentialSaving} class="w-full">
 							{credentialSaving ? '保存中...' : '保存凭证'}
 						</Button>
@@ -2149,13 +1906,13 @@
 					? 'bg-background h-full w-full max-w-none'
 					: 'bg-card/95 w-full max-w-4xl rounded-lg border shadow-2xl backdrop-blur-sm'} relative overflow-hidden"
 			>
-				<SheetHeader class="{isMobile ? 'p-4 border-b' : 'border-b p-6'} relative">
+				<SheetHeader class="{isMobile ? 'border-b p-4' : 'border-b p-6'} relative">
 					<SheetTitle>风控配置</SheetTitle>
 					<SheetDescription>UP主投稿获取风控策略，用于优化大量视频UP主的获取</SheetDescription>
 					<!-- 自定义关闭按钮 -->
 					<button
 						onclick={() => (openSheet = null)}
-						class="ring-offset-background focus:ring-ring absolute top-2 right-2 rounded-sm p-1 opacity-70 transition-opacity hover:bg-gray-100 hover:opacity-100 focus:ring-2 focus:ring-offset-2 focus:outline-none disabled:pointer-events-none"
+						class="ring-offset-background focus:ring-ring absolute right-2 top-2 rounded-sm p-1 opacity-70 transition-opacity hover:bg-gray-100 hover:opacity-100 focus:outline-none focus:ring-2 focus:ring-offset-2 disabled:pointer-events-none"
 						type="button"
 					>
 						<svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -2298,7 +2055,9 @@
 								</div>
 
 								{#if enableBatchProcessing}
-									<div class="grid grid-cols-1 gap-4 {isMobile ? 'sm:grid-cols-1' : 'md:grid-cols-2'}">
+									<div
+										class="grid grid-cols-1 gap-4 {isMobile ? 'sm:grid-cols-1' : 'md:grid-cols-2'}"
+									>
 										<div class="space-y-2">
 											<Label for="batch-size">分批大小（页数）</Label>
 											<Input
@@ -2345,7 +2104,9 @@
 								</div>
 
 								{#if enableAutoBackoff}
-									<div class="grid grid-cols-1 gap-4 {isMobile ? 'sm:grid-cols-1' : 'md:grid-cols-2'}">
+									<div
+										class="grid grid-cols-1 gap-4 {isMobile ? 'sm:grid-cols-1' : 'md:grid-cols-2'}"
+									>
 										<div class="space-y-2">
 											<Label for="auto-backoff-base-seconds">自动退避基础时间（秒）</Label>
 											<Input
@@ -2390,7 +2151,7 @@
 							</div>
 						</div>
 					</div>
-					<SheetFooter class="{isMobile ? 'pb-safe border-t pt-3 px-4' : 'pb-safe border-t pt-4'}">
+					<SheetFooter class={isMobile ? 'pb-safe border-t px-4 pt-3' : 'pb-safe border-t pt-4'}>
 						<Button type="submit" disabled={saving} class="w-full">
 							{saving ? '保存中...' : '保存设置'}
 						</Button>
@@ -2436,13 +2197,13 @@
 					? 'bg-background h-full w-full max-w-none'
 					: 'bg-card/95 w-full max-w-4xl rounded-lg border shadow-2xl backdrop-blur-sm'} relative overflow-hidden"
 			>
-				<SheetHeader class="{isMobile ? 'p-4 border-b' : 'border-b p-6'} relative">
+				<SheetHeader class="{isMobile ? 'border-b p-4' : 'border-b p-6'} relative">
 					<SheetTitle>Aria2监控设置</SheetTitle>
 					<SheetDescription>下载器健康检查和自动重启配置</SheetDescription>
 					<!-- 自定义关闭按钮 -->
 					<button
 						onclick={() => (openSheet = null)}
-						class="ring-offset-background focus:ring-ring absolute top-2 right-2 rounded-sm p-1 opacity-70 transition-opacity hover:bg-gray-100 hover:opacity-100 focus:ring-2 focus:ring-offset-2 focus:outline-none disabled:pointer-events-none"
+						class="ring-offset-background focus:ring-ring absolute right-2 top-2 rounded-sm p-1 opacity-70 transition-opacity hover:bg-gray-100 hover:opacity-100 focus:outline-none focus:ring-2 focus:ring-offset-2 disabled:pointer-events-none"
 						type="button"
 					>
 						<svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -2573,7 +2334,7 @@
 							</div>
 						</div>
 					</div>
-					<SheetFooter class="{isMobile ? 'pb-safe border-t pt-3 px-4' : 'pb-safe border-t pt-4'}">
+					<SheetFooter class={isMobile ? 'pb-safe border-t px-4 pt-3' : 'pb-safe border-t pt-4'}>
 						<Button type="submit" disabled={saving} class="w-full">
 							{saving ? '保存中...' : '保存设置'}
 						</Button>
@@ -2619,13 +2380,13 @@
 					? 'bg-background h-full w-full max-w-none'
 					: 'bg-card/95 w-full max-w-4xl rounded-lg border shadow-2xl backdrop-blur-sm'} relative overflow-hidden"
 			>
-				<SheetHeader class="{isMobile ? 'p-4 border-b' : 'border-b p-6'} relative">
+				<SheetHeader class="{isMobile ? 'border-b p-4' : 'border-b p-6'} relative">
 					<SheetTitle>系统设置</SheetTitle>
 					<SheetDescription>时区、扫描间隔等其他设置</SheetDescription>
 					<!-- 自定义关闭按钮 -->
 					<button
 						onclick={() => (openSheet = null)}
-						class="ring-offset-background focus:ring-ring absolute top-2 right-2 rounded-sm p-1 opacity-70 transition-opacity hover:bg-gray-100 hover:opacity-100 focus:ring-2 focus:ring-offset-2 focus:outline-none disabled:pointer-events-none"
+						class="ring-offset-background focus:ring-ring absolute right-2 top-2 rounded-sm p-1 opacity-70 transition-opacity hover:bg-gray-100 hover:opacity-100 focus:outline-none focus:ring-2 focus:ring-offset-2 disabled:pointer-events-none"
 						type="button"
 					>
 						<svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -2669,7 +2430,7 @@
 									id="timezone"
 									bind:value={timezone}
 									onchange={() => setTimezone(timezone)}
-									class="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500 focus:outline-none"
+									class="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
 								>
 									{#each TIMEZONE_OPTIONS as option}
 										<option value={option.value}>{option.label}</option>
@@ -2716,7 +2477,7 @@
 							</div>
 						</div>
 					</div>
-					<SheetFooter class="{isMobile ? 'pb-safe border-t pt-3 px-4' : 'pb-safe border-t pt-4'}">
+					<SheetFooter class={isMobile ? 'pb-safe border-t px-4 pt-3' : 'pb-safe border-t pt-4'}>
 						<Button type="submit" disabled={saving} class="w-full">
 							{saving ? '保存中...' : '保存设置'}
 						</Button>
