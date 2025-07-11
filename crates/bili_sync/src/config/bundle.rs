@@ -157,18 +157,25 @@ impl ConfigBundle {
 
     /// 渲染视频名称模板的便捷方法
     pub fn render_video_template(&self, data: &serde_json::Value) -> Result<String> {
-        use crate::utils::filenamify::filenamify;
+        use crate::utils::filenamify::filenamify_with_options;
 
+        // 两阶段处理：
+        // 1. 先渲染模板，保护模板路径分隔符
         let rendered = self.handlebars.render("video", data)?;
+        
+        // 2. 对整个渲染结果进行安全化，保护模板分隔符
+        let safe_rendered = filenamify_with_options(&rendered, true);
+        
+        // 3. 最后处理路径分隔符
         #[cfg(windows)]
         {
-            Ok(filenamify(&rendered)
+            Ok(safe_rendered
                 .replace("__UNIX_SEP__", "_")
                 .replace("__WIN_SEP__", "\\"))
         }
         #[cfg(not(windows))]
         {
-            Ok(filenamify(&rendered)
+            Ok(safe_rendered
                 .replace("__UNIX_SEP__", "/")
                 .replace("__WIN_SEP__", "_"))
         }
@@ -176,18 +183,25 @@ impl ConfigBundle {
 
     /// 渲染分页名称模板的便捷方法
     pub fn render_page_template(&self, data: &serde_json::Value) -> Result<String> {
-        use crate::utils::filenamify::filenamify;
+        use crate::utils::filenamify::filenamify_with_options;
 
+        // 两阶段处理：
+        // 1. 先渲染模板，保护模板路径分隔符
         let rendered = self.handlebars.render("page", data)?;
+        
+        // 2. 对整个渲染结果进行安全化，保护模板分隔符
+        let safe_rendered = filenamify_with_options(&rendered, true);
+        
+        // 3. 最后处理路径分隔符
         #[cfg(windows)]
         {
-            Ok(filenamify(&rendered)
+            Ok(safe_rendered
                 .replace("__UNIX_SEP__", "_")
                 .replace("__WIN_SEP__", "\\"))
         }
         #[cfg(not(windows))]
         {
-            Ok(filenamify(&rendered)
+            Ok(safe_rendered
                 .replace("__UNIX_SEP__", "/")
                 .replace("__WIN_SEP__", "_"))
         }
@@ -195,18 +209,25 @@ impl ConfigBundle {
 
     /// 渲染多P视频分页名称模板的便捷方法
     pub fn render_multi_page_template(&self, data: &serde_json::Value) -> Result<String> {
-        use crate::utils::filenamify::filenamify;
+        use crate::utils::filenamify::filenamify_with_options;
 
+        // 两阶段处理：
+        // 1. 先渲染模板，保护模板路径分隔符
         let rendered = self.handlebars.render("multi_page", data)?;
+        
+        // 2. 对整个渲染结果进行安全化，保护模板分隔符
+        let safe_rendered = filenamify_with_options(&rendered, true);
+        
+        // 3. 最后处理路径分隔符
         #[cfg(windows)]
         {
-            Ok(filenamify(&rendered)
+            Ok(safe_rendered
                 .replace("__UNIX_SEP__", "_")
                 .replace("__WIN_SEP__", "\\"))
         }
         #[cfg(not(windows))]
         {
-            Ok(filenamify(&rendered)
+            Ok(safe_rendered
                 .replace("__UNIX_SEP__", "/")
                 .replace("__WIN_SEP__", "_"))
         }
@@ -215,18 +236,25 @@ impl ConfigBundle {
     /// 渲染番剧名称模板的便捷方法
     #[allow(dead_code)]
     pub fn render_bangumi_template(&self, data: &serde_json::Value) -> Result<String> {
-        use crate::utils::filenamify::filenamify;
+        use crate::utils::filenamify::filenamify_with_options;
 
+        // 两阶段处理：
+        // 1. 先渲染模板，保护模板路径分隔符
         let rendered = self.handlebars.render("bangumi", data)?;
+        
+        // 2. 对整个渲染结果进行安全化，保护模板分隔符
+        let safe_rendered = filenamify_with_options(&rendered, true);
+        
+        // 3. 最后处理路径分隔符
         #[cfg(windows)]
         {
-            Ok(filenamify(&rendered)
+            Ok(safe_rendered
                 .replace("__UNIX_SEP__", "_")
                 .replace("__WIN_SEP__", "\\"))
         }
         #[cfg(not(windows))]
         {
-            Ok(filenamify(&rendered)
+            Ok(safe_rendered
                 .replace("__UNIX_SEP__", "/")
                 .replace("__WIN_SEP__", "_"))
         }
@@ -234,18 +262,25 @@ impl ConfigBundle {
 
     /// 渲染番剧文件夹名称模板的便捷方法
     pub fn render_bangumi_folder_template(&self, data: &serde_json::Value) -> Result<String> {
-        use crate::utils::filenamify::filenamify;
+        use crate::utils::filenamify::filenamify_with_options;
 
+        // 两阶段处理：
+        // 1. 先渲染模板，保护模板路径分隔符
         let rendered = self.handlebars.render("bangumi_folder", data)?;
+        
+        // 2. 对整个渲染结果进行安全化，保护模板分隔符
+        let safe_rendered = filenamify_with_options(&rendered, true);
+        
+        // 3. 最后处理路径分隔符
         #[cfg(windows)]
         {
-            Ok(filenamify(&rendered)
+            Ok(safe_rendered
                 .replace("__UNIX_SEP__", "_")
                 .replace("__WIN_SEP__", "\\"))
         }
         #[cfg(not(windows))]
         {
-            Ok(filenamify(&rendered)
+            Ok(safe_rendered
                 .replace("__UNIX_SEP__", "/")
                 .replace("__WIN_SEP__", "_"))
         }
@@ -253,18 +288,25 @@ impl ConfigBundle {
 
     /// 渲染文件夹结构模板的便捷方法
     pub fn render_folder_structure_template(&self, data: &serde_json::Value) -> Result<String> {
-        use crate::utils::filenamify::filenamify;
+        use crate::utils::filenamify::filenamify_with_options;
 
+        // 两阶段处理：
+        // 1. 先渲染模板，保护模板路径分隔符
         let rendered = self.handlebars.render("folder_structure", data)?;
+        
+        // 2. 对整个渲染结果进行安全化，保护模板分隔符
+        let safe_rendered = filenamify_with_options(&rendered, true);
+        
+        // 3. 最后处理路径分隔符
         #[cfg(windows)]
         {
-            Ok(filenamify(&rendered)
+            Ok(safe_rendered
                 .replace("__UNIX_SEP__", "_")
                 .replace("__WIN_SEP__", "\\"))
         }
         #[cfg(not(windows))]
         {
-            Ok(filenamify(&rendered)
+            Ok(safe_rendered
                 .replace("__UNIX_SEP__", "/")
                 .replace("__WIN_SEP__", "_"))
         }

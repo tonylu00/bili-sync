@@ -6,13 +6,25 @@ macro_rules! regex {
 }
 
 pub fn filenamify<S: AsRef<str>>(input: S) -> String {
+    filenamify_with_options(input, false)
+}
+
+/// 带选项的文件名安全化函数
+/// 
+/// # 参数
+/// - `input`: 输入字符串
+/// - `preserve_template_separators`: 是否保护模板路径分隔符（__UNIX_SEP__, __WIN_SEP__）
+pub fn filenamify_with_options<S: AsRef<str>>(input: S, preserve_template_separators: bool) -> String {
     let mut input = input.as_ref().to_string();
 
     // 保护路径分隔符标记，避免被处理
     let unix_sep_placeholder = "🔒UNIX_SEP_PROTECTED🔒";
     let win_sep_placeholder = "🔒WIN_SEP_PROTECTED🔒";
-    input = input.replace("__UNIX_SEP__", unix_sep_placeholder);
-    input = input.replace("__WIN_SEP__", win_sep_placeholder);
+    
+    if preserve_template_separators {
+        input = input.replace("__UNIX_SEP__", unix_sep_placeholder);
+        input = input.replace("__WIN_SEP__", win_sep_placeholder);
+    }
 
     // Windows不允许的字符：< > : " / \ | ? *
     // Unicode控制字符：\u{0000}-\u{001F} \u{007F} \u{0080}-\u{009F}
@@ -94,16 +106,18 @@ pub fn filenamify<S: AsRef<str>>(input: S) -> String {
         input = input.trim_matches(|c| c == ' ' || c == '_').to_string();
     }
 
-    // 11. 恢复路径分隔符占位符
-    input = input.replace(unix_sep_placeholder, "__UNIX_SEP__");
-    input = input.replace(win_sep_placeholder, "__WIN_SEP__");
+    // 11. 恢复路径分隔符占位符（仅在保护模式下）
+    if preserve_template_separators {
+        input = input.replace(unix_sep_placeholder, "__UNIX_SEP__");
+        input = input.replace(win_sep_placeholder, "__WIN_SEP__");
+    }
 
     input
 }
 
 #[cfg(test)]
 mod tests {
-    use super::filenamify;
+    use super::{filenamify, filenamify_with_options};
 
     #[test]
     fn test_filenamify() {
@@ -134,6 +148,37 @@ mod tests {
         assert_eq!(
             filenamify("https://www.youtube.com/watch?v=dQw4w9WgXcQ"),
             "https_www.youtube.com_watch_v=dQw4w9WgXcQ"
+        );
+    }
+
+    #[test]
+    fn test_filenamify_with_options() {
+        // 测试保护模板分隔符
+        assert_eq!(
+            filenamify_with_options("foo__UNIX_SEP__bar", true),
+            "foo__UNIX_SEP__bar"
+        );
+        assert_eq!(
+            filenamify_with_options("foo__WIN_SEP__bar", true),
+            "foo__WIN_SEP__bar"
+        );
+        
+        // 测试不保护模板分隔符时的行为
+        assert_eq!(
+            filenamify_with_options("foo__UNIX_SEP__bar", false),
+            "foo__UNIX_SEP__bar"  // 不包含真实分隔符，所以不受影响
+        );
+        
+        // 测试用户问题中的场景：标题中包含分隔符
+        assert_eq!(
+            filenamify_with_options("【𝟒𝐊 𝐇𝐢𝐑𝐞𝐬】「分身/ドッペルゲンガー」", false),
+            "_𝟒𝐊 𝐇𝐢𝐑𝐞𝐬_[分身_ドッペルゲンガー]"
+        );
+        
+        // 测试模板和内容的组合情况
+        assert_eq!(
+            filenamify_with_options("UP主名__UNIX_SEP__「分身/ドッペルゲンガー」", true),
+            "UP主名__UNIX_SEP__[分身_ドッペルゲンガー]"
         );
     }
 }
