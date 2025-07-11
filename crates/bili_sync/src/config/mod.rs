@@ -108,7 +108,7 @@ fn default_bind_address() -> String {
 // }
 
 fn default_multi_page_name() -> Cow<'static, str> {
-    Cow::Borrowed("{{title}}/P{{pid_pad}}.{{ptitle}}")
+    Cow::Borrowed("P{{pid_pad}}.{{ptitle}}")
 }
 
 fn default_bangumi_name() -> Cow<'static, str> {
@@ -281,7 +281,7 @@ impl Default for Config {
             danmaku_option: DanmakuOption::default(),
             video_name: Cow::Borrowed("{{upper_name}}"),
             page_name: Cow::Borrowed("{{pubtime}}-{{bvid}}-{{truncate title 20}}"),
-            multi_page_name: Cow::Borrowed("{{title}}/P{{pid_pad}}.{{ptitle}}"),
+            multi_page_name: Cow::Borrowed("P{{pid_pad}}.{{ptitle}}"),
             bangumi_name: Cow::Borrowed("{{title}} S{{season_pad}}E{{pid_pad}} - {{ptitle}}"),
             folder_structure: Cow::Borrowed("Season {{season_pad}}"),
             bangumi_folder_name: Cow::Borrowed("{{series_title}}"),

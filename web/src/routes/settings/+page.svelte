@@ -106,7 +106,7 @@
 	// 表单数据
 	let videoName = '{{upper_name}}';
 	let pageName = '{{pubtime}}-{{bvid}}-{{truncate title 20}}';
-	let multiPageName = '{{title}}/P{{pid_pad}}.{{ptitle}}';
+	let multiPageName = 'P{{pid_pad}}.{{ptitle}}';
 	let bangumiName = '{{title}} S{{season_pad}}E{{pid_pad}} - {{ptitle}}';
 	let folderStructure = 'Season {{season_pad}}';
 	let bangumiFolderName = '{{title}}';
@@ -916,7 +916,7 @@
 								<Input
 									id="multi-page-name"
 									bind:value={multiPageName}
-									placeholder={`{{title}}/P{{pid_pad}}.{{ptitle}}`}
+									placeholder={`P{{pid_pad}}.{{ptitle}}`}
 									class={!multiPageNameValid
 										? 'border-red-500 focus:border-red-500'
 										: videoNameHasPath && multiPageNameHasPath
