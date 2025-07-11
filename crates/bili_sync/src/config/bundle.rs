@@ -180,45 +180,28 @@ impl ConfigBundle {
     /// 安全渲染模板的通用方法（修复原始斜杠分割问题）
     fn render_template_safe(&self, template_name: &str, data: &serde_json::Value) -> Result<String> {
         use crate::utils::filenamify::filenamify_with_options;
-        use tracing::debug;
 
-        // 三阶段处理（修复原始斜杠分割问题）：
+        // 两阶段处理（修复原始斜杠分割问题）：
         // 1. 先渲染模板，模板分隔符已转换为 __UNIX_SEP__ 等占位符
         let rendered = self.handlebars.render(template_name, data)?;
-        debug!("步骤1 - 模板渲染结果: '{}'", rendered);
         
-        // 2. 对整个渲染结果进行安全化，保护模板分隔符，但处理内容中的原始路径分隔符
+        // 2. 对整个渲染结果进行安全化，保护模板分隔符
+        // filenamify_with_options 已经正确处理了内容中的斜杠
         let safe_rendered = filenamify_with_options(&rendered, true);
-        debug!("步骤2 - 安全化结果: '{}'", safe_rendered);
         
-        // 3. 处理可能遗漏的原始斜杠（在模板分隔符恢复前）
-        // 将任何不在占位符中的斜杠转换为下划线
-        let extra_safe = safe_rendered
-            .replace("__UNIX_SEP__/", "__UNIX_SEP___")  // 防止占位符后的斜杠
-            .replace("/__UNIX_SEP__", "___UNIX_SEP__")  // 防止占位符前的斜杠
-            .replace("/", "_")  // 处理其他所有斜杠
-            .replace("__UNIX_SEP___", "__UNIX_SEP__/")  // 恢复占位符后的斜杠
-            .replace("___UNIX_SEP__", "/__UNIX_SEP__"); // 恢复占位符前的斜杠
-        debug!("步骤3 - 额外处理结果: '{}'", extra_safe);
-        
-        // 4. 最后处理模板路径分隔符，将占位符转换为真实的路径分隔符
-        let final_result = {
-            #[cfg(windows)]
-            {
-                extra_safe
-                    .replace("__UNIX_SEP__", "/")  // 模板路径分隔符 → 真实分隔符
-                    .replace("__WIN_SEP__", "\\")
-            }
-            #[cfg(not(windows))]
-            {
-                extra_safe
-                    .replace("__UNIX_SEP__", "/")  // 模板路径分隔符 → 真实分隔符
-                    .replace("__WIN_SEP__", "_")
-            }
-        };
-        debug!("步骤4 - 最终结果: '{}'", final_result);
-        
-        Ok(final_result)
+        // 3. 最后处理模板路径分隔符，将占位符转换为真实的路径分隔符
+        #[cfg(windows)]
+        {
+            Ok(safe_rendered
+                .replace("__UNIX_SEP__", "/")  // 模板路径分隔符 → 真实分隔符
+                .replace("__WIN_SEP__", "\\"))
+        }
+        #[cfg(not(windows))]
+        {
+            Ok(safe_rendered
+                .replace("__UNIX_SEP__", "/")  // 模板路径分隔符 → 真实分隔符
+                .replace("__WIN_SEP__", "_"))
+        }
     }
 
     /// 渲染视频名称模板的便捷方法
@@ -372,7 +355,6 @@ mod tests {
         });
         
         let result = bundle.render_video_template(&data).unwrap();
-        println!("最终渲染结果: '{}'", result);
         
         // 验证结果：应该创建正确的目录结构，内容中的斜杠应该被转换为下划线
         // 期望：ZHY2020/[正确处理的标题]，其中标题中的 / 被转换为 _
