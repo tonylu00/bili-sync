@@ -813,11 +813,7 @@ pub async fn download_video_pages(
         // 番剧文件夹路径
         let bangumi_folder_path = bangumi_root_path.join(&bangumi_folder_name);
 
-        // 确保番剧文件夹存在
-        if !bangumi_folder_path.exists() {
-            fs::create_dir_all(&bangumi_folder_path).await?;
-            info!("创建番剧文件夹: {}", bangumi_folder_path.display());
-        }
+        // 延迟创建番剧文件夹，只在实际需要时创建
 
         // 检查是否启用番剧Season结构
         let use_bangumi_season_structure = crate::config::with_config(|bundle| {
@@ -838,12 +834,8 @@ pub async fn download_video_pages(
                     season_title
                 );
 
-            // 创建统一的系列根目录
+            // 系列根目录路径，延迟创建
             let series_root_path = bangumi_root_path.join(&base_series_name);
-            if !series_root_path.exists() {
-                fs::create_dir_all(&series_root_path).await?;
-                info!("创建番剧系列根目录: {}", series_root_path.display());
-            }
 
             // 生成标准的Season文件夹名称
             let season_folder_name = crate::utils::bangumi_name_extractor::BangumiNameExtractor::generate_season_folder_name(season_number);
@@ -960,27 +952,7 @@ pub async fn download_video_pages(
         }
     };
 
-    // 确保季度文件夹存在（番剧、多P视频、合集采用不同的处理方式）
-    if let Some(_season_folder_name) = &season_folder {
-        if is_bangumi {
-            // 对于番剧，Season文件夹的创建已经在上面的逻辑中处理了
-            // base_path 已经是完整的路径（番剧文件夹/Season文件夹）
-            if !base_path.exists() {
-                fs::create_dir_all(&base_path).await?;
-                info!("创建季度文件夹: {}", base_path.display());
-            }
-        } else {
-            // 对于多P视频或合集，base_path 已经是完整的路径（视频文件夹/Season文件夹）
-            if !base_path.exists() {
-                fs::create_dir_all(&base_path).await?;
-                if is_collection {
-                    info!("创建合集Season文件夹: {}", base_path.display());
-                } else {
-                    info!("创建多P视频Season文件夹: {}", base_path.display());
-                }
-            }
-        }
-    }
+    // 延迟创建季度文件夹，只在实际需要写入文件时创建
 
     let upper_id = video_model.upper_id.to_string();
     let current_config = crate::config::reload_config();
@@ -1054,6 +1026,7 @@ pub async fn download_video_pages(
     // 先处理NFO生成（独立执行，避免tokio::join!类型问题）
     let nfo_result = if is_bangumi && season_info.is_some() {
         // 番剧且有API数据：使用API驱动的NFO生成
+        // 注意：启用Season结构时，bangumi_folder_path已经指向系列根目录
         generate_bangumi_video_nfo(
             separate_status[2] && bangumi_folder_path.is_some() && should_download_bangumi_nfo,
             &video_model,
@@ -1109,6 +1082,73 @@ pub async fn download_video_pages(
             },
         )
         .await
+    };
+
+    // 为启用Season结构的番剧生成season.nfo
+    let season_nfo_result = if is_bangumi && season_info.is_some() {
+        let config = crate::config::reload_config();
+        if config.bangumi_use_season_structure {
+            // 提取季度信息来生成season.nfo
+            let series_title = season_info.as_ref().unwrap().title.as_str();
+            
+            // 直接从series_title中提取季度信息
+            let (_, season_number) = 
+                crate::utils::bangumi_name_extractor::BangumiNameExtractor::extract_series_name_and_season(
+                    series_title,
+                    None // 让算法从title中自动提取
+                );
+            
+            info!("番剧「{}」提取的季度编号: {}", series_title, season_number);
+
+            // 独立检查season.nfo文件是否存在（不依赖tvshow.nfo检查）
+            let season_nfo_path = base_path.join("season.nfo");
+            let should_generate_season_nfo = separate_status[2] && !season_nfo_path.exists();
+
+            generate_bangumi_season_nfo(
+                should_generate_season_nfo,
+                &video_model,
+                season_info.as_ref().unwrap(),
+                base_path.clone(),
+                season_number,
+            )
+            .await
+        } else {
+            Ok(ExecutionStatus::Skipped)
+        }
+    } else {
+        Ok(ExecutionStatus::Skipped)
+    };
+
+    // 为启用Season结构的番剧下载季度级图片
+    let season_images_result = if is_bangumi && season_info.is_some() {
+        let config = crate::config::reload_config();
+        if config.bangumi_use_season_structure {
+            let poster_path = base_path.join("season-poster.jpg");
+            let fanart_path = base_path.join("season-fanart.jpg");
+            
+            // 独立检查季度级图片文件是否存在
+            let should_download_season_images = separate_status[0] && (!poster_path.exists() || !fanart_path.exists());
+            
+            info!("准备下载季度级图片到: {:?} 和 {:?}", poster_path, fanart_path);
+            
+            // 优先使用季度封面URL，如果没有则回退到视频封面
+            let season_cover_url = season_info.as_ref().unwrap().cover.as_deref();
+            
+            fetch_video_poster(
+                should_download_season_images,
+                &video_model,
+                downloader,
+                poster_path,
+                fanart_path,
+                token.clone(),
+                season_cover_url, // 使用季度封面URL
+            )
+            .await
+        } else {
+            Ok(ExecutionStatus::Skipped)
+        }
+    } else {
+        Ok(ExecutionStatus::Skipped)
     };
 
     let (res_1, res_3, res_4, res_5) = tokio::join!(
@@ -1207,15 +1247,26 @@ pub async fn download_video_pages(
         )
     );
 
-    let results = [res_1, nfo_result, res_3, res_4, res_5]
+    // 主要的5个任务结果，保持与VideoStatus<5>兼容
+    let main_results = [res_1, nfo_result, res_3, res_4, res_5]
         .into_iter()
         .map(Into::into)
         .collect::<Vec<_>>();
-    status.update_status(&results);
+    status.update_status(&main_results);
+    
+    // 额外的结果单独处理（季度NFO和季度图片）
+    let extra_results = [Ok(season_nfo_result.unwrap_or(ExecutionStatus::Skipped)), Ok(season_images_result.unwrap_or(ExecutionStatus::Skipped))]
+        .into_iter()
+        .map(Into::into)
+        .collect::<Vec<_>>();
+
+    // 合并所有结果用于日志处理
+    let mut all_results = main_results;
+    all_results.extend(extra_results);
 
     // 处理87007错误检测和自动删除（在for_each之前）
     let mut has_87007_error = false;
-    for (res, task_name) in results.iter().take(4).zip(["封面", "详情", "作者头像", "作者详情"]) {
+    for (res, task_name) in all_results.iter().take(4).zip(["封面", "详情", "作者头像", "作者详情"]) {
         if let ExecutionStatus::Ignored(e) = res {
             let error_msg = e.to_string();
             if error_msg.contains("status code: 87007") {
@@ -1246,10 +1297,10 @@ pub async fn download_video_pages(
         }
     }
 
-    results
+    all_results
         .iter()
-        .take(4)
-        .zip(["封面", "详情", "作者头像", "作者详情"])
+        .take(7)
+        .zip(["封面", "详情", "作者头像", "作者详情", "分页下载", "季度NFO", "季度图片"])
         .for_each(|(res, task_name)| match res {
             ExecutionStatus::Skipped => debug!("处理视频「{}」{}已成功过，跳过", &video_model.name, task_name),
             ExecutionStatus::Succeeded => debug!("处理视频「{}」{}成功", &video_model.name, task_name),
@@ -1330,7 +1381,7 @@ pub async fn download_video_pages(
                 }
             }
         });
-    if let ExecutionStatus::Failed(e) = results.into_iter().nth(4).context("page download result not found")? {
+    if let ExecutionStatus::Failed(e) = all_results.into_iter().nth(4).context("page download result not found")? {
         if e.downcast_ref::<DownloadAbortError>().is_some() {
             return Err(e);
         }
@@ -1821,6 +1872,7 @@ pub async fn fetch_page_poster(
         res = downloader.fetch_with_fallback(&urls, &poster_path) => res,
     }?;
     if let Some(fanart_path) = fanart_path {
+        ensure_parent_dir_for_file(&fanart_path).await?;
         fs::copy(&poster_path, &fanart_path).await?;
     }
     Ok(ExecutionStatus::Succeeded)
@@ -1898,12 +1950,8 @@ pub async fn fetch_page_video(
         } => res
     }?;
 
-    // 创建保存目录
-    if let Some(parent) = page_path.parent() {
-        if !parent.exists() {
-            tokio::fs::create_dir_all(parent).await?;
-        }
-    }
+    // 按需创建保存目录（只在实际下载时创建）
+    ensure_parent_dir_for_file(page_path).await?;
 
     // UnifiedDownloader会自动选择最佳下载方式
 
@@ -2221,6 +2269,7 @@ pub async fn fetch_page_subtitle(
         .into_iter()
         .map(|subtitle| async move {
             let path = subtitle_path.with_extension(format!("{}.srt", subtitle.lan));
+            ensure_parent_dir_for_file(&path).await.map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
             tokio::fs::write(path, subtitle.body.to_string()).await
         })
         .collect::<FuturesUnordered<_>>();
@@ -2286,6 +2335,7 @@ pub async fn fetch_video_poster(
         _ = token.cancelled() => return Ok(ExecutionStatus::Skipped),
         res = downloader.fetch_with_fallback(&urls, &poster_path) => res,
     }?;
+    ensure_parent_dir_for_file(&fanart_path).await?;
     fs::copy(&poster_path, &fanart_path).await?;
     Ok(ExecutionStatus::Succeeded)
 }
@@ -2357,10 +2407,54 @@ pub async fn generate_bangumi_video_nfo(
     Ok(ExecutionStatus::Succeeded)
 }
 
-async fn generate_nfo(nfo: NFO<'_>, nfo_path: PathBuf) -> Result<()> {
-    if let Some(parent) = nfo_path.parent() {
-        fs::create_dir_all(parent).await?;
+/// 为番剧季度生成season.nfo文件
+pub async fn generate_bangumi_season_nfo(
+    should_run: bool,
+    video_model: &video::Model,
+    season_info: &SeasonInfo,
+    season_path: PathBuf,
+    _season_number: u32,
+) -> Result<ExecutionStatus> {
+    if !should_run {
+        return Ok(ExecutionStatus::Skipped);
     }
+    
+    let nfo_path = season_path.join("season.nfo");
+    
+    // 检查文件是否已存在（但仍然继续生成，确保内容更新）
+    if nfo_path.exists() {
+        debug!("Season NFO文件已存在，将覆盖更新: {:?}", nfo_path);
+    }
+    
+    use crate::utils::nfo::TVShow;
+    let mut tvshow = TVShow::from_season_info(video_model, season_info);
+    
+    // 为season.nfo定制内容：使用季度特定标题（暂时使用title）
+    // SeasonInfo没有season_title字段，使用title作为季度名称
+    tvshow.name = &season_info.title;
+    
+    // 暂时注释掉season字段设置，稍后在TVShow结构体中添加
+    // tvshow.season = Some(season_number as i32);
+    
+    generate_nfo(NFO::TVShow(tvshow), nfo_path.clone()).await?;
+    info!("成功生成season.nfo: {:?} (季度{})", nfo_path, _season_number);
+    Ok(ExecutionStatus::Succeeded)
+}
+
+/// 按需创建目录的辅助函数，只在实际需要写入文件时创建
+async fn ensure_parent_dir_for_file(file_path: &std::path::Path) -> Result<()> {
+    if let Some(parent) = file_path.parent() {
+        if !parent.exists() {
+            fs::create_dir_all(parent).await?;
+            debug!("按需创建目录: {}", parent.display());
+        }
+    }
+    Ok(())
+}
+
+async fn generate_nfo(nfo: NFO<'_>, nfo_path: PathBuf) -> Result<()> {
+    // 只在实际写入NFO文件时才创建父目录
+    ensure_parent_dir_for_file(&nfo_path).await?;
     fs::write(nfo_path, nfo.generate_nfo().await?.as_bytes()).await?;
     Ok(())
 }
