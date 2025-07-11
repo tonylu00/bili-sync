@@ -46,20 +46,52 @@ fn normalize_file_path(path: &str) -> String {
 /// 处理包含路径分隔符的模板结果，对每个路径段单独应用filenamify
 /// 这样可以保持目录结构同时确保每个段都是安全的文件名
 fn process_path_with_filenamify(input: &str) -> String {
-    // 先替换路径分隔符占位符为正斜杠
-    let path_replaced = input.replace("___PATH_SEP___", "/");
+    // 修复：采用与下载流程相同的两阶段处理
+    // 阶段1：先对内容进行安全化，保护模板分隔符
+    let temp_placeholder = "🔒TEMP_PATH_SEP🔒";
+    let protected_input = input.replace("___PATH_SEP___", temp_placeholder);
     
-    if path_replaced.contains('/') {
-        // 包含路径分隔符，需要分段处理
-        let parts: Vec<&str> = path_replaced.split('/').collect();
-        let sanitized_parts: Vec<String> = parts
-            .into_iter()
-            .map(|part| crate::utils::filenamify::filenamify(part))
-            .collect();
-        sanitized_parts.join("/")
-    } else {
-        // 不包含路径分隔符，直接处理
-        crate::utils::filenamify::filenamify(&path_replaced)
+    // 阶段2：对保护后的内容进行安全化处理（内容中的斜杠会被转换为下划线）
+    let safe_content = crate::utils::filenamify::filenamify(&protected_input);
+    
+    // 阶段3：恢复模板路径分隔符
+    let final_result = safe_content.replace(temp_placeholder, "/");
+    
+    final_result
+}
+
+#[cfg(test)]
+mod rename_tests {
+    use super::*;
+    
+    #[test]
+    fn test_process_path_with_filenamify_slash_handling() {
+        // 测试与用户报告相同的情况
+        let input = "ZHY2020___PATH_SEP___【𝟒𝐊 𝐇𝐢𝐑𝐞𝐬】「分身/ドッペルゲンガー」孤独摇滚！总集剧场版Re:Re: OP Lyric MV";
+        let result = process_path_with_filenamify(input);
+        
+        println!("输入: {}", input);
+        println!("输出: {}", result);
+        
+        // 验证结果
+        assert!(result.starts_with("ZHY2020/"), "应该以 ZHY2020/ 开头");
+        assert!(!result.contains("分身/ドッペルゲンガー"), "内容中的斜杠应该被处理");
+        assert!(result.contains("分身_ドッペルゲンガー"), "斜杠应该变成下划线");
+        
+        // 确保只有一个路径分隔符
+        let slash_count = result.matches('/').count();
+        assert_eq!(slash_count, 1, "应该只有一个路径分隔符，但发现了 {}，结果: {}", slash_count, result);
+    }
+    
+    #[test]
+    fn test_process_path_without_separator() {
+        // 测试不包含模板分隔符的情况
+        let input = "普通视频标题/带斜杠";
+        let result = process_path_with_filenamify(input);
+        
+        // 应该将所有斜杠转换为下划线
+        assert_eq!(result, "普通视频标题_带斜杠");
+        assert!(!result.contains('/'));
     }
 }
 
@@ -1669,19 +1701,51 @@ pub async fn reload_config(Extension(db): Extension<Arc<DatabaseConnection>>) ->
 
 /// 内部重载配置函数（用于队列处理和直接调用）
 pub async fn reload_config_internal() -> Result<bool, ApiError> {
+    info!("开始重新加载配置...");
+    
     // 优先从数据库重新加载配置包
-    if let Err(e) = crate::config::reload_config_bundle().await {
-        warn!("从数据库重新加载配置包失败: {}, 回退到TOML重载", e);
-        // 回退到传统的重新加载方式
-        let _new_config = crate::config::reload_config();
-    } else {
-        info!("配置包已从数据库重新加载");
+    match crate::config::reload_config_bundle().await {
+        Ok(_) => {
+            info!("配置包已从数据库成功重新加载并验证");
+        }
+        Err(e) => {
+            warn!("从数据库重新加载配置包失败: {}, 回退到TOML重载", e);
+            // 回退到传统的重新加载方式
+            let _new_config = crate::config::reload_config();
+            warn!("已回退到TOML配置重载，但某些功能可能受限");
+        }
     }
 
-    info!("配置已重新加载");
+    // 验证重载后的配置
+    let verification_result = crate::config::with_config(|bundle| {
+        use serde_json::json;
+        let test_data = json!({
+            "upper_name": "TestUP",
+            "title": "TestVideo"
+        });
+        
+        // 尝试渲染一个简单的模板以验证配置生效
+        bundle.render_video_template(&test_data)
+    });
 
-    // 返回成功响应
-    Ok(true)
+    match verification_result {
+        Ok(rendered_result) => {
+            info!("配置重载验证成功，模板渲染结果: '{}'", rendered_result);
+            
+            // 检查是否包含路径分隔符，这有助于发现模板更改
+            if rendered_result.contains("/") {
+                warn!("检测到模板包含路径分隔符，这可能影响现有视频的目录结构");
+                warn!("如果您刚刚更改了视频文件名模板，请注意现有视频可能需要重新处理");
+                warn!("重新处理时将从视频源原始路径重新计算，确保目录结构正确");
+            }
+            
+            Ok(true)
+        }
+        Err(e) => {
+            error!("配置重载验证失败: {}", e);
+            Err(ApiError::from(anyhow::anyhow!("配置重载验证失败: {}", e)))
+        }
+    }
 }
 
 /// 更新视频源启用状态

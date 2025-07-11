@@ -35,7 +35,9 @@ impl ConfigBundle {
     /// 构建 Handlebars 模板引擎
     fn build_handlebars(config: &Config) -> Result<Handlebars<'static>> {
         use handlebars::handlebars_helper;
+        use tracing::{debug, info};
 
+        debug!("开始构建Handlebars模板引擎...");
         let mut handlebars = Handlebars::new();
 
         // 注册自定义 helper
@@ -47,6 +49,7 @@ impl ConfigBundle {
             }
         });
         handlebars.register_helper("truncate", Box::new(truncate));
+        debug!("Handlebars helper 'truncate' 已注册");
 
         // 注册所有必需的模板
         // 使用 to_string() 转换 Cow<'static, str> 为 &'static str
@@ -71,13 +74,26 @@ impl ConfigBundle {
             .replace('/', "__UNIX_SEP__")
             .replace('\\', "__WIN_SEP__");
 
-        handlebars.register_template_string("video", safe_video_name)?;
-        handlebars.register_template_string("page", safe_page_name)?;
-        handlebars.register_template_string("multi_page", safe_multi_page_name)?;
-        handlebars.register_template_string("bangumi", safe_bangumi_name)?;
-        handlebars.register_template_string("folder_structure", safe_folder_structure)?;
-        handlebars.register_template_string("bangumi_folder", safe_bangumi_folder_name)?;
+        // 注册模板并记录日志
+        handlebars.register_template_string("video", &safe_video_name)?;
+        debug!("模板 'video' 已注册: '{}' -> '{}'", video_name, safe_video_name);
+        
+        handlebars.register_template_string("page", &safe_page_name)?;
+        debug!("模板 'page' 已注册: '{}' -> '{}'", page_name, safe_page_name);
+        
+        handlebars.register_template_string("multi_page", &safe_multi_page_name)?;
+        debug!("模板 'multi_page' 已注册: '{}' -> '{}'", multi_page_name, safe_multi_page_name);
+        
+        handlebars.register_template_string("bangumi", &safe_bangumi_name)?;
+        debug!("模板 'bangumi' 已注册: '{}' -> '{}'", bangumi_name, safe_bangumi_name);
+        
+        handlebars.register_template_string("folder_structure", &safe_folder_structure)?;
+        debug!("模板 'folder_structure' 已注册: '{}' -> '{}'", folder_structure, safe_folder_structure);
+        
+        handlebars.register_template_string("bangumi_folder", &safe_bangumi_folder_name)?;
+        debug!("模板 'bangumi_folder' 已注册: '{}' -> '{}'", bangumi_folder_name, safe_bangumi_folder_name);
 
+        info!("Handlebars模板引擎构建完成，共注册 {} 个模板", 6);
         Ok(handlebars)
     }
 
@@ -137,179 +153,103 @@ impl ConfigBundle {
     /// 渲染模板的便捷方法（使用path_safe_render确保分隔符正确处理）
     #[allow(dead_code)]
     pub fn render_template(&self, template_name: &str, data: &serde_json::Value) -> Result<String> {
-        use crate::utils::filenamify::filenamify;
+        use crate::utils::filenamify::filenamify_with_options;
 
-        // 直接使用handlebars的render方法，然后手动处理分隔符
+        // 两阶段处理：
+        // 1. 先渲染模板，保护模板路径分隔符
         let rendered = self.handlebars.render(template_name, data)?;
+        
+        // 2. 对整个渲染结果进行安全化，保护模板分隔符
+        let safe_rendered = filenamify_with_options(&rendered, true);
+        
+        // 3. 最后处理路径分隔符
         #[cfg(windows)]
         {
-            Ok(filenamify(&rendered)
-                .replace("__UNIX_SEP__", "_")
+            Ok(safe_rendered
+                .replace("__UNIX_SEP__", "/")
                 .replace("__WIN_SEP__", "\\"))
         }
         #[cfg(not(windows))]
         {
-            Ok(filenamify(&rendered)
+            Ok(safe_rendered
                 .replace("__UNIX_SEP__", "/")
                 .replace("__WIN_SEP__", "_"))
         }
+    }
+
+    /// 安全渲染模板的通用方法（修复原始斜杠分割问题）
+    fn render_template_safe(&self, template_name: &str, data: &serde_json::Value) -> Result<String> {
+        use crate::utils::filenamify::filenamify_with_options;
+        use tracing::debug;
+
+        // 三阶段处理（修复原始斜杠分割问题）：
+        // 1. 先渲染模板，模板分隔符已转换为 __UNIX_SEP__ 等占位符
+        let rendered = self.handlebars.render(template_name, data)?;
+        debug!("步骤1 - 模板渲染结果: '{}'", rendered);
+        
+        // 2. 对整个渲染结果进行安全化，保护模板分隔符，但处理内容中的原始路径分隔符
+        let safe_rendered = filenamify_with_options(&rendered, true);
+        debug!("步骤2 - 安全化结果: '{}'", safe_rendered);
+        
+        // 3. 处理可能遗漏的原始斜杠（在模板分隔符恢复前）
+        // 将任何不在占位符中的斜杠转换为下划线
+        let extra_safe = safe_rendered
+            .replace("__UNIX_SEP__/", "__UNIX_SEP___")  // 防止占位符后的斜杠
+            .replace("/__UNIX_SEP__", "___UNIX_SEP__")  // 防止占位符前的斜杠
+            .replace("/", "_")  // 处理其他所有斜杠
+            .replace("__UNIX_SEP___", "__UNIX_SEP__/")  // 恢复占位符后的斜杠
+            .replace("___UNIX_SEP__", "/__UNIX_SEP__"); // 恢复占位符前的斜杠
+        debug!("步骤3 - 额外处理结果: '{}'", extra_safe);
+        
+        // 4. 最后处理模板路径分隔符，将占位符转换为真实的路径分隔符
+        let final_result = {
+            #[cfg(windows)]
+            {
+                extra_safe
+                    .replace("__UNIX_SEP__", "/")  // 模板路径分隔符 → 真实分隔符
+                    .replace("__WIN_SEP__", "\\")
+            }
+            #[cfg(not(windows))]
+            {
+                extra_safe
+                    .replace("__UNIX_SEP__", "/")  // 模板路径分隔符 → 真实分隔符
+                    .replace("__WIN_SEP__", "_")
+            }
+        };
+        debug!("步骤4 - 最终结果: '{}'", final_result);
+        
+        Ok(final_result)
     }
 
     /// 渲染视频名称模板的便捷方法
     pub fn render_video_template(&self, data: &serde_json::Value) -> Result<String> {
-        use crate::utils::filenamify::filenamify_with_options;
-
-        // 两阶段处理：
-        // 1. 先渲染模板，保护模板路径分隔符
-        let rendered = self.handlebars.render("video", data)?;
-        
-        // 2. 对整个渲染结果进行安全化，保护模板分隔符
-        let safe_rendered = filenamify_with_options(&rendered, true);
-        
-        // 3. 最后处理路径分隔符
-        #[cfg(windows)]
-        {
-            Ok(safe_rendered
-                .replace("__UNIX_SEP__", "_")
-                .replace("__WIN_SEP__", "\\"))
-        }
-        #[cfg(not(windows))]
-        {
-            Ok(safe_rendered
-                .replace("__UNIX_SEP__", "/")
-                .replace("__WIN_SEP__", "_"))
-        }
+        self.render_template_safe("video", data)
     }
 
     /// 渲染分页名称模板的便捷方法
     pub fn render_page_template(&self, data: &serde_json::Value) -> Result<String> {
-        use crate::utils::filenamify::filenamify_with_options;
-
-        // 两阶段处理：
-        // 1. 先渲染模板，保护模板路径分隔符
-        let rendered = self.handlebars.render("page", data)?;
-        
-        // 2. 对整个渲染结果进行安全化，保护模板分隔符
-        let safe_rendered = filenamify_with_options(&rendered, true);
-        
-        // 3. 最后处理路径分隔符
-        #[cfg(windows)]
-        {
-            Ok(safe_rendered
-                .replace("__UNIX_SEP__", "_")
-                .replace("__WIN_SEP__", "\\"))
-        }
-        #[cfg(not(windows))]
-        {
-            Ok(safe_rendered
-                .replace("__UNIX_SEP__", "/")
-                .replace("__WIN_SEP__", "_"))
-        }
+        self.render_template_safe("page", data)
     }
 
     /// 渲染多P视频分页名称模板的便捷方法
     pub fn render_multi_page_template(&self, data: &serde_json::Value) -> Result<String> {
-        use crate::utils::filenamify::filenamify_with_options;
-
-        // 两阶段处理：
-        // 1. 先渲染模板，保护模板路径分隔符
-        let rendered = self.handlebars.render("multi_page", data)?;
-        
-        // 2. 对整个渲染结果进行安全化，保护模板分隔符
-        let safe_rendered = filenamify_with_options(&rendered, true);
-        
-        // 3. 最后处理路径分隔符
-        #[cfg(windows)]
-        {
-            Ok(safe_rendered
-                .replace("__UNIX_SEP__", "_")
-                .replace("__WIN_SEP__", "\\"))
-        }
-        #[cfg(not(windows))]
-        {
-            Ok(safe_rendered
-                .replace("__UNIX_SEP__", "/")
-                .replace("__WIN_SEP__", "_"))
-        }
+        self.render_template_safe("multi_page", data)
     }
 
     /// 渲染番剧名称模板的便捷方法
     #[allow(dead_code)]
     pub fn render_bangumi_template(&self, data: &serde_json::Value) -> Result<String> {
-        use crate::utils::filenamify::filenamify_with_options;
-
-        // 两阶段处理：
-        // 1. 先渲染模板，保护模板路径分隔符
-        let rendered = self.handlebars.render("bangumi", data)?;
-        
-        // 2. 对整个渲染结果进行安全化，保护模板分隔符
-        let safe_rendered = filenamify_with_options(&rendered, true);
-        
-        // 3. 最后处理路径分隔符
-        #[cfg(windows)]
-        {
-            Ok(safe_rendered
-                .replace("__UNIX_SEP__", "_")
-                .replace("__WIN_SEP__", "\\"))
-        }
-        #[cfg(not(windows))]
-        {
-            Ok(safe_rendered
-                .replace("__UNIX_SEP__", "/")
-                .replace("__WIN_SEP__", "_"))
-        }
+        self.render_template_safe("bangumi", data)
     }
 
     /// 渲染番剧文件夹名称模板的便捷方法
     pub fn render_bangumi_folder_template(&self, data: &serde_json::Value) -> Result<String> {
-        use crate::utils::filenamify::filenamify_with_options;
-
-        // 两阶段处理：
-        // 1. 先渲染模板，保护模板路径分隔符
-        let rendered = self.handlebars.render("bangumi_folder", data)?;
-        
-        // 2. 对整个渲染结果进行安全化，保护模板分隔符
-        let safe_rendered = filenamify_with_options(&rendered, true);
-        
-        // 3. 最后处理路径分隔符
-        #[cfg(windows)]
-        {
-            Ok(safe_rendered
-                .replace("__UNIX_SEP__", "_")
-                .replace("__WIN_SEP__", "\\"))
-        }
-        #[cfg(not(windows))]
-        {
-            Ok(safe_rendered
-                .replace("__UNIX_SEP__", "/")
-                .replace("__WIN_SEP__", "_"))
-        }
+        self.render_template_safe("bangumi_folder", data)
     }
 
     /// 渲染文件夹结构模板的便捷方法
     pub fn render_folder_structure_template(&self, data: &serde_json::Value) -> Result<String> {
-        use crate::utils::filenamify::filenamify_with_options;
-
-        // 两阶段处理：
-        // 1. 先渲染模板，保护模板路径分隔符
-        let rendered = self.handlebars.render("folder_structure", data)?;
-        
-        // 2. 对整个渲染结果进行安全化，保护模板分隔符
-        let safe_rendered = filenamify_with_options(&rendered, true);
-        
-        // 3. 最后处理路径分隔符
-        #[cfg(windows)]
-        {
-            Ok(safe_rendered
-                .replace("__UNIX_SEP__", "_")
-                .replace("__WIN_SEP__", "\\"))
-        }
-        #[cfg(not(windows))]
-        {
-            Ok(safe_rendered
-                .replace("__UNIX_SEP__", "/")
-                .replace("__WIN_SEP__", "_"))
-        }
+        self.render_template_safe("folder_structure", data)
     }
 }
 
@@ -320,5 +260,128 @@ impl std::fmt::Debug for ConfigBundle {
             .field("handlebars", &"<Handlebars instance>")
             .field("rate_limiter", &"<RateLimiter instance>")
             .finish()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::config::Config;
+    use serde_json::json;
+    use std::borrow::Cow;
+
+    #[test]
+    fn test_video_template_path_separator_handling() {
+        let mut config = Config::default();
+        // 设置包含路径分隔符的模板，模拟用户问题中的场景
+        config.video_name = Cow::Borrowed("{{upper_name}}/{{title}}");
+        let bundle = ConfigBundle::from_config(config).unwrap();
+        
+        // 测试视频文件名模板中的路径分隔符处理
+        let test_data = json!({
+            "upper_name": "ZHY2020",
+            "title": "【𝟒𝐊 𝐇𝐢𝐑𝐞𝐬】「分身/ドッペルゲンガー」孤独摇滚！总集剧场版Re:Re: OP Lyric MV [HiRes 48kHz/24bit]"
+        });
+        
+        let result = bundle.render_video_template(&test_data).unwrap();
+        
+        // 应该包含路径分隔符，而不是下划线
+        #[cfg(windows)]
+        {
+            // Windows下应该包含正斜杠分隔符
+            assert!(result.contains("/"), "Windows系统下路径分隔符应该是 '/'，实际结果: {}", result);
+            assert!(!result.contains("ZHY2020__"), "不应该出现双下划线连接，实际结果: {}", result);
+        }
+        #[cfg(not(windows))]
+        {
+            // 非Windows系统下应该包含正斜杠分隔符
+            assert!(result.contains("/"), "非Windows系统下路径分隔符应该是 '/'，实际结果: {}", result);
+            assert!(!result.contains("ZHY2020__"), "不应该出现双下划线连接，实际结果: {}", result);
+        }
+        
+        // 验证特殊字符被正确处理（内容中的分隔符应该被转换为安全字符）
+        assert!(result.contains("[分身_ドッペルゲンガー]"), "特殊字符应该被正确处理，实际结果: {}", result);
+    }
+
+    #[test]
+    fn test_template_reload_with_different_configs() {
+        let test_data = json!({
+            "upper_name": "TestUpper",
+            "title": "TestVideo"
+        });
+
+        // 创建第一个配置
+        let mut config1 = Config::default();
+        config1.video_name = Cow::Borrowed("{{upper_name}}-{{title}}");
+        let bundle1 = ConfigBundle::from_config(config1).unwrap();
+        
+        let result1 = bundle1.render_video_template(&test_data).unwrap();
+        assert_eq!(result1, "TestUpper-TestVideo");
+
+        // 创建第二个配置，模拟配置更改
+        let mut config2 = Config::default();
+        config2.video_name = Cow::Borrowed("{{upper_name}}/{{title}}");
+        let bundle2 = ConfigBundle::from_config(config2).unwrap();
+        
+        let result2 = bundle2.render_video_template(&test_data).unwrap();
+        assert!(result2.contains("/"), "更新后的模板应该包含路径分隔符: {}", result2);
+        assert_eq!(result2, "TestUpper/TestVideo");
+
+        // 验证两个bundle的结果不同
+        assert_ne!(result1, result2, "不同配置应该产生不同的渲染结果");
+    }
+
+    #[test]
+    fn test_template_render_consistency() {
+        let mut config = Config::default();
+        config.video_name = Cow::Borrowed("{{upper_name}}/{{title}}");
+        config.page_name = Cow::Borrowed("{{upper_name}}/{{title}}/Page{{page}}");
+        
+        let bundle = ConfigBundle::from_config(config).unwrap();
+        
+        let test_data = json!({
+            "upper_name": "UP主名称",
+            "title": "视频标题",
+            "page": "01"
+        });
+
+        // 渲染不同的模板
+        let video_result = bundle.render_video_template(&test_data).unwrap();
+        let page_result = bundle.render_page_template(&test_data).unwrap();
+
+        // 验证路径分隔符一致性
+        assert!(video_result.contains("/"), "video模板应该包含路径分隔符");
+        assert!(page_result.contains("/"), "page模板应该包含路径分隔符");
+        
+        // 验证基础路径一致
+        assert!(page_result.starts_with(&video_result), "page路径应该以video路径为前缀");
+    }
+
+    #[test]
+    fn test_content_slash_handling() {
+        // 创建一个测试配置
+        let mut config = Config::default();
+        config.video_name = Cow::Borrowed("{{upper_name}}/{{title}}");
+        
+        let bundle = ConfigBundle::from_config(config).unwrap();
+        
+        // 测试包含斜杠的数据
+        let data = json!({
+            "upper_name": "ZHY2020",
+            "title": "【𝟒𝐊 𝐇𝐢𝐑𝐞𝐬】「分身/ドッペルゲンガー」孤独摇滚！总集剧场版Re:Re:"
+        });
+        
+        let result = bundle.render_video_template(&data).unwrap();
+        println!("最终渲染结果: '{}'", result);
+        
+        // 验证结果：应该创建正确的目录结构，内容中的斜杠应该被转换为下划线
+        // 期望：ZHY2020/[正确处理的标题]，其中标题中的 / 被转换为 _
+        assert!(result.starts_with("ZHY2020/"), "应该以 ZHY2020/ 开头，实际结果: {}", result);
+        assert!(!result.contains("分身/ドッペルゲンガー"), "原始斜杠应该被处理，实际结果: {}", result);
+        assert!(result.contains("分身_ドッペルゲンガー"), "斜杠应该变成下划线，实际结果: {}", result);
+        
+        // 确保只有一个路径分隔符
+        let slash_count = result.matches('/').count();
+        assert_eq!(slash_count, 1, "应该只有一个路径分隔符，但发现了 {}，结果: {}", slash_count, result);
     }
 }

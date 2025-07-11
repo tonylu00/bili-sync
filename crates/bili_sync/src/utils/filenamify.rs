@@ -126,6 +126,28 @@ mod tests {
         assert_eq!(filenamify("//foo//bar//"), "_foo_bar_");
         assert_eq!(filenamify("foo\\bar"), "foo_bar");
         assert_eq!(filenamify("foo\\\\\\bar"), "foo_bar");
+    }
+
+    #[test]
+    fn test_filenamify_with_template_separators() {
+        // 测试保护模板分隔符时，内容中的原始斜杠应该被处理
+        let input = "ZHY2020__UNIX_SEP__【𝟒𝐊 𝐇𝐢𝐑𝐞𝐬】「分身/ドッペルゲンガー」";
+        let result = filenamify_with_options(input, true);
+        
+        // 期望结果：模板分隔符保留，但内容中的斜杠被处理
+        assert_eq!(result, "ZHY2020__UNIX_SEP___𝟒𝐊 𝐇𝐢𝐑𝐞𝐬_[分身_ドッペルゲンガー]");
+    }
+    
+    #[test]
+    fn test_slash_in_content() {
+        // 专门测试内容中的斜杠处理
+        let input = "分身/ドッペルゲンガー";
+        let result = filenamify(input);
+        assert_eq!(result, "分身_ドッペルゲンガー");
+    }
+    
+    #[test]
+    fn test_filenamify_extended() {
         assert_eq!(filenamify(r"foo\\bar"), "foo_bar");
         assert_eq!(filenamify(r"foo\\\\\\bar"), "foo_bar");
         assert_eq!(filenamify("////foo////bar////"), "_foo_bar_");

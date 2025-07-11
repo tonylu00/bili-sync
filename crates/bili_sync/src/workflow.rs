@@ -874,13 +874,22 @@ pub async fn download_video_pages(
         }
     } else {
         // 非番剧使用原来的逻辑，但对合集进行特殊处理
+        // 【重要】：始终从视频源的原始路径开始计算，避免使用已保存的视频路径
+        let video_source_base_path = video_source.path();
+        
+        debug!("=== 路径计算开始 ===");
+        debug!("视频源基础路径: {:?}", video_source_base_path);
+        debug!("视频BVID: {}", video_model.bvid);
+        debug!("数据库中保存的路径: {:?}", video_model.path);
+        debug!("注意：将忽略数据库中的路径，从视频源基础路径重新计算");
+        
         let path = if let VideoSourceEnum::Collection(collection_source) = video_source {
             // 合集的特殊处理
             let config = crate::config::reload_config();
             match config.collection_folder_mode.as_ref() {
                 "unified" => {
                     // 统一模式：所有视频放在以合集名称命名的同一个文件夹下
-                    video_source.path().join(&collection_source.name)
+                    video_source_base_path.join(&collection_source.name)
                 }
                 _ => {
                     // 分离模式（默认）：每个视频有自己的文件夹
@@ -888,6 +897,9 @@ pub async fn download_video_pages(
                         bundle.render_video_template(&video_format_args(&video_model))
                     })
                     .map_err(|e| anyhow::anyhow!("模板渲染失败: {}", e))?;
+
+                    debug!("合集分离模式 - 渲染的文件夹名: '{}'", base_folder_name);
+                    debug!("合集分离模式 - 基础路径: {:?}", video_source_base_path);
 
                     // **智能判断：根据模板内容决定是否需要去重**
                     let video_template =
@@ -898,15 +910,15 @@ pub async fn download_video_pages(
                     if needs_deduplication {
                         // 智能去重：检查文件夹名是否已存在，如果存在则追加唯一标识符
                         let unique_folder_name = generate_unique_folder_name(
-                            video_source.path(),
+                            video_source_base_path,
                             &base_folder_name,
                             &video_model.bvid,
                             &video_model.pubtime.format("%Y-%m-%d").to_string(),
                         );
-                        video_source.path().join(&unique_folder_name)
+                        video_source_base_path.join(&unique_folder_name)
                     } else {
                         // 不使用去重，允许多个视频共享同一文件夹
-                        video_source.path().join(&base_folder_name)
+                        video_source_base_path.join(&base_folder_name)
                     }
                 }
             }
@@ -916,6 +928,9 @@ pub async fn download_video_pages(
                 crate::config::with_config(|bundle| bundle.render_video_template(&video_format_args(&video_model)))
                     .map_err(|e| anyhow::anyhow!("模板渲染失败: {}", e))?;
 
+            debug!("普通视频源 - 渲染的文件夹名: '{}'", base_folder_name);
+            debug!("普通视频源 - 基础路径: {:?}", video_source_base_path);
+
             // **智能判断：根据模板内容决定是否需要去重**
             let video_template = crate::config::with_config(|bundle| bundle.config.video_name.as_ref().to_string());
             let needs_deduplication = video_template.contains("title")
@@ -924,15 +939,21 @@ pub async fn download_video_pages(
             if needs_deduplication {
                 // 智能去重：检查文件夹名是否已存在，如果存在则追加唯一标识符
                 let unique_folder_name = generate_unique_folder_name(
-                    video_source.path(),
+                    video_source_base_path,
                     &base_folder_name,
                     &video_model.bvid,
                     &video_model.pubtime.format("%Y-%m-%d").to_string(),
                 );
-                video_source.path().join(&unique_folder_name)
+                debug!("使用去重文件夹名: '{}'", unique_folder_name);
+                let final_path = video_source_base_path.join(&unique_folder_name);
+                debug!("最终计算路径: {:?}", final_path);
+                final_path
             } else {
                 // 不使用去重，允许多个视频共享同一文件夹
-                video_source.path().join(&base_folder_name)
+                debug!("不使用去重，直接使用基础文件夹名: '{}'", base_folder_name);
+                let final_path = video_source_base_path.join(&base_folder_name);
+                debug!("最终计算路径: {:?}", final_path);
+                final_path
             }
         };
 
@@ -1411,6 +1432,17 @@ pub async fn download_video_pages(
             base_path.to_string_lossy().to_string()
         }
     };
+
+    debug!("=== 路径保存 ===");
+    debug!("最终保存到数据库的路径: {:?}", path_to_save);
+    debug!("原始基础路径: {:?}", base_path);
+    if let Some(ref bangumi_folder_path) = bangumi_folder_path {
+        debug!("番剧文件夹路径: {:?}", bangumi_folder_path);
+    }
+    if let Some(ref season_folder) = season_folder {
+        debug!("季度文件夹名: {}", season_folder);
+    }
+    debug!("=== 路径计算结束 ===");
 
     video_active_model.path = Set(path_to_save);
     Ok(video_active_model)
