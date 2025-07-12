@@ -43,6 +43,7 @@ pub struct Movie<'a> {
     pub sorttitle: Option<String>,   // 排序标题
     pub actors_info: Option<String>, // 演员信息字符串（从API获取）
     pub cover_url: &'a str,          // 封面图片URL
+    pub fanart_url: Option<&'a str>, // 背景图片URL
 }
 
 pub struct TVShow<'a> {
@@ -72,6 +73,7 @@ pub struct TVShow<'a> {
     pub sorttitle: Option<String>,   // 排序标题
     pub actors_info: Option<String>, // 演员信息字符串（从API获取）
     pub cover_url: &'a str,          // 封面图片URL
+    pub fanart_url: Option<&'a str>, // 背景图片URL
     pub season_id: Option<String>,   // 番剧季度ID（从API获取）
     pub media_id: Option<i64>,       // 媒体ID（从API获取）
 }
@@ -131,6 +133,7 @@ pub struct Season<'a> {
     pub sorttitle: Option<String>,   // 排序标题
     pub actors_info: Option<String>, // 演员信息字符串
     pub cover_url: &'a str,          // 封面图片URL
+    pub fanart_url: Option<&'a str>, // 背景图片URL
     pub season_id: Option<String>,   // 番剧季度ID
     pub media_id: Option<i64>,       // 媒体ID
 }
@@ -430,10 +433,15 @@ impl NFO<'_> {
                         .create_element("thumb")
                         .write_text_content_async(BytesText::new(movie.cover_url))
                         .await?;
-                    writer
-                        .create_element("fanart")
-                        .write_text_content_async(BytesText::new(movie.cover_url))
-                        .await?;
+                    // 只有在真正有fanart_url时才添加fanart字段
+                    if let Some(fanart_url) = movie.fanart_url {
+                        if !fanart_url.is_empty() {
+                            writer
+                                .create_element("fanart")
+                                .write_text_content_async(BytesText::new(fanart_url))
+                                .await?;
+                        }
+                    }
                 }
 
                 Ok(writer)
@@ -726,10 +734,15 @@ impl NFO<'_> {
                         .create_element("thumb")
                         .write_text_content_async(BytesText::new(tvshow.cover_url))
                         .await?;
-                    writer
-                        .create_element("fanart")
-                        .write_text_content_async(BytesText::new(tvshow.cover_url))
-                        .await?;
+                    // 只有在真正有fanart_url时才添加fanart字段
+                    if let Some(fanart_url) = tvshow.fanart_url {
+                        if !fanart_url.is_empty() {
+                            writer
+                                .create_element("fanart")
+                                .write_text_content_async(BytesText::new(fanart_url))
+                                .await?;
+                        }
+                    }
                 }
 
                 Ok(writer)
@@ -1242,10 +1255,15 @@ impl NFO<'_> {
                         .create_element("thumb")
                         .write_text_content_async(BytesText::new(season.cover_url))
                         .await?;
-                    writer
-                        .create_element("fanart")
-                        .write_text_content_async(BytesText::new(season.cover_url))
-                        .await?;
+                    // 只有在真正有fanart_url时才添加fanart字段
+                    if let Some(fanart_url) = season.fanart_url {
+                        if !fanart_url.is_empty() {
+                            writer
+                                .create_element("fanart")
+                                .write_text_content_async(BytesText::new(fanart_url))
+                                .await?;
+                        }
+                    }
                 }
 
                 Ok(writer)
@@ -1531,6 +1549,7 @@ impl<'a> From<&'a video::Model> for Movie<'a> {
             sorttitle,
             actors_info: video.actors.clone(),
             cover_url: &video.cover,
+            fanart_url: None, // Movie暂不单独设置fanart URL
         }
     }
 }
@@ -1620,6 +1639,7 @@ impl<'a> From<&'a video::Model> for TVShow<'a> {
             sorttitle,
             actors_info: video.actors.clone(),
             cover_url: &video.cover,
+            fanart_url: None, // 普通视频没有单独的fanart URL
             season_id: None, // 普通视频没有season_id
             media_id: None,  // 普通视频没有media_id
         }
@@ -1754,6 +1774,10 @@ impl<'a> TVShow<'a> {
                 .or(season_info.horizontal_cover_169.as_deref())
                 .or(season_info.horizontal_cover_1610.as_deref())
                 .unwrap_or(&video.cover),
+            fanart_url: season_info.new_ep_cover.as_deref()
+                .or(season_info.horizontal_cover_169.as_deref())
+                .or(season_info.horizontal_cover_1610.as_deref())
+                .or(season_info.bkg_cover.as_deref()),
             // 使用season_id和media_id作为额外的uniqueid（通过扩展字段传递）
             season_id: Some(season_info.season_id.clone()),
             media_id: season_info.media_id,
@@ -1911,6 +1935,7 @@ impl<'a> From<&'a video::Model> for Season<'a> {
             sorttitle,
             actors_info: video.actors.clone(),
             cover_url: &video.cover,
+            fanart_url: None, // 普通视频没有单独的fanart URL
             season_id: None, // 普通视频没有season_id
             media_id: None,  // 普通视频没有media_id
         }
@@ -2001,6 +2026,10 @@ impl<'a> Season<'a> {
                 .or(season_info.horizontal_cover_169.as_deref())
                 .or(season_info.horizontal_cover_1610.as_deref())
                 .unwrap_or(&video.cover),
+            fanart_url: season_info.new_ep_cover.as_deref()
+                .or(season_info.horizontal_cover_169.as_deref())
+                .or(season_info.horizontal_cover_1610.as_deref())
+                .or(season_info.bkg_cover.as_deref()),
             // 使用season_id和media_id作为额外的uniqueid
             season_id: Some(season_info.season_id.clone()),
             media_id: season_info.media_id,

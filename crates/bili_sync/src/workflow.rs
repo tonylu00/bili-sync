@@ -1048,6 +1048,35 @@ pub async fn download_video_pages(
         (false, false)
     };
 
+    // 为启用Season结构的非番剧视频检查封面文件是否已存在，避免重复下载
+    let should_download_season_poster = if !is_bangumi {
+        let config = crate::config::reload_config();
+        let uses_season_structure = (is_collection && config.collection_use_season_structure) 
+            || (!is_single_page && config.multi_page_use_season_structure);
+            
+        if uses_season_structure && season_folder.is_some() {
+            // 计算封面文件路径（与下载逻辑保持一致）
+            let poster_path = base_path
+                .parent()
+                .map(|parent| parent.join(format!("{}-poster.jpg", video_base_name)))
+                .unwrap_or_else(|| base_path.join(format!("{}-poster.jpg", video_base_name)));
+            let fanart_path = base_path
+                .parent()
+                .map(|parent| parent.join(format!("{}-fanart.jpg", video_base_name)))
+                .unwrap_or_else(|| base_path.join(format!("{}-fanart.jpg", video_base_name)));
+            
+            let poster_exists = poster_path.exists() && fanart_path.exists();
+            let video_type = if is_collection { "合集" } else { "多P视频" };
+            info!("{}「{}」封面检查: poster_path={:?}, fanart_path={:?}, exists={}", 
+                video_type, video_model.name, poster_path, fanart_path, poster_exists);
+            !poster_exists
+        } else {
+            true // 未启用Season结构时不进行检查
+        }
+    } else {
+        true // 番剧不在此处检查
+    };
+
     // 先处理NFO生成（独立执行，避免tokio::join!类型问题）
     let nfo_result = if is_bangumi && season_info.is_some() {
         // 番剧且有API数据：使用API驱动的NFO生成
@@ -1202,9 +1231,9 @@ pub async fn download_video_pages(
                 // 番剧：只有在文件不存在时才下载，放在番剧文件夹根目录
                 separate_status[0] && bangumi_folder_path.is_some() && should_download_bangumi_poster
             } else {
-                // 普通视频：为多P视频或启用Season结构的合集生成封面
+                // 普通视频：为多P视频或启用Season结构的合集生成封面，并检查文件是否已存在
                 let config = crate::config::reload_config();
-                separate_status[0] && (!is_single_page || (is_collection && config.collection_use_season_structure))
+                separate_status[0] && (!is_single_page || (is_collection && config.collection_use_season_structure)) && should_download_season_poster
             },
             &video_model,
             downloader,
