@@ -8,12 +8,19 @@ fn extract_series_title_with_context(
     video_model: &bili_sync_entity::video::Model,
     api_title: Option<&str>,
 ) -> Option<String> {
+    println!("🔍 extract_series_title_with_context 输入参数:");
+    println!("  - video_model.name: '{}'", video_model.name);
+    println!("  - video_model.bvid: '{}'", video_model.bvid);
+    println!("  - api_title: {:?}", api_title);
+    
     // 只使用API提供的真实番剧标题，无回退逻辑
     if let Some(title) = api_title {
+        println!("✅ 使用API标题: '{}'", title);
         return Some(title.to_string());
     }
 
     // 如果没有API标题，记录警告并返回None
+    println!("❌ 没有API标题，返回None");
     tracing::debug!(
         "番剧视频 {} (BVID: {}) 缺少API标题，将跳过处理",
         video_model.name,
@@ -231,10 +238,14 @@ pub fn bangumi_page_format_args(
 
     // 提取番剧系列标题用于文件夹命名，完全依赖API数据
     let series_title = match extract_series_title_with_context(video_model, api_title) {
-        Some(title) => title,
+        Some(title) => {
+            println!("🎯 extract_series_title_with_context 成功提取: '{}'", title);
+            title
+        },
         None => {
             // 无API数据时记录警告，使用空字符串作为series_title
             // 这样调用方可以根据空字符串判断是否缺少API数据
+            println!("⚠️ extract_series_title_with_context 失败，api_title: {:?}", api_title);
             tracing::debug!(
                 "番剧视频 {} (BVID: {}) 缺少API标题，series_title将为空",
                 video_model.name,

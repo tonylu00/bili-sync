@@ -2970,6 +2970,94 @@ pub async fn reset_video_source_path(
     }
 }
 
+/// 验证路径重设操作的安全性
+async fn validate_path_reset_safety(
+    txn: &sea_orm::DatabaseTransaction,
+    source_type: &str,
+    id: i32,
+    new_base_path: &str,
+) -> Result<(), ApiError> {
+    use std::path::Path;
+    
+    // 检查新路径是否有效
+    let new_path = Path::new(new_base_path);
+    if !new_path.is_absolute() {
+        return Err(anyhow!("新路径必须是绝对路径: {}", new_base_path).into());
+    }
+    
+    // 对于番剧，进行特殊验证
+    if source_type == "bangumi" {
+        // 获取番剧的一个示例视频进行路径预测试
+        let sample_video = video::Entity::find()
+            .filter(video::Column::SourceId.eq(id))
+            .filter(video::Column::SourceType.eq(1)) // 番剧类型
+            .one(txn)
+            .await?;
+            
+        if let Some(video) = sample_video {
+            // 尝试预生成路径，检查是否会产生合理的结果
+            let temp_page = bili_sync_entity::page::Model {
+                id: 0,
+                video_id: video.id,
+                cid: 0,
+                pid: 1,
+                name: "temp".to_string(),
+                width: None,
+                height: None,
+                duration: 0,
+                path: None,
+                image: None,
+                download_status: 0,
+                created_at: chrono::Utc::now().to_rfc3339(),
+            };
+            
+            let api_title = if let Some(current_path) = std::path::Path::new(&video.path).parent() {
+                // 从当前路径中提取番剧名称（去掉Season部分）
+                if let Some(folder_name) = current_path.file_name().and_then(|n| n.to_str()) {
+                    // 如果当前文件夹名不是"Season XX"格式，那就是番剧名称
+                    if !folder_name.starts_with("Season ") {
+                        Some(folder_name.to_string())
+                    } else if let Some(series_folder) = current_path.parent() {
+                        // 如果当前是Season文件夹，则取其父文件夹名称
+                        series_folder.file_name()
+                            .and_then(|n| n.to_str())
+                            .map(|s| s.to_string())
+                    } else {
+                        None
+                    }
+                } else {
+                    None
+                }
+            } else {
+                None
+            };
+            
+            let format_args = crate::utils::format_arg::bangumi_page_format_args(&video, &temp_page, api_title.as_deref());
+            let series_title = format_args["series_title"].as_str().unwrap_or("");
+            
+            // 验证是否会产生合理的番剧标题
+            if series_title.is_empty() {
+                return Err(anyhow!(
+                    "番剧路径重设验证失败：无法为番剧 {} 生成有效的系列标题，这可能导致文件移动到错误位置",
+                    video.name
+                ).into());
+            }
+            
+            // 验证生成的路径不包含明显的错误标识
+            if series_title.contains("原版") || series_title.contains("中文") || series_title.contains("日语") {
+                warn!(
+                    "番剧路径重设警告：为番剧 {} 生成的系列标题 '{}' 包含版本标识，这可能不是预期的结果",
+                    video.name, series_title
+                );
+            }
+            
+            info!("番剧路径重设验证通过：将使用系列标题 '{}'", series_title);
+        }
+    }
+    
+    Ok(())
+}
+
 /// 内部路径重设函数（用于队列处理和直接调用）
 pub async fn reset_video_source_path_internal(
     db: Arc<DatabaseConnection>,
@@ -2977,7 +3065,9 @@ pub async fn reset_video_source_path_internal(
     id: i32,
     request: ResetVideoSourcePathRequest,
 ) -> Result<ResetVideoSourcePathResponse, ApiError> {
+    // 在开始操作前进行安全验证
     let txn = db.begin().await?;
+    validate_path_reset_safety(&txn, &source_type, id, &request.new_path).await?;
     let mut moved_files_count = 0;
     let mut updated_videos_count = 0;
     let mut cleaned_folders_count = 0;
@@ -3208,10 +3298,11 @@ pub async fn reset_video_source_path_internal(
                     .all(&txn)
                     .await?;
 
-                for video in &videos {
-                    // 使用番剧专用的文件移动函数
+                // 对于番剧，所有版本共享同一个文件夹，只需要移动一次
+                if let Some(first_video) = videos.first() {
+                    // 使用第一个视频来确定移动逻辑，只移动一次物理文件夹
                     match move_bangumi_files_to_new_path(
-                        video,
+                        first_video,
                         &old_path,
                         &request.new_path,
                         request.clean_empty_folders,
@@ -3222,8 +3313,15 @@ pub async fn reset_video_source_path_internal(
                         Ok((moved, cleaned)) => {
                             moved_files_count += moved;
                             cleaned_folders_count += cleaned;
+                            
+                            // 移动成功后，更新所有视频的数据库路径到相同的新路径
+                            for video in &videos {
+                                if let Err(e) = update_bangumi_video_path_in_database(&txn, video, &request.new_path).await {
+                                    warn!("更新番剧视频 {} 数据库路径失败: {:?}", video.id, e);
+                                }
+                            }
                         }
-                        Err(e) => warn!("移动番剧 {} 文件失败: {}", video.id, e),
+                        Err(e) => warn!("移动番剧文件夹失败: {}", e),
                     }
                 }
                 updated_videos_count = videos.len();
@@ -7836,6 +7934,126 @@ async fn move_directory_contents(
     Ok(())
 }
 
+/// 更新番剧视频在数据库中的路径（不移动文件，只更新数据库）
+async fn update_bangumi_video_path_in_database(
+    txn: &sea_orm::DatabaseTransaction,
+    video: &video::Model,
+    new_base_path: &str,
+) -> Result<(), ApiError> {
+    use std::path::Path;
+
+    // 计算该视频的新路径（与move_bangumi_files_to_new_path使用相同逻辑）
+    let new_video_dir = Path::new(new_base_path);
+
+    // 基于视频模型重新生成路径结构（使用番剧专用逻辑）
+    let new_video_path = if video.source_type == Some(1) {
+        // 番剧使用专用的路径计算逻辑，与workflow.rs保持一致
+        
+        // 创建临时page模型用于格式化参数
+        let temp_page = bili_sync_entity::page::Model {
+            id: 0,
+            video_id: video.id,
+            cid: 0,
+            pid: 1,
+            name: "temp".to_string(),
+            width: None,
+            height: None,
+            duration: 0,
+            path: None,
+            image: None,
+            download_status: 0,
+            created_at: chrono::Utc::now().to_rfc3339(),
+        };
+
+        // 🚨 修复路径提取逻辑：处理混合路径分隔符问题
+        // 数据库中的路径可能包含混合的路径分隔符，如：D:/Downloads/00111\名侦探柯南 绝海的侦探
+        let api_title = {
+            debug!("=== 数据库路径更新调试 ===");
+            debug!("视频ID: {}, BVID: {}", video.id, video.bvid);
+            debug!("视频名称: {}", video.name);
+            debug!("原始数据库路径: {}", &video.path);
+            debug!("新基础路径: {}", new_base_path);
+            
+            // 🔧 标准化路径分隔符：统一转换为当前平台的分隔符
+            let normalized_path = video.path.replace('/', std::path::MAIN_SEPARATOR_STR)
+                                           .replace('\\', std::path::MAIN_SEPARATOR_STR);
+            debug!("标准化后的路径: {}", normalized_path);
+            
+            // 🔍 从标准化路径中提取番剧文件夹名称
+            let current_path = std::path::Path::new(&normalized_path);
+            debug!("Path组件: {:?}", current_path.components().collect::<Vec<_>>());
+            
+            let path_extracted = current_path.file_name()
+                .and_then(|n| n.to_str())
+                .map(|s| s.to_string());
+            debug!("从标准化路径提取的文件夹名: {:?}", path_extracted);
+            
+            // ✅ 验证提取的名称是否合理（包含中文字符或非纯数字）
+            if let Some(ref name) = path_extracted {
+                let is_likely_bangumi_name = !name.chars().all(|c| c.is_ascii_digit()) 
+                    && name.len() > 3; // 番剧名通常比较长
+                
+                if is_likely_bangumi_name {
+                    debug!("✅ 提取的番剧文件夹名看起来合理: '{}'", name);
+                    path_extracted
+                } else {
+                    debug!("⚠️ 提取的名称 '{}' 看起来不像番剧名（可能是根目录）", name);
+                    debug!("💡 将使用None来触发模板的默认行为");
+                    None
+                }
+            } else {
+                debug!("❌ 无法从路径中提取文件夹名");
+                None
+            }
+        };
+
+        // 使用番剧格式化参数生成正确的番剧文件夹路径
+        let format_args = crate::utils::format_arg::bangumi_page_format_args(video, &temp_page, api_title.as_deref());
+        debug!("格式化参数: {}", serde_json::to_string_pretty(&format_args).unwrap_or_default());
+        
+        // 检查是否有有效的series_title
+        let series_title = format_args["series_title"].as_str().unwrap_or("");
+        debug!("提取的series_title: '{}'", series_title);
+        
+        if series_title.is_empty() {
+            return Err(anyhow!(
+                "番剧 {} (BVID: {}) 缺少有效的系列标题，无法生成路径",
+                video.name, video.bvid
+            ).into());
+        }
+
+        // 生成番剧文件夹名称
+        let rendered_folder = crate::config::with_config(|bundle| {
+            bundle.render_bangumi_folder_template(&format_args)
+        })
+        .map_err(|e| anyhow!("番剧文件夹模板渲染失败: {}", e))?;
+        
+        debug!("渲染的番剧文件夹名: '{}'", rendered_folder);
+        rendered_folder
+    } else {
+        return Err(anyhow!("非番剧视频不应调用此函数").into());
+    };
+
+    let target_video_dir = new_video_dir.join(&new_video_path);
+    debug!("=== 最终路径构建 ===");
+    debug!("新基础目录: {:?}", new_video_dir);
+    debug!("生成的番剧文件夹名: '{}'", new_video_path);
+    debug!("最终目标路径: {:?}", target_video_dir);
+
+    // 只更新数据库，不移动文件
+    let video_path_str = target_video_dir.to_string_lossy().to_string();
+    debug!("将要保存到数据库的路径字符串: '{}'", video_path_str);
+    
+    video::Entity::update_many()
+        .filter(video::Column::Id.eq(video.id))
+        .col_expr(video::Column::Path, Expr::value(video_path_str.clone()))
+        .exec(txn)
+        .await?;
+
+    info!("更新番剧视频 {} 数据库路径: {} -> {}", video.id, video.path, video_path_str);
+    Ok(())
+}
+
 /// 番剧专用的文件移动函数，避免BVID后缀污染
 async fn move_bangumi_files_to_new_path(
     video: &video::Model,
@@ -7858,17 +8076,110 @@ async fn move_bangumi_files_to_new_path(
     // 使用模板重新生成视频在新基础路径下的目标路径
     let new_video_dir = Path::new(new_base_path);
 
-    // 基于视频模型重新生成路径结构
-    let new_video_path = crate::config::with_config(|bundle| {
-        let video_args = crate::utils::format_arg::video_format_args(video);
-        bundle.render_video_template(&video_args)
-    })
-    .map_err(|e| std::io::Error::other(format!("模板渲染失败: {}", e)))?;
+    // 基于视频模型重新生成路径结构（使用番剧专用逻辑）
+    let new_video_path = if video.source_type == Some(1) {
+        // 番剧使用专用的路径计算逻辑，与workflow.rs保持一致
+        
+        // 创建临时page模型用于格式化参数
+        let temp_page = bili_sync_entity::page::Model {
+            id: 0,
+            video_id: video.id,
+            cid: 0,
+            pid: 1,
+            name: "temp".to_string(),
+            width: None,
+            height: None,
+            duration: 0,
+            path: None,
+            image: None,
+            download_status: 0,
+            created_at: chrono::Utc::now().to_rfc3339(),
+        };
+
+        // 🚨 修复路径提取逻辑：处理混合路径分隔符问题
+        // 数据库中的路径可能包含混合的路径分隔符，如：D:/Downloads/00111\名侦探柯南 绝海的侦探
+        let api_title = {
+            println!("=== 文件移动路径提取调试 ===");
+            println!("视频ID: {}, BVID: {}", video.id, video.bvid);
+            println!("视频名称: {}", video.name);
+            println!("原始文件系统路径: {}", &video.path);
+            println!("新基础路径: {}", new_base_path);
+            
+            // 🔧 标准化路径分隔符：统一转换为当前平台的分隔符
+            let normalized_path = video.path.replace('/', std::path::MAIN_SEPARATOR_STR)
+                                           .replace('\\', std::path::MAIN_SEPARATOR_STR);
+            println!("标准化后的路径: {}", normalized_path);
+            
+            // 🔍 从标准化路径中提取番剧文件夹名称
+            let current_path = std::path::Path::new(&normalized_path);
+            println!("Path组件: {:?}", current_path.components().collect::<Vec<_>>());
+            
+            let path_extracted = current_path.file_name()
+                .and_then(|n| n.to_str())
+                .map(|s| s.to_string());
+            println!("从标准化路径提取的文件夹名: {:?}", path_extracted);
+            
+            // ✅ 验证提取的名称是否合理（包含中文字符或非纯数字）
+            if let Some(ref name) = path_extracted {
+                let is_likely_bangumi_name = !name.chars().all(|c| c.is_ascii_digit()) 
+                    && name.len() > 3; // 番剧名通常比较长
+                
+                if is_likely_bangumi_name {
+                    println!("✅ 提取的番剧文件夹名看起来合理: '{}'", name);
+                    path_extracted
+                } else {
+                    println!("⚠️ 提取的名称 '{}' 看起来不像番剧名（可能是根目录）", name);
+                    println!("💡 将使用None来触发模板的默认行为");
+                    None
+                }
+            } else {
+                println!("❌ 无法从路径中提取文件夹名");
+                None
+            }
+        };
+
+        // 使用番剧格式化参数生成正确的番剧文件夹路径
+        let format_args = crate::utils::format_arg::bangumi_page_format_args(video, &temp_page, api_title.as_deref());
+        println!("格式化参数: {}", serde_json::to_string_pretty(&format_args).unwrap_or_default());
+        
+        // 检查是否有有效的series_title
+        let series_title = format_args["series_title"].as_str().unwrap_or("");
+        println!("提取的series_title: '{}'", series_title);
+        
+        if series_title.is_empty() {
+            return Err(std::io::Error::other(format!(
+                "番剧 {} (BVID: {}) 缺少有效的系列标题，无法生成路径",
+                video.name, video.bvid
+            )));
+        }
+
+        // 生成番剧文件夹名称
+        let rendered_folder = crate::config::with_config(|bundle| {
+            bundle.render_bangumi_folder_template(&format_args)
+        })
+        .map_err(|e| std::io::Error::other(format!("番剧文件夹模板渲染失败: {}", e)))?;
+        
+        println!("渲染的番剧文件夹名: '{}'", rendered_folder);
+        rendered_folder
+    } else {
+        // 非番剧使用原有逻辑
+        crate::config::with_config(|bundle| {
+            let video_args = crate::utils::format_arg::video_format_args(video);
+            bundle.render_video_template(&video_args)
+        })
+        .map_err(|e| std::io::Error::other(format!("模板渲染失败: {}", e)))?
+    };
 
     let target_video_dir = new_video_dir.join(&new_video_path);
+    println!("=== 文件移动最终路径构建 ===");
+    println!("当前视频路径: {:?}", current_video_path);
+    println!("新基础目录: {:?}", new_video_dir);
+    println!("生成的番剧文件夹名: '{}'", new_video_path);
+    println!("最终目标路径: {:?}", target_video_dir);
 
     // 如果目标路径和当前路径相同，无需移动
     if current_video_path == target_video_dir {
+        println!("目标路径与当前路径相同，无需移动");
         return Ok((0, 0));
     }
 
@@ -7899,6 +8210,7 @@ async fn move_bangumi_files_to_new_path(
 
     Ok((moved_count, cleaned_count))
 }
+
 
 /// 番剧文件重命名：只重命名集数部分，保留版本和后缀
 async fn rename_bangumi_files_in_directory(
@@ -7952,14 +8264,7 @@ async fn rename_bangumi_files_in_directory(
         }
     }
 
-    // 更新视频路径在数据库中的记录
-    let video_path_str = video_dir.to_string_lossy().to_string();
-    video::Entity::update_many()
-        .filter(video::Column::Id.eq(video.id))
-        .col_expr(video::Column::Path, Expr::value(video_path_str))
-        .exec(txn)
-        .await?;
-
+    // 注意：数据库路径更新现在由调用方统一处理，避免多版本视频路径冲突
     Ok(())
 }
 
