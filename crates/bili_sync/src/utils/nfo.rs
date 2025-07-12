@@ -14,6 +14,7 @@ pub enum NFO<'a> {
     TVShow(TVShow<'a>),
     Upper(Upper),
     Episode(Episode<'a>),
+    Season(Season<'a>),
 }
 
 pub struct Movie<'a> {
@@ -103,6 +104,37 @@ pub struct Episode<'a> {
     pub fanart_url: Option<&'a str>, // 背景图URL
 }
 
+pub struct Season<'a> {
+    pub name: &'a str,
+    pub original_title: &'a str,
+    pub intro: &'a str,
+    pub season_number: i32,
+    pub bvid: &'a str,
+    #[allow(dead_code)]
+    pub upper_id: i64,
+    pub upper_name: &'a str,
+    pub aired: NaiveDateTime,
+    pub premiered: NaiveDateTime,
+    pub tags: Option<Vec<String>>,
+    pub user_rating: Option<f32>,
+    pub mpaa: Option<&'a str>,
+    pub country: Option<&'a str>,
+    pub studio: Option<&'a str>,
+    pub status: Option<&'a str>,
+    pub total_episodes: Option<i32>,
+    pub duration: Option<i32>,       // 平均集时长（分钟）
+    pub view_count: Option<i64>,     // 总播放量
+    pub like_count: Option<i64>,     // 总点赞数
+    pub category: i32,               // 视频分类
+    pub tagline: Option<String>,     // 标语/副标题
+    pub set: Option<String>,         // 系列名称
+    pub sorttitle: Option<String>,   // 排序标题
+    pub actors_info: Option<String>, // 演员信息字符串
+    pub cover_url: &'a str,          // 封面图片URL
+    pub season_id: Option<String>,   // 番剧季度ID
+    pub media_id: Option<i64>,       // 媒体ID
+}
+
 impl NFO<'_> {
     pub async fn generate_nfo(self) -> Result<String> {
         let config = crate::config::reload_config();
@@ -124,6 +156,9 @@ impl NFO<'_> {
             }
             NFO::Episode(episode) => {
                 Self::write_episode_nfo(writer, episode, &config.nfo_config).await?;
+            }
+            NFO::Season(season) => {
+                Self::write_season_nfo(writer, season, &config.nfo_config).await?;
             }
         }
         tokio_buffer.flush().await?;
@@ -913,6 +948,312 @@ impl NFO<'_> {
         Ok(())
     }
 
+    async fn write_season_nfo(
+        mut writer: Writer<&mut BufWriter<&mut Vec<u8>>>,
+        season: Season<'_>,
+        config: &NFOConfig,
+    ) -> Result<()> {
+        // 验证数据有效性
+        if !Self::validate_nfo_data(season.name, season.bvid, season.upper_name) {
+            return Err(anyhow::anyhow!(
+                "Invalid NFO data: name='{}', bvid='{}', upper_name='{}'",
+                season.name,
+                season.bvid,
+                season.upper_name
+            ));
+        }
+
+        writer
+            .create_element("season")
+            .write_inner_content_async::<_, _, Error>(|writer| async move {
+                // 标题信息 - 根据Emby标准，Season应该显示纯季度标题（如"第二季"）
+                let (display_title, original_title) = if Self::is_bangumi_video(season.category) {
+                    // 尝试提取纯季度标题
+                    if let Some(season_title) = Self::extract_season_title_from_full_name(season.name) {
+                        (season_title, season.name.to_string())
+                    } else {
+                        // 如果提取失败，使用完整名称
+                        (season.name.to_string(), season.original_title.to_string())
+                    }
+                } else {
+                    // 非番剧使用完整名称
+                    (season.name.to_string(), season.original_title.to_string())
+                };
+
+                writer
+                    .create_element("title")
+                    .write_text_content_async(BytesText::new(&display_title))
+                    .await?;
+                writer
+                    .create_element("originaltitle")
+                    .write_text_content_async(BytesText::new(&original_title))
+                    .await?;
+
+                // 季数信息
+                writer
+                    .create_element("seasonnumber")
+                    .write_text_content_async(BytesText::new(&season.season_number.to_string()))
+                    .await?;
+
+                // 标语/副标题
+                if let Some(ref tagline) = season.tagline {
+                    writer
+                        .create_element("tagline")
+                        .write_text_content_async(BytesText::new(tagline))
+                        .await?;
+                }
+
+                // 排序标题
+                if let Some(ref sorttitle) = season.sorttitle {
+                    writer
+                        .create_element("sorttitle")
+                        .write_text_content_async(BytesText::new(sorttitle))
+                        .await?;
+                } else {
+                    // 使用显示标题作为默认排序标题
+                    writer
+                        .create_element("sorttitle")
+                        .write_text_content_async(BytesText::new(&display_title))
+                        .await?;
+                }
+
+                // 系列信息
+                if let Some(ref set_name) = season.set {
+                    writer
+                        .create_element("set")
+                        .write_inner_content_async::<_, _, Error>(|writer| async move {
+                            writer
+                                .create_element("name")
+                                .write_text_content_async(BytesText::new(set_name))
+                                .await?;
+                            Ok(writer)
+                        })
+                        .await?;
+                }
+
+                // 剧情简介 - 为Season添加季度特定的前缀
+                let season_plot = if Self::is_bangumi_video(season.category) {
+                    if let Some(season_title) = Self::extract_season_title_from_full_name(season.name) {
+                        format!("【{}】{}", season_title, Self::format_plot(season.bvid, season.intro))
+                    } else {
+                        Self::format_plot(season.bvid, season.intro)
+                    }
+                } else {
+                    Self::format_plot(season.bvid, season.intro)
+                };
+                writer
+                    .create_element("plot")
+                    .write_cdata_content_async(BytesCData::new(season_plot))
+                    .await?;
+                writer.create_element("outline").write_empty_async().await?;
+
+                // 评分信息
+                if let Some(rating) = season.user_rating {
+                    writer
+                        .create_element("userrating")
+                        .write_text_content_async(BytesText::new(&rating.to_string()))
+                        .await?;
+                }
+
+                // 分级信息
+                if let Some(mpaa) = season.mpaa {
+                    writer
+                        .create_element("mpaa")
+                        .write_text_content_async(BytesText::new(mpaa))
+                        .await?;
+                }
+
+                // 唯一标识符
+                writer
+                    .create_element("uniqueid")
+                    .with_attribute(("type", "bilibili"))
+                    .with_attribute(("default", "true"))
+                    .write_text_content_async(BytesText::new(season.bvid))
+                    .await?;
+
+                // 添加番剧季度ID作为额外的uniqueid
+                if let Some(ref season_id) = season.season_id {
+                    writer
+                        .create_element("uniqueid")
+                        .with_attribute(("type", "bilibili_season"))
+                        .write_text_content_async(BytesText::new(season_id))
+                        .await?;
+                }
+
+                // 添加媒体ID作为额外的uniqueid
+                if let Some(media_id) = season.media_id {
+                    writer
+                        .create_element("uniqueid")
+                        .with_attribute(("type", "bilibili_media"))
+                        .write_text_content_async(BytesText::new(&media_id.to_string()))
+                        .await?;
+                }
+
+                // 类型标签
+                if let Some(tags) = season.tags {
+                    for tag in tags {
+                        writer
+                            .create_element("genre")
+                            .write_text_content_async(BytesText::new(&tag))
+                            .await?;
+                    }
+                }
+
+                // 国家信息
+                if let Some(country) = season.country {
+                    writer
+                        .create_element("country")
+                        .write_text_content_async(BytesText::new(country))
+                        .await?;
+                } else {
+                    writer
+                        .create_element("country")
+                        .write_text_content_async(BytesText::new(&config.default_country))
+                        .await?;
+                }
+
+                // 播出状态
+                if let Some(status) = season.status {
+                    writer
+                        .create_element("status")
+                        .write_text_content_async(BytesText::new(status))
+                        .await?;
+                } else {
+                    writer
+                        .create_element("status")
+                        .write_text_content_async(BytesText::new(&config.default_tvshow_status))
+                        .await?;
+                }
+
+                // 集数信息
+                if let Some(total_episodes) = season.total_episodes {
+                    writer
+                        .create_element("totalepisodes")
+                        .write_text_content_async(BytesText::new(&total_episodes.to_string()))
+                        .await?;
+                }
+
+                // 时间信息
+                writer
+                    .create_element("year")
+                    .write_text_content_async(BytesText::new(&season.aired.format("%Y").to_string()))
+                    .await?;
+                writer
+                    .create_element("premiered")
+                    .write_text_content_async(BytesText::new(&season.premiered.format("%Y-%m-%d").to_string()))
+                    .await?;
+                writer
+                    .create_element("aired")
+                    .write_text_content_async(BytesText::new(&season.aired.format("%Y-%m-%d").to_string()))
+                    .await?;
+
+                // 制作信息
+                if let Some(studio) = season.studio {
+                    writer
+                        .create_element("studio")
+                        .write_text_content_async(BytesText::new(studio))
+                        .await?;
+                } else {
+                    writer
+                        .create_element("studio")
+                        .write_text_content_async(BytesText::new(&config.default_studio))
+                        .await?;
+                }
+
+                // 演员信息（优先使用真实演员信息，备选UP主）
+                if config.include_actor_info {
+                    // 首先尝试使用真实演员信息
+                    if let Some(ref actors_str) = season.actors_info {
+                        let actors = Self::parse_actors_string(actors_str);
+                        for (index, (character, actor)) in actors.iter().enumerate() {
+                            writer
+                                .create_element("actor")
+                                .write_inner_content_async::<_, _, Error>(|writer| async move {
+                                    writer
+                                        .create_element("name")
+                                        .write_text_content_async(BytesText::new(actor))
+                                        .await?;
+                                    writer
+                                        .create_element("role")
+                                        .write_text_content_async(BytesText::new(character))
+                                        .await?;
+                                    writer
+                                        .create_element("order")
+                                        .write_text_content_async(BytesText::new(&(index + 1).to_string()))
+                                        .await?;
+                                    Ok(writer)
+                                })
+                                .await?;
+                        }
+                    } else {
+                        // 备选：使用UP主信息作为创作者
+                        let actor_name = Self::get_actor_name(season.upper_name, config);
+                        if let Some(name) = actor_name {
+                            writer
+                                .create_element("actor")
+                                .write_inner_content_async::<_, _, Error>(|writer| async move {
+                                    writer
+                                        .create_element("name")
+                                        .write_text_content_async(BytesText::new(&name))
+                                        .await?;
+                                    writer
+                                        .create_element("role")
+                                        .write_text_content_async(BytesText::new("创作者"))
+                                        .await?;
+                                    writer
+                                        .create_element("order")
+                                        .write_text_content_async(BytesText::new("1"))
+                                        .await?;
+                                    Ok(writer)
+                                })
+                                .await?;
+                        }
+                    }
+                }
+
+                // 时长信息
+                if let Some(duration) = season.duration {
+                    writer
+                        .create_element("runtime")
+                        .write_text_content_async(BytesText::new(&duration.to_string()))
+                        .await?;
+                }
+
+                // B站特有信息作为自定义标签
+                if config.include_bilibili_info {
+                    if let Some(view_count) = season.view_count {
+                        writer
+                            .create_element("tag")
+                            .write_text_content_async(BytesText::new(&format!("播放量: {}", view_count)))
+                            .await?;
+                    }
+
+                    if let Some(like_count) = season.like_count {
+                        writer
+                            .create_element("tag")
+                            .write_text_content_async(BytesText::new(&format!("点赞数: {}", like_count)))
+                            .await?;
+                    }
+                }
+
+                // 封面图信息
+                if !season.cover_url.is_empty() {
+                    writer
+                        .create_element("thumb")
+                        .write_text_content_async(BytesText::new(season.cover_url))
+                        .await?;
+                    writer
+                        .create_element("fanart")
+                        .write_text_content_async(BytesText::new(season.cover_url))
+                        .await?;
+                }
+
+                Ok(writer)
+            })
+            .await?;
+        Ok(())
+    }
+
     #[inline]
     fn format_plot(bvid: &str, intro: &str) -> String {
         format!(
@@ -924,6 +1265,16 @@ impl NFO<'_> {
     /// 检测是否为番剧视频（基于 category 字段）
     fn is_bangumi_video(category: i32) -> bool {
         category == 1
+    }
+
+    /// 从完整标题中提取纯季度标题（如"第二季"）
+    fn extract_season_title_from_full_name(full_name: &str) -> Option<String> {
+        // 匹配 "番剧名称第X季" 格式，提取季度部分
+        let pattern = regex::Regex::new(r".+?(第[一二三四五六七八九十\d]+季)").unwrap();
+        if let Some(caps) = pattern.captures(full_name) {
+            return Some(caps[1].to_string());
+        }
+        None
     }
 
     /// 从完整标题中提取番剧名称
@@ -951,7 +1302,46 @@ impl NFO<'_> {
             }
         }
 
+        // 匹配 "番剧名称第X季" 格式，用于TVShow标题清理
+        let pattern4 = regex::Regex::new(r"^(.+?)第[一二三四五六七八九十\d]+季$").unwrap();
+        if let Some(caps) = pattern4.captures(full_name) {
+            return Some(caps[1].trim().to_string());
+        }
+
         None
+    }
+
+    /// 计算番剧的实际总季数
+    /// 通过分析番剧标题中的季度信息来推断总季数
+    fn calculate_total_seasons_from_title(title: &str) -> i32 {
+        // 如果标题包含季度信息，尝试提取季度数字
+        if let Some(season_match) = regex::Regex::new(r"第([一二三四五六七八九十\d]+)季")
+            .unwrap()
+            .captures(title) {
+            let season_str = &season_match[1];
+            
+            // 处理中文数字转换
+            let season_number = match season_str {
+                "一" => 1,
+                "二" => 2, 
+                "三" => 3,
+                "四" => 4,
+                "五" => 5,
+                "六" => 6,
+                "七" => 7,
+                "八" => 8,
+                "九" => 9,
+                "十" => 10,
+                _ => season_str.parse::<i32>().unwrap_or(1)
+            };
+            
+            // 返回当前检测到的季度作为总季数的估计
+            // 这是基于标题的最佳猜测
+            season_number
+        } else {
+            // 没有季度信息，假设为单季
+            1
+        }
     }
 
     /// 从share_copy或标题中提取副标题信息
@@ -1219,7 +1609,7 @@ impl<'a> From<&'a video::Model> for TVShow<'a> {
             country: None,              // 使用默认值（中国）
             studio: None,               // 使用默认值（哔哩哔哩）
             status: Some("Continuing"), // 默认持续播出状态
-            total_seasons: Some(1),     // 默认单季
+            total_seasons: Some(NFO::calculate_total_seasons_from_title(nfo_title)),
             total_episodes: None,       // 从分页数量推断
             duration: None,             // video模型中没有duration字段
             view_count: None,           // video模型中没有view_count字段
@@ -1344,14 +1734,18 @@ impl<'a> TVShow<'a> {
             country,
             studio: None, // 可以从制作公司获取，但API中暂无此字段
             status,
-            total_seasons: Some(1), // 默认单季，可能需要从更复杂的逻辑推导
+            total_seasons: season_info.total_seasons.or_else(|| Some(NFO::calculate_total_seasons_from_title(&season_info.title))),
             total_episodes: season_info.total_episodes,
             duration: None, // 单集平均时长，需要计算
             view_count: season_info.total_views,
             like_count: season_info.total_favorites,
             category: video.category,
             tagline: season_info.alias.as_deref().map(|s| s.to_string()),
-            set: Some(season_info.title.clone()), // 系列名称
+            set: if NFO::is_bangumi_video(video.category) {
+                NFO::extract_bangumi_title_from_full_name(&season_info.title)
+            } else {
+                Some(season_info.title.clone())
+            }, // 系列名称（清理季度信息）
             sorttitle: Some(season_info.title.clone()),
             actors_info: season_info.actors.clone(),
             cover_url: season_info
@@ -1427,6 +1821,187 @@ impl<'a> Episode<'a> {
                 .and_then(|tags| serde_json::from_value(tags.clone()).ok()), // 从视频标签提取类型
             thumb_url: None,                                          // 暂不设置本地路径
             fanart_url: None,                                         // 暂不设置本地路径
+        }
+    }
+}
+
+impl<'a> From<&'a video::Model> for Season<'a> {
+    fn from(video: &'a video::Model) -> Self {
+        // 使用动态配置而非静态CONFIG
+        let config = crate::config::reload_config();
+
+        // 对于番剧影视类型（show_season_type=2），使用share_copy作为标题
+        // 其他类型继续使用video.name
+        let nfo_title = if video.show_season_type == Some(2) {
+            video.share_copy.as_deref().unwrap_or(&video.name)
+        } else {
+            &video.name
+        };
+
+        let aired_time = match config.nfo_config.time_type {
+            NFOTimeType::FavTime => video.favtime,
+            NFOTimeType::PubTime => video.pubtime,
+        };
+
+        // 提取标语/副标题
+        let tagline = if video.show_season_type == Some(2) {
+            video
+                .share_copy
+                .as_ref()
+                .and_then(|sc| NFO::extract_subtitle_from_share_copy(sc))
+        } else {
+            None
+        };
+
+        // 生成排序标题（去除特殊字符，便于排序）
+        let sorttitle = Some({
+            // 对于番剧，使用提取的系列名称；否则使用原标题
+            if NFO::is_bangumi_video(video.category) {
+                if let Some(bangumi_title) = NFO::extract_bangumi_title_from_full_name(nfo_title) {
+                    bangumi_title
+                } else {
+                    // 如果提取失败，手动清理标题
+                    nfo_title
+                        .replace("《", "")
+                        .replace("》", "")
+                        .split_whitespace()
+                        .next()
+                        .unwrap_or(nfo_title)
+                        .to_string()
+                }
+            } else {
+                nfo_title.to_string()
+            }
+        });
+
+        // 对于番剧，尝试提取系列名称
+        let set_name = if NFO::is_bangumi_video(video.category) {
+            NFO::extract_bangumi_title_from_full_name(nfo_title)
+        } else {
+            None
+        };
+
+        Self {
+            name: nfo_title,
+            original_title: &video.name,
+            intro: &video.intro,
+            season_number: video.season_number.unwrap_or(1), // 使用video的season_number，默认为1
+            bvid: &video.bvid,
+            upper_id: video.upper_id,
+            upper_name: &video.upper_name,
+            aired: aired_time,
+            premiered: aired_time,
+            tags: video
+                .tags
+                .as_ref()
+                .and_then(|tags| serde_json::from_value(tags.clone()).ok()),
+            user_rating: None,          // B站没有评分系统
+            mpaa: None,                 // 使用默认分级
+            country: None,              // 使用默认值（中国）
+            studio: None,               // 使用默认值（哔哩哔哩）
+            status: Some("Continuing"), // 默认持续播出状态
+            total_episodes: None,       // 从集数统计推断
+            duration: None,             // 平均集时长，需要计算
+            view_count: None,           // video模型中没有view_count字段
+            like_count: None,           // video模型中没有like_count字段
+            category: video.category,
+            tagline,
+            set: set_name,
+            sorttitle,
+            actors_info: video.actors.clone(),
+            cover_url: &video.cover,
+            season_id: None, // 普通视频没有season_id
+            media_id: None,  // 普通视频没有media_id
+        }
+    }
+}
+
+impl<'a> Season<'a> {
+    /// 从API获取的SeasonInfo创建带有完整元数据的Season
+    pub fn from_season_info(video: &'a video::Model, season_info: &'a crate::workflow::SeasonInfo) -> Self {
+        // 使用动态配置而非静态CONFIG
+        let config = crate::config::reload_config();
+
+        // 优先使用API的发布时间，如果没有则使用配置的时间类型
+        let aired_time = if let Some(ref publish_time) = season_info.publish_time {
+            // 尝试解析API提供的发布时间
+            if let Ok(parsed_time) = chrono::NaiveDateTime::parse_from_str(publish_time, "%Y-%m-%d %H:%M:%S") {
+                parsed_time
+            } else if let Ok(parsed_time) = chrono::NaiveDate::parse_from_str(publish_time, "%Y-%m-%d") {
+                parsed_time.and_hms_opt(0, 0, 0).unwrap_or(video.pubtime)
+            } else {
+                // 解析失败，使用配置的时间类型
+                match config.nfo_config.time_type {
+                    crate::config::NFOTimeType::FavTime => video.favtime,
+                    crate::config::NFOTimeType::PubTime => video.pubtime,
+                }
+            }
+        } else {
+            // 没有API时间，使用配置的时间类型
+            match config.nfo_config.time_type {
+                crate::config::NFOTimeType::FavTime => video.favtime,
+                crate::config::NFOTimeType::PubTime => video.pubtime,
+            }
+        };
+
+        // 使用API提供的信息
+        let nfo_title = &season_info.title;
+        let evaluate = season_info.evaluate.as_deref().unwrap_or(&video.intro);
+
+        // 制作地区处理（使用第一个地区或默认值）
+        let country = season_info.areas.first().map(|s| s.as_str());
+
+        // 播出状态
+        let status = season_info.status.as_deref();
+
+        // 类型标签
+        let genres: Option<Vec<String>> = if !season_info.styles.is_empty() {
+            Some(season_info.styles.clone())
+        } else {
+            // 备选：使用video中的tags
+            video
+                .tags
+                .as_ref()
+                .and_then(|tags| serde_json::from_value(tags.clone()).ok())
+        };
+
+        Self {
+            name: nfo_title,
+            original_title: season_info.alias.as_deref().unwrap_or(&season_info.title),
+            intro: evaluate,
+            season_number: video.season_number.unwrap_or(1), // 使用video的season_number
+            bvid: &video.bvid,
+            upper_id: video.upper_id,
+            upper_name: &video.upper_name,
+            aired: aired_time,
+            premiered: aired_time,
+            tags: genres,
+            user_rating: season_info.rating,
+            mpaa: None, // 可以从API的"分级"字段获取，但目前API中没有
+            country,
+            studio: None, // 可以从制作公司获取，但API中暂无此字段
+            status,
+            total_episodes: season_info.total_episodes,
+            duration: None, // 单集平均时长，需要计算
+            view_count: season_info.total_views,
+            like_count: season_info.total_favorites,
+            category: video.category,
+            tagline: season_info.alias.as_deref().map(|s| s.to_string()),
+            set: if NFO::is_bangumi_video(video.category) {
+                NFO::extract_bangumi_title_from_full_name(&season_info.title)
+            } else {
+                Some(season_info.title.clone())
+            }, // 系列名称（清理季度信息）
+            sorttitle: Some(season_info.title.clone()),
+            actors_info: season_info.actors.clone(),
+            cover_url: season_info
+                .cover
+                .as_deref()
+                .or(season_info.horizontal_cover.as_deref())
+                .unwrap_or(&video.cover),
+            // 使用season_id和media_id作为额外的uniqueid
+            season_id: Some(season_info.season_id.clone()),
+            media_id: season_info.media_id,
         }
     }
 }
@@ -1939,5 +2514,193 @@ mod tests {
         assert_eq!(movie_no_duration.duration, None);
 
         println!("时长计算NFO生成测试通过");
+    }
+
+    #[tokio::test]
+    async fn test_season_nfo_generation() {
+        // 测试Season NFO生成功能
+        let video = video::Model {
+            intro: "数百年前，欲望催生了几乎灭绝人类的玛娜生态。".to_string(),
+            name: "《灵笼 第二季》".to_string(),
+            upper_id: 0,
+            upper_name: "".to_string(),
+            category: 1,               // 番剧分类
+            season_number: Some(2),    // 第二季
+            favtime: chrono::NaiveDateTime::new(
+                chrono::NaiveDate::from_ymd_opt(2025, 5, 23).unwrap(),
+                chrono::NaiveTime::from_hms_opt(14, 30, 0).unwrap(),
+            ),
+            pubtime: chrono::NaiveDateTime::new(
+                chrono::NaiveDate::from_ymd_opt(2025, 5, 23).unwrap(),
+                chrono::NaiveTime::from_hms_opt(14, 30, 0).unwrap(),
+            ),
+            bvid: "BV1bSJez1Et8".to_string(),
+            tags: Some(serde_json::json!(["动画", "科幻"])),
+            ..Default::default()
+        };
+
+        let season_nfo = NFO::Season((&video).into()).generate_nfo().await.unwrap();
+
+        // 验证Season NFO的关键字段
+        assert!(season_nfo.contains("<?xml version=\"1.0\" encoding=\"utf-8\" standalone=\"yes\"?>"));
+        assert!(season_nfo.contains("<season>"));
+        assert!(season_nfo.contains("</season>"));
+        assert!(season_nfo.contains("<title>第二季</title>"));
+        assert!(season_nfo.contains("<originaltitle>《灵笼 第二季》</originaltitle>"));
+        assert!(season_nfo.contains("<seasonnumber>2</seasonnumber>"));
+        assert!(season_nfo.contains(r#"<uniqueid type="bilibili" default="true">BV1bSJez1Et8</uniqueid>"#));
+        assert!(season_nfo.contains("<country>中国</country>"));
+        assert!(season_nfo.contains("<studio>哔哩哔哩</studio>"));
+        assert!(season_nfo.contains("<status>Continuing</status>"));
+        assert!(season_nfo.contains("<genre>动画</genre>"));
+        assert!(season_nfo.contains("<genre>科幻</genre>"));
+
+        // 验证没有空的演员信息
+        assert!(!season_nfo.contains("<actor>"));
+
+        println!("Season NFO生成测试通过");
+        println!("生成的Season NFO:");
+        println!("{}", season_nfo);
+    }
+
+    #[tokio::test]
+    async fn test_dynamic_total_seasons_calculation() {
+        // 测试阶段3修复：动态TotalSeasons计算功能
+        
+        // 测试不同季度标题的总季数计算
+        let test_cases = vec![
+            ("灵笼 第一季", 1),
+            ("灵笼第二季", 2), 
+            ("进击的巨人第三季", 3),
+            ("某科学的超电磁炮第2季", 2),
+            ("鬼灭之刃第四季", 4),
+            ("普通番剧标题", 1), // 无季度信息，默认为1
+        ];
+
+        for (input, expected) in test_cases {
+            let result = NFO::calculate_total_seasons_from_title(input);
+            assert_eq!(result, expected, "Failed for input: {}", input);
+        }
+
+        // 测试在TVShow NFO生成中的应用
+        let video = video::Model {
+            intro: "测试番剧".to_string(),
+            name: "灵笼第二季".to_string(),
+            upper_id: 0,
+            upper_name: "".to_string(),
+            category: 1, // 番剧分类
+            favtime: chrono::NaiveDateTime::new(
+                chrono::NaiveDate::from_ymd_opt(2025, 7, 11).unwrap(),
+                chrono::NaiveTime::from_hms_opt(14, 30, 0).unwrap(),
+            ),
+            pubtime: chrono::NaiveDateTime::new(
+                chrono::NaiveDate::from_ymd_opt(2025, 7, 11).unwrap(),
+                chrono::NaiveTime::from_hms_opt(14, 30, 0).unwrap(),
+            ),
+            bvid: "BV1TestSeason".to_string(),
+            tags: Some(serde_json::json!(["科幻", "动画"])),
+            ..Default::default()
+        };
+
+        let tvshow_nfo = NFO::TVShow((&video).into()).generate_nfo().await.unwrap();
+
+        // 验证TVShow NFO中包含正确的总季数
+        assert!(tvshow_nfo.contains("<totalseasons>2</totalseasons>"), 
+               "TVShow NFO应该包含正确的总季数2");
+
+        println!("动态TotalSeasons计算功能测试通过");
+    }
+
+    #[tokio::test]
+    async fn test_season_title_fix() {
+        // 测试Season NFO标题修复：Season的title应该显示完整季度名称
+        let video = video::Model {
+            intro: "数百年前，欲望催生了几乎灭绝人类的玛娜生态。".to_string(),
+            name: "灵笼第二季".to_string(),
+            upper_id: 0,
+            upper_name: "".to_string(),
+            category: 1,               // 番剧分类
+            season_number: Some(2),    // 第二季
+            favtime: chrono::NaiveDateTime::new(
+                chrono::NaiveDate::from_ymd_opt(2025, 7, 11).unwrap(),
+                chrono::NaiveTime::from_hms_opt(14, 30, 0).unwrap(),
+            ),
+            pubtime: chrono::NaiveDateTime::new(
+                chrono::NaiveDate::from_ymd_opt(2025, 7, 11).unwrap(),
+                chrono::NaiveTime::from_hms_opt(14, 30, 0).unwrap(),
+            ),
+            bvid: "BV1SeasonTitleFix".to_string(),
+            tags: Some(serde_json::json!(["动画", "科幻"])),
+            ..Default::default()
+        };
+
+        let season_nfo = NFO::Season((&video).into()).generate_nfo().await.unwrap();
+
+        // 验证Season NFO的title显示纯季度名称（符合Emby标准）
+        assert!(season_nfo.contains("<title>第二季</title>"), 
+               "Season NFO的title应该显示纯季度名称");
+        
+        // 验证Season NFO的originaltitle
+        assert!(season_nfo.contains("<originaltitle>灵笼第二季</originaltitle>"), 
+               "Season NFO的originaltitle应该正确");
+               
+        // 验证Season NFO的seasonnumber
+        assert!(season_nfo.contains("<seasonnumber>2</seasonnumber>"), 
+               "Season NFO应该包含正确的季度编号");
+               
+        // 验证Season NFO的set使用系列名称（不含季度信息）
+        assert!(season_nfo.contains("<set>"), "Season NFO应该包含set信息");
+        assert!(season_nfo.contains("<name>灵笼</name>"), 
+               "Season NFO的set应该使用清理后的系列名称");
+
+        println!("Season标题修复测试通过");
+    }
+
+    #[tokio::test]
+    async fn test_emby_standard_season_nfo() {
+        // 测试符合Emby标准的Season NFO生成
+        let video = video::Model {
+            intro: "数百年前，欲望催生了几乎灭绝人类的玛娜生态。".to_string(),
+            name: "灵笼第二季".to_string(),
+            upper_id: 0,
+            upper_name: "".to_string(),
+            category: 1,               // 番剧分类
+            season_number: Some(2),    // 第二季
+            favtime: chrono::NaiveDateTime::new(
+                chrono::NaiveDate::from_ymd_opt(2025, 7, 11).unwrap(),
+                chrono::NaiveTime::from_hms_opt(14, 30, 0).unwrap(),
+            ),
+            pubtime: chrono::NaiveDateTime::new(
+                chrono::NaiveDate::from_ymd_opt(2025, 7, 11).unwrap(),
+                chrono::NaiveTime::from_hms_opt(14, 30, 0).unwrap(),
+            ),
+            bvid: "BV1EmbyStandard".to_string(),
+            tags: Some(serde_json::json!(["动画", "科幻"])),
+            ..Default::default()
+        };
+
+        let season_nfo = NFO::Season((&video).into()).generate_nfo().await.unwrap();
+
+        // 验证Emby标准的Season NFO结构
+        assert!(season_nfo.contains("<title>第二季</title>"), 
+               "Season NFO的title应该显示纯季度标题（第二季）");
+        
+        assert!(season_nfo.contains("<originaltitle>灵笼第二季</originaltitle>"), 
+               "Season NFO的originaltitle应该保留完整名称");
+               
+        assert!(season_nfo.contains("<seasonnumber>2</seasonnumber>"), 
+               "Season NFO应该包含正确的季度编号");
+               
+        assert!(season_nfo.contains("<set>"), "Season NFO应该包含set信息");
+        assert!(season_nfo.contains("<name>灵笼</name>"), 
+               "Season NFO的set应该使用清理后的系列名称");
+
+        // 验证Season专属的plot前缀
+        assert!(season_nfo.contains("【第二季】"), 
+               "Season NFO的plot应该包含季度特定的前缀");
+
+        println!("Emby标准Season NFO测试通过");
+        println!("生成的Season NFO:");
+        println!("{}", season_nfo);
     }
 }

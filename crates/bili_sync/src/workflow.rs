@@ -58,6 +58,7 @@ pub struct SeasonInfo {
     pub publish_time: Option<String>,     // 发布时间
     pub total_views: Option<i64>,         // 总播放量
     pub total_favorites: Option<i64>,     // 总收藏数
+    pub total_seasons: Option<i32>,       // 总季数（从API的seasons数组计算）
 }
 
 #[derive(Debug, Clone)]
@@ -2458,17 +2459,11 @@ pub async fn generate_bangumi_season_nfo(
         debug!("Season NFO文件已存在，将覆盖更新: {:?}", nfo_path);
     }
     
-    use crate::utils::nfo::TVShow;
-    let mut tvshow = TVShow::from_season_info(video_model, season_info);
+    use crate::utils::nfo::Season;
+    let mut season = Season::from_season_info(video_model, season_info);
+    season.season_number = _season_number as i32;  // 设置正确的季度编号
     
-    // 为season.nfo定制内容：使用季度特定标题（暂时使用title）
-    // SeasonInfo没有season_title字段，使用title作为季度名称
-    tvshow.name = &season_info.title;
-    
-    // 暂时注释掉season字段设置，稍后在TVShow结构体中添加
-    // tvshow.season = Some(season_number as i32);
-    
-    generate_nfo(NFO::TVShow(tvshow), nfo_path.clone()).await?;
+    generate_nfo(NFO::Season(season), nfo_path.clone()).await?;
     info!("成功生成season.nfo: {:?} (季度{})", nfo_path, _season_number);
     Ok(ExecutionStatus::Succeeded)
 }
@@ -2841,7 +2836,22 @@ async fn get_season_info_from_api(
         .with_context(|| format!("解析番剧季 {} 响应失败", season_id))?;
 
     if json["code"].as_i64().unwrap_or(-1) != 0 {
-        bail!("API返回错误: {}", json["message"].as_str().unwrap_or("未知错误"));
+        let error_code = json["code"].as_i64().unwrap_or(-1);
+        let error_msg = json["message"].as_str().unwrap_or("未知错误").to_string();
+        
+        // 创建BiliError以触发风控检测
+        let bili_error = crate::bilibili::BiliError::RequestFailed(error_code, error_msg.clone());
+        let error = anyhow::Error::from(bili_error);
+        
+        // 使用错误分类器检测风控
+        let classified_error = crate::error::ErrorClassifier::classify_error(&error);
+        if classified_error.error_type == crate::error::ErrorType::RiskControl {
+            // 风控错误，触发下载中止
+            return Err(anyhow!(crate::error::DownloadAbortError()));
+        }
+        
+        // 其他错误正常返回
+        bail!("API返回错误 {}: {}", error_code, error_msg);
     }
 
     let result = &json["result"];
@@ -2945,6 +2955,26 @@ async fn get_season_info_from_api(
         styles
     );
 
+    // 从API的seasons数组计算总季数
+    let total_seasons = if let Some(seasons_array) = result["seasons"].as_array() {
+        if seasons_array.is_empty() {
+            // 单季度番剧：seasons数组为空，默认为1季
+            Some(1)
+        } else {
+            // 多季度番剧：seasons数组长度就是总季数
+            Some(seasons_array.len() as i32)
+        }
+    } else {
+        // 没有seasons字段，假设为单季
+        Some(1)
+    };
+
+    debug!(
+        "番剧 {} 总季数计算完成: {} 季",
+        title,
+        total_seasons.unwrap_or(1)
+    );
+
     Ok(SeasonInfo {
         title,
         episodes,
@@ -2964,6 +2994,7 @@ async fn get_season_info_from_api(
         publish_time,
         total_views,
         total_favorites,
+        total_seasons,
     })
 }
 
