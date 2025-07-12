@@ -1751,7 +1751,8 @@ impl<'a> TVShow<'a> {
             cover_url: season_info
                 .cover
                 .as_deref()
-                .or(season_info.horizontal_cover.as_deref())
+                .or(season_info.horizontal_cover_169.as_deref())
+                .or(season_info.horizontal_cover_1610.as_deref())
                 .unwrap_or(&video.cover),
             // 使用season_id和media_id作为额外的uniqueid（通过扩展字段传递）
             season_id: Some(season_info.season_id.clone()),
@@ -1997,7 +1998,8 @@ impl<'a> Season<'a> {
             cover_url: season_info
                 .cover
                 .as_deref()
-                .or(season_info.horizontal_cover.as_deref())
+                .or(season_info.horizontal_cover_169.as_deref())
+                .or(season_info.horizontal_cover_1610.as_deref())
                 .unwrap_or(&video.cover),
             // 使用season_id和media_id作为额外的uniqueid
             season_id: Some(season_info.season_id.clone()),
