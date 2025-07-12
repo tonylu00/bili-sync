@@ -916,7 +916,7 @@ pub async fn download_video_pages(
                         let unique_folder_name = generate_unique_folder_name(
                             video_source_base_path,
                             &base_folder_name,
-                            &video_model.bvid,
+                            &video_model,
                             &video_model.pubtime.format("%Y-%m-%d").to_string(),
                         );
                         video_source_base_path.join(&unique_folder_name)
@@ -945,7 +945,7 @@ pub async fn download_video_pages(
                 let unique_folder_name = generate_unique_folder_name(
                     video_source_base_path,
                     &base_folder_name,
-                    &video_model.bvid,
+                    &video_model,
                     &video_model.pubtime.format("%Y-%m-%d").to_string(),
                 );
                 debug!("使用去重文件夹名: '{}'", unique_folder_name);
@@ -3426,8 +3426,47 @@ async fn get_collection_video_episode_number(
     Err(anyhow!("视频 {} 在合集 {} 中未找到", bvid, collection_id))
 }
 
-/// 生成唯一的文件夹名称，避免同名冲突（公共函数）
-pub fn generate_unique_folder_name(parent_dir: &std::path::Path, base_name: &str, bvid: &str, pubtime: &str) -> String {
+/// 检查文件夹是否为同一视频的文件夹
+fn is_same_video_folder(folder_path: &std::path::Path, video_model: &video::Model) -> bool {
+    use std::fs;
+    
+    if !folder_path.exists() {
+        return false;
+    }
+    
+    // 方法1：检查数据库中记录的路径
+    if let Some(db_path) = std::path::Path::new(&video_model.path).file_name() {
+        if let Some(folder_name) = folder_path.file_name() {
+            if db_path == folder_name {
+                debug!("通过数据库路径匹配确认为同一视频文件夹: {:?}", folder_path);
+                return true;
+            }
+        }
+    }
+    
+    // 方法2：检查文件夹中是否有该视频的临时文件或视频文件
+    if let Ok(entries) = fs::read_dir(folder_path) {
+        for entry in entries.flatten() {
+            let file_name = entry.file_name();
+            let file_name_str = file_name.to_string_lossy();
+            
+            // 检查是否有包含BVID的临时文件
+            if file_name_str.contains(&video_model.bvid) && 
+               (file_name_str.ends_with(".tmp_video") || 
+                file_name_str.ends_with(".mp4") || 
+                file_name_str.ends_with(".mkv") ||
+                file_name_str.ends_with(".flv")) {
+                debug!("通过文件名匹配确认为同一视频文件夹: {:?} (匹配文件: {})", folder_path, file_name_str);
+                return true;
+            }
+        }
+    }
+    
+    false
+}
+
+/// 生成唯一的文件夹名称，避免同名冲突（增强版）
+pub fn generate_unique_folder_name(parent_dir: &std::path::Path, base_name: &str, video_model: &video::Model, pubtime: &str) -> String {
     let mut unique_name = base_name.to_string();
     let mut counter = 0;
 
@@ -3437,7 +3476,16 @@ pub fn generate_unique_folder_name(parent_dir: &std::path::Path, base_name: &str
         return unique_name;
     }
 
-    // 如果存在，先尝试追加发布时间
+    // 如果存在，智能检查这个文件夹是否就是当前视频的文件夹
+    if is_same_video_folder(&base_path, video_model) {
+        debug!("文件夹 {:?} 已是当前视频的文件夹，无需生成新名称", base_path);
+        return unique_name;
+    }
+
+    // 确认是真正的冲突，开始生成唯一名称
+    debug!("检测到真实的文件夹名冲突，开始生成唯一名称: {}", base_name);
+
+    // 如果存在真正冲突，先尝试追加发布时间
     unique_name = format!("{}-{}", base_name, pubtime);
     let time_path = parent_dir.join(&unique_name);
     if !time_path.exists() {
@@ -3446,7 +3494,7 @@ pub fn generate_unique_folder_name(parent_dir: &std::path::Path, base_name: &str
     }
 
     // 如果发布时间也冲突，追加BVID
-    unique_name = format!("{}-{}", base_name, bvid);
+    unique_name = format!("{}-{}", base_name, &video_model.bvid);
     let bvid_path = parent_dir.join(&unique_name);
     if !bvid_path.exists() {
         info!("检测到下载文件夹名冲突，追加BVID: {} -> {}", base_name, unique_name);
