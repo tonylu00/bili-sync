@@ -1175,11 +1175,6 @@ pub async fn download_video_pages(
                 .or(season_info_ref.cover.as_deref().filter(|s| !s.is_empty()));
             
             info!("Season级别fanart选择逻辑:");
-            info!("  new_ep_cover: {:?}", season_info_ref.new_ep_cover);
-            info!("  horizontal_cover_169: {:?}", season_info_ref.horizontal_cover_169);
-            info!("  horizontal_cover_1610: {:?}", season_info_ref.horizontal_cover_1610);
-            info!("  bkg_cover: {:?}", season_info_ref.bkg_cover);
-            info!("  cover: {:?}", season_info_ref.cover);
             info!("  最终选择的season fanart URL: {:?}", season_fanart_url);
             
             fetch_video_poster(
@@ -1274,25 +1269,9 @@ pub async fn download_video_pages(
                     .or(season.cover.as_deref().filter(|s| !s.is_empty()));
                 
                 info!("番剧「{}」fanart选择逻辑:", video_model.name);
-                info!("  SeasonInfo字段值:");
-                info!("    new_ep_cover: {:?}", season.new_ep_cover);
-                info!("    horizontal_cover_169: {:?}", season.horizontal_cover_169);
-                info!("    horizontal_cover_1610: {:?}", season.horizontal_cover_1610);
-                info!("    bkg_cover: {:?}", season.bkg_cover);
-                info!("    cover: {:?}", season.cover);
-                
-                info!("  优先级选择过程:");
-                let step1 = season.new_ep_cover.as_deref().filter(|s| !s.is_empty());
-                info!("    step1 (new_ep_cover): {:?}", step1);
-                let step2 = step1.or(season.horizontal_cover_169.as_deref().filter(|s| !s.is_empty()));
-                info!("    step2 (+ horizontal_cover_169): {:?}", step2);
-                let step3 = step2.or(season.horizontal_cover_1610.as_deref().filter(|s| !s.is_empty()));
-                info!("    step3 (+ horizontal_cover_1610): {:?}", step3);
-                let step4 = step3.or(season.bkg_cover.as_deref().filter(|s| !s.is_empty()));
-                info!("    step4 (+ bkg_cover): {:?}", step4);
-                let step5 = step4.or(season.cover.as_deref().filter(|s| !s.is_empty()));
-                info!("    step5 (+ cover): {:?}", step5);
-                
+                debug!("  字段值: new_ep_cover={:?}, h169={:?}, h1610={:?}, bkg={:?}, cover={:?}", 
+                       season.new_ep_cover, season.horizontal_cover_169, season.horizontal_cover_1610, 
+                       season.bkg_cover, season.cover);
                 info!("  最终选择的fanart URL: {:?}", fanart_url);
                 
                 fanart_url
@@ -3026,9 +3005,7 @@ async fn get_season_info_from_api(
     
     // 从seasons数组中查找当前season的横版封面信息
     let (new_ep_cover, horizontal_cover_1610, horizontal_cover_169, bkg_cover) = if let Some(seasons_array) = result["seasons"].as_array() {
-        info!("=== 调试seasons数组查找 ===");
-        info!("目标season_id: {}", season_id);
-        info!("seasons数组长度: {}", seasons_array.len());
+        debug!("seasons数组查找: 目标season_id={}, 数组长度={}", season_id, seasons_array.len());
         
         // 在seasons数组中查找当前season_id对应的条目，同时记录第一个有横版封面的条目作为备选
         let mut target_season_covers = Vec::new(); // 目标season_id的所有条目
@@ -3061,17 +3038,11 @@ async fn get_season_info_from_api(
             if season_season_id.to_string() == season_id {
                 info!("✓ 找到匹配的season_id: {} (第{}个条目)", season_season_id, target_season_covers.len() + 1);
                 // 找到了当前season，提取横版封面信息
-                info!("  原始JSON字段值:");
-                info!("    new_ep.cover: {:?}", season["new_ep"]["cover"]);
-                info!("    horizontal_cover_1610: {:?}", season["horizontal_cover_1610"]);
-                info!("    horizontal_cover_169: {:?}", season["horizontal_cover_169"]);
-                info!("    bkg_cover: {:?}", season["bkg_cover"]);
-                
                 let new_ep = season["new_ep"]["cover"].as_str().map(|s| s.to_string());
                 let h1610 = season["horizontal_cover_1610"].as_str().map(|s| s.to_string());
                 let h169 = season["horizontal_cover_169"].as_str().map(|s| s.to_string());
                 let bkg = season["bkg_cover"].as_str().map(|s| s.to_string());
-                info!("  提取结果: new_ep={:?}, h1610={:?}, h169={:?}, bkg={:?}", new_ep, h1610, h169, bkg);
+                debug!("  字段提取: new_ep={:?}, h1610={:?}, h169={:?}, bkg={:?}", new_ep, h1610, h169, bkg);
                 target_season_covers.push((new_ep, h1610, h169, bkg));
                 // 不要break，继续查找是否还有其他相同season_id的条目
             }
@@ -3091,15 +3062,9 @@ async fn get_season_info_from_api(
             
             if let Some(covers) = valid_cover {
                 info!("✓ 找到有有效横版封面的season_id {} 条目", season_id);
-                info!("  选中的有效横版封面: new_ep={:?}, h1610={:?}, h169={:?}, bkg={:?}", 
-                      covers.0, covers.1, covers.2, covers.3);
                 Some(covers.clone())
             } else {
                 warn!("⚠️ 目标season {} 的所有条目都没有有效的横版封面", season_id);
-                if let Some(first_cover) = target_season_covers.first() {
-                    info!("  使用第一个条目: new_ep={:?}, h1610={:?}, h169={:?}, bkg={:?}", 
-                          first_cover.0, first_cover.1, first_cover.2, first_cover.3);
-                }
                 target_season_covers.first().cloned()
             }
         } else {
