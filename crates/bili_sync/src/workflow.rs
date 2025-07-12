@@ -1145,8 +1145,17 @@ pub async fn download_video_pages(
     let season_images_result = if is_bangumi && season_info.is_some() {
         let config = crate::config::reload_config();
         if config.bangumi_use_season_structure {
-            let poster_path = base_path.join("season-poster.jpg");
-            let fanart_path = base_path.join("season-fanart.jpg");
+            // 获取季度编号用于生成正确的文件名
+            let series_title = season_info.as_ref().unwrap().title.as_str();
+            let (_, season_number) = crate::utils::bangumi_name_extractor::BangumiNameExtractor::extract_series_name_and_season(
+                series_title,
+                None
+            );
+            
+            // 季度级图片应该放在系列根目录，使用标准命名
+            let series_root = bangumi_folder_path.as_ref().unwrap();
+            let poster_path = series_root.join(format!("Season{:02}-poster.jpg", season_number));
+            let fanart_path = series_root.join(format!("Season{:02}-fanart.jpg", season_number));
             
             // 独立检查季度级图片文件是否存在
             let should_download_season_images = separate_status[0] && (!poster_path.exists() || !fanart_path.exists());
