@@ -8096,55 +8096,39 @@ async fn move_bangumi_files_to_new_path(
             created_at: chrono::Utc::now().to_rfc3339(),
         };
 
-        // 🚨 修复路径提取逻辑：处理混合路径分隔符问题
+        // 修复路径提取逻辑：处理混合路径分隔符问题
         // 数据库中的路径可能包含混合的路径分隔符，如：D:/Downloads/00111\名侦探柯南 绝海的侦探
         let api_title = {
-            println!("=== 文件移动路径提取调试 ===");
-            println!("视频ID: {}, BVID: {}", video.id, video.bvid);
-            println!("视频名称: {}", video.name);
-            println!("原始文件系统路径: {}", &video.path);
-            println!("新基础路径: {}", new_base_path);
-            
-            // 🔧 标准化路径分隔符：统一转换为当前平台的分隔符
+            // 标准化路径分隔符：统一转换为当前平台的分隔符
             let normalized_path = video.path.replace('/', std::path::MAIN_SEPARATOR_STR)
                                            .replace('\\', std::path::MAIN_SEPARATOR_STR);
-            println!("标准化后的路径: {}", normalized_path);
             
-            // 🔍 从标准化路径中提取番剧文件夹名称
+            // 从标准化路径中提取番剧文件夹名称
             let current_path = std::path::Path::new(&normalized_path);
-            println!("Path组件: {:?}", current_path.components().collect::<Vec<_>>());
-            
             let path_extracted = current_path.file_name()
                 .and_then(|n| n.to_str())
                 .map(|s| s.to_string());
-            println!("从标准化路径提取的文件夹名: {:?}", path_extracted);
             
-            // ✅ 验证提取的名称是否合理（包含中文字符或非纯数字）
+            // 验证提取的名称是否合理（包含中文字符或非纯数字）
             if let Some(ref name) = path_extracted {
                 let is_likely_bangumi_name = !name.chars().all(|c| c.is_ascii_digit()) 
                     && name.len() > 3; // 番剧名通常比较长
                 
                 if is_likely_bangumi_name {
-                    println!("✅ 提取的番剧文件夹名看起来合理: '{}'", name);
                     path_extracted
                 } else {
-                    println!("⚠️ 提取的名称 '{}' 看起来不像番剧名（可能是根目录）", name);
-                    println!("💡 将使用None来触发模板的默认行为");
-                    None
+                    None // 使用None来触发模板的默认行为
                 }
             } else {
-                println!("❌ 无法从路径中提取文件夹名");
                 None
             }
         };
 
         // 使用番剧格式化参数生成正确的番剧文件夹路径
         let format_args = crate::utils::format_arg::bangumi_page_format_args(video, &temp_page, api_title.as_deref());
-        println!("格式化参数: {}", serde_json::to_string_pretty(&format_args).unwrap_or_default());
         
         // 检查是否有有效的series_title
         let series_title = format_args["series_title"].as_str().unwrap_or("");
-        println!("提取的series_title: '{}'", series_title);
         
         if series_title.is_empty() {
             return Err(std::io::Error::other(format!(
@@ -8159,7 +8143,6 @@ async fn move_bangumi_files_to_new_path(
         })
         .map_err(|e| std::io::Error::other(format!("番剧文件夹模板渲染失败: {}", e)))?;
         
-        println!("渲染的番剧文件夹名: '{}'", rendered_folder);
         rendered_folder
     } else {
         // 非番剧使用原有逻辑
@@ -8171,15 +8154,9 @@ async fn move_bangumi_files_to_new_path(
     };
 
     let target_video_dir = new_video_dir.join(&new_video_path);
-    println!("=== 文件移动最终路径构建 ===");
-    println!("当前视频路径: {:?}", current_video_path);
-    println!("新基础目录: {:?}", new_video_dir);
-    println!("生成的番剧文件夹名: '{}'", new_video_path);
-    println!("最终目标路径: {:?}", target_video_dir);
 
     // 如果目标路径和当前路径相同，无需移动
     if current_video_path == target_video_dir {
-        println!("目标路径与当前路径相同，无需移动");
         return Ok((0, 0));
     }
 
