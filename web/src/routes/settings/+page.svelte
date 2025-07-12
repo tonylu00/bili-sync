@@ -1066,6 +1066,34 @@
 								更改此设置后，系统会自动重置所有NFO相关任务状态，并立即开始重新生成NFO文件以应用新的时间类型。
 							</p>
 						</div>
+
+						<!-- Season结构说明 -->
+						<div class="mt-6 rounded-lg border border-green-200 bg-green-50 p-3">
+							<h5 class="mb-2 font-medium text-green-800">多P视频Season结构说明</h5>
+							<div class="space-y-1 text-sm text-green-700">
+								<p><strong>启用后：</strong>多P视频将采用与番剧相同的目录结构</p>
+								<p><strong>目录层级：</strong>视频名称/Season 01/分P文件</p>
+								<p><strong>媒体库兼容：</strong>Emby/Jellyfin能正确识别为TV Show剧集</p>
+								<p><strong>文件命名：</strong>保持现有的multi_page_name模板不变</p>
+								<p class="text-green-600">
+									<strong>注意：</strong>默认关闭保持向后兼容，启用后新下载的多P视频将使用新结构
+								</p>
+							</div>
+						</div>
+
+						<div class="mt-6 rounded-lg border border-blue-200 bg-blue-50 p-3">
+							<h5 class="mb-2 font-medium text-blue-800">番剧Season结构说明</h5>
+							<div class="space-y-1 text-sm text-blue-700">
+								<p><strong>启用后：</strong>多季番剧将创建统一的系列根目录</p>
+								<p><strong>智能识别：</strong>自动从"灵笼 第二季"中提取"灵笼"作为系列名</p>
+								<p><strong>目录层级：</strong>系列名/Season 01、Season 02/剧集文件</p>
+								<p><strong>媒体库优势：</strong>Emby/Jellyfin能正确识别同一系列的不同季度</p>
+								<p><strong>文件命名：</strong>保持现有的bangumi_name模板不变</p>
+								<p class="text-blue-600">
+									<strong>注意：</strong>默认关闭保持向后兼容，仅影响新下载的番剧
+								</p>
+							</div>
+						</div>
 					</div>
 					<SheetFooter class={isMobile ? 'pb-safe border-t px-4 pt-3' : 'pb-safe border-t pt-4'}>
 						<Button type="submit" disabled={saving || !pageNameValid} class="w-full">
@@ -1505,32 +1533,6 @@
 							</div>
 						</div>
 
-						<div class="mt-6 rounded-lg border border-green-200 bg-green-50 p-3">
-							<h5 class="mb-2 font-medium text-green-800">多P视频Season结构说明</h5>
-							<div class="space-y-1 text-sm text-green-700">
-								<p><strong>启用后：</strong>多P视频将采用与番剧相同的目录结构</p>
-								<p><strong>目录层级：</strong>视频名称/Season 01/分P文件</p>
-								<p><strong>媒体库兼容：</strong>Emby/Jellyfin能正确识别为TV Show剧集</p>
-								<p><strong>文件命名：</strong>保持现有的multi_page_name模板不变</p>
-								<p class="text-green-600">
-									<strong>注意：</strong>默认关闭保持向后兼容，启用后新下载的多P视频将使用新结构
-								</p>
-							</div>
-						</div>
-
-						<div class="mt-6 rounded-lg border border-blue-200 bg-blue-50 p-3">
-							<h5 class="mb-2 font-medium text-blue-800">番剧Season结构说明</h5>
-							<div class="space-y-1 text-sm text-blue-700">
-								<p><strong>启用后：</strong>多季番剧将创建统一的系列根目录</p>
-								<p><strong>智能识别：</strong>自动从"灵笼 第二季"中提取"灵笼"作为系列名</p>
-								<p><strong>目录层级：</strong>系列名/Season 01、Season 02/剧集文件</p>
-								<p><strong>媒体库优势：</strong>Emby/Jellyfin能正确识别同一系列的不同季度</p>
-								<p><strong>文件命名：</strong>保持现有的bangumi_name模板不变</p>
-								<p class="text-blue-600">
-									<strong>注意：</strong>默认关闭保持向后兼容，仅影响新下载的番剧
-								</p>
-							</div>
-						</div>
 					</div>
 					<SheetFooter class={isMobile ? 'pb-safe border-t px-4 pt-3' : 'pb-safe border-t pt-4'}>
 						<Button type="submit" disabled={saving} class="w-full">
