@@ -989,9 +989,24 @@ pub async fn download_video_pages(
 
     // 为多P视频生成基于视频名称的文件名
     let video_base_name = if !is_single_page {
-        // 使用video_name模板渲染视频名称
-        crate::config::with_config(|bundle| bundle.render_video_template(&video_format_args(&video_model)))
-            .map_err(|e| anyhow::anyhow!("模板渲染失败: {}", e))?
+        // 多P视频启用Season结构时，使用视频根目录的文件夹名作为系列级封面的文件名
+        let config = crate::config::reload_config();
+        if config.multi_page_use_season_structure {
+            // 从base_path获取视频根目录的文件夹名称
+            if let Some(parent) = base_path.parent() {
+                if let Some(folder_name) = parent.file_name() {
+                    folder_name.to_string_lossy().to_string()
+                } else {
+                    video_model.name.clone() // 回退到视频标题
+                }
+            } else {
+                video_model.name.clone() // 回退到视频标题
+            }
+        } else {
+            // 不使用Season结构时，使用模板渲染
+            crate::config::with_config(|bundle| bundle.render_video_template(&video_format_args(&video_model)))
+                .map_err(|e| anyhow::anyhow!("模板渲染失败: {}", e))?
+        }
     } else if is_collection {
         // 合集中的单页视频：检查是否启用Season结构
         let config = crate::config::reload_config();
