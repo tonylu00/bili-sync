@@ -37,14 +37,14 @@ use crate::utils::nfo::NFO;
 use crate::utils::status::{PageStatus, VideoStatus, STATUS_OK};
 
 /// 检测并处理需要自动删除的错误（主要是87007充电专享视频错误）
-/// 
+///
 /// # 参数
-/// - `results`: 执行结果列表 
+/// - `results`: 执行结果列表
 /// - `task_names`: 任务名称列表，用于日志输出
 /// - `video_model`: 视频模型引用
 /// - `connection`: 数据库连接
 /// - `context_info`: 额外的上下文信息（如"第X页"），用于日志输出
-/// 
+///
 /// # 返回值
 /// - `Result<bool>`: 如果检测到需要自动删除的错误返回true，否则返回false
 async fn detect_and_handle_auto_delete_errors(
@@ -55,22 +55,16 @@ async fn detect_and_handle_auto_delete_errors(
     context_info: Option<&str>,
 ) -> Result<bool> {
     let mut needs_auto_delete = false;
-    
+
     // 扩展检测范围：检查所有任务结果
-    for (res, task_name) in results.iter().zip(task_names.iter()) {
+    for (res, _task_name) in results.iter().zip(task_names.iter()) {
         if let ExecutionStatus::ClassifiedFailed(classified_error) = res {
             // 使用error.rs层面的should_auto_delete标志，更精确的判断
             if classified_error.should_auto_delete {
                 if let Some(context) = context_info {
-                    warn!(
-                        "检测到需要自动删除的视频「{}」{}{}，错误类型: {}，将自动删除该视频以避免重复尝试",
-                        &video_model.name, context, task_name, classified_error.error_type
-                    );
+                    info!("「{}」{} - 充电专享视频，将自动删除", &video_model.name, context);
                 } else {
-                    warn!(
-                        "检测到需要自动删除的视频「{}」{}，错误类型: {}，将自动删除该视频以避免重复尝试",
-                        &video_model.name, task_name, classified_error.error_type
-                    );
+                    info!("「{}」- 充电专享视频，将自动删除", &video_model.name);
                 }
                 needs_auto_delete = true;
                 break; // 只需要检测一次即可
@@ -80,15 +74,12 @@ async fn detect_and_handle_auto_delete_errors(
             let error_msg = e.to_string();
             if error_msg.contains("status code: 87007") {
                 if let Some(context) = context_info {
-                    warn!(
-                        "检测到充电专享视频「{}」{}{}，将自动删除该视频以避免重复尝试: {:#}",
-                        &video_model.name, context, task_name, e
+                    info!(
+                        "「{}」{} - 充电专享视频，将自动删除（向后兼容检测）",
+                        &video_model.name, context
                     );
                 } else {
-                    warn!(
-                        "检测到充电专享视频「{}」{}，将自动删除该视频以避免重复尝试: {:#}",
-                        &video_model.name, task_name, e
-                    );
+                    info!("「{}」- 充电专享视频，将自动删除（向后兼容检测）", &video_model.name);
                 }
                 needs_auto_delete = true;
                 break; // 只需要检测一次即可
@@ -103,19 +94,16 @@ async fn detect_and_handle_auto_delete_errors(
         } else {
             format!("auto_delete_87007_{}", video_model.id)
         };
-        
+
         let delete_task = DeleteVideoTask {
             video_id: video_model.id,
             task_id,
         };
 
         if let Err(delete_err) = VIDEO_DELETE_TASK_QUEUE.enqueue_task(delete_task, connection).await {
-            error!(
-                "无法创建自动删除任务，视频「{}」: {:#}",
-                &video_model.name, delete_err
-            );
+            error!("创建删除任务失败「{}」: {:#}", &video_model.name, delete_err);
         } else {
-            info!("已为视频「{}」创建自动删除任务", &video_model.name);
+            debug!("删除任务已加入队列「{}」", &video_model.name);
         }
     }
 
@@ -556,12 +544,12 @@ pub async fn fetch_video_details(
             if let Err(e) = res {
                 // 使用错误分类器进行统一处理
                 let classified_error = crate::error::ErrorClassifier::classify_error(&e);
-                
+
                 if classified_error.error_type == crate::error::ErrorType::UserCancelled {
                     info!("视频详情获取因用户暂停而终止: {}", classified_error.message);
                     return Err(e); // 直接返回暂停错误，不取消其他任务
                 }
-                
+
                 let error_msg = e.to_string();
 
                 if e.downcast_ref::<DownloadAbortError>().is_some() || error_msg.contains("Download cancelled") {
@@ -1477,15 +1465,16 @@ pub async fn download_video_pages(
 
     // 使用新的公共函数处理87007错误检测和自动删除
     let task_names = [
-        "封面", "详情", "作者头像", "作者详情", "分页下载", "季度NFO", "季度图片"
+        "封面",
+        "详情",
+        "作者头像",
+        "作者详情",
+        "分页下载",
+        "季度NFO",
+        "季度图片",
     ];
-    let _has_87007_error = detect_and_handle_auto_delete_errors(
-        &all_results,
-        &task_names,
-        &video_model,
-        connection,
-        None,
-    ).await?;
+    let _has_87007_error =
+        detect_and_handle_auto_delete_errors(&all_results, &task_names, &video_model, connection, None).await?;
 
     all_results
         .iter()
@@ -1521,11 +1510,18 @@ pub async fn download_video_pages(
                         );
                     }
                     crate::error::ErrorType::Permission => {
-                        // 对于权限错误（包括充电专享视频），使用info级别记录
-                        info!(
-                            "跳过视频「{}」{}: {}",
-                            &video_model.name, task_name, classified_error.message
-                        );
+                        // 对于权限错误（包括充电专享视频），使用debug级别记录，避免重复日志
+                        if classified_error.should_auto_delete {
+                            debug!(
+                                "跳过视频「{}」{}: 充电专享视频（已安排自动删除）",
+                                &video_model.name, task_name
+                            );
+                        } else {
+                            info!(
+                                "跳过视频「{}」{}: {}",
+                                &video_model.name, task_name, classified_error.message
+                            );
+                        }
                     }
                     crate::error::ErrorType::Network
                     | crate::error::ErrorType::Timeout
@@ -1571,7 +1567,12 @@ pub async fn download_video_pages(
                         info!("处理视频「{}」{}因用户暂停而终止", &video_model.name, task_name);
                     }
                     _ => {
-                        error!("处理视频「{}」{}失败: {:#}", &video_model.name, task_name, e);
+                        // 对于分页下载任务，错误日志已经在内部处理了，这里只记录DEBUG级别
+                        if task_name == "分页下载" {
+                            debug!("处理视频「{}」{}失败: {:#}", &video_model.name, task_name, e);
+                        } else {
+                            error!("处理视频「{}」{}失败: {:#}", &video_model.name, task_name, e);
+                        }
                     }
                 }
             }
@@ -1652,6 +1653,7 @@ pub async fn dispatch_download_page(args: DownloadPageArgs<'_>, token: Cancellat
         })
         .collect::<FuturesUnordered<_>>();
     let (mut download_aborted, mut target_status) = (false, STATUS_OK);
+    let mut has_charging_video_error = false;
     let mut stream = tasks;
     while let Some(res) = stream.next().await {
         match res {
@@ -1694,7 +1696,17 @@ pub async fn dispatch_download_page(args: DownloadPageArgs<'_>, token: Cancellat
                     if error_msg.contains("用户主动暂停任务") || error_msg.contains("任务已暂停") {
                         info!("分页下载因用户暂停而终止");
                     } else {
-                        error!("下载分页子任务失败: {:#}", e);
+                        // 检查是否是充电专享视频错误
+                        let is_charging_video_error = error_msg.contains("status code: 87007")
+                            || error_msg.contains("status code: 87008")
+                            || error_msg.contains("充电专享视频");
+
+                        if is_charging_video_error {
+                            debug!("分页下载失败: 充电专享视频");
+                            has_charging_video_error = true;
+                        } else {
+                            error!("下载分页子任务失败: {:#}", e);
+                        }
                     }
                 }
             }
@@ -1709,6 +1721,16 @@ pub async fn dispatch_download_page(args: DownloadPageArgs<'_>, token: Cancellat
         bail!(DownloadAbortError());
     }
     if target_status != STATUS_OK {
+        // 如果检测到充电专享视频错误，返回相应的ClassifiedFailed状态
+        if has_charging_video_error {
+            let classified_error = crate::error::ClassifiedError::new(
+                crate::error::ErrorType::Permission,
+                "充电专享视频，需要为UP主充电才能观看".to_string(),
+            )
+            .with_auto_delete(true);
+            return Ok(ExecutionStatus::ClassifiedFailed(classified_error));
+        }
+
         return Ok(ExecutionStatus::FixedFailed(target_status, ProcessPageError().into()));
     }
     Ok(ExecutionStatus::Succeeded)
@@ -1892,13 +1914,9 @@ pub async fn download_page(
     // 使用新的公共函数处理87007错误检测和自动删除
     let task_names = ["封面", "视频", "详情", "弹幕", "字幕"];
     let context_info = format!("第 {} 页", page_model.pid);
-    let _has_87007_error = detect_and_handle_auto_delete_errors(
-        &results,
-        &task_names,
-        video_model,
-        connection,
-        Some(&context_info),
-    ).await?;
+    let _has_87007_error =
+        detect_and_handle_auto_delete_errors(&results, &task_names, video_model, connection, Some(&context_info))
+            .await?;
 
     results
         .iter()
@@ -1935,11 +1953,18 @@ pub async fn download_page(
                         );
                     }
                     crate::error::ErrorType::Permission => {
-                        // 对于权限错误（包括充电专享视频），使用info级别记录
-                        info!(
-                            "跳过视频「{}」第 {} 页{}: {}",
-                            &video_model.name, page_model.pid, task_name, classified_error.message
-                        );
+                        // 对于权限错误（包括充电专享视频），使用debug级别记录，避免重复日志
+                        if classified_error.should_auto_delete {
+                            debug!(
+                                "跳过视频「{}」第 {} 页{}: 充电专享视频（已安排自动删除）",
+                                &video_model.name, page_model.pid, task_name
+                            );
+                        } else {
+                            info!(
+                                "跳过视频「{}」第 {} 页{}: {}",
+                                &video_model.name, page_model.pid, task_name, classified_error.message
+                            );
+                        }
                     }
                     crate::error::ErrorType::Network
                     | crate::error::ErrorType::Timeout
@@ -2449,9 +2474,7 @@ pub async fn fetch_page_subtitle(
         .into_iter()
         .map(|subtitle| async move {
             let path = subtitle_path.with_extension(format!("{}.srt", subtitle.lan));
-            ensure_parent_dir_for_file(&path)
-                .await
-                .map_err(|e| std::io::Error::other(e))?;
+            ensure_parent_dir_for_file(&path).await.map_err(std::io::Error::other)?;
             tokio::fs::write(path, subtitle.body.to_string()).await
         })
         .collect::<FuturesUnordered<_>>();
@@ -2498,6 +2521,7 @@ pub async fn generate_page_nfo(
     Ok(ExecutionStatus::Succeeded)
 }
 
+#[allow(clippy::too_many_arguments)]
 pub async fn fetch_video_poster(
     should_run: bool,
     video_model: &video::Model,
@@ -3816,28 +3840,28 @@ mod tests {
 
     #[cfg(test)]
     mod auto_delete_tests {
-        use super::*;
         use crate::error::{ClassifiedError, ErrorType, ExecutionStatus};
         use bili_sync_entity::video;
-        
+
         #[tokio::test]
         async fn test_87007_error_detection_via_classified_error() {
             // 创建一个包含should_auto_delete标志的ClassifiedError
             let classified_error = ClassifiedError::new(
                 ErrorType::Permission,
-                "充电专享视频，需要为UP主充电才能观看".to_string()
-            ).with_auto_delete(true);
-            
-            let results = vec![
+                "充电专享视频，需要为UP主充电才能观看".to_string(),
+            )
+            .with_auto_delete(true);
+
+            let results = [
                 ExecutionStatus::Succeeded,
                 ExecutionStatus::ClassifiedFailed(classified_error),
                 ExecutionStatus::Skipped,
             ];
-            
+
             let task_names = ["封面", "详情", "作者头像"];
-            
+
             // 创建测试用的video model
-            let video_model = video::Model {
+            let _video_model = video::Model {
                 id: 12345,
                 collection_id: None,
                 favorite_id: None,
@@ -3872,13 +3896,13 @@ mod tests {
                 actors: None,
                 auto_download: false,
             };
-            
+
             // 注意：这个测试不能真正连接数据库，所以我们只验证函数的逻辑部分
             // 在实际项目中，应该使用mock或测试数据库
-            
+
             // 验证错误检测逻辑 - 我们可以通过检查结果来模拟
             let mut needs_auto_delete = false;
-            
+
             for (res, _task_name) in results.iter().zip(task_names.iter()) {
                 if let ExecutionStatus::ClassifiedFailed(classified_error) = res {
                     if classified_error.should_auto_delete {
@@ -3887,27 +3911,27 @@ mod tests {
                     }
                 }
             }
-            
+
             assert!(needs_auto_delete, "应该检测到需要自动删除的87007错误");
         }
-        
+
         #[tokio::test]
         async fn test_backward_compatibility_87007_string_matching() {
             // 测试向后兼容的字符串匹配逻辑
             let error_87007 = anyhow::anyhow!("B站API错误: status code: 87007");
             let error_other = anyhow::anyhow!("B站API错误: status code: 404");
-            
-            let results = vec![
+
+            let results = [
                 ExecutionStatus::Succeeded,
                 ExecutionStatus::Ignored(error_87007),
                 ExecutionStatus::Ignored(error_other),
             ];
-            
+
             let task_names = ["封面", "详情", "作者头像"];
-            
+
             // 验证字符串匹配逻辑
             let mut has_87007_error = false;
-            
+
             for (res, _task_name) in results.iter().zip(task_names.iter()) {
                 if let ExecutionStatus::Ignored(e) = res {
                     let error_msg = e.to_string();
@@ -3917,55 +3941,55 @@ mod tests {
                     }
                 }
             }
-            
+
             assert!(has_87007_error, "应该通过字符串匹配检测到87007错误");
         }
-        
+
         #[test]
         fn test_87007_classified_error_creation() {
             // 测试error.rs中87007错误的分类逻辑
             use crate::bilibili::BiliError;
             use crate::error::ErrorClassifier;
-            
+
             let bili_error = BiliError::RequestFailed(87007, "充电专享视频".to_string());
             let anyhow_error = anyhow::anyhow!(bili_error);
-            
+
             let classified = ErrorClassifier::classify_error(&anyhow_error);
-            
+
             assert_eq!(classified.error_type, ErrorType::Permission);
             assert!(classified.should_ignore, "87007错误应该被忽略");
             assert!(!classified.should_retry, "87007错误不应该重试");
             assert!(classified.should_auto_delete, "87007错误应该自动删除");
             assert!(classified.message.contains("充电专享视频"));
         }
-        
+
         #[test]
         fn test_87008_classified_error_creation() {
             // 测试87008错误的分类逻辑（修复后应该和87007一样工作）
             use crate::bilibili::BiliError;
             use crate::error::ErrorClassifier;
-            
+
             let bili_error = BiliError::RequestFailed(87008, "87008".to_string());
             let anyhow_error = anyhow::anyhow!(bili_error);
-            
+
             let classified = ErrorClassifier::classify_error(&anyhow_error);
-            
+
             assert_eq!(classified.error_type, ErrorType::Permission);
             assert!(classified.should_ignore, "87008错误应该被忽略");
             assert!(!classified.should_retry, "87008错误不应该重试");
             assert!(classified.should_auto_delete, "87008错误应该自动删除");
             assert!(classified.message.contains("充电专享视频"));
         }
-        
+
         #[test]
         fn test_87008_execution_status_conversion() {
             // 测试87008错误的ExecutionStatus转换（修复关键点）
             use crate::bilibili::BiliError;
-            
+
             let bili_error = BiliError::RequestFailed(87008, "87008".to_string());
             let result: Result<ExecutionStatus, anyhow::Error> = Err(bili_error.into());
             let execution_status = ExecutionStatus::from(result);
-            
+
             // 修复后，87008错误应该被转换为ClassifiedFailed，而不是Ignored
             match execution_status {
                 ExecutionStatus::ClassifiedFailed(classified_error) => {

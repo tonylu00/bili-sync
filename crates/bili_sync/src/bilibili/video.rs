@@ -246,10 +246,28 @@ impl<'a> Video<'a> {
                     return Ok(analyzer);
                 }
                 Err(e) => {
-                    tracing::warn!("× 质量 qn={} 获取失败: {}", qn, e);
+                    // 检查是否为充电专享视频错误，如果是则不输出详细的质量级别失败日志
+                    let is_charging_video_error = {
+                        if let Some(bili_err) = e.downcast_ref::<crate::bilibili::BiliError>() {
+                            matches!(bili_err, crate::bilibili::BiliError::RequestFailed(87007 | 87008, _))
+                        } else {
+                            false
+                        }
+                    };
+
+                    if !is_charging_video_error {
+                        tracing::warn!("× 质量 qn={} 获取失败: {}", qn, e);
+                    } else {
+                        tracing::debug!("× 质量 qn={} 获取失败: 充电专享视频", qn);
+                    }
+                    
                     if attempt == quality_levels.len() - 1 {
                         // 最后一次尝试也失败了
-                        tracing::error!("所有质量级别都获取失败");
+                        if is_charging_video_error {
+                            tracing::debug!("所有质量级别都获取失败: 充电专享视频");
+                        } else {
+                            tracing::error!("所有质量级别都获取失败");
+                        }
                         return Err(e);
                     }
                     // 继续尝试下一个质量级别
@@ -408,10 +426,28 @@ impl<'a> Video<'a> {
                     return Ok(analyzer);
                 }
                 Err(e) => {
-                    tracing::warn!("× 番剧质量 qn={} 获取失败: {}", qn, e);
+                    // 检查是否为充电专享视频错误，如果是则不输出详细的质量级别失败日志
+                    let is_charging_video_error = {
+                        if let Some(bili_err) = e.downcast_ref::<crate::bilibili::BiliError>() {
+                            matches!(bili_err, crate::bilibili::BiliError::RequestFailed(87007 | 87008, _))
+                        } else {
+                            false
+                        }
+                    };
+
+                    if !is_charging_video_error {
+                        tracing::warn!("× 番剧质量 qn={} 获取失败: {}", qn, e);
+                    } else {
+                        tracing::debug!("× 番剧质量 qn={} 获取失败: 充电专享视频", qn);
+                    }
+                    
                     if attempt == quality_levels.len() - 1 {
                         // 最后一次尝试也失败了
-                        tracing::error!("所有番剧质量级别都获取失败");
+                        if is_charging_video_error {
+                            tracing::debug!("所有番剧质量级别都获取失败: 充电专享视频");
+                        } else {
+                            tracing::error!("所有番剧质量级别都获取失败");
+                        }
                         return Err(e);
                     }
                     // 继续尝试下一个质量级别

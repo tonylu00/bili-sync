@@ -98,103 +98,6 @@ fn extract_version_info(video_title: &str) -> String {
     String::new()
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_extract_season_number() {
-        // 测试中文季度标识
-        assert_eq!(extract_season_number("_灵笼 第一季_第001话"), 1);
-        assert_eq!(extract_season_number("_灵笼 第二季_第1话 末世桃源"), 2);
-        assert_eq!(extract_season_number("_灵笼 第三季_第001话"), 3);
-
-        // 测试阿拉伯数字季度标识
-        assert_eq!(extract_season_number("_某番剧 第1季_第001话"), 1);
-        assert_eq!(extract_season_number("_某番剧 第2季_第001话"), 2);
-
-        // 测试英文季度标识
-        assert_eq!(extract_season_number("_某番剧 Season 1_第001话"), 1);
-        assert_eq!(extract_season_number("_某番剧 Season 2_第001话"), 2);
-
-        // 测试默认值
-        assert_eq!(extract_season_number("_某番剧_第001话"), 1);
-        assert_eq!(extract_season_number("_名侦探柯南 绯色的不在证明_全片"), 1);
-    }
-
-    #[test]
-    fn test_extract_series_title_with_context() {
-        use bili_sync_entity::video::Model;
-        use chrono::DateTime;
-
-        // 创建测试用的video model
-        let test_time = DateTime::from_timestamp(1640995200, 0).unwrap().naive_utc();
-        let mut video_model = Model {
-            id: 1,
-            collection_id: None,
-            favorite_id: None,
-            watch_later_id: None,
-            submission_id: None,
-            source_id: None,
-            source_type: Some(1),
-            upper_id: 123456,
-            upper_name: "官方频道".to_string(),
-            upper_face: "".to_string(),
-            name: "中配".to_string(),
-            path: "".to_string(),
-            category: 1,
-            bvid: "BV1234567890".to_string(),
-            intro: "".to_string(),
-            cover: "".to_string(),
-            ctime: test_time,
-            pubtime: test_time,
-            favtime: test_time,
-            download_status: 0,
-            valid: true,
-            tags: None,
-            single_page: Some(true),
-            created_at: "2024-01-01 00:00:00".to_string(),
-            season_id: Some("12345".to_string()),
-            ep_id: None,
-            season_number: None,
-            episode_number: None,
-            deleted: 0,
-            share_copy: None,
-            show_season_type: None,
-            actors: None,
-            auto_download: false,
-        };
-
-        // 测试使用API标题的情况
-        let result = extract_series_title_with_context(&video_model, Some("灵笼 第一季"));
-        assert_eq!(result, Some("灵笼 第一季".to_string()));
-
-        // 测试无API数据的情况
-        let result = extract_series_title_with_context(&video_model, None);
-        assert_eq!(result, None);
-
-        // 测试空字符串API数据
-        let result = extract_series_title_with_context(&video_model, Some(""));
-        assert_eq!(result, Some("".to_string()));
-    }
-
-    #[test]
-    fn test_extract_version_info() {
-        // 测试短标题（可能是版本标识）
-        assert_eq!(extract_version_info("中文"), "中文");
-        assert_eq!(extract_version_info("_中配"), "中配");
-        assert_eq!(extract_version_info("原版"), "原版");
-        assert_eq!(extract_version_info("日配"), "日配");
-
-        // 测试包含番剧标识符的标题（不应被识别为版本）
-        assert_eq!(extract_version_info("_灵笼 第一季_第001话"), "");
-        assert_eq!(extract_version_info("名侦探柯南 第1集"), "");
-        assert_eq!(extract_version_info("某番剧 第1话"), "");
-
-        // 测试长标题（应该返回空）
-        assert_eq!(extract_version_info("很长的番剧标题名称"), "");
-    }
-}
 
 pub fn video_format_args(video_model: &bili_sync_entity::video::Model) -> serde_json::Value {
     let current_config = config::reload_config();
@@ -371,5 +274,103 @@ pub fn page_format_args(
             "long_title": &page_model.name,
             "show_title": &page_model.name,
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_extract_season_number() {
+        // 测试中文季度标识
+        assert_eq!(extract_season_number("_灵笼 第一季_第001话"), 1);
+        assert_eq!(extract_season_number("_灵笼 第二季_第1话 末世桃源"), 2);
+        assert_eq!(extract_season_number("_灵笼 第三季_第001话"), 3);
+
+        // 测试阿拉伯数字季度标识
+        assert_eq!(extract_season_number("_某番剧 第1季_第001话"), 1);
+        assert_eq!(extract_season_number("_某番剧 第2季_第001话"), 2);
+
+        // 测试英文季度标识
+        assert_eq!(extract_season_number("_某番剧 Season 1_第001话"), 1);
+        assert_eq!(extract_season_number("_某番剧 Season 2_第001话"), 2);
+
+        // 测试默认值
+        assert_eq!(extract_season_number("_某番剧_第001话"), 1);
+        assert_eq!(extract_season_number("_名侦探柯南 绯色的不在证明_全片"), 1);
+    }
+
+    #[test]
+    fn test_extract_series_title_with_context() {
+        use bili_sync_entity::video::Model;
+        use chrono::DateTime;
+
+        // 创建测试用的video model
+        let test_time = DateTime::from_timestamp(1640995200, 0).unwrap().naive_utc();
+        let video_model = Model {
+            id: 1,
+            collection_id: None,
+            favorite_id: None,
+            watch_later_id: None,
+            submission_id: None,
+            source_id: None,
+            source_type: Some(1),
+            upper_id: 123456,
+            upper_name: "官方频道".to_string(),
+            upper_face: "".to_string(),
+            name: "中配".to_string(),
+            path: "".to_string(),
+            category: 1,
+            bvid: "BV1234567890".to_string(),
+            intro: "".to_string(),
+            cover: "".to_string(),
+            ctime: test_time,
+            pubtime: test_time,
+            favtime: test_time,
+            download_status: 0,
+            valid: true,
+            tags: None,
+            single_page: Some(true),
+            created_at: "2024-01-01 00:00:00".to_string(),
+            season_id: Some("12345".to_string()),
+            ep_id: None,
+            season_number: None,
+            episode_number: None,
+            deleted: 0,
+            share_copy: None,
+            show_season_type: None,
+            actors: None,
+            auto_download: false,
+        };
+
+        // 测试使用API标题的情况
+        let result = extract_series_title_with_context(&video_model, Some("灵笼 第一季"));
+        assert_eq!(result, Some("灵笼 第一季".to_string()));
+
+        // 测试无API数据的情况
+        let result = extract_series_title_with_context(&video_model, None);
+        assert_eq!(result, None);
+
+        // 测试空字符串API数据
+        let result = extract_series_title_with_context(&video_model, Some(""));
+        assert_eq!(result, Some("".to_string()));
+    }
+
+    #[test]
+    fn test_extract_version_info() {
+        // 测试短标题（可能是版本标识）
+        assert_eq!(extract_version_info("中文"), "中文");
+        assert_eq!(extract_version_info("_中配"), "中配");
+        assert_eq!(extract_version_info("原版"), "原版");
+        assert_eq!(extract_version_info("日配"), "日配");
+
+        // 测试包含番剧标识符的标题（不应被识别为版本）
+        assert_eq!(extract_version_info("_灵笼 第一季_第001话"), "");
+        assert_eq!(extract_version_info("名侦探柯南 第1集"), "");
+        assert_eq!(extract_version_info("某番剧 第1话"), "");
+
+        // 测试长标题（应该返回空）
+        assert_eq!(extract_version_info("很长的番剧标题名称"), "");
     }
 }
