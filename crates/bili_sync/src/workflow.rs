@@ -42,26 +42,26 @@ pub struct SeasonInfo {
     pub title: String,
     pub episodes: Vec<EpisodeInfo>,
     // API扩展字段
-    pub alias: Option<String>,            // 别名
-    pub evaluate: Option<String>,         // 剧情简介
-    pub rating: Option<f32>,              // 评分 (如9.6)
-    pub rating_count: Option<i64>,        // 评分人数
-    pub areas: Vec<String>,               // 制作地区 (如"中国大陆")
-    pub actors: Option<String>,           // 声优演员信息 (格式化字符串)
-    pub styles: Vec<String>,              // 类型标签 (如"科幻", "机战")
-    pub total_episodes: Option<i32>,      // 总集数
-    pub status: Option<String>,           // 播出状态 (如"完结", "连载中")
-    pub cover: Option<String>,            // 季度封面图URL (竖版)
-    pub new_ep_cover: Option<String>,     // 新EP封面图URL (来自new_ep.cover)
+    pub alias: Option<String>,                 // 别名
+    pub evaluate: Option<String>,              // 剧情简介
+    pub rating: Option<f32>,                   // 评分 (如9.6)
+    pub rating_count: Option<i64>,             // 评分人数
+    pub areas: Vec<String>,                    // 制作地区 (如"中国大陆")
+    pub actors: Option<String>,                // 声优演员信息 (格式化字符串)
+    pub styles: Vec<String>,                   // 类型标签 (如"科幻", "机战")
+    pub total_episodes: Option<i32>,           // 总集数
+    pub status: Option<String>,                // 播出状态 (如"完结", "连载中")
+    pub cover: Option<String>,                 // 季度封面图URL (竖版)
+    pub new_ep_cover: Option<String>,          // 新EP封面图URL (来自new_ep.cover)
     pub horizontal_cover_1610: Option<String>, // 16:10横版封面URL
     pub horizontal_cover_169: Option<String>,  // 16:9横版封面URL
-    pub bkg_cover: Option<String>,        // 背景图URL (专门的背景图)
-    pub media_id: Option<i64>,            // 媒体ID
-    pub season_id: String,                // 季度ID
-    pub publish_time: Option<String>,     // 发布时间
-    pub total_views: Option<i64>,         // 总播放量
-    pub total_favorites: Option<i64>,     // 总收藏数
-    pub total_seasons: Option<i32>,       // 总季数（从API的seasons数组计算）
+    pub bkg_cover: Option<String>,             // 背景图URL (专门的背景图)
+    pub media_id: Option<i64>,                 // 媒体ID
+    pub season_id: String,                     // 季度ID
+    pub publish_time: Option<String>,          // 发布时间
+    pub total_views: Option<i64>,              // 总播放量
+    pub total_favorites: Option<i64>,          // 总收藏数
+    pub total_seasons: Option<i32>,            // 总季数（从API的seasons数组计算）
 }
 
 #[derive(Debug, Clone)]
@@ -820,36 +820,31 @@ pub async fn download_video_pages(
         // 延迟创建番剧文件夹，只在实际需要时创建
 
         // 检查是否启用番剧Season结构
-        let use_bangumi_season_structure = crate::config::with_config(|bundle| {
-            bundle.config.bangumi_use_season_structure
-        });
+        let use_bangumi_season_structure =
+            crate::config::with_config(|bundle| bundle.config.bangumi_use_season_structure);
 
         if use_bangumi_season_structure {
             // 启用番剧Season结构：创建统一的系列根目录，在其下创建Season子目录
-            
+
             // 提取基础系列名称和季度信息
             let series_title = api_title.as_deref().unwrap_or(&video_model.name);
-            let season_title = format_args.get("season_title")
-                .and_then(|v| v.as_str());
-            
-            let (base_series_name, season_number) = 
+            let season_title = format_args.get("season_title").and_then(|v| v.as_str());
+
+            let (base_series_name, season_number) =
                 crate::utils::bangumi_name_extractor::BangumiNameExtractor::extract_series_name_and_season(
                     series_title,
-                    season_title
+                    season_title,
                 );
 
             // 系列根目录路径，延迟创建
             let series_root_path = bangumi_root_path.join(&base_series_name);
 
             // 生成标准的Season文件夹名称
-            let season_folder_name = crate::utils::bangumi_name_extractor::BangumiNameExtractor::generate_season_folder_name(season_number);
+            let season_folder_name =
+                crate::utils::bangumi_name_extractor::BangumiNameExtractor::generate_season_folder_name(season_number);
             let season_path = series_root_path.join(&season_folder_name);
 
-            (
-                season_path,
-                Some(season_folder_name),
-                Some(series_root_path),
-            )
+            (season_path, Some(season_folder_name), Some(series_root_path))
         } else {
             // 原有逻辑：根据配置决定是否创建季度子目录
             let should_create_season_folder = bangumi_source.download_all_seasons
@@ -880,13 +875,13 @@ pub async fn download_video_pages(
         // 非番剧使用原来的逻辑，但对合集进行特殊处理
         // 【重要】：始终从视频源的原始路径开始计算，避免使用已保存的视频路径
         let video_source_base_path = video_source.path();
-        
+
         debug!("=== 路径计算开始 ===");
         debug!("视频源基础路径: {:?}", video_source_base_path);
         debug!("视频BVID: {}", video_model.bvid);
         debug!("数据库中保存的路径: {:?}", video_model.path);
         debug!("注意：将忽略数据库中的路径，从视频源基础路径重新计算");
-        
+
         let path = if let VideoSourceEnum::Collection(collection_source) = video_source {
             // 合集的特殊处理
             let config = crate::config::reload_config();
@@ -1066,9 +1061,9 @@ pub async fn download_video_pages(
     // 为启用Season结构的非番剧视频检查封面文件是否已存在，避免重复下载
     let should_download_season_poster = if !is_bangumi {
         let config = crate::config::reload_config();
-        let uses_season_structure = (is_collection && config.collection_use_season_structure) 
+        let uses_season_structure = (is_collection && config.collection_use_season_structure)
             || (!is_single_page && config.multi_page_use_season_structure);
-            
+
         if uses_season_structure && season_folder.is_some() {
             // 计算封面文件路径（与下载逻辑保持一致）
             let poster_path = base_path
@@ -1079,11 +1074,13 @@ pub async fn download_video_pages(
                 .parent()
                 .map(|parent| parent.join(format!("{}-fanart.jpg", video_base_name)))
                 .unwrap_or_else(|| base_path.join(format!("{}-fanart.jpg", video_base_name)));
-            
+
             let poster_exists = poster_path.exists() && fanart_path.exists();
             let video_type = if is_collection { "合集" } else { "多P视频" };
-            info!("{}「{}」封面检查: poster_path={:?}, fanart_path={:?}, exists={}", 
-                video_type, video_model.name, poster_path, fanart_path, poster_exists);
+            info!(
+                "{}「{}」封面检查: poster_path={:?}, fanart_path={:?}, exists={}",
+                video_type, video_model.name, poster_path, fanart_path, poster_exists
+            );
             !poster_exists
         } else {
             true // 未启用Season结构时不进行检查
@@ -1159,14 +1156,14 @@ pub async fn download_video_pages(
         if config.bangumi_use_season_structure {
             // 提取季度信息来生成season.nfo
             let series_title = season_info.as_ref().unwrap().title.as_str();
-            
+
             // 直接从series_title中提取季度信息
-            let (_, season_number) = 
+            let (_, season_number) =
                 crate::utils::bangumi_name_extractor::BangumiNameExtractor::extract_series_name_and_season(
                     series_title,
-                    None // 让算法从title中自动提取
+                    None, // 让算法从title中自动提取
                 );
-            
+
             info!("番剧「{}」提取的季度编号: {}", series_title, season_number);
 
             // 独立检查season.nfo文件是否存在（不依赖tvshow.nfo检查）
@@ -1194,33 +1191,43 @@ pub async fn download_video_pages(
         if config.bangumi_use_season_structure {
             // 获取季度编号用于生成正确的文件名
             let series_title = season_info.as_ref().unwrap().title.as_str();
-            let (_, season_number) = crate::utils::bangumi_name_extractor::BangumiNameExtractor::extract_series_name_and_season(
-                series_title,
-                None
-            );
-            
+            let (_, season_number) =
+                crate::utils::bangumi_name_extractor::BangumiNameExtractor::extract_series_name_and_season(
+                    series_title,
+                    None,
+                );
+
             // 季度级图片应该放在系列根目录，使用标准命名
             let series_root = bangumi_folder_path.as_ref().unwrap();
             let poster_path = series_root.join(format!("Season{:02}-poster.jpg", season_number));
             let fanart_path = series_root.join(format!("Season{:02}-fanart.jpg", season_number));
-            
+
             // 独立检查季度级图片文件是否存在
             let should_download_season_images = separate_status[0] && (!poster_path.exists() || !fanart_path.exists());
-            
+
             info!("准备下载季度级图片到: {:?} 和 {:?}", poster_path, fanart_path);
-            
+
             // 季度级图片：poster使用封面，fanart使用横版封面（优先级：新EP封面 > 横版封面 > 专门背景图 > 竖版封面）
             let season_info_ref = season_info.as_ref().unwrap();
             let season_cover_url = season_info_ref.cover.as_deref();
-            let season_fanart_url = season_info_ref.new_ep_cover.as_deref().filter(|s| !s.is_empty())
-                .or(season_info_ref.horizontal_cover_169.as_deref().filter(|s| !s.is_empty()))
-                .or(season_info_ref.horizontal_cover_1610.as_deref().filter(|s| !s.is_empty()))
+            let season_fanart_url = season_info_ref
+                .new_ep_cover
+                .as_deref()
+                .filter(|s| !s.is_empty())
+                .or(season_info_ref
+                    .horizontal_cover_169
+                    .as_deref()
+                    .filter(|s| !s.is_empty()))
+                .or(season_info_ref
+                    .horizontal_cover_1610
+                    .as_deref()
+                    .filter(|s| !s.is_empty()))
                 .or(season_info_ref.bkg_cover.as_deref().filter(|s| !s.is_empty()))
                 .or(season_info_ref.cover.as_deref().filter(|s| !s.is_empty()));
-            
+
             info!("Season级别fanart选择逻辑:");
             info!("  最终选择的season fanart URL: {:?}", season_fanart_url);
-            
+
             fetch_video_poster(
                 should_download_season_images,
                 &video_model,
@@ -1228,7 +1235,7 @@ pub async fn download_video_pages(
                 poster_path,
                 fanart_path,
                 token.clone(),
-                season_cover_url, // 使用季度封面URL
+                season_cover_url,  // 使用季度封面URL
                 season_fanart_url, // 使用横版封面作为fanart
             )
             .await
@@ -1248,7 +1255,9 @@ pub async fn download_video_pages(
             } else {
                 // 普通视频：为多P视频或启用Season结构的合集生成封面，并检查文件是否已存在
                 let config = crate::config::reload_config();
-                separate_status[0] && (!is_single_page || (is_collection && config.collection_use_season_structure)) && should_download_season_poster
+                separate_status[0]
+                    && (!is_single_page || (is_collection && config.collection_use_season_structure))
+                    && should_download_season_poster
             },
             &video_model,
             downloader,
@@ -1306,18 +1315,26 @@ pub async fn download_video_pages(
             // 番剧fanart优先级：新EP封面 > 横版封面 > 专门背景图 > 竖版封面，普通视频复用poster
             if is_bangumi && season_info.is_some() {
                 let season = season_info.as_ref().unwrap();
-                let fanart_url = season.new_ep_cover.as_deref().filter(|s| !s.is_empty())
+                let fanart_url = season
+                    .new_ep_cover
+                    .as_deref()
+                    .filter(|s| !s.is_empty())
                     .or(season.horizontal_cover_169.as_deref().filter(|s| !s.is_empty()))
                     .or(season.horizontal_cover_1610.as_deref().filter(|s| !s.is_empty()))
                     .or(season.bkg_cover.as_deref().filter(|s| !s.is_empty()))
                     .or(season.cover.as_deref().filter(|s| !s.is_empty()));
-                
+
                 info!("番剧「{}」fanart选择逻辑:", video_model.name);
-                debug!("  字段值: new_ep_cover={:?}, h169={:?}, h1610={:?}, bkg={:?}, cover={:?}", 
-                       season.new_ep_cover, season.horizontal_cover_169, season.horizontal_cover_1610, 
-                       season.bkg_cover, season.cover);
+                debug!(
+                    "  字段值: new_ep_cover={:?}, h169={:?}, h1610={:?}, bkg={:?}, cover={:?}",
+                    season.new_ep_cover,
+                    season.horizontal_cover_169,
+                    season.horizontal_cover_1610,
+                    season.bkg_cover,
+                    season.cover
+                );
                 info!("  最终选择的fanart URL: {:?}", fanart_url);
-                
+
                 fanart_url
             } else {
                 None
@@ -1360,12 +1377,15 @@ pub async fn download_video_pages(
         .map(Into::into)
         .collect::<Vec<_>>();
     status.update_status(&main_results);
-    
+
     // 额外的结果单独处理（季度NFO和季度图片）
-    let extra_results = [Ok(season_nfo_result.unwrap_or(ExecutionStatus::Skipped)), Ok(season_images_result.unwrap_or(ExecutionStatus::Skipped))]
-        .into_iter()
-        .map(Into::into)
-        .collect::<Vec<_>>();
+    let extra_results = [
+        Ok(season_nfo_result.unwrap_or(ExecutionStatus::Skipped)),
+        Ok(season_images_result.unwrap_or(ExecutionStatus::Skipped)),
+    ]
+    .into_iter()
+    .map(Into::into)
+    .collect::<Vec<_>>();
 
     // 合并所有结果用于日志处理
     let mut all_results = main_results;
@@ -1407,7 +1427,15 @@ pub async fn download_video_pages(
     all_results
         .iter()
         .take(7)
-        .zip(["封面", "详情", "作者头像", "作者详情", "分页下载", "季度NFO", "季度图片"])
+        .zip([
+            "封面",
+            "详情",
+            "作者头像",
+            "作者详情",
+            "分页下载",
+            "季度NFO",
+            "季度图片",
+        ])
         .for_each(|(res, task_name)| match res {
             ExecutionStatus::Skipped => debug!("处理视频「{}」{}已成功过，跳过", &video_model.name, task_name),
             ExecutionStatus::Succeeded => debug!("处理视频「{}」{}成功", &video_model.name, task_name),
@@ -1488,7 +1516,11 @@ pub async fn download_video_pages(
                 }
             }
         });
-    if let ExecutionStatus::Failed(e) = all_results.into_iter().nth(4).context("page download result not found")? {
+    if let ExecutionStatus::Failed(e) = all_results
+        .into_iter()
+        .nth(4)
+        .context("page download result not found")?
+    {
         if e.downcast_ref::<DownloadAbortError>().is_some() {
             return Err(e);
         }
@@ -2387,7 +2419,9 @@ pub async fn fetch_page_subtitle(
         .into_iter()
         .map(|subtitle| async move {
             let path = subtitle_path.with_extension(format!("{}.srt", subtitle.lan));
-            ensure_parent_dir_for_file(&path).await.map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
+            ensure_parent_dir_for_file(&path)
+                .await
+                .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
             tokio::fs::write(path, subtitle.body.to_string()).await
         })
         .collect::<FuturesUnordered<_>>();
@@ -2447,13 +2481,13 @@ pub async fn fetch_video_poster(
     if !should_run {
         return Ok(ExecutionStatus::Skipped);
     }
-    
+
     info!("开始处理视频「{}」的封面和背景图", video_model.name);
     info!("  poster路径: {:?}", poster_path);
     info!("  fanart路径: {:?}", fanart_path);
     info!("  custom_cover_url: {:?}", custom_cover_url);
     info!("  custom_fanart_url: {:?}", custom_fanart_url);
-    
+
     // 下载poster封面
     let cover_url = custom_cover_url.unwrap_or(video_model.cover.as_str());
     let urls = vec![cover_url];
@@ -2462,7 +2496,7 @@ pub async fn fetch_video_poster(
         _ = token.cancelled() => return Ok(ExecutionStatus::Skipped),
         res = downloader.fetch_with_fallback(&urls, &poster_path) => res,
     }?;
-    
+
     // 下载fanart背景图（可能使用不同的URL）
     ensure_parent_dir_for_file(&fanart_path).await?;
     if let Some(fanart_url) = custom_fanart_url {
@@ -2490,7 +2524,7 @@ pub async fn fetch_video_poster(
         // 没有专门的fanart URL，直接复制poster
         fs::copy(&poster_path, &fanart_path).await?;
     }
-    
+
     Ok(ExecutionStatus::Succeeded)
 }
 
@@ -2572,18 +2606,18 @@ pub async fn generate_bangumi_season_nfo(
     if !should_run {
         return Ok(ExecutionStatus::Skipped);
     }
-    
+
     let nfo_path = season_path.join("season.nfo");
-    
+
     // 检查文件是否已存在（但仍然继续生成，确保内容更新）
     if nfo_path.exists() {
         debug!("Season NFO文件已存在，将覆盖更新: {:?}", nfo_path);
     }
-    
+
     use crate::utils::nfo::Season;
     let mut season = Season::from_season_info(video_model, season_info);
-    season.season_number = _season_number as i32;  // 设置正确的季度编号
-    
+    season.season_number = _season_number as i32; // 设置正确的季度编号
+
     generate_nfo(NFO::Season(season), nfo_path.clone()).await?;
     info!("成功生成season.nfo: {:?} (季度{})", nfo_path, _season_number);
     Ok(ExecutionStatus::Succeeded)
@@ -2959,18 +2993,18 @@ async fn get_season_info_from_api(
     if json["code"].as_i64().unwrap_or(-1) != 0 {
         let error_code = json["code"].as_i64().unwrap_or(-1);
         let error_msg = json["message"].as_str().unwrap_or("未知错误").to_string();
-        
+
         // 创建BiliError以触发风控检测
         let bili_error = crate::bilibili::BiliError::RequestFailed(error_code, error_msg.clone());
         let error = anyhow::Error::from(bili_error);
-        
+
         // 使用错误分类器检测风控
         let classified_error = crate::error::ErrorClassifier::classify_error(&error);
         if classified_error.error_type == crate::error::ErrorType::RiskControl {
             // 风控错误，触发下载中止
             return Err(anyhow!(crate::error::DownloadAbortError()));
         }
-        
+
         // 其他错误正常返回
         bail!("API返回错误 {}: {}", error_code, error_msg);
     }
@@ -3046,64 +3080,86 @@ async fn get_season_info_from_api(
     // 其他元数据
     let total_episodes = result["total"].as_i64().map(|t| t as i32);
     let cover = result["cover"].as_str().map(|s| s.to_string());
-    
+
     // 从seasons数组中查找当前season的横版封面信息
-    let (new_ep_cover, horizontal_cover_1610, horizontal_cover_169, bkg_cover) = if let Some(seasons_array) = result["seasons"].as_array() {
-        debug!("seasons数组查找: 目标season_id={}, 数组长度={}", season_id, seasons_array.len());
-        
+    let (new_ep_cover, horizontal_cover_1610, horizontal_cover_169, bkg_cover) = if let Some(seasons_array) =
+        result["seasons"].as_array()
+    {
+        debug!(
+            "seasons数组查找: 目标season_id={}, 数组长度={}",
+            season_id,
+            seasons_array.len()
+        );
+
         // 在seasons数组中查找当前season_id对应的条目，同时记录第一个有横版封面的条目作为备选
         let mut target_season_covers = Vec::new(); // 目标season_id的所有条目
         let mut first_available_covers = None;
-        
+
         for (index, season) in seasons_array.iter().enumerate() {
             // 简化调试输出
             let season_season_id = season["season_id"].as_i64().unwrap_or(-1);
             debug!("处理seasons[{}]: season_id={}", index, season_season_id);
-            
+
             // 检查当前条目是否有有效的横版封面（作为备选）
             let current_h1610 = season["horizontal_cover_1610"].as_str().filter(|s| !s.is_empty());
             let current_h169 = season["horizontal_cover_169"].as_str().filter(|s| !s.is_empty());
             let current_bkg = season["bkg_cover"].as_str().filter(|s| !s.is_empty());
             let current_new_ep_cover = season["new_ep"]["cover"].as_str().filter(|s| !s.is_empty());
-            
+
             // 如果还没有备选条目，且当前条目有有效的横版封面，就记录它
-            if first_available_covers.is_none() && (current_new_ep_cover.is_some() || current_h1610.is_some() || current_h169.is_some() || current_bkg.is_some()) {
+            if first_available_covers.is_none()
+                && (current_new_ep_cover.is_some()
+                    || current_h1610.is_some()
+                    || current_h169.is_some()
+                    || current_bkg.is_some())
+            {
                 let covers = (
                     current_new_ep_cover.map(|s| s.to_string()),
                     current_h1610.map(|s| s.to_string()),
                     current_h169.map(|s| s.to_string()),
-                    current_bkg.map(|s| s.to_string())
+                    current_bkg.map(|s| s.to_string()),
                 );
                 first_available_covers = Some(covers);
                 info!("💾 记录为第一个可用的横版封面备选：season_id={}", season_season_id);
             }
-            
+
             // 检查是否匹配当前season_id
             if season_season_id.to_string() == season_id {
-                info!("✓ 找到匹配的season_id: {} (第{}个条目)", season_season_id, target_season_covers.len() + 1);
+                info!(
+                    "✓ 找到匹配的season_id: {} (第{}个条目)",
+                    season_season_id,
+                    target_season_covers.len() + 1
+                );
                 // 找到了当前season，提取横版封面信息
                 let new_ep = season["new_ep"]["cover"].as_str().map(|s| s.to_string());
                 let h1610 = season["horizontal_cover_1610"].as_str().map(|s| s.to_string());
                 let h169 = season["horizontal_cover_169"].as_str().map(|s| s.to_string());
                 let bkg = season["bkg_cover"].as_str().map(|s| s.to_string());
-                debug!("  字段提取: new_ep={:?}, h1610={:?}, h169={:?}, bkg={:?}", new_ep, h1610, h169, bkg);
+                debug!(
+                    "  字段提取: new_ep={:?}, h1610={:?}, h169={:?}, bkg={:?}",
+                    new_ep, h1610, h169, bkg
+                );
                 target_season_covers.push((new_ep, h1610, h169, bkg));
                 // 不要break，继续查找是否还有其他相同season_id的条目
             }
         }
-        
+
         // 从目标season的所有条目中选择第一个有有效横版封面的
         let found_season_covers = if !target_season_covers.is_empty() {
-            info!("共找到 {} 个 season_id {} 的条目", target_season_covers.len(), season_id);
-            
+            info!(
+                "共找到 {} 个 season_id {} 的条目",
+                target_season_covers.len(),
+                season_id
+            );
+
             // 先寻找有有效横版封面的条目
             let valid_cover = target_season_covers.iter().find(|(new_ep, h1610, h169, bkg)| {
-                new_ep.as_ref().map(|s| !s.is_empty()).unwrap_or(false) ||
-                h1610.as_ref().map(|s| !s.is_empty()).unwrap_or(false) ||
-                h169.as_ref().map(|s| !s.is_empty()).unwrap_or(false) ||
-                bkg.as_ref().map(|s| !s.is_empty()).unwrap_or(false)
+                new_ep.as_ref().map(|s| !s.is_empty()).unwrap_or(false)
+                    || h1610.as_ref().map(|s| !s.is_empty()).unwrap_or(false)
+                    || h169.as_ref().map(|s| !s.is_empty()).unwrap_or(false)
+                    || bkg.as_ref().map(|s| !s.is_empty()).unwrap_or(false)
             });
-            
+
             if let Some(covers) = valid_cover {
                 info!("✓ 找到有有效横版封面的season_id {} 条目", season_id);
                 Some(covers.clone())
@@ -3119,35 +3175,44 @@ async fn get_season_info_from_api(
         match found_season_covers {
             Some((new_ep, h1610, h169, bkg)) => {
                 // 检查找到的season是否有有效的横版封面
-                let has_valid_covers = new_ep.as_ref().map(|s| !s.is_empty()).unwrap_or(false) ||
-                                     h1610.as_ref().map(|s| !s.is_empty()).unwrap_or(false) ||
-                                     h169.as_ref().map(|s| !s.is_empty()).unwrap_or(false) ||
-                                     bkg.as_ref().map(|s| !s.is_empty()).unwrap_or(false);
-                
+                let has_valid_covers = new_ep.as_ref().map(|s| !s.is_empty()).unwrap_or(false)
+                    || h1610.as_ref().map(|s| !s.is_empty()).unwrap_or(false)
+                    || h169.as_ref().map(|s| !s.is_empty()).unwrap_or(false)
+                    || bkg.as_ref().map(|s| !s.is_empty()).unwrap_or(false);
+
                 if has_valid_covers {
                     info!("✓ 目标season {} 有有效的横版封面，直接使用", season_id);
                     (new_ep, h1610, h169, bkg)
-                } else if let Some((fallback_new_ep, fallback_h1610, fallback_h169, fallback_bkg)) = first_available_covers {
+                } else if let Some((fallback_new_ep, fallback_h1610, fallback_h169, fallback_bkg)) =
+                    first_available_covers
+                {
                     warn!("⚠️ 目标season {} 没有有效的横版封面，使用第一个可用的备选", season_id);
-                    info!("  备选横版封面: new_ep={:?}, h1610={:?}, h169={:?}, bkg={:?}", 
-                          fallback_new_ep, fallback_h1610, fallback_h169, fallback_bkg);
+                    info!(
+                        "  备选横版封面: new_ep={:?}, h1610={:?}, h169={:?}, bkg={:?}",
+                        fallback_new_ep, fallback_h1610, fallback_h169, fallback_bkg
+                    );
                     (fallback_new_ep, fallback_h1610, fallback_h169, fallback_bkg)
                 } else {
-                    warn!("⚠️ 目标season {} 和所有备选都没有有效的横版封面，使用顶层字段", season_id);
+                    warn!(
+                        "⚠️ 目标season {} 和所有备选都没有有效的横版封面，使用顶层字段",
+                        season_id
+                    );
                     (
                         None, // 顶层没有new_ep字段
                         result["horizontal_cover_1610"].as_str().map(|s| s.to_string()),
                         result["horizontal_cover_169"].as_str().map(|s| s.to_string()),
-                        result["bkg_cover"].as_str().map(|s| s.to_string())
+                        result["bkg_cover"].as_str().map(|s| s.to_string()),
                     )
                 }
-            },
+            }
             None => {
                 // 完全没找到目标season，使用备选或顶层
                 if let Some((fallback_new_ep, fallback_h1610, fallback_h169, fallback_bkg)) = first_available_covers {
                     warn!("⚠️ 未找到目标season {}，使用第一个可用的备选", season_id);
-                    info!("  备选横版封面: new_ep={:?}, h1610={:?}, h169={:?}, bkg={:?}", 
-                          fallback_new_ep, fallback_h1610, fallback_h169, fallback_bkg);
+                    info!(
+                        "  备选横版封面: new_ep={:?}, h1610={:?}, h169={:?}, bkg={:?}",
+                        fallback_new_ep, fallback_h1610, fallback_h169, fallback_bkg
+                    );
                     (fallback_new_ep, fallback_h1610, fallback_h169, fallback_bkg)
                 } else {
                     warn!("⚠️ 未找到目标season {} 且无备选，使用顶层字段", season_id);
@@ -3155,7 +3220,7 @@ async fn get_season_info_from_api(
                         None, // 顶层没有new_ep字段
                         result["horizontal_cover_1610"].as_str().map(|s| s.to_string()),
                         result["horizontal_cover_169"].as_str().map(|s| s.to_string()),
-                        result["bkg_cover"].as_str().map(|s| s.to_string())
+                        result["bkg_cover"].as_str().map(|s| s.to_string()),
                     )
                 }
             }
@@ -3167,7 +3232,7 @@ async fn get_season_info_from_api(
             None, // 顶层没有new_ep字段
             result["horizontal_cover_1610"].as_str().map(|s| s.to_string()),
             result["horizontal_cover_169"].as_str().map(|s| s.to_string()),
-            result["bkg_cover"].as_str().map(|s| s.to_string())
+            result["bkg_cover"].as_str().map(|s| s.to_string()),
         )
     };
     let media_id = result["media_id"].as_i64();
@@ -3213,11 +3278,7 @@ async fn get_season_info_from_api(
         Some(1)
     };
 
-    debug!(
-        "番剧 {} 总季数计算完成: {} 季",
-        title,
-        total_seasons.unwrap_or(1)
-    );
+    debug!("番剧 {} 总季数计算完成: {} 季", title, total_seasons.unwrap_or(1));
 
     Ok(SeasonInfo {
         title,
@@ -3444,44 +3505,156 @@ async fn get_collection_video_episode_number(
 /// 检查文件夹是否为同一视频的文件夹
 fn is_same_video_folder(folder_path: &std::path::Path, video_model: &video::Model) -> bool {
     use std::fs;
-    
+
     if !folder_path.exists() {
+        debug!("文件夹不存在: {:?}", folder_path);
         return false;
     }
-    
-    // 方法1：检查数据库中记录的路径
-    if let Some(db_path) = std::path::Path::new(&video_model.path).file_name() {
-        if let Some(folder_name) = folder_path.file_name() {
-            if db_path == folder_name {
-                debug!("通过数据库路径匹配确认为同一视频文件夹: {:?}", folder_path);
+
+    debug!("=== 智能冲突检测开始 ===");
+    debug!("检查文件夹: {:?}", folder_path);
+    debug!("数据库存储路径: {}", video_model.path);
+    debug!("视频BVID: {}", video_model.bvid);
+    debug!("视频标题: {}", video_model.name);
+
+    // 方法1：增强的数据库路径匹配
+    let db_path = std::path::Path::new(&video_model.path);
+
+    // 1.1 完整路径匹配
+    if folder_path == db_path {
+        debug!("✓ 通过完整路径匹配确认为同一视频文件夹");
+        return true;
+    }
+
+    // 1.2 规范化路径比较（处理不同的路径分隔符）
+    let folder_normalized = folder_path.to_string_lossy().replace('\\', "/");
+    let db_normalized = db_path.to_string_lossy().replace('\\', "/");
+    if folder_normalized == db_normalized {
+        debug!("✓ 通过规范化路径匹配确认为同一视频文件夹");
+        return true;
+    }
+
+    // 1.3 文件夹名称匹配（原有逻辑）
+    if let Some(db_folder_name) = db_path.file_name() {
+        if let Some(check_folder_name) = folder_path.file_name() {
+            if db_folder_name == check_folder_name {
+                debug!("✓ 通过文件夹名称匹配确认为同一视频文件夹");
                 return true;
             }
         }
     }
-    
-    // 方法2：检查文件夹中是否有该视频的临时文件或视频文件
+
+    // 1.4 相对路径后缀匹配
+    if let Some(db_folder_name) = db_path.file_name() {
+        if folder_path.ends_with(db_folder_name) {
+            debug!("✓ 通过路径后缀匹配确认为同一视频文件夹");
+            return true;
+        }
+    }
+
+    debug!("⚠ 数据库路径匹配失败，尝试文件内容检测");
+
+    // 方法2：扩展的文件内容检测
     if let Ok(entries) = fs::read_dir(folder_path) {
+        let mut found_media_files = false;
+        let mut found_bvid_files = false;
+        let mut found_title_files = false;
+
         for entry in entries.flatten() {
             let file_name = entry.file_name();
-            let file_name_str = file_name.to_string_lossy();
-            
-            // 检查是否有包含BVID的临时文件
-            if file_name_str.contains(&video_model.bvid) && 
-               (file_name_str.ends_with(".tmp_video") || 
-                file_name_str.ends_with(".mp4") || 
-                file_name_str.ends_with(".mkv") ||
-                file_name_str.ends_with(".flv")) {
-                debug!("通过文件名匹配确认为同一视频文件夹: {:?} (匹配文件: {})", folder_path, file_name_str);
-                return true;
+            let file_name_str = file_name.to_string_lossy().to_lowercase();
+
+            // 2.1 检查包含BVID的文件（扩展文件类型）
+            if file_name_str.contains(&video_model.bvid.to_lowercase()) {
+                if file_name_str.ends_with(".tmp_video")
+                    || file_name_str.ends_with(".tmp_audio")
+                    || file_name_str.ends_with(".mp4")
+                    || file_name_str.ends_with(".mkv")
+                    || file_name_str.ends_with(".flv")
+                    || file_name_str.ends_with(".webm")
+                    || file_name_str.ends_with(".nfo")
+                    || file_name_str.ends_with(".jpg")
+                    || file_name_str.ends_with(".png")
+                    || file_name_str.ends_with(".ass")
+                    || file_name_str.ends_with(".srt")
+                {
+                    debug!(
+                        "✓ 通过BVID文件匹配确认为同一视频文件夹: {} (匹配文件: {})",
+                        folder_path.display(),
+                        file_name_str
+                    );
+                    return true;
+                }
+                found_bvid_files = true;
+            }
+
+            // 2.2 检查包含视频标题关键词的文件
+            let video_title_clean = video_model
+                .name
+                .to_lowercase()
+                .replace(['/', '\\', ':', '*', '?', '"', '<', '>', '|'], "");
+            if !video_title_clean.is_empty() && video_title_clean.len() > 3 {
+                // 提取标题的前几个字符作为关键词
+                let title_keywords: Vec<&str> = video_title_clean.split_whitespace().take(3).collect();
+                for keyword in title_keywords {
+                    if keyword.len() > 2 && file_name_str.contains(keyword) {
+                        if file_name_str.ends_with(".mp4")
+                            || file_name_str.ends_with(".mkv")
+                            || file_name_str.ends_with(".flv")
+                            || file_name_str.ends_with(".webm")
+                            || file_name_str.ends_with(".nfo")
+                        {
+                            debug!(
+                                "✓ 通过标题关键词匹配确认为同一视频文件夹: {} (匹配关键词: {}, 文件: {})",
+                                folder_path.display(),
+                                keyword,
+                                file_name_str
+                            );
+                            return true;
+                        }
+                        found_title_files = true;
+                    }
+                }
+            }
+
+            // 2.3 检查是否有媒体相关文件（降低要求）
+            if file_name_str.ends_with(".mp4")
+                || file_name_str.ends_with(".mkv")
+                || file_name_str.ends_with(".flv")
+                || file_name_str.ends_with(".webm")
+                || file_name_str.ends_with(".nfo")
+                || file_name_str.ends_with(".jpg")
+                || file_name_str.ends_with(".png")
+                || file_name_str.ends_with(".ass")
+                || file_name_str.ends_with(".srt")
+            {
+                found_media_files = true;
             }
         }
+
+        debug!(
+            "文件检测结果: 媒体文件={}, BVID文件={}, 标题文件={}",
+            found_media_files, found_bvid_files, found_title_files
+        );
+
+        // 如果找到了相关文件但没有精确匹配，记录为可疑
+        if found_media_files || found_bvid_files || found_title_files {
+            debug!("⚠ 文件夹包含相关文件但无法确认为同一视频文件夹: {:?}", folder_path);
+        }
     }
-    
+
+    debug!("✗ 无法确认为同一视频文件夹: {:?}", folder_path);
+    debug!("=== 智能冲突检测结束 ===");
     false
 }
 
 /// 生成唯一的文件夹名称，避免同名冲突（增强版）
-pub fn generate_unique_folder_name(parent_dir: &std::path::Path, base_name: &str, video_model: &video::Model, pubtime: &str) -> String {
+pub fn generate_unique_folder_name(
+    parent_dir: &std::path::Path,
+    base_name: &str,
+    video_model: &video::Model,
+    pubtime: &str,
+) -> String {
     let mut unique_name = base_name.to_string();
     let mut counter = 0;
 

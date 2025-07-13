@@ -1335,13 +1335,14 @@ impl NFO<'_> {
         // 如果标题包含季度信息，尝试提取季度数字
         if let Some(season_match) = regex::Regex::new(r"第([一二三四五六七八九十\d]+)季")
             .unwrap()
-            .captures(title) {
+            .captures(title)
+        {
             let season_str = &season_match[1];
-            
+
             // 处理中文数字转换
             let season_number = match season_str {
                 "一" => 1,
-                "二" => 2, 
+                "二" => 2,
                 "三" => 3,
                 "四" => 4,
                 "五" => 5,
@@ -1350,9 +1351,9 @@ impl NFO<'_> {
                 "八" => 8,
                 "九" => 9,
                 "十" => 10,
-                _ => season_str.parse::<i32>().unwrap_or(1)
+                _ => season_str.parse::<i32>().unwrap_or(1),
             };
-            
+
             // 返回当前检测到的季度作为总季数的估计
             // 这是基于标题的最佳猜测
             season_number
@@ -1629,10 +1630,10 @@ impl<'a> From<&'a video::Model> for TVShow<'a> {
             studio: None,               // 使用默认值（哔哩哔哩）
             status: Some("Continuing"), // 默认持续播出状态
             total_seasons: Some(NFO::calculate_total_seasons_from_title(nfo_title)),
-            total_episodes: None,       // 从分页数量推断
-            duration: None,             // video模型中没有duration字段
-            view_count: None,           // video模型中没有view_count字段
-            like_count: None,           // video模型中没有like_count字段
+            total_episodes: None, // 从分页数量推断
+            duration: None,       // video模型中没有duration字段
+            view_count: None,     // video模型中没有view_count字段
+            like_count: None,     // video模型中没有like_count字段
             category: video.category,
             tagline,
             set: set_name,
@@ -1640,8 +1641,8 @@ impl<'a> From<&'a video::Model> for TVShow<'a> {
             actors_info: video.actors.clone(),
             cover_url: &video.cover,
             fanart_url: None, // 普通视频没有单独的fanart URL
-            season_id: None, // 普通视频没有season_id
-            media_id: None,  // 普通视频没有media_id
+            season_id: None,  // 普通视频没有season_id
+            media_id: None,   // 普通视频没有media_id
         }
     }
 }
@@ -1754,7 +1755,9 @@ impl<'a> TVShow<'a> {
             country,
             studio: None, // 可以从制作公司获取，但API中暂无此字段
             status,
-            total_seasons: season_info.total_seasons.or_else(|| Some(NFO::calculate_total_seasons_from_title(&season_info.title))),
+            total_seasons: season_info
+                .total_seasons
+                .or_else(|| Some(NFO::calculate_total_seasons_from_title(&season_info.title))),
             total_episodes: season_info.total_episodes,
             duration: None, // 单集平均时长，需要计算
             view_count: season_info.total_views,
@@ -1774,7 +1777,9 @@ impl<'a> TVShow<'a> {
                 .or(season_info.horizontal_cover_169.as_deref())
                 .or(season_info.horizontal_cover_1610.as_deref())
                 .unwrap_or(&video.cover),
-            fanart_url: season_info.new_ep_cover.as_deref()
+            fanart_url: season_info
+                .new_ep_cover
+                .as_deref()
                 .or(season_info.horizontal_cover_169.as_deref())
                 .or(season_info.horizontal_cover_1610.as_deref())
                 .or(season_info.bkg_cover.as_deref()),
@@ -1936,8 +1941,8 @@ impl<'a> From<&'a video::Model> for Season<'a> {
             actors_info: video.actors.clone(),
             cover_url: &video.cover,
             fanart_url: None, // 普通视频没有单独的fanart URL
-            season_id: None, // 普通视频没有season_id
-            media_id: None,  // 普通视频没有media_id
+            season_id: None,  // 普通视频没有season_id
+            media_id: None,   // 普通视频没有media_id
         }
     }
 }
@@ -2026,7 +2031,9 @@ impl<'a> Season<'a> {
                 .or(season_info.horizontal_cover_169.as_deref())
                 .or(season_info.horizontal_cover_1610.as_deref())
                 .unwrap_or(&video.cover),
-            fanart_url: season_info.new_ep_cover.as_deref()
+            fanart_url: season_info
+                .new_ep_cover
+                .as_deref()
                 .or(season_info.horizontal_cover_169.as_deref())
                 .or(season_info.horizontal_cover_1610.as_deref())
                 .or(season_info.bkg_cover.as_deref()),
@@ -2555,8 +2562,8 @@ mod tests {
             name: "《灵笼 第二季》".to_string(),
             upper_id: 0,
             upper_name: "".to_string(),
-            category: 1,               // 番剧分类
-            season_number: Some(2),    // 第二季
+            category: 1,            // 番剧分类
+            season_number: Some(2), // 第二季
             favtime: chrono::NaiveDateTime::new(
                 chrono::NaiveDate::from_ymd_opt(2025, 5, 23).unwrap(),
                 chrono::NaiveTime::from_hms_opt(14, 30, 0).unwrap(),
@@ -2597,11 +2604,11 @@ mod tests {
     #[tokio::test]
     async fn test_dynamic_total_seasons_calculation() {
         // 测试阶段3修复：动态TotalSeasons计算功能
-        
+
         // 测试不同季度标题的总季数计算
         let test_cases = vec![
             ("灵笼 第一季", 1),
-            ("灵笼第二季", 2), 
+            ("灵笼第二季", 2),
             ("进击的巨人第三季", 3),
             ("某科学的超电磁炮第2季", 2),
             ("鬼灭之刃第四季", 4),
@@ -2636,8 +2643,10 @@ mod tests {
         let tvshow_nfo = NFO::TVShow((&video).into()).generate_nfo().await.unwrap();
 
         // 验证TVShow NFO中包含正确的总季数
-        assert!(tvshow_nfo.contains("<totalseasons>2</totalseasons>"), 
-               "TVShow NFO应该包含正确的总季数2");
+        assert!(
+            tvshow_nfo.contains("<totalseasons>2</totalseasons>"),
+            "TVShow NFO应该包含正确的总季数2"
+        );
 
         println!("动态TotalSeasons计算功能测试通过");
     }
@@ -2650,8 +2659,8 @@ mod tests {
             name: "灵笼第二季".to_string(),
             upper_id: 0,
             upper_name: "".to_string(),
-            category: 1,               // 番剧分类
-            season_number: Some(2),    // 第二季
+            category: 1,            // 番剧分类
+            season_number: Some(2), // 第二季
             favtime: chrono::NaiveDateTime::new(
                 chrono::NaiveDate::from_ymd_opt(2025, 7, 11).unwrap(),
                 chrono::NaiveTime::from_hms_opt(14, 30, 0).unwrap(),
@@ -2668,21 +2677,29 @@ mod tests {
         let season_nfo = NFO::Season((&video).into()).generate_nfo().await.unwrap();
 
         // 验证Season NFO的title显示纯季度名称（符合Emby标准）
-        assert!(season_nfo.contains("<title>第二季</title>"), 
-               "Season NFO的title应该显示纯季度名称");
-        
+        assert!(
+            season_nfo.contains("<title>第二季</title>"),
+            "Season NFO的title应该显示纯季度名称"
+        );
+
         // 验证Season NFO的originaltitle
-        assert!(season_nfo.contains("<originaltitle>灵笼第二季</originaltitle>"), 
-               "Season NFO的originaltitle应该正确");
-               
+        assert!(
+            season_nfo.contains("<originaltitle>灵笼第二季</originaltitle>"),
+            "Season NFO的originaltitle应该正确"
+        );
+
         // 验证Season NFO的seasonnumber
-        assert!(season_nfo.contains("<seasonnumber>2</seasonnumber>"), 
-               "Season NFO应该包含正确的季度编号");
-               
+        assert!(
+            season_nfo.contains("<seasonnumber>2</seasonnumber>"),
+            "Season NFO应该包含正确的季度编号"
+        );
+
         // 验证Season NFO的set使用系列名称（不含季度信息）
         assert!(season_nfo.contains("<set>"), "Season NFO应该包含set信息");
-        assert!(season_nfo.contains("<name>灵笼</name>"), 
-               "Season NFO的set应该使用清理后的系列名称");
+        assert!(
+            season_nfo.contains("<name>灵笼</name>"),
+            "Season NFO的set应该使用清理后的系列名称"
+        );
 
         println!("Season标题修复测试通过");
     }
@@ -2695,8 +2712,8 @@ mod tests {
             name: "灵笼第二季".to_string(),
             upper_id: 0,
             upper_name: "".to_string(),
-            category: 1,               // 番剧分类
-            season_number: Some(2),    // 第二季
+            category: 1,            // 番剧分类
+            season_number: Some(2), // 第二季
             favtime: chrono::NaiveDateTime::new(
                 chrono::NaiveDate::from_ymd_opt(2025, 7, 11).unwrap(),
                 chrono::NaiveTime::from_hms_opt(14, 30, 0).unwrap(),
@@ -2713,22 +2730,32 @@ mod tests {
         let season_nfo = NFO::Season((&video).into()).generate_nfo().await.unwrap();
 
         // 验证Emby标准的Season NFO结构
-        assert!(season_nfo.contains("<title>第二季</title>"), 
-               "Season NFO的title应该显示纯季度标题（第二季）");
-        
-        assert!(season_nfo.contains("<originaltitle>灵笼第二季</originaltitle>"), 
-               "Season NFO的originaltitle应该保留完整名称");
-               
-        assert!(season_nfo.contains("<seasonnumber>2</seasonnumber>"), 
-               "Season NFO应该包含正确的季度编号");
-               
+        assert!(
+            season_nfo.contains("<title>第二季</title>"),
+            "Season NFO的title应该显示纯季度标题（第二季）"
+        );
+
+        assert!(
+            season_nfo.contains("<originaltitle>灵笼第二季</originaltitle>"),
+            "Season NFO的originaltitle应该保留完整名称"
+        );
+
+        assert!(
+            season_nfo.contains("<seasonnumber>2</seasonnumber>"),
+            "Season NFO应该包含正确的季度编号"
+        );
+
         assert!(season_nfo.contains("<set>"), "Season NFO应该包含set信息");
-        assert!(season_nfo.contains("<name>灵笼</name>"), 
-               "Season NFO的set应该使用清理后的系列名称");
+        assert!(
+            season_nfo.contains("<name>灵笼</name>"),
+            "Season NFO的set应该使用清理后的系列名称"
+        );
 
         // 验证Season专属的plot前缀
-        assert!(season_nfo.contains("【第二季】"), 
-               "Season NFO的plot应该包含季度特定的前缀");
+        assert!(
+            season_nfo.contains("【第二季】"),
+            "Season NFO的plot应该包含季度特定的前缀"
+        );
 
         println!("Emby标准Season NFO测试通过");
         println!("生成的Season NFO:");

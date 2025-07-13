@@ -10,7 +10,7 @@ pub fn filenamify<S: AsRef<str>>(input: S) -> String {
 }
 
 /// 带选项的文件名安全化函数
-/// 
+///
 /// # 参数
 /// - `input`: 输入字符串
 /// - `preserve_template_separators`: 是否保护模板路径分隔符（__UNIX_SEP__, __WIN_SEP__）
@@ -20,7 +20,7 @@ pub fn filenamify_with_options<S: AsRef<str>>(input: S, preserve_template_separa
     // 保护路径分隔符标记，避免被处理
     let unix_sep_placeholder = "🔒UNIX_SEP_PROTECTED🔒";
     let win_sep_placeholder = "🔒WIN_SEP_PROTECTED🔒";
-    
+
     if preserve_template_separators {
         input = input.replace("__UNIX_SEP__", unix_sep_placeholder);
         input = input.replace("__WIN_SEP__", win_sep_placeholder);
@@ -133,11 +133,11 @@ mod tests {
         // 测试保护模板分隔符时，内容中的原始斜杠应该被处理
         let input = "ZHY2020__UNIX_SEP__【𝟒𝐊 𝐇𝐢𝐑𝐞𝐬】「分身/ドッペルゲンガー」";
         let result = filenamify_with_options(input, true);
-        
+
         // 期望结果：模板分隔符保留，但内容中的斜杠被处理
         assert_eq!(result, "ZHY2020__UNIX_SEP___𝟒𝐊 𝐇𝐢𝐑𝐞𝐬_[分身_ドッペルゲンガー]");
     }
-    
+
     #[test]
     fn test_slash_in_content() {
         // 专门测试内容中的斜杠处理
@@ -145,7 +145,7 @@ mod tests {
         let result = filenamify(input);
         assert_eq!(result, "分身_ドッペルゲンガー");
     }
-    
+
     #[test]
     fn test_filenamify_extended() {
         assert_eq!(filenamify(r"foo\\bar"), "foo_bar");
@@ -180,23 +180,20 @@ mod tests {
             filenamify_with_options("foo__UNIX_SEP__bar", true),
             "foo__UNIX_SEP__bar"
         );
-        assert_eq!(
-            filenamify_with_options("foo__WIN_SEP__bar", true),
-            "foo__WIN_SEP__bar"
-        );
-        
+        assert_eq!(filenamify_with_options("foo__WIN_SEP__bar", true), "foo__WIN_SEP__bar");
+
         // 测试不保护模板分隔符时的行为
         assert_eq!(
             filenamify_with_options("foo__UNIX_SEP__bar", false),
-            "foo__UNIX_SEP__bar"  // 不包含真实分隔符，所以不受影响
+            "foo__UNIX_SEP__bar" // 不包含真实分隔符，所以不受影响
         );
-        
+
         // 测试用户问题中的场景：标题中包含分隔符
         assert_eq!(
             filenamify_with_options("【𝟒𝐊 𝐇𝐢𝐑𝐞𝐬】「分身/ドッペルゲンガー」", false),
             "_𝟒𝐊 𝐇𝐢𝐑𝐞𝐬_[分身_ドッペルゲンガー]"
         );
-        
+
         // 测试模板和内容的组合情况
         assert_eq!(
             filenamify_with_options("UP主名__UNIX_SEP__「分身/ドッペルゲンガー」", true),

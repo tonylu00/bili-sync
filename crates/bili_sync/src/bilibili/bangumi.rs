@@ -17,24 +17,24 @@ fn is_preview_episode(episode: &serde_json::Value) -> bool {
 }
 
 /// 智能集数分配算法，解决特殊剧集集数冲突问题
-/// 
+///
 /// 该函数处理B站API返回的剧集数据，为每个剧集分配唯一的集数：
 /// 1. 首先处理可以解析为数字的正常集数（如"001", "002"等）
 /// 2. 然后按发布时间顺序为特殊剧集（如"中章", "终章 上"等）分配后续集数
 /// 3. 确保同一season内所有剧集都有唯一的集数
 fn assign_episode_numbers(episodes: &[serde_json::Value]) -> std::collections::HashMap<String, i32> {
     use std::collections::HashMap;
-    
+
     let mut episode_assignments = HashMap::new();
     let mut parsed_episodes = Vec::new();
     let mut special_episodes = Vec::new();
-    
+
     // 第一步：分离可解析的数字集数和特殊剧集
     for episode in episodes {
         let ep_id = episode["id"].as_i64().unwrap_or(0).to_string();
         let episode_title_raw = episode["title"].as_str().unwrap_or_default();
         let pub_time = episode["pub_time"].as_i64().unwrap_or(0);
-        
+
         if let Ok(episode_num) = episode_title_raw.parse::<i32>() {
             // 可解析的数字集数
             parsed_episodes.push((ep_id, episode_num, pub_time));
@@ -43,32 +43,27 @@ fn assign_episode_numbers(episodes: &[serde_json::Value]) -> std::collections::H
             special_episodes.push((ep_id, episode_title_raw.to_string(), pub_time));
         }
     }
-    
+
     // 第二步：为可解析的数字集数分配集数
     for (ep_id, episode_num, _) in parsed_episodes {
         episode_assignments.insert(ep_id, episode_num);
     }
-    
+
     // 第三步：为特殊剧集分配集数
     // 首先按发布时间排序
     special_episodes.sort_by_key(|(_, _, pub_time)| *pub_time);
-    
+
     // 找出已分配的最大集数
     let max_assigned = episode_assignments.values().max().copied().unwrap_or(0);
-    
+
     // 为特殊剧集分配从 max_assigned + 1 开始的集数
     for (index, (ep_id, title, _)) in special_episodes.iter().enumerate() {
         let assigned_number = max_assigned + 1 + index as i32;
         episode_assignments.insert(ep_id.clone(), assigned_number);
-        
-        tracing::debug!(
-            "为特殊剧集 '{}' (EP{}) 分配集数: {}",
-            title,
-            ep_id,
-            assigned_number
-        );
+
+        tracing::debug!("为特殊剧集 '{}' (EP{}) 分配集数: {}", title, ep_id, assigned_number);
     }
-    
+
     episode_assignments
 }
 

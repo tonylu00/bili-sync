@@ -50,45 +50,49 @@ fn process_path_with_filenamify(input: &str) -> String {
     // 阶段1：先对内容进行安全化，保护模板分隔符
     let temp_placeholder = "🔒TEMP_PATH_SEP🔒";
     let protected_input = input.replace("___PATH_SEP___", temp_placeholder);
-    
+
     // 阶段2：对保护后的内容进行安全化处理（内容中的斜杠会被转换为下划线）
     let safe_content = crate::utils::filenamify::filenamify(&protected_input);
-    
+
     // 阶段3：恢复模板路径分隔符
     let final_result = safe_content.replace(temp_placeholder, "/");
-    
+
     final_result
 }
 
 #[cfg(test)]
 mod rename_tests {
     use super::*;
-    
+
     #[test]
     fn test_process_path_with_filenamify_slash_handling() {
         // 测试与用户报告相同的情况
         let input = "ZHY2020___PATH_SEP___【𝟒𝐊 𝐇𝐢𝐑𝐞𝐬】「分身/ドッペルゲンガー」孤独摇滚！总集剧场版Re:Re: OP Lyric MV";
         let result = process_path_with_filenamify(input);
-        
+
         println!("输入: {}", input);
         println!("输出: {}", result);
-        
+
         // 验证结果
         assert!(result.starts_with("ZHY2020/"), "应该以 ZHY2020/ 开头");
         assert!(!result.contains("分身/ドッペルゲンガー"), "内容中的斜杠应该被处理");
         assert!(result.contains("分身_ドッペルゲンガー"), "斜杠应该变成下划线");
-        
+
         // 确保只有一个路径分隔符
         let slash_count = result.matches('/').count();
-        assert_eq!(slash_count, 1, "应该只有一个路径分隔符，但发现了 {}，结果: {}", slash_count, result);
+        assert_eq!(
+            slash_count, 1,
+            "应该只有一个路径分隔符，但发现了 {}，结果: {}",
+            slash_count, result
+        );
     }
-    
+
     #[test]
     fn test_process_path_without_separator() {
         // 测试不包含模板分隔符的情况
         let input = "普通视频标题/带斜杠";
         let result = process_path_with_filenamify(input);
-        
+
         // 应该将所有斜杠转换为下划线
         assert_eq!(result, "普通视频标题_带斜杠");
         assert!(!result.contains('/'));
@@ -1702,7 +1706,7 @@ pub async fn reload_config(Extension(db): Extension<Arc<DatabaseConnection>>) ->
 /// 内部重载配置函数（用于队列处理和直接调用）
 pub async fn reload_config_internal() -> Result<bool, ApiError> {
     info!("开始重新加载配置...");
-    
+
     // 优先从数据库重新加载配置包
     match crate::config::reload_config_bundle().await {
         Ok(_) => {
@@ -1723,7 +1727,7 @@ pub async fn reload_config_internal() -> Result<bool, ApiError> {
             "upper_name": "TestUP",
             "title": "TestVideo"
         });
-        
+
         // 尝试渲染一个简单的模板以验证配置生效
         bundle.render_video_template(&test_data)
     });
@@ -1731,14 +1735,14 @@ pub async fn reload_config_internal() -> Result<bool, ApiError> {
     match verification_result {
         Ok(rendered_result) => {
             info!("配置重载验证成功，模板渲染结果: '{}'", rendered_result);
-            
+
             // 检查是否包含路径分隔符，这有助于发现模板更改
             if rendered_result.contains("/") {
                 warn!("检测到模板包含路径分隔符，这可能影响现有视频的目录结构");
                 warn!("如果您刚刚更改了视频文件名模板，请注意现有视频可能需要重新处理");
                 warn!("重新处理时将从视频源原始路径重新计算，确保目录结构正确");
             }
-            
+
             Ok(true)
         }
         Err(e) => {
@@ -2201,31 +2205,30 @@ async fn delete_video_files_from_pages(db: Arc<DatabaseConnection>, video_id: i3
                 if let Some(page_path) = &first_page.path {
                     let video_path = std::path::Path::new(&video.path);
                     let page_path = std::path::Path::new(page_path);
-                    
+
                     // 如果page路径包含Season文件夹，说明使用了Season结构
-                    let uses_season_structure = page_path.components()
-                        .any(|component| {
-                            if let std::path::Component::Normal(name) = component {
-                                name.to_string_lossy().starts_with("Season ")
-                            } else {
-                                false
-                            }
-                        });
+                    let uses_season_structure = page_path.components().any(|component| {
+                        if let std::path::Component::Normal(name) = component {
+                            name.to_string_lossy().starts_with("Season ")
+                        } else {
+                            false
+                        }
+                    });
 
                     if uses_season_structure {
                         debug!("检测到Season结构，删除根目录元数据文件");
-                        
+
                         // 获取配置以确定video_base_name生成规则
                         let config = crate::config::reload_config();
-                        
+
                         // 确定是否为合集或多P视频
                         let is_collection = video.collection_id.is_some();
                         let is_single_page = video.single_page.unwrap_or(true);
-                        
+
                         // 检查是否需要处理
                         let should_process = (is_collection && config.collection_use_season_structure)
                             || (!is_single_page && config.multi_page_use_season_structure);
-                        
+
                         if should_process {
                             let video_base_name = if is_collection && config.collection_use_season_structure {
                                 // 合集：使用合集名称
@@ -2978,13 +2981,13 @@ async fn validate_path_reset_safety(
     new_base_path: &str,
 ) -> Result<(), ApiError> {
     use std::path::Path;
-    
+
     // 检查新路径是否有效
     let new_path = Path::new(new_base_path);
     if !new_path.is_absolute() {
         return Err(anyhow!("新路径必须是绝对路径: {}", new_base_path).into());
     }
-    
+
     // 对于番剧，进行特殊验证
     if source_type == "bangumi" {
         // 获取番剧的一个示例视频进行路径预测试
@@ -2993,7 +2996,7 @@ async fn validate_path_reset_safety(
             .filter(video::Column::SourceType.eq(1)) // 番剧类型
             .one(txn)
             .await?;
-            
+
         if let Some(video) = sample_video {
             // 尝试预生成路径，检查是否会产生合理的结果
             let temp_page = bili_sync_entity::page::Model {
@@ -3010,7 +3013,7 @@ async fn validate_path_reset_safety(
                 download_status: 0,
                 created_at: chrono::Utc::now().to_rfc3339(),
             };
-            
+
             let api_title = if let Some(current_path) = std::path::Path::new(&video.path).parent() {
                 // 从当前路径中提取番剧名称（去掉Season部分）
                 if let Some(folder_name) = current_path.file_name().and_then(|n| n.to_str()) {
@@ -3019,7 +3022,8 @@ async fn validate_path_reset_safety(
                         Some(folder_name.to_string())
                     } else if let Some(series_folder) = current_path.parent() {
                         // 如果当前是Season文件夹，则取其父文件夹名称
-                        series_folder.file_name()
+                        series_folder
+                            .file_name()
                             .and_then(|n| n.to_str())
                             .map(|s| s.to_string())
                     } else {
@@ -3031,18 +3035,20 @@ async fn validate_path_reset_safety(
             } else {
                 None
             };
-            
-            let format_args = crate::utils::format_arg::bangumi_page_format_args(&video, &temp_page, api_title.as_deref());
+
+            let format_args =
+                crate::utils::format_arg::bangumi_page_format_args(&video, &temp_page, api_title.as_deref());
             let series_title = format_args["series_title"].as_str().unwrap_or("");
-            
+
             // 验证是否会产生合理的番剧标题
             if series_title.is_empty() {
                 return Err(anyhow!(
                     "番剧路径重设验证失败：无法为番剧 {} 生成有效的系列标题，这可能导致文件移动到错误位置",
                     video.name
-                ).into());
+                )
+                .into());
             }
-            
+
             // 验证生成的路径不包含明显的错误标识
             if series_title.contains("原版") || series_title.contains("中文") || series_title.contains("日语") {
                 warn!(
@@ -3050,11 +3056,11 @@ async fn validate_path_reset_safety(
                     video.name, series_title
                 );
             }
-            
+
             info!("番剧路径重设验证通过：将使用系列标题 '{}'", series_title);
         }
     }
-    
+
     Ok(())
 }
 
@@ -3313,10 +3319,12 @@ pub async fn reset_video_source_path_internal(
                         Ok((moved, cleaned)) => {
                             moved_files_count += moved;
                             cleaned_folders_count += cleaned;
-                            
+
                             // 移动成功后，更新所有视频的数据库路径到相同的新路径
                             for video in &videos {
-                                if let Err(e) = update_bangumi_video_path_in_database(&txn, video, &request.new_path).await {
+                                if let Err(e) =
+                                    update_bangumi_video_path_in_database(&txn, video, &request.new_path).await
+                                {
                                     warn!("更新番剧视频 {} 数据库路径失败: {:?}", video.id, e);
                                 }
                             }
@@ -4602,7 +4610,7 @@ async fn rename_existing_files(
     // **修复：使用更唯一的分隔符标记，避免与文件名中的下划线冲突**
     let video_template = config.video_name.replace(['/', '\\'], "___PATH_SEP___");
     let page_template = config.page_name.replace(['/', '\\'], "___PATH_SEP___");
-    
+
     info!("🔧 原始视频模板: '{}'", config.video_name);
     info!("🔧 处理后视频模板: '{}'", video_template);
 
@@ -4672,7 +4680,7 @@ async fn rename_existing_files(
 
         // 构建模板数据
         let mut template_data = std::collections::HashMap::new();
-        
+
         // 对于合集视频，需要获取合集名称
         let collection_name = if is_collection {
             if let Some(collection_id) = video.collection_id {
@@ -4696,14 +4704,14 @@ async fn rename_existing_files(
         } else {
             None
         };
-        
+
         // 设置title: 合集使用合集名称，其他使用视频名称
         let display_title = if let Some(ref coll_name) = collection_name {
             coll_name.clone()
         } else {
             video.name.clone()
         };
-        
+
         template_data.insert("title".to_string(), serde_json::Value::String(display_title.clone()));
         template_data.insert("show_title".to_string(), serde_json::Value::String(display_title));
         template_data.insert("bvid".to_string(), serde_json::Value::String(video.bvid.clone()));
@@ -4715,10 +4723,13 @@ async fn rename_existing_files(
             "upper_mid".to_string(),
             serde_json::Value::String(video.upper_id.to_string()),
         );
-        
+
         // 为合集添加额外的模板变量
         if let Some(ref coll_name) = collection_name {
-            template_data.insert("collection_name".to_string(), serde_json::Value::String(coll_name.clone()));
+            template_data.insert(
+                "collection_name".to_string(),
+                serde_json::Value::String(coll_name.clone()),
+            );
             template_data.insert("video_name".to_string(), serde_json::Value::String(video.name.clone()));
         }
 
@@ -4772,7 +4783,7 @@ async fn rename_existing_files(
             let rendered_name = handlebars
                 .render("video", &template_value)
                 .unwrap_or_else(|_| video.name.clone());
-            
+
             info!("🔧 模板渲染结果: '{}'", rendered_name);
             // **最终修复：使用分段处理保持目录结构同时确保文件名安全**
             let base_video_name = process_path_with_filenamify(&rendered_name);
@@ -4787,7 +4798,7 @@ async fn rename_existing_files(
                 let video_template = config.video_name.as_ref();
                 let basic_needs_deduplication = video_template.contains("title")
                     || video_template.contains("name") && !video_template.contains("upper_name");
-                
+
                 // **修复：为合集和多P视频的Season结构添加例外处理**
                 // 对于启用Season结构的合集和多P视频，相同路径是期望行为，不应该被当作冲突
                 let should_skip_deduplication = {
@@ -4798,19 +4809,21 @@ async fn rename_existing_files(
                     // 多P视频且启用多P Season结构
                     else if !is_single_page && config.multi_page_use_season_structure {
                         true
-                    }
-                    else {
+                    } else {
                         false
                     }
                 };
-                
+
                 let needs_deduplication = basic_needs_deduplication && !should_skip_deduplication;
-                
+
                 if should_skip_deduplication {
-                    info!("🔧 跳过冲突检测: 视频 {} (合集: {}, 多P Season: {}, 合集 Season: {})", 
-                          video.bvid, is_collection, 
-                          !is_single_page && config.multi_page_use_season_structure,
-                          is_collection && config.collection_use_season_structure);
+                    info!(
+                        "🔧 跳过冲突检测: 视频 {} (合集: {}, 多P Season: {}, 合集 Season: {})",
+                        video.bvid,
+                        is_collection,
+                        !is_single_page && config.multi_page_use_season_structure,
+                        is_collection && config.collection_use_season_structure
+                    );
                 }
 
                 let expected_new_path = if needs_deduplication {
@@ -7275,7 +7288,7 @@ async fn extract_video_files_by_database(
         Ok(Some(v)) => {
             info!("✅ 成功获取视频信息: id={}, name={}, path={}", v.id, v.name, v.path);
             v
-        },
+        }
         Ok(None) => {
             error!("❌ 视频不存在: video_id={}", video_id);
             return Err(std::io::Error::other(format!("视频 {} 不存在", video_id)));
@@ -7301,11 +7314,17 @@ async fn extract_video_files_by_database(
         Ok(pages) => {
             info!("✅ 成功查询到 {} 个已下载的页面", pages.len());
             for (idx, page) in pages.iter().enumerate() {
-                info!("   页面 {}: id={}, name={}, path={:?}, download_status={}", 
-                      idx + 1, page.id, page.name, page.path, page.download_status);
+                info!(
+                    "   页面 {}: id={}, name={}, path={:?}, download_status={}",
+                    idx + 1,
+                    page.id,
+                    page.name,
+                    page.path,
+                    page.download_status
+                );
             }
             pages
-        },
+        }
         Err(e) => {
             error!("❌ 数据库查询页面失败: video_id={}, 错误: {}", video_id, e);
             return Err(std::io::Error::other(format!("数据库查询失败: {}", e)));
@@ -7325,14 +7344,20 @@ async fn extract_video_files_by_database(
     // 移动每个页面的相关文件
     info!("🔄 开始处理 {} 个页面的文件移动", pages.len());
     for (page_idx, page) in pages.iter().enumerate() {
-        info!("📄 处理页面 {}/{}: id={}, name={}", page_idx + 1, pages.len(), page.id, page.name);
-        
+        info!(
+            "📄 处理页面 {}/{}: id={}, name={}",
+            page_idx + 1,
+            pages.len(),
+            page.id,
+            page.name
+        );
+
         // 跳过没有路径信息的页面
         let page_path_str = match &page.path {
             Some(path) => {
                 info!("   📍 页面路径: {}", path);
                 path
-            },
+            }
             None => {
                 warn!("   ⚠️ 页面 {} 没有路径信息，跳过", page.id);
                 continue;
@@ -7352,134 +7377,146 @@ async fn extract_video_files_by_database(
                 Ok(entries) => {
                     info!("   ✅ 成功读取目录，开始扫描文件");
                     for entry in entries.flatten() {
-                    let file_path = entry.path();
+                        let file_path = entry.path();
 
-                    // 检查文件是否属于当前页面
-                    if let Some(file_name) = file_path.file_name() {
-                        let file_name_str = file_name.to_string_lossy();
-                        let page_base_name = page_file_path.file_stem().unwrap_or_default().to_string_lossy();
+                        // 检查文件是否属于当前页面
+                        if let Some(file_name) = file_path.file_name() {
+                            let file_name_str = file_name.to_string_lossy();
+                            let page_base_name = page_file_path.file_stem().unwrap_or_default().to_string_lossy();
 
-                        // 获取原始基础名称（去除数字后缀）
-                        let original_base_name = if let Some(index) = page_base_name.rfind('-') {
-                            if let Some(suffix) = page_base_name.get(index + 1..) {
-                                if suffix.chars().all(|c| c.is_ascii_digit()) {
-                                    // 如果后缀是纯数字，说明是重复文件，使用原始名称匹配
-                                    page_base_name.get(..index).unwrap_or(&page_base_name)
+                            // 获取原始基础名称（去除数字后缀）
+                            let original_base_name = if let Some(index) = page_base_name.rfind('-') {
+                                if let Some(suffix) = page_base_name.get(index + 1..) {
+                                    if suffix.chars().all(|c| c.is_ascii_digit()) {
+                                        // 如果后缀是纯数字，说明是重复文件，使用原始名称匹配
+                                        page_base_name.get(..index).unwrap_or(&page_base_name)
+                                    } else {
+                                        &page_base_name
+                                    }
                                 } else {
                                     &page_base_name
                                 }
                             } else {
                                 &page_base_name
-                            }
-                        } else {
-                            &page_base_name
-                        };
+                            };
 
-                        // 如果文件名包含原始基础名称，就认为是相关文件
-                        if file_name_str.contains(original_base_name) {
-                            total_files += 1;
-                            info!("       📎 找到相关文件: {:?} (匹配基础名: {})", file_path, original_base_name);
-                            
-                            // **关键修复：计算文件相对于视频根目录的路径**
-                            let relative_path = if let Ok(rel_path) = file_path.strip_prefix(video_root_path) {
-                                let rel_parent = rel_path.parent().unwrap_or(std::path::Path::new(""));
-                                info!("       📐 计算相对路径成功: {:?} -> {:?}", file_path, rel_parent);
-                                rel_parent
-                            } else {
-                                info!("       ⚠️ 无法使用strip_prefix计算相对路径，尝试备用方法");
-                                // 如果无法计算相对路径，至少保持文件所在的直接父目录
-                                if let (Some(file_parent), Some(video_parent)) = (file_path.parent(), video_root_path.parent()) {
-                                    if let Ok(rel) = file_parent.strip_prefix(video_parent) {
-                                        info!("       📐 备用方法计算相对路径成功: {:?}", rel);
-                                        rel
+                            // 如果文件名包含原始基础名称，就认为是相关文件
+                            if file_name_str.contains(original_base_name) {
+                                total_files += 1;
+                                info!(
+                                    "       📎 找到相关文件: {:?} (匹配基础名: {})",
+                                    file_path, original_base_name
+                                );
+
+                                // **关键修复：计算文件相对于视频根目录的路径**
+                                let relative_path = if let Ok(rel_path) = file_path.strip_prefix(video_root_path) {
+                                    let rel_parent = rel_path.parent().unwrap_or(std::path::Path::new(""));
+                                    info!("       📐 计算相对路径成功: {:?} -> {:?}", file_path, rel_parent);
+                                    rel_parent
+                                } else {
+                                    info!("       ⚠️ 无法使用strip_prefix计算相对路径，尝试备用方法");
+                                    // 如果无法计算相对路径，至少保持文件所在的直接父目录
+                                    if let (Some(file_parent), Some(video_parent)) =
+                                        (file_path.parent(), video_root_path.parent())
+                                    {
+                                        if let Ok(rel) = file_parent.strip_prefix(video_parent) {
+                                            info!("       📐 备用方法计算相对路径成功: {:?}", rel);
+                                            rel
+                                        } else {
+                                            info!("       📐 备用方法也无法计算相对路径，使用空路径");
+                                            std::path::Path::new("")
+                                        }
                                     } else {
-                                        info!("       📐 备用方法也无法计算相对路径，使用空路径");
+                                        info!("       📐 无法获取父目录，使用空路径");
                                         std::path::Path::new("")
                                     }
+                                };
+
+                                // **关键修复：在目标路径中保持相对目录结构**
+                                let target_dir = target_path.join(relative_path);
+                                let target_file = target_dir.join(file_name);
+                                info!("       🎯 目标目录: {:?}", target_dir);
+                                info!("       🎯 目标文件: {:?}", target_file);
+
+                                // 确保目标子目录存在
+                                if !target_dir.exists() {
+                                    info!("       📁 创建目标子目录: {:?}", target_dir);
+                                    if let Err(e) = std::fs::create_dir_all(&target_dir) {
+                                        error!("       ❌ 创建目标子目录失败: {:?}, 错误: {}", target_dir, e);
+                                        continue;
+                                    }
+                                    info!("       ✅ 目标子目录创建成功");
                                 } else {
-                                    info!("       📐 无法获取父目录，使用空路径");
-                                    std::path::Path::new("")
+                                    info!("       ✅ 目标子目录已存在");
                                 }
-                            };
 
-                            // **关键修复：在目标路径中保持相对目录结构**
-                            let target_dir = target_path.join(relative_path);
-                            let target_file = target_dir.join(file_name);
-                            info!("       🎯 目标目录: {:?}", target_dir);
-                            info!("       🎯 目标文件: {:?}", target_file);
-
-                            // 确保目标子目录存在
-                            if !target_dir.exists() {
-                                info!("       📁 创建目标子目录: {:?}", target_dir);
-                                if let Err(e) = std::fs::create_dir_all(&target_dir) {
-                                    error!("       ❌ 创建目标子目录失败: {:?}, 错误: {}", target_dir, e);
+                                // 避免重复移动（如果文件已经在目标位置）
+                                if file_path == target_file {
+                                    info!("       ↩️ 文件已在目标位置，跳过: {:?}", file_path);
                                     continue;
                                 }
-                                info!("       ✅ 目标子目录创建成功");
-                            } else {
-                                info!("       ✅ 目标子目录已存在");
-                            }
 
-                            // 避免重复移动（如果文件已经在目标位置）
-                            if file_path == target_file {
-                                info!("       ↩️ 文件已在目标位置，跳过: {:?}", file_path);
-                                continue;
-                            }
+                                // 如果目标文件已存在，生成新的文件名避免覆盖
+                                let final_target_file = if target_file.exists() {
+                                    warn!("       ⚠️ 目标文件已存在，生成唯一文件名: {:?}", target_file);
+                                    let unique_file =
+                                        generate_unique_filename_with_video_info(&target_file, video_id, db).await;
+                                    info!("       🔄 生成唯一文件名: {:?}", unique_file);
+                                    unique_file
+                                } else {
+                                    target_file.clone()
+                                };
 
-                            // 如果目标文件已存在，生成新的文件名避免覆盖
-                            let final_target_file = if target_file.exists() {
-                                warn!("       ⚠️ 目标文件已存在，生成唯一文件名: {:?}", target_file);
-                                let unique_file = generate_unique_filename_with_video_info(&target_file, video_id, db).await;
-                                info!("       🔄 生成唯一文件名: {:?}", unique_file);
-                                unique_file
-                            } else {
-                                target_file.clone()
-                            };
+                                info!("       🚀 开始移动文件: {:?} -> {:?}", file_path, final_target_file);
+                                match std::fs::rename(&file_path, &final_target_file) {
+                                    Ok(_) => {
+                                        moved_files += 1;
+                                        info!("       ✅ 文件移动成功 (总计: {}/{})", moved_files, total_files);
 
-                            info!("       🚀 开始移动文件: {:?} -> {:?}", file_path, final_target_file);
-                            match std::fs::rename(&file_path, &final_target_file) {
-                                Ok(_) => {
-                                    moved_files += 1;
-                                    info!("       ✅ 文件移动成功 (总计: {}/{})", moved_files, total_files);
+                                        // **关键修复：如果移动的是页面主文件，记录需要更新数据库路径**
+                                        // 检查是否为主文件：mp4或nfo文件，且文件名匹配原始基础名称
+                                        let is_main_file = if let Some(extension) = file_path.extension() {
+                                            let ext_str = extension.to_string_lossy().to_lowercase();
+                                            (ext_str == "mp4" || ext_str == "nfo")
+                                                && file_name_str.starts_with(original_base_name)
+                                                && !file_name_str.contains("-fanart")
+                                                && !file_name_str.contains("-poster")
+                                                && !file_name_str.contains(".zh-CN.default")
+                                        } else {
+                                            false
+                                        };
 
-                                    // **关键修复：如果移动的是页面主文件，记录需要更新数据库路径**
-                                    // 检查是否为主文件：mp4或nfo文件，且文件名匹配原始基础名称
-                                    let is_main_file = if let Some(extension) = file_path.extension() {
-                                        let ext_str = extension.to_string_lossy().to_lowercase();
-                                        (ext_str == "mp4" || ext_str == "nfo")
-                                            && file_name_str.starts_with(original_base_name)
-                                            && !file_name_str.contains("-fanart")
-                                            && !file_name_str.contains("-poster")
-                                            && !file_name_str.contains(".zh-CN.default")
-                                    } else {
-                                        false
-                                    };
-
-                                    if is_main_file {
-                                        pages_to_update
-                                            .push((page.id, final_target_file.to_string_lossy().to_string()));
-                                        info!(
-                                            "       🎯 页面主文件移动成功，将更新数据库路径: {:?} -> {:?}",
-                                            file_path, final_target_file
+                                        if is_main_file {
+                                            pages_to_update
+                                                .push((page.id, final_target_file.to_string_lossy().to_string()));
+                                            info!(
+                                                "       🎯 页面主文件移动成功，将更新数据库路径: {:?} -> {:?}",
+                                                file_path, final_target_file
+                                            );
+                                        } else if final_target_file != target_file {
+                                            info!(
+                                                "       🔄 移动文件成功（重命名避免覆盖）: {:?} -> {:?}",
+                                                file_path, final_target_file
+                                            );
+                                        } else {
+                                            info!("       ✅ 移动文件成功: {:?} -> {:?}", file_path, final_target_file);
+                                        }
+                                    }
+                                    Err(e) => {
+                                        error!(
+                                            "       ❌ 移动文件失败: {:?} -> {:?}, 错误: {}",
+                                            file_path, final_target_file, e
                                         );
-                                    } else if final_target_file != target_file {
-                                        info!(
-                                            "       🔄 移动文件成功（重命名避免覆盖）: {:?} -> {:?}",
-                                            file_path, final_target_file
-                                        );
-                                    } else {
-                                        info!("       ✅ 移动文件成功: {:?} -> {:?}", file_path, final_target_file);
                                     }
                                 }
-                                Err(e) => {
-                                    error!("       ❌ 移动文件失败: {:?} -> {:?}, 错误: {}", file_path, final_target_file, e);
-                                }
+                            } else {
+                                debug!(
+                                    "       🔍 文件不匹配基础名，跳过: {:?} (基础名: {})",
+                                    file_path, original_base_name
+                                );
                             }
-                        } else {
-                            debug!("       🔍 文件不匹配基础名，跳过: {:?} (基础名: {})", file_path, original_base_name);
                         }
                     }
-                }
                 }
                 Err(e) => {
                     warn!("   ❌ 无法读取目录 {:?}: {}", page_dir, e);
@@ -7524,34 +7561,40 @@ async fn extract_video_files_by_database(
                     if file_path.is_file() {
                         if let Some(file_name) = file_path.file_name() {
                             let file_name_str = file_name.to_string_lossy();
-                            
+
                             // 检查是否为视频级元数据文件
-                            let is_video_metadata = file_name_str == "tvshow.nfo" ||
-                                file_name_str.ends_with("-fanart.jpg") ||
-                                file_name_str.ends_with("-poster.jpg") ||
-                                file_name_str.ends_with(".nfo");
-                            
+                            let is_video_metadata = file_name_str == "tvshow.nfo"
+                                || file_name_str.ends_with("-fanart.jpg")
+                                || file_name_str.ends_with("-poster.jpg")
+                                || file_name_str.ends_with(".nfo");
+
                             if is_video_metadata {
                                 total_files += 1;
                                 info!("   📎 找到视频级元数据文件: {:?}", file_path);
-                                
+
                                 // 视频级元数据文件直接移动到目标根目录
                                 let target_file = target_path.join(file_name);
                                 info!("   🎯 目标文件: {:?}", target_file);
-                                
+
                                 // 检查目标文件是否已存在，如果存在则重命名
                                 let final_target_file = if target_file.exists() {
                                     let base_name = target_file.file_stem().unwrap_or_default().to_string_lossy();
-                                    let extension = target_file.extension().map(|e| format!(".{}", e.to_string_lossy())).unwrap_or_default();
+                                    let extension = target_file
+                                        .extension()
+                                        .map(|e| format!(".{}", e.to_string_lossy()))
+                                        .unwrap_or_default();
                                     let counter_file = target_path.join(format!("{}-1{}", base_name, extension));
                                     info!("   ⚠️ 目标文件已存在，重命名为: {:?}", counter_file);
                                     counter_file
                                 } else {
                                     target_file
                                 };
-                                
+
                                 // 移动文件
-                                info!("   🚀 开始移动视频级元数据文件: {:?} -> {:?}", file_path, final_target_file);
+                                info!(
+                                    "   🚀 开始移动视频级元数据文件: {:?} -> {:?}",
+                                    file_path, final_target_file
+                                );
                                 match std::fs::rename(&file_path, &final_target_file) {
                                     Ok(_) => {
                                         moved_files += 1;
@@ -7559,7 +7602,10 @@ async fn extract_video_files_by_database(
                                         info!("   ✅ 移动文件成功: {:?} -> {:?}", file_path, final_target_file);
                                     }
                                     Err(e) => {
-                                        error!("   ❌ 移动视频级元数据文件失败: {:?} -> {:?}, 错误: {}", file_path, final_target_file, e);
+                                        error!(
+                                            "   ❌ 移动视频级元数据文件失败: {:?} -> {:?}, 错误: {}",
+                                            file_path, final_target_file, e
+                                        );
                                     }
                                 }
                             } else {
@@ -7568,7 +7614,7 @@ async fn extract_video_files_by_database(
                         }
                     }
                 }
-                
+
                 // 添加视频根目录到清理检查列表
                 source_dirs_to_check.insert(video_root_path.to_path_buf());
                 info!("   📝 已添加视频根目录到清理检查列表: {:?}", video_root_path);
@@ -7609,7 +7655,11 @@ async fn extract_video_files_by_database(
                         }
                     }
                 } else {
-                    info!("   📄 源文件夹仍有 {} 个文件，保留: {:?}", remaining_files.len(), source_dir);
+                    info!(
+                        "   📄 源文件夹仍有 {} 个文件，保留: {:?}",
+                        remaining_files.len(),
+                        source_dir
+                    );
                 }
             }
             Err(e) => {
@@ -7628,13 +7678,16 @@ async fn extract_video_files_by_database(
         "🎉 视频 {} 文件移动完成: 成功移动 {}/{} 个文件到 {:?}",
         video_id, moved_files, total_files, target_path
     );
-    
+
     if moved_files == 0 && total_files > 0 {
-        warn!("⚠️ 发现了 {} 个文件但没有移动任何文件，请检查权限或路径问题", total_files);
+        warn!(
+            "⚠️ 发现了 {} 个文件但没有移动任何文件，请检查权限或路径问题",
+            total_files
+        );
     } else if moved_files == 0 {
         warn!("⚠️ 没有找到任何相关文件进行移动");
     }
-    
+
     Ok(())
 }
 
@@ -7948,7 +8001,7 @@ async fn update_bangumi_video_path_in_database(
     // 基于视频模型重新生成路径结构（使用番剧专用逻辑）
     let new_video_path = if video.source_type == Some(1) {
         // 番剧使用专用的路径计算逻辑，与workflow.rs保持一致
-        
+
         // 创建临时page模型用于格式化参数
         let temp_page = bili_sync_entity::page::Model {
             id: 0,
@@ -7973,26 +8026,25 @@ async fn update_bangumi_video_path_in_database(
             debug!("视频名称: {}", video.name);
             debug!("原始数据库路径: {}", &video.path);
             debug!("新基础路径: {}", new_base_path);
-            
+
             // 🔧 标准化路径分隔符：统一转换为当前平台的分隔符
-            let normalized_path = video.path.replace('/', std::path::MAIN_SEPARATOR_STR)
-                                           .replace('\\', std::path::MAIN_SEPARATOR_STR);
+            let normalized_path = video
+                .path
+                .replace('/', std::path::MAIN_SEPARATOR_STR)
+                .replace('\\', std::path::MAIN_SEPARATOR_STR);
             debug!("标准化后的路径: {}", normalized_path);
-            
+
             // 🔍 从标准化路径中提取番剧文件夹名称
             let current_path = std::path::Path::new(&normalized_path);
             debug!("Path组件: {:?}", current_path.components().collect::<Vec<_>>());
-            
-            let path_extracted = current_path.file_name()
-                .and_then(|n| n.to_str())
-                .map(|s| s.to_string());
+
+            let path_extracted = current_path.file_name().and_then(|n| n.to_str()).map(|s| s.to_string());
             debug!("从标准化路径提取的文件夹名: {:?}", path_extracted);
-            
+
             // ✅ 验证提取的名称是否合理（包含中文字符或非纯数字）
             if let Some(ref name) = path_extracted {
-                let is_likely_bangumi_name = !name.chars().all(|c| c.is_ascii_digit()) 
-                    && name.len() > 3; // 番剧名通常比较长
-                
+                let is_likely_bangumi_name = !name.chars().all(|c| c.is_ascii_digit()) && name.len() > 3; // 番剧名通常比较长
+
                 if is_likely_bangumi_name {
                     debug!("✅ 提取的番剧文件夹名看起来合理: '{}'", name);
                     path_extracted
@@ -8009,25 +8061,28 @@ async fn update_bangumi_video_path_in_database(
 
         // 使用番剧格式化参数生成正确的番剧文件夹路径
         let format_args = crate::utils::format_arg::bangumi_page_format_args(video, &temp_page, api_title.as_deref());
-        debug!("格式化参数: {}", serde_json::to_string_pretty(&format_args).unwrap_or_default());
-        
+        debug!(
+            "格式化参数: {}",
+            serde_json::to_string_pretty(&format_args).unwrap_or_default()
+        );
+
         // 检查是否有有效的series_title
         let series_title = format_args["series_title"].as_str().unwrap_or("");
         debug!("提取的series_title: '{}'", series_title);
-        
+
         if series_title.is_empty() {
             return Err(anyhow!(
                 "番剧 {} (BVID: {}) 缺少有效的系列标题，无法生成路径",
-                video.name, video.bvid
-            ).into());
+                video.name,
+                video.bvid
+            )
+            .into());
         }
 
         // 生成番剧文件夹名称
-        let rendered_folder = crate::config::with_config(|bundle| {
-            bundle.render_bangumi_folder_template(&format_args)
-        })
-        .map_err(|e| anyhow!("番剧文件夹模板渲染失败: {}", e))?;
-        
+        let rendered_folder = crate::config::with_config(|bundle| bundle.render_bangumi_folder_template(&format_args))
+            .map_err(|e| anyhow!("番剧文件夹模板渲染失败: {}", e))?;
+
         debug!("渲染的番剧文件夹名: '{}'", rendered_folder);
         rendered_folder
     } else {
@@ -8043,14 +8098,17 @@ async fn update_bangumi_video_path_in_database(
     // 只更新数据库，不移动文件
     let video_path_str = target_video_dir.to_string_lossy().to_string();
     debug!("将要保存到数据库的路径字符串: '{}'", video_path_str);
-    
+
     video::Entity::update_many()
         .filter(video::Column::Id.eq(video.id))
         .col_expr(video::Column::Path, Expr::value(video_path_str.clone()))
         .exec(txn)
         .await?;
 
-    info!("更新番剧视频 {} 数据库路径: {} -> {}", video.id, video.path, video_path_str);
+    info!(
+        "更新番剧视频 {} 数据库路径: {} -> {}",
+        video.id, video.path, video_path_str
+    );
     Ok(())
 }
 
@@ -8079,7 +8137,7 @@ async fn move_bangumi_files_to_new_path(
     // 基于视频模型重新生成路径结构（使用番剧专用逻辑）
     let new_video_path = if video.source_type == Some(1) {
         // 番剧使用专用的路径计算逻辑，与workflow.rs保持一致
-        
+
         // 创建临时page模型用于格式化参数
         let temp_page = bili_sync_entity::page::Model {
             id: 0,
@@ -8100,20 +8158,19 @@ async fn move_bangumi_files_to_new_path(
         // 数据库中的路径可能包含混合的路径分隔符，如：D:/Downloads/00111\名侦探柯南 绝海的侦探
         let api_title = {
             // 标准化路径分隔符：统一转换为当前平台的分隔符
-            let normalized_path = video.path.replace('/', std::path::MAIN_SEPARATOR_STR)
-                                           .replace('\\', std::path::MAIN_SEPARATOR_STR);
-            
+            let normalized_path = video
+                .path
+                .replace('/', std::path::MAIN_SEPARATOR_STR)
+                .replace('\\', std::path::MAIN_SEPARATOR_STR);
+
             // 从标准化路径中提取番剧文件夹名称
             let current_path = std::path::Path::new(&normalized_path);
-            let path_extracted = current_path.file_name()
-                .and_then(|n| n.to_str())
-                .map(|s| s.to_string());
-            
+            let path_extracted = current_path.file_name().and_then(|n| n.to_str()).map(|s| s.to_string());
+
             // 验证提取的名称是否合理（包含中文字符或非纯数字）
             if let Some(ref name) = path_extracted {
-                let is_likely_bangumi_name = !name.chars().all(|c| c.is_ascii_digit()) 
-                    && name.len() > 3; // 番剧名通常比较长
-                
+                let is_likely_bangumi_name = !name.chars().all(|c| c.is_ascii_digit()) && name.len() > 3; // 番剧名通常比较长
+
                 if is_likely_bangumi_name {
                     path_extracted
                 } else {
@@ -8126,10 +8183,10 @@ async fn move_bangumi_files_to_new_path(
 
         // 使用番剧格式化参数生成正确的番剧文件夹路径
         let format_args = crate::utils::format_arg::bangumi_page_format_args(video, &temp_page, api_title.as_deref());
-        
+
         // 检查是否有有效的series_title
         let series_title = format_args["series_title"].as_str().unwrap_or("");
-        
+
         if series_title.is_empty() {
             return Err(std::io::Error::other(format!(
                 "番剧 {} (BVID: {}) 缺少有效的系列标题，无法生成路径",
@@ -8138,11 +8195,9 @@ async fn move_bangumi_files_to_new_path(
         }
 
         // 生成番剧文件夹名称
-        let rendered_folder = crate::config::with_config(|bundle| {
-            bundle.render_bangumi_folder_template(&format_args)
-        })
-        .map_err(|e| std::io::Error::other(format!("番剧文件夹模板渲染失败: {}", e)))?;
-        
+        let rendered_folder = crate::config::with_config(|bundle| bundle.render_bangumi_folder_template(&format_args))
+            .map_err(|e| std::io::Error::other(format!("番剧文件夹模板渲染失败: {}", e)))?;
+
         rendered_folder
     } else {
         // 非番剧使用原有逻辑
@@ -8187,7 +8242,6 @@ async fn move_bangumi_files_to_new_path(
 
     Ok((moved_count, cleaned_count))
 }
-
 
 /// 番剧文件重命名：只重命名集数部分，保留版本和后缀
 async fn rename_bangumi_files_in_directory(

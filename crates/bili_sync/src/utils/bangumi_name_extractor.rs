@@ -5,11 +5,11 @@ pub struct BangumiNameExtractor;
 
 impl BangumiNameExtractor {
     /// 从番剧标题中提取基础系列名称和季度信息
-    /// 
+    ///
     /// # 参数
     /// - `title`: 完整的番剧标题，例如 "灵笼 第二季"
     /// - `season_title`: 可选的季度标题，例如 "第二季"
-    /// 
+    ///
     /// # 返回值
     /// 返回元组 (基础系列名称, 季度编号)
     /// 例如：("灵笼", 2)
@@ -46,7 +46,7 @@ impl BangumiNameExtractor {
                     let base_name = captures.get(1).map_or("", |m| m.as_str()).trim().to_string();
                     let season_str = captures.get(2).map_or("1", |m| m.as_str());
                     let season_number = Self::parse_season_number(season_str);
-                    
+
                     if !base_name.is_empty() {
                         return (base_name, season_number);
                     }
@@ -62,8 +62,16 @@ impl BangumiNameExtractor {
     fn extract_season_number(season_str: &str) -> Option<u32> {
         // 中文数字映射
         let chinese_numbers = [
-            ("一", 1), ("二", 2), ("三", 3), ("四", 4), ("五", 5),
-            ("六", 6), ("七", 7), ("八", 8), ("九", 9), ("十", 10),
+            ("一", 1),
+            ("二", 2),
+            ("三", 3),
+            ("四", 4),
+            ("五", 5),
+            ("六", 6),
+            ("七", 7),
+            ("八", 8),
+            ("九", 9),
+            ("十", 10),
         ];
 
         // 尝试直接解析数字
@@ -90,8 +98,16 @@ impl BangumiNameExtractor {
 
         // 尝试中文数字
         let chinese_numbers = [
-            ("一", 1), ("二", 2), ("三", 3), ("四", 4), ("五", 5),
-            ("六", 6), ("七", 7), ("八", 8), ("九", 9), ("十", 10),
+            ("一", 1),
+            ("二", 2),
+            ("三", 3),
+            ("四", 4),
+            ("五", 5),
+            ("六", 6),
+            ("七", 7),
+            ("八", 8),
+            ("九", 9),
+            ("十", 10),
         ];
 
         for (chinese, number) in &chinese_numbers {
@@ -122,10 +138,10 @@ impl BangumiNameExtractor {
     }
 
     /// 生成标准的季度文件夹名称
-    /// 
+    ///
     /// # 参数
     /// - `season_number`: 季度编号
-    /// 
+    ///
     /// # 返回值
     /// 标准的季度文件夹名称，例如 "Season 01"、"Season 02"
     pub fn generate_season_folder_name(season_number: u32) -> String {
@@ -139,30 +155,21 @@ mod tests {
 
     #[test]
     fn test_extract_with_season_title() {
-        let (base_name, season) = BangumiNameExtractor::extract_series_name_and_season(
-            "灵笼 第二季",
-            Some("第二季")
-        );
+        let (base_name, season) = BangumiNameExtractor::extract_series_name_and_season("灵笼 第二季", Some("第二季"));
         assert_eq!(base_name, "灵笼");
         assert_eq!(season, 2);
     }
 
     #[test]
     fn test_extract_chinese_season() {
-        let (base_name, season) = BangumiNameExtractor::extract_series_name_and_season(
-            "进击的巨人 第三季",
-            None
-        );
+        let (base_name, season) = BangumiNameExtractor::extract_series_name_and_season("进击的巨人 第三季", None);
         assert_eq!(base_name, "进击的巨人");
         assert_eq!(season, 3);
     }
 
     #[test]
     fn test_extract_english_season() {
-        let (base_name, season) = BangumiNameExtractor::extract_series_name_and_season(
-            "Attack on Titan S2",
-            None
-        );
+        let (base_name, season) = BangumiNameExtractor::extract_series_name_and_season("Attack on Titan S2", None);
         assert_eq!(base_name, "Attack on Titan");
         assert_eq!(season, 2);
     }
@@ -175,10 +182,7 @@ mod tests {
 
     #[test]
     fn test_no_season_info() {
-        let (base_name, season) = BangumiNameExtractor::extract_series_name_and_season(
-            "鬼灭之刃",
-            None
-        );
+        let (base_name, season) = BangumiNameExtractor::extract_series_name_and_season("鬼灭之刃", None);
         assert_eq!(base_name, "鬼灭之刃");
         assert_eq!(season, 1);
     }

@@ -743,37 +743,37 @@ async fn delete_video_files_from_pages_task(
                 if let Some(page_path) = &first_page.path {
                     let video_path = std::path::Path::new(&video.path);
                     let page_path = std::path::Path::new(page_path);
-                    
+
                     // 如果page路径包含Season文件夹，说明使用了Season结构
-                    let uses_season_structure = page_path.components()
-                        .any(|component| {
-                            if let std::path::Component::Normal(name) = component {
-                                name.to_string_lossy().starts_with("Season ")
-                            } else {
-                                false
-                            }
-                        });
+                    let uses_season_structure = page_path.components().any(|component| {
+                        if let std::path::Component::Normal(name) = component {
+                            name.to_string_lossy().starts_with("Season ")
+                        } else {
+                            false
+                        }
+                    });
 
                     if uses_season_structure {
                         debug!("检测到Season结构，删除根目录元数据文件");
-                        
+
                         // 获取配置以确定video_base_name生成规则
                         let config = crate::config::reload_config();
-                        
+
                         // 确定是否为合集或多P视频
                         let is_collection = video.collection_id.is_some();
                         let is_single_page = video.single_page.unwrap_or(true);
-                        
+
                         // 检查是否需要处理
                         let should_process = (is_collection && config.collection_use_season_structure)
                             || (!is_single_page && config.multi_page_use_season_structure);
-                        
+
                         if should_process {
                             let video_base_name = if is_collection && config.collection_use_season_structure {
                                 // 合集：使用合集名称
-                                if let Ok(collection) = bili_sync_entity::collection::Entity::find_by_id(video.collection_id.unwrap_or(0))
-                                    .one(db.as_ref())
-                                    .await
+                                if let Ok(collection) =
+                                    bili_sync_entity::collection::Entity::find_by_id(video.collection_id.unwrap_or(0))
+                                        .one(db.as_ref())
+                                        .await
                                 {
                                     if let Some(coll) = collection {
                                         coll.name
