@@ -55,9 +55,7 @@ fn process_path_with_filenamify(input: &str) -> String {
     let safe_content = crate::utils::filenamify::filenamify(&protected_input);
 
     // 阶段3：恢复模板路径分隔符
-    let final_result = safe_content.replace(temp_placeholder, "/");
-
-    final_result
+    safe_content.replace(temp_placeholder, "/")
 }
 
 #[cfg(test)]
@@ -2232,17 +2230,12 @@ async fn delete_video_files_from_pages(db: Arc<DatabaseConnection>, video_id: i3
                         if should_process {
                             let video_base_name = if is_collection && config.collection_use_season_structure {
                                 // 合集：使用合集名称
-                                if let Ok(collection) = collection::Entity::find_by_id(video.collection_id.unwrap_or(0))
+                                match collection::Entity::find_by_id(video.collection_id.unwrap_or(0))
                                     .one(db.as_ref())
                                     .await
                                 {
-                                    if let Some(coll) = collection {
-                                        coll.name
-                                    } else {
-                                        "collection".to_string()
-                                    }
-                                } else {
-                                    "collection".to_string()
+                                    Ok(Some(coll)) => coll.name,
+                                    _ => "collection".to_string(),
                                 }
                             } else {
                                 // 多P视频：使用视频名称模板
@@ -4801,18 +4794,11 @@ async fn rename_existing_files(
 
                 // **修复：为合集和多P视频的Season结构添加例外处理**
                 // 对于启用Season结构的合集和多P视频，相同路径是期望行为，不应该被当作冲突
-                let should_skip_deduplication = {
+                let should_skip_deduplication = 
                     // 合集视频且启用合集Season结构
-                    if is_collection && config.collection_use_season_structure {
-                        true
-                    }
+                    (is_collection && config.collection_use_season_structure) ||
                     // 多P视频且启用多P Season结构
-                    else if !is_single_page && config.multi_page_use_season_structure {
-                        true
-                    } else {
-                        false
-                    }
-                };
+                    (!is_single_page && config.multi_page_use_season_structure);
 
                 let needs_deduplication = basic_needs_deduplication && !should_skip_deduplication;
 
@@ -8030,8 +8016,7 @@ async fn update_bangumi_video_path_in_database(
             // 🔧 标准化路径分隔符：统一转换为当前平台的分隔符
             let normalized_path = video
                 .path
-                .replace('/', std::path::MAIN_SEPARATOR_STR)
-                .replace('\\', std::path::MAIN_SEPARATOR_STR);
+                .replace(['/', '\\'], std::path::MAIN_SEPARATOR_STR);
             debug!("标准化后的路径: {}", normalized_path);
 
             // 🔍 从标准化路径中提取番剧文件夹名称
@@ -8160,8 +8145,7 @@ async fn move_bangumi_files_to_new_path(
             // 标准化路径分隔符：统一转换为当前平台的分隔符
             let normalized_path = video
                 .path
-                .replace('/', std::path::MAIN_SEPARATOR_STR)
-                .replace('\\', std::path::MAIN_SEPARATOR_STR);
+                .replace(['/', '\\'], std::path::MAIN_SEPARATOR_STR);
 
             // 从标准化路径中提取番剧文件夹名称
             let current_path = std::path::Path::new(&normalized_path);

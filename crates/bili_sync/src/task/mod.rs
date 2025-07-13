@@ -770,18 +770,12 @@ async fn delete_video_files_from_pages_task(
                         if should_process {
                             let video_base_name = if is_collection && config.collection_use_season_structure {
                                 // 合集：使用合集名称
-                                if let Ok(collection) =
-                                    bili_sync_entity::collection::Entity::find_by_id(video.collection_id.unwrap_or(0))
-                                        .one(db.as_ref())
-                                        .await
+                                match bili_sync_entity::collection::Entity::find_by_id(video.collection_id.unwrap_or(0))
+                                    .one(db.as_ref())
+                                    .await
                                 {
-                                    if let Some(coll) = collection {
-                                        coll.name
-                                    } else {
-                                        "collection".to_string()
-                                    }
-                                } else {
-                                    "collection".to_string()
+                                    Ok(Some(coll)) => coll.name,
+                                    _ => "collection".to_string(),
                                 }
                             } else {
                                 // 多P视频：使用视频名称模板

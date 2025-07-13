@@ -543,6 +543,7 @@ pub async fn fetch_video_details(
         while let Some(res) = stream.next().await {
             if let Err(e) = res {
                 // 使用错误分类器进行统一处理
+                #[allow(clippy::needless_borrow)]
                 let classified_error = crate::error::ErrorClassifier::classify_error(&e);
 
                 if classified_error.error_type == crate::error::ErrorType::UserCancelled {
@@ -1558,6 +1559,7 @@ pub async fn download_video_pages(
             }
             ExecutionStatus::Failed(e) | ExecutionStatus::FixedFailed(_, e) => {
                 // 使用错误分类器进行统一处理
+                #[allow(clippy::needless_borrow)]
                 let classified_error = crate::error::ErrorClassifier::classify_error(&e);
                 match classified_error.error_type {
                     crate::error::ErrorType::NotFound => {
@@ -2009,6 +2011,7 @@ pub async fn download_page(
             }
             ExecutionStatus::Failed(e) | ExecutionStatus::FixedFailed(_, e) => {
                 // 使用错误分类器进行统一处理
+                #[allow(clippy::needless_borrow)]
                 let classified_error = crate::error::ErrorClassifier::classify_error(&e);
                 match classified_error.error_type {
                     crate::error::ErrorType::NotFound => {
@@ -2112,6 +2115,7 @@ async fn download_stream(downloader: &UnifiedDownloader, urls: &[&str], path: &P
                 debug!("下载失败(404): {:#}", e);
             } else {
                 // 使用错误分类器进行统一处理
+                #[allow(clippy::needless_borrow)]
                 let classified_error = crate::error::ErrorClassifier::classify_error(&e);
                 match classified_error.error_type {
                     crate::error::ErrorType::UserCancelled => {

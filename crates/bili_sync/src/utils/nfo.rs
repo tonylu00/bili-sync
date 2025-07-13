@@ -1339,8 +1339,9 @@ impl NFO<'_> {
         {
             let season_str = &season_match[1];
 
-            // 处理中文数字转换
-            let season_number = match season_str {
+            // 处理中文数字转换并返回当前检测到的季度作为总季数的估计
+            // 这是基于标题的最佳猜测
+            match season_str {
                 "一" => 1,
                 "二" => 2,
                 "三" => 3,
@@ -1352,11 +1353,7 @@ impl NFO<'_> {
                 "九" => 9,
                 "十" => 10,
                 _ => season_str.parse::<i32>().unwrap_or(1),
-            };
-
-            // 返回当前检测到的季度作为总季数的估计
-            // 这是基于标题的最佳猜测
-            season_number
+            }
         } else {
             // 没有季度信息，假设为单季
             1
@@ -2271,8 +2268,10 @@ mod tests {
         };
 
         // 测试Skip策略（默认）
-        let mut config = NFOConfig::default();
-        config.empty_upper_strategy = EmptyUpperStrategy::Skip;
+        let config = NFOConfig { 
+            empty_upper_strategy: EmptyUpperStrategy::Skip, 
+            ..Default::default() 
+        };
 
         // 创建一个自定义的Movie结构并手动生成NFO
         let movie = Movie::from(&video);
@@ -2280,15 +2279,21 @@ mod tests {
         assert_eq!(actor_name, None);
 
         // 测试Placeholder策略
-        config.empty_upper_strategy = EmptyUpperStrategy::Placeholder;
-        config.empty_upper_placeholder = "官方内容".to_string();
+        let config = NFOConfig { 
+            empty_upper_strategy: EmptyUpperStrategy::Placeholder,
+            empty_upper_placeholder: "官方内容".to_string(),
+            ..Default::default() 
+        };
 
         let actor_name = NFO::get_actor_name(movie.upper_name, &config);
         assert_eq!(actor_name, Some("官方内容".to_string()));
 
         // 测试Default策略
-        config.empty_upper_strategy = EmptyUpperStrategy::Default;
-        config.empty_upper_default_name = "哔哩哔哩".to_string();
+        let config = NFOConfig { 
+            empty_upper_strategy: EmptyUpperStrategy::Default,
+            empty_upper_default_name: "哔哩哔哩".to_string(),
+            ..Default::default() 
+        };
 
         let actor_name = NFO::get_actor_name(movie.upper_name, &config);
         assert_eq!(actor_name, Some("哔哩哔哩".to_string()));

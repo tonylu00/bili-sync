@@ -260,9 +260,11 @@ mod tests {
 
     #[test]
     fn test_video_template_path_separator_handling() {
-        let mut config = Config::default();
         // 设置包含路径分隔符的模板，模拟用户问题中的场景
-        config.video_name = Cow::Borrowed("{{upper_name}}/{{title}}");
+        let config = Config { 
+            video_name: Cow::Borrowed("{{upper_name}}/{{title}}"), 
+            ..Default::default() 
+        };
         let bundle = ConfigBundle::from_config(config).unwrap();
 
         // 测试视频文件名模板中的路径分隔符处理
@@ -319,16 +321,20 @@ mod tests {
         });
 
         // 创建第一个配置
-        let mut config1 = Config::default();
-        config1.video_name = Cow::Borrowed("{{upper_name}}-{{title}}");
+        let config1 = Config { 
+            video_name: Cow::Borrowed("{{upper_name}}-{{title}}"), 
+            ..Default::default() 
+        };
         let bundle1 = ConfigBundle::from_config(config1).unwrap();
 
         let result1 = bundle1.render_video_template(&test_data).unwrap();
         assert_eq!(result1, "TestUpper-TestVideo");
 
         // 创建第二个配置，模拟配置更改
-        let mut config2 = Config::default();
-        config2.video_name = Cow::Borrowed("{{upper_name}}/{{title}}");
+        let config2 = Config { 
+            video_name: Cow::Borrowed("{{upper_name}}/{{title}}"), 
+            ..Default::default() 
+        };
         let bundle2 = ConfigBundle::from_config(config2).unwrap();
 
         let result2 = bundle2.render_video_template(&test_data).unwrap();
@@ -341,9 +347,11 @@ mod tests {
 
     #[test]
     fn test_template_render_consistency() {
-        let mut config = Config::default();
-        config.video_name = Cow::Borrowed("{{upper_name}}/{{title}}");
-        config.page_name = Cow::Borrowed("{{upper_name}}/{{title}}/Page{{page}}");
+        let config = Config { 
+            video_name: Cow::Borrowed("{{upper_name}}/{{title}}"), 
+            page_name: Cow::Borrowed("{{upper_name}}/{{title}}/Page{{page}}"), 
+            ..Default::default() 
+        };
 
         let bundle = ConfigBundle::from_config(config).unwrap();
 
@@ -368,8 +376,10 @@ mod tests {
     #[test]
     fn test_content_slash_handling() {
         // 创建一个测试配置
-        let mut config = Config::default();
-        config.video_name = Cow::Borrowed("{{upper_name}}/{{title}}");
+        let config = Config { 
+            video_name: Cow::Borrowed("{{upper_name}}/{{title}}"), 
+            ..Default::default() 
+        };
 
         let bundle = ConfigBundle::from_config(config).unwrap();
 
