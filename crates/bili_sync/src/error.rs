@@ -40,6 +40,8 @@ pub enum ErrorType {
     Configuration,
     #[error("风控触发")]
     RiskControl,
+    #[error("用户主动暂停")]
+    UserCancelled,
     #[error("未知错误")]
     Unknown,
 }
@@ -63,6 +65,7 @@ impl ClassifiedError {
             ErrorType::NotFound => (false, true),
             ErrorType::Authentication | ErrorType::Authorization => (false, false),
             ErrorType::RiskControl => (false, false),
+            ErrorType::UserCancelled => (false, true),  // 用户主动暂停：不重试，直接忽略
             ErrorType::ServerError => (true, false),
             ErrorType::ClientError | ErrorType::Parse | ErrorType::Configuration => (false, false),
             ErrorType::Unknown => (false, false),
@@ -95,6 +98,13 @@ pub struct ErrorClassifier;
 impl ErrorClassifier {
     /// 分析并分类错误
     pub fn classify_error(err: &anyhow::Error) -> ClassifiedError {
+        let error_msg = err.to_string();
+        
+        // 首先检查是否为用户主动暂停相关错误
+        if Self::is_user_cancellation(&error_msg) {
+            return ClassifiedError::new(ErrorType::UserCancelled, "用户主动暂停任务".to_string());
+        }
+        
         for cause in err.chain() {
             // HTTP 状态码错误
             if let Some(reqwest_err) = cause.downcast_ref::<reqwest::Error>() {
@@ -109,6 +119,15 @@ impl ErrorClassifier {
             // B站特定错误
             if let Some(bili_err) = cause.downcast_ref::<crate::bilibili::BiliError>() {
                 return Self::classify_bili_error(bili_err);
+            }
+            
+            // 分页错误处理
+            if cause.downcast_ref::<ProcessPageError>().is_some() {
+                // 如果在暂停状态下发生分页错误，很可能是因为用户暂停导致的
+                if crate::task::TASK_CONTROLLER.is_paused() {
+                    return ClassifiedError::new(ErrorType::UserCancelled, "分页下载因用户暂停而终止".to_string());
+                }
+                return ClassifiedError::new(ErrorType::Unknown, "分页处理失败".to_string());
             }
 
             // JSON解析错误
@@ -218,6 +237,33 @@ impl ErrorClassifier {
                 ClassifiedError::new(error_type, message).with_retry_policy(should_retry, should_ignore)
             }
         }
+    }
+    
+    /// 检查错误信息是否表示用户主动取消
+    fn is_user_cancellation(error_msg: &str) -> bool {
+        // 检查是否处于暂停状态
+        let is_paused = crate::task::TASK_CONTROLLER.is_paused();
+        
+        // 明确的暂停相关错误信息（优先检查）
+        let explicit_cancellation = error_msg.contains("任务已暂停")
+            || error_msg.contains("停止下载")
+            || error_msg.contains("用户主动暂停任务")
+            || error_msg.contains("用户暂停任务")
+            || error_msg.contains("因用户暂停而终止");
+            
+        if explicit_cancellation {
+            return true;
+        }
+        
+        // 暂停状态下的特定错误信息
+        if is_paused {
+            return error_msg.contains("Download cancelled")
+                || error_msg.contains("由于目标计算机积极拒绝，无法连接")
+                || error_msg.contains("os error 10061")
+                || error_msg.contains("Connection refused");
+        }
+        
+        false
     }
 }
 

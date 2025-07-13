@@ -468,17 +468,15 @@ pub async fn fetch_video_details(
         let mut stream = tasks;
         while let Some(res) = stream.next().await {
             if let Err(e) = res {
-                let error_msg = e.to_string();
-
-                // 检查是否是暂停导致的失败，只有在任务暂停时才将 Download cancelled 视为暂停错误
-                if error_msg.contains("任务已暂停")
-                    || error_msg.contains("停止下载")
-                    || error_msg.contains("用户主动暂停任务")
-                    || (error_msg.contains("Download cancelled") && crate::task::TASK_CONTROLLER.is_paused())
-                {
-                    info!("视频详情获取因用户暂停而终止: {}", error_msg);
+                // 使用错误分类器进行统一处理
+                let classified_error = crate::error::ErrorClassifier::classify_error(&e);
+                
+                if classified_error.error_type == crate::error::ErrorType::UserCancelled {
+                    info!("视频详情获取因用户暂停而终止: {}", classified_error.message);
                     return Err(e); // 直接返回暂停错误，不取消其他任务
                 }
+                
+                let error_msg = e.to_string();
 
                 if e.downcast_ref::<DownloadAbortError>().is_some() || error_msg.contains("Download cancelled") {
                     token.cancel();
@@ -1486,31 +1484,28 @@ pub async fn download_video_pages(
                             &video_model.name, task_name, classified_error.message
                         );
                     }
+                    crate::error::ErrorType::UserCancelled => {
+                        info!("处理视频「{}」{}因用户暂停而终止", &video_model.name, task_name);
+                    }
                     _ => {
-                        // 检查是否为暂停相关错误
-                        if classified_error.message.contains("用户主动暂停任务")
-                            || classified_error.message.contains("任务已暂停")
-                        {
-                            info!("处理视频「{}」{}因用户暂停而终止", &video_model.name, task_name);
-                        } else {
-                            error!(
-                                "处理视频「{}」{}失败({}): {}",
-                                &video_model.name, task_name, classified_error.error_type, classified_error.message
-                            );
-                        }
+                        error!(
+                            "处理视频「{}」{}失败({}): {}",
+                            &video_model.name, task_name, classified_error.error_type, classified_error.message
+                        );
                     }
                 }
             }
             ExecutionStatus::Failed(e) | ExecutionStatus::FixedFailed(_, e) => {
-                // 兼容旧的错误处理方式
-                if let Some(BiliError::RequestFailed(-404, _)) = e.downcast_ref::<BiliError>() {
-                    debug!("处理视频「{}」{}失败(404): {:#}", &video_model.name, task_name, e);
-                } else {
-                    // 检查是否为暂停相关错误
-                    let error_msg = e.to_string();
-                    if error_msg.contains("用户主动暂停任务") || error_msg.contains("任务已暂停") {
+                // 使用错误分类器进行统一处理
+                let classified_error = crate::error::ErrorClassifier::classify_error(&e);
+                match classified_error.error_type {
+                    crate::error::ErrorType::NotFound => {
+                        debug!("处理视频「{}」{}失败(404): {:#}", &video_model.name, task_name, e);
+                    }
+                    crate::error::ErrorType::UserCancelled => {
                         info!("处理视频「{}」{}因用户暂停而终止", &video_model.name, task_name);
-                    } else {
+                    }
+                    _ => {
                         error!("处理视频「{}」{}失败: {:#}", &video_model.name, task_name, e);
                     }
                 }
@@ -1926,44 +1921,41 @@ pub async fn download_page(
                             &video_model.name, page_model.pid, task_name, classified_error.message
                         );
                     }
-                    _ => {
-                        // 检查是否为暂停相关错误
-                        if classified_error.message.contains("用户主动暂停任务")
-                            || classified_error.message.contains("任务已暂停")
-                        {
-                            info!(
-                                "处理视频「{}」第 {} 页{}因用户暂停而终止",
-                                &video_model.name, page_model.pid, task_name
-                            );
-                        } else {
-                            error!(
-                                "处理视频「{}」第 {} 页{}失败({}): {}",
-                                &video_model.name,
-                                page_model.pid,
-                                task_name,
-                                classified_error.error_type,
-                                classified_error.message
-                            );
-                        }
-                    }
-                }
-            }
-            ExecutionStatus::Failed(e) | ExecutionStatus::FixedFailed(_, e) => {
-                // 兼容旧的错误处理方式
-                if let Some(BiliError::RequestFailed(-404, _)) = e.downcast_ref::<BiliError>() {
-                    debug!(
-                        "处理视频「{}」第 {} 页{}失败(404): {:#}",
-                        &video_model.name, page_model.pid, task_name, e
-                    );
-                } else {
-                    // 检查是否为暂停相关错误
-                    let error_msg = e.to_string();
-                    if error_msg.contains("用户主动暂停任务") || error_msg.contains("任务已暂停") {
+                    crate::error::ErrorType::UserCancelled => {
                         info!(
                             "处理视频「{}」第 {} 页{}因用户暂停而终止",
                             &video_model.name, page_model.pid, task_name
                         );
-                    } else {
+                    }
+                    _ => {
+                        error!(
+                            "处理视频「{}」第 {} 页{}失败({}): {}",
+                            &video_model.name,
+                            page_model.pid,
+                            task_name,
+                            classified_error.error_type,
+                            classified_error.message
+                        );
+                    }
+                }
+            }
+            ExecutionStatus::Failed(e) | ExecutionStatus::FixedFailed(_, e) => {
+                // 使用错误分类器进行统一处理
+                let classified_error = crate::error::ErrorClassifier::classify_error(&e);
+                match classified_error.error_type {
+                    crate::error::ErrorType::NotFound => {
+                        debug!(
+                            "处理视频「{}」第 {} 页{}失败(404): {:#}",
+                            &video_model.name, page_model.pid, task_name, e
+                        );
+                    }
+                    crate::error::ErrorType::UserCancelled => {
+                        info!(
+                            "处理视频「{}」第 {} 页{}因用户暂停而终止",
+                            &video_model.name, page_model.pid, task_name
+                        );
+                    }
+                    _ => {
                         error!(
                             "处理视频「{}」第 {} 页{}失败: {:#}",
                             &video_model.name, page_model.pid, task_name, e
@@ -2051,14 +2043,15 @@ async fn download_stream(downloader: &UnifiedDownloader, urls: &[&str], path: &P
                 // 对于404错误，降级为debug日志
                 debug!("下载失败(404): {:#}", e);
             } else {
-                let error_msg = e.to_string();
-                // 检查是否是暂停导致的连接错误
-                if (error_msg.contains("tcp connect error") && error_msg.contains("由于目标计算机积极拒绝"))
-                    && crate::task::TASK_CONTROLLER.is_paused()
-                {
-                    info!("下载因用户暂停导致的连接失败: {:#}", e);
-                } else {
-                    error!("下载失败: {:#}", e);
+                // 使用错误分类器进行统一处理
+                let classified_error = crate::error::ErrorClassifier::classify_error(&e);
+                match classified_error.error_type {
+                    crate::error::ErrorType::UserCancelled => {
+                        info!("下载因用户暂停而终止: {:#}", e);
+                    }
+                    _ => {
+                        error!("下载失败: {:#}", e);
+                    }
                 }
             }
             Err(e)
@@ -2229,16 +2222,13 @@ pub async fn fetch_page_video(
             let video_size = download_stream(downloader, &video_urls, &tmp_video_path)
                 .await
                 .map_err(|e| {
-                    let error_msg = e.to_string();
-                    if error_msg.contains("用户主动暂停任务") || error_msg.contains("任务已暂停") {
-                        info!("视频流下载因用户暂停而终止");
-                    } else {
-                        // 检查是否是暂停导致的连接错误
-                        if (error_msg.contains("tcp connect error") && error_msg.contains("由于目标计算机积极拒绝"))
-                            && crate::task::TASK_CONTROLLER.is_paused()
-                        {
-                            info!("视频流下载因用户暂停导致的连接失败: {:#}", e);
-                        } else {
+                    // 使用错误分类器进行统一处理
+                    let classified_error = crate::error::ErrorClassifier::classify_error(&e);
+                    match classified_error.error_type {
+                        crate::error::ErrorType::UserCancelled => {
+                            info!("视频流下载因用户暂停而终止");
+                        }
+                        _ => {
                             error!("视频流下载失败: {:#}", e);
                         }
                     }
@@ -2249,16 +2239,13 @@ pub async fn fetch_page_video(
             let audio_size = download_stream(downloader, &audio_urls, &tmp_audio_path)
                 .await
                 .map_err(|e| {
-                    let error_msg = e.to_string();
-                    if error_msg.contains("用户主动暂停任务") || error_msg.contains("任务已暂停") {
-                        info!("音频流下载因用户暂停而终止");
-                    } else {
-                        // 检查是否是暂停导致的连接错误
-                        if (error_msg.contains("tcp connect error") && error_msg.contains("由于目标计算机积极拒绝"))
-                            && crate::task::TASK_CONTROLLER.is_paused()
-                        {
-                            info!("音频流下载因用户暂停导致的连接失败: {:#}", e);
-                        } else {
+                    // 使用错误分类器进行统一处理
+                    let classified_error = crate::error::ErrorClassifier::classify_error(&e);
+                    match classified_error.error_type {
+                        crate::error::ErrorType::UserCancelled => {
+                            info!("音频流下载因用户暂停而终止");
+                        }
+                        _ => {
                             error!("音频流下载失败: {:#}", e);
                         }
                     }
