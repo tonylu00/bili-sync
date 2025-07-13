@@ -97,15 +97,15 @@ pub async fn get_failed_videos_in_current_cycle(
         .await?;
 
     // 获取所有待处理的删除任务中的视频ID
-    use bili_sync_entity::task_queue::{self, TaskType, TaskStatus};
     use crate::task::DeleteVideoTask;
-    
+    use bili_sync_entity::task_queue::{self, TaskStatus, TaskType};
+
     let pending_delete_tasks = task_queue::Entity::find()
         .filter(task_queue::Column::TaskType.eq(TaskType::DeleteVideo))
         .filter(task_queue::Column::Status.eq(TaskStatus::Pending))
         .all(connection)
         .await?;
-    
+
     let mut videos_in_delete_queue = std::collections::HashSet::new();
     for task_record in pending_delete_tasks {
         if let Ok(task_data) = serde_json::from_str::<DeleteVideoTask>(&task_record.task_data) {
@@ -120,7 +120,7 @@ pub async fn get_failed_videos_in_current_cycle(
             if videos_in_delete_queue.contains(&video_model.id) {
                 return false;
             }
-            
+
             // 检查视频和分页是否有可重试的失败
             let video_status = crate::utils::status::VideoStatus::from(video_model.download_status);
             let video_should_retry = video_status.should_run().iter().any(|&should_run| should_run);

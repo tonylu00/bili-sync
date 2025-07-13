@@ -98,7 +98,6 @@ fn extract_version_info(video_title: &str) -> String {
     String::new()
 }
 
-
 pub fn video_format_args(video_model: &bili_sync_entity::video::Model) -> serde_json::Value {
     let current_config = config::reload_config();
     json!({

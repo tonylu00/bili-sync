@@ -2240,7 +2240,7 @@ pub async fn fetch_page_video(
                 if quality_value < requested_quality {
                     let quality_gap = requested_quality - quality_value;
                     if requested_quality >= 120 && quality_value < 120 {
-                        warn!("⚠️  未获得4K+质量(请求{}，实际{})", requested_quality, quality_value);
+                        debug!("⚠️  未获得4K+质量(请求{}，实际{})", requested_quality, quality_value);
                     } else if quality_gap >= 40 {
                         warn!(
                             "⚠️  视频质量显著低于预期(请求{}，实际{}) - 视频源可能不支持更高质量",

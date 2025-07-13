@@ -260,7 +260,7 @@ impl<'a> Video<'a> {
                     } else {
                         tracing::debug!("× 质量 qn={} 获取失败: 充电专享视频", qn);
                     }
-                    
+
                     if attempt == quality_levels.len() - 1 {
                         // 最后一次尝试也失败了
                         if is_charging_video_error {
@@ -440,7 +440,7 @@ impl<'a> Video<'a> {
                     } else {
                         tracing::debug!("× 番剧质量 qn={} 获取失败: 充电专享视频", qn);
                     }
-                    
+
                     if attempt == quality_levels.len() - 1 {
                         // 最后一次尝试也失败了
                         if is_charging_video_error {
