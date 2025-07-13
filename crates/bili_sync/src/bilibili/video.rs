@@ -299,13 +299,13 @@ impl<'a> Video<'a> {
         if let Some(code) = res["code"].as_i64() {
             if code != 0 {
                 let message = res["message"].as_str().unwrap_or("未知错误");
-                return Err(anyhow!("API返回错误 {}: {}", code, message));
+                return Err(crate::bilibili::BiliError::RequestFailed(code, message.to_string()).into());
             }
         }
 
         // 检查是否有可用的视频流
         if res["data"]["dash"]["video"].as_array().is_none_or(|v| v.is_empty()) {
-            return Err(anyhow!("API返回的视频流为空"));
+            return Err(crate::bilibili::BiliError::RequestFailed(87008, "API返回的视频流为空".to_string()).into());
         }
 
         // 记录成功获取的质量信息
@@ -466,13 +466,13 @@ impl<'a> Video<'a> {
         if let Some(code) = res["code"].as_i64() {
             if code != 0 {
                 let message = res["message"].as_str().unwrap_or("未知错误");
-                return Err(anyhow!("番剧API返回错误 {}: {}", code, message));
+                return Err(crate::bilibili::BiliError::RequestFailed(code, message.to_string()).into());
             }
         }
 
         // 检查是否有可用的番剧视频流
         if res["result"]["dash"]["video"].as_array().is_none_or(|v| v.is_empty()) {
-            return Err(anyhow!("番剧API返回的视频流为空"));
+            return Err(crate::bilibili::BiliError::RequestFailed(87008, "番剧API返回的视频流为空".to_string()).into());
         }
 
         // 记录成功获取的番剧质量信息

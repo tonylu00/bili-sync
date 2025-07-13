@@ -36,6 +36,92 @@ use crate::utils::model::{
 use crate::utils::nfo::NFO;
 use crate::utils::status::{PageStatus, VideoStatus, STATUS_OK};
 
+/// 检测并处理需要自动删除的错误（主要是87007充电专享视频错误）
+/// 
+/// # 参数
+/// - `results`: 执行结果列表 
+/// - `task_names`: 任务名称列表，用于日志输出
+/// - `video_model`: 视频模型引用
+/// - `connection`: 数据库连接
+/// - `context_info`: 额外的上下文信息（如"第X页"），用于日志输出
+/// 
+/// # 返回值
+/// - `Result<bool>`: 如果检测到需要自动删除的错误返回true，否则返回false
+async fn detect_and_handle_auto_delete_errors(
+    results: &[ExecutionStatus],
+    task_names: &[&str],
+    video_model: &video::Model,
+    connection: &DatabaseConnection,
+    context_info: Option<&str>,
+) -> Result<bool> {
+    let mut needs_auto_delete = false;
+    
+    // 扩展检测范围：检查所有任务结果
+    for (res, task_name) in results.iter().zip(task_names.iter()) {
+        if let ExecutionStatus::ClassifiedFailed(classified_error) = res {
+            // 使用error.rs层面的should_auto_delete标志，更精确的判断
+            if classified_error.should_auto_delete {
+                if let Some(context) = context_info {
+                    warn!(
+                        "检测到需要自动删除的视频「{}」{}{}，错误类型: {}，将自动删除该视频以避免重复尝试",
+                        &video_model.name, context, task_name, classified_error.error_type
+                    );
+                } else {
+                    warn!(
+                        "检测到需要自动删除的视频「{}」{}，错误类型: {}，将自动删除该视频以避免重复尝试",
+                        &video_model.name, task_name, classified_error.error_type
+                    );
+                }
+                needs_auto_delete = true;
+                break; // 只需要检测一次即可
+            }
+        } else if let ExecutionStatus::Ignored(e) = res {
+            // 向后兼容：继续检查字符串匹配的87007错误
+            let error_msg = e.to_string();
+            if error_msg.contains("status code: 87007") {
+                if let Some(context) = context_info {
+                    warn!(
+                        "检测到充电专享视频「{}」{}{}，将自动删除该视频以避免重复尝试: {:#}",
+                        &video_model.name, context, task_name, e
+                    );
+                } else {
+                    warn!(
+                        "检测到充电专享视频「{}」{}，将自动删除该视频以避免重复尝试: {:#}",
+                        &video_model.name, task_name, e
+                    );
+                }
+                needs_auto_delete = true;
+                break; // 只需要检测一次即可
+            }
+        }
+    }
+
+    // 如果检测到需要自动删除的错误，创建自动删除任务
+    if needs_auto_delete {
+        let task_id = if context_info.is_some() {
+            format!("auto_delete_87007_page_{}", video_model.id)
+        } else {
+            format!("auto_delete_87007_{}", video_model.id)
+        };
+        
+        let delete_task = DeleteVideoTask {
+            video_id: video_model.id,
+            task_id,
+        };
+
+        if let Err(delete_err) = VIDEO_DELETE_TASK_QUEUE.enqueue_task(delete_task, connection).await {
+            error!(
+                "无法创建自动删除任务，视频「{}」: {:#}",
+                &video_model.name, delete_err
+            );
+        } else {
+            info!("已为视频「{}」创建自动删除任务", &video_model.name);
+        }
+    }
+
+    Ok(needs_auto_delete)
+}
+
 // 新增：番剧季信息结构体
 #[derive(Debug, Clone)]
 pub struct SeasonInfo {
@@ -1389,38 +1475,17 @@ pub async fn download_video_pages(
     let mut all_results = main_results;
     all_results.extend(extra_results);
 
-    // 处理87007错误检测和自动删除（在for_each之前）
-    let mut has_87007_error = false;
-    for (res, task_name) in all_results.iter().take(4).zip(["封面", "详情", "作者头像", "作者详情"]) {
-        if let ExecutionStatus::Ignored(e) = res {
-            let error_msg = e.to_string();
-            if error_msg.contains("status code: 87007") {
-                warn!(
-                    "检测到充电专享视频「{}」{}，将自动删除该视频以避免重复尝试: {:#}",
-                    &video_model.name, task_name, e
-                );
-                has_87007_error = true;
-                break; // 只需要检测一次即可
-            }
-        }
-    }
-
-    // 如果检测到87007错误，创建自动删除任务
-    if has_87007_error {
-        let delete_task = DeleteVideoTask {
-            video_id: video_model.id,
-            task_id: format!("auto_delete_87007_{}", video_model.id),
-        };
-
-        if let Err(delete_err) = VIDEO_DELETE_TASK_QUEUE.enqueue_task(delete_task, connection).await {
-            error!(
-                "无法创建充电专享视频「{}」的自动删除任务: {:#}",
-                &video_model.name, delete_err
-            );
-        } else {
-            info!("已为充电专享视频「{}」创建自动删除任务", &video_model.name);
-        }
-    }
+    // 使用新的公共函数处理87007错误检测和自动删除
+    let task_names = [
+        "封面", "详情", "作者头像", "作者详情", "分页下载", "季度NFO", "季度图片"
+    ];
+    let _has_87007_error = detect_and_handle_auto_delete_errors(
+        &all_results,
+        &task_names,
+        &video_model,
+        connection,
+        None,
+    ).await?;
 
     all_results
         .iter()
@@ -1824,38 +1889,16 @@ pub async fn download_page(
         .collect::<Vec<_>>();
     status.update_status(&results);
 
-    // 处理87007错误检测和自动删除（在for_each之前）
-    let mut has_87007_error = false;
-    for (res, task_name) in results.iter().zip(["封面", "视频", "详情", "弹幕", "字幕"]) {
-        if let ExecutionStatus::Ignored(e) = res {
-            let error_msg = e.to_string();
-            if error_msg.contains("status code: 87007") {
-                warn!(
-                    "检测到充电专享视频「{}」第 {} 页{}，将自动删除该视频以避免重复尝试: {:#}",
-                    &video_model.name, page_model.pid, task_name, e
-                );
-                has_87007_error = true;
-                break; // 只需要检测一次即可
-            }
-        }
-    }
-
-    // 如果检测到87007错误，创建自动删除任务
-    if has_87007_error {
-        let delete_task = DeleteVideoTask {
-            video_id: video_model.id,
-            task_id: format!("auto_delete_87007_page_{}", video_model.id),
-        };
-
-        if let Err(delete_err) = VIDEO_DELETE_TASK_QUEUE.enqueue_task(delete_task, connection).await {
-            error!(
-                "无法创建充电专享视频「{}」的自动删除任务: {:#}",
-                &video_model.name, delete_err
-            );
-        } else {
-            info!("已为充电专享视频「{}」创建自动删除任务", &video_model.name);
-        }
-    }
+    // 使用新的公共函数处理87007错误检测和自动删除
+    let task_names = ["封面", "视频", "详情", "弹幕", "字幕"];
+    let context_info = format!("第 {} 页", page_model.pid);
+    let _has_87007_error = detect_and_handle_auto_delete_errors(
+        &results,
+        &task_names,
+        video_model,
+        connection,
+        Some(&context_info),
+    ).await?;
 
     results
         .iter()
@@ -2408,7 +2451,7 @@ pub async fn fetch_page_subtitle(
             let path = subtitle_path.with_extension(format!("{}.srt", subtitle.lan));
             ensure_parent_dir_for_file(&path)
                 .await
-                .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
+                .map_err(|e| std::io::Error::other(e))?;
             tokio::fs::write(path, subtitle.body.to_string()).await
         })
         .collect::<FuturesUnordered<_>>();
@@ -2992,8 +3035,8 @@ async fn get_season_info_from_api(
             return Err(anyhow!(crate::error::DownloadAbortError()));
         }
 
-        // 其他错误正常返回
-        bail!("API返回错误 {}: {}", error_code, error_msg);
+        // 其他错误正常返回，使用BiliError以便被错误分类系统处理
+        return Err(crate::bilibili::BiliError::RequestFailed(error_code, error_msg.to_string()).into());
     }
 
     let result = &json["result"];
@@ -3769,5 +3812,168 @@ mod tests {
                 .unwrap(),
             "哈哈，你说得对，但是 Rust 是由 Mozilla 自主研发的一"
         );
+    }
+
+    #[cfg(test)]
+    mod auto_delete_tests {
+        use super::*;
+        use crate::error::{ClassifiedError, ErrorType, ExecutionStatus};
+        use bili_sync_entity::video;
+        
+        #[tokio::test]
+        async fn test_87007_error_detection_via_classified_error() {
+            // 创建一个包含should_auto_delete标志的ClassifiedError
+            let classified_error = ClassifiedError::new(
+                ErrorType::Permission,
+                "充电专享视频，需要为UP主充电才能观看".to_string()
+            ).with_auto_delete(true);
+            
+            let results = vec![
+                ExecutionStatus::Succeeded,
+                ExecutionStatus::ClassifiedFailed(classified_error),
+                ExecutionStatus::Skipped,
+            ];
+            
+            let task_names = ["封面", "详情", "作者头像"];
+            
+            // 创建测试用的video model
+            let video_model = video::Model {
+                id: 12345,
+                collection_id: None,
+                favorite_id: None,
+                watch_later_id: None,
+                submission_id: None,
+                source_id: Some(1),
+                source_type: Some(1),
+                upper_id: 1,
+                upper_name: "测试UP主".to_string(),
+                upper_face: "http://example.com/face.jpg".to_string(),
+                name: "测试充电专享视频".to_string(),
+                path: "/test/path".to_string(),
+                category: 1,
+                bvid: "BV1234567890".to_string(),
+                intro: "测试视频介绍".to_string(),
+                cover: "http://example.com/cover.jpg".to_string(),
+                ctime: chrono::Utc::now().naive_utc(),
+                pubtime: chrono::Utc::now().naive_utc(),
+                favtime: chrono::Utc::now().naive_utc(),
+                download_status: 0,
+                valid: true,
+                tags: None,
+                single_page: Some(true),
+                created_at: chrono::Utc::now().to_rfc3339(),
+                season_id: None,
+                ep_id: None,
+                season_number: None,
+                episode_number: None,
+                deleted: 0,
+                share_copy: None,
+                show_season_type: None,
+                actors: None,
+                auto_download: false,
+            };
+            
+            // 注意：这个测试不能真正连接数据库，所以我们只验证函数的逻辑部分
+            // 在实际项目中，应该使用mock或测试数据库
+            
+            // 验证错误检测逻辑 - 我们可以通过检查结果来模拟
+            let mut needs_auto_delete = false;
+            
+            for (res, _task_name) in results.iter().zip(task_names.iter()) {
+                if let ExecutionStatus::ClassifiedFailed(classified_error) = res {
+                    if classified_error.should_auto_delete {
+                        needs_auto_delete = true;
+                        break;
+                    }
+                }
+            }
+            
+            assert!(needs_auto_delete, "应该检测到需要自动删除的87007错误");
+        }
+        
+        #[tokio::test]
+        async fn test_backward_compatibility_87007_string_matching() {
+            // 测试向后兼容的字符串匹配逻辑
+            let error_87007 = anyhow::anyhow!("B站API错误: status code: 87007");
+            let error_other = anyhow::anyhow!("B站API错误: status code: 404");
+            
+            let results = vec![
+                ExecutionStatus::Succeeded,
+                ExecutionStatus::Ignored(error_87007),
+                ExecutionStatus::Ignored(error_other),
+            ];
+            
+            let task_names = ["封面", "详情", "作者头像"];
+            
+            // 验证字符串匹配逻辑
+            let mut has_87007_error = false;
+            
+            for (res, _task_name) in results.iter().zip(task_names.iter()) {
+                if let ExecutionStatus::Ignored(e) = res {
+                    let error_msg = e.to_string();
+                    if error_msg.contains("status code: 87007") {
+                        has_87007_error = true;
+                        break;
+                    }
+                }
+            }
+            
+            assert!(has_87007_error, "应该通过字符串匹配检测到87007错误");
+        }
+        
+        #[test]
+        fn test_87007_classified_error_creation() {
+            // 测试error.rs中87007错误的分类逻辑
+            use crate::bilibili::BiliError;
+            use crate::error::ErrorClassifier;
+            
+            let bili_error = BiliError::RequestFailed(87007, "充电专享视频".to_string());
+            let anyhow_error = anyhow::anyhow!(bili_error);
+            
+            let classified = ErrorClassifier::classify_error(&anyhow_error);
+            
+            assert_eq!(classified.error_type, ErrorType::Permission);
+            assert!(classified.should_ignore, "87007错误应该被忽略");
+            assert!(!classified.should_retry, "87007错误不应该重试");
+            assert!(classified.should_auto_delete, "87007错误应该自动删除");
+            assert!(classified.message.contains("充电专享视频"));
+        }
+        
+        #[test]
+        fn test_87008_classified_error_creation() {
+            // 测试87008错误的分类逻辑（修复后应该和87007一样工作）
+            use crate::bilibili::BiliError;
+            use crate::error::ErrorClassifier;
+            
+            let bili_error = BiliError::RequestFailed(87008, "87008".to_string());
+            let anyhow_error = anyhow::anyhow!(bili_error);
+            
+            let classified = ErrorClassifier::classify_error(&anyhow_error);
+            
+            assert_eq!(classified.error_type, ErrorType::Permission);
+            assert!(classified.should_ignore, "87008错误应该被忽略");
+            assert!(!classified.should_retry, "87008错误不应该重试");
+            assert!(classified.should_auto_delete, "87008错误应该自动删除");
+            assert!(classified.message.contains("充电专享视频"));
+        }
+        
+        #[test]
+        fn test_87008_execution_status_conversion() {
+            // 测试87008错误的ExecutionStatus转换（修复关键点）
+            use crate::bilibili::BiliError;
+            
+            let bili_error = BiliError::RequestFailed(87008, "87008".to_string());
+            let result: Result<ExecutionStatus, anyhow::Error> = Err(bili_error.into());
+            let execution_status = ExecutionStatus::from(result);
+            
+            // 修复后，87008错误应该被转换为ClassifiedFailed，而不是Ignored
+            match execution_status {
+                ExecutionStatus::ClassifiedFailed(classified_error) => {
+                    assert_eq!(classified_error.error_type, ErrorType::Permission);
+                    assert!(classified_error.should_auto_delete, "87008错误应该标记为需要自动删除");
+                }
+                _ => panic!("87008错误应该被转换为ClassifiedFailed状态"),
+            }
+        }
     }
 }

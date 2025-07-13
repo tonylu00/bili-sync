@@ -55,6 +55,8 @@ pub struct ClassifiedError {
     pub status_code: Option<u16>,
     pub should_retry: bool,
     pub should_ignore: bool,
+    /// 是否为87007充电专享视频错误，需要自动删除
+    pub should_auto_delete: bool,
 }
 
 impl ClassifiedError {
@@ -77,6 +79,7 @@ impl ClassifiedError {
             status_code: None,
             should_retry,
             should_ignore,
+            should_auto_delete: false, // 默认不自动删除
         }
     }
 
@@ -88,6 +91,11 @@ impl ClassifiedError {
     pub fn with_retry_policy(mut self, should_retry: bool, should_ignore: bool) -> Self {
         self.should_retry = should_retry;
         self.should_ignore = should_ignore;
+        self
+    }
+
+    pub fn with_auto_delete(mut self, should_auto_delete: bool) -> Self {
+        self.should_auto_delete = should_auto_delete;
         self
     }
 }
@@ -234,7 +242,9 @@ impl ErrorClassifier {
                     _ => format!("B站API错误: {}", msg),
                 };
 
-                ClassifiedError::new(error_type, message).with_retry_policy(should_retry, should_ignore)
+                ClassifiedError::new(error_type, message)
+                    .with_retry_policy(should_retry, should_ignore)
+                    .with_auto_delete(matches!(*code, 87007 | 87008)) // 87007/87008需要自动删除
             }
         }
     }
@@ -287,6 +297,11 @@ impl From<Result<ExecutionStatus>> for ExecutionStatus {
                 let classified_error = ErrorClassifier::classify_error(&err);
 
                 // 根据分类结果决定处理方式
+                // 如果需要自动删除，使用ClassifiedFailed以便被检测到
+                if classified_error.should_auto_delete {
+                    return ExecutionStatus::ClassifiedFailed(classified_error);
+                }
+                
                 if classified_error.should_ignore {
                     return ExecutionStatus::Ignored(err);
                 }
