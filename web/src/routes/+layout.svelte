@@ -34,33 +34,46 @@
 		window.location.reload(); // 重新加载页面以清除状态
 	}
 
-	// 初始化共用数据
-	onMount(async () => {
-		// 检查认证状态
+	// 检查认证状态
+	async function checkAuthStatus() {
 		const token = localStorage.getItem('auth_token');
 		if (token) {
-			isAuthenticated = true;
-
-			// 初始化视频源数据，所有组件都会用到
-			if (!$videoSourceStore) {
-				try {
-					const response = await api.getVideoSources();
-					setVideoSources(response.data);
-				} catch (error) {
-					console.error('加载视频来源失败:', error);
-					if ((error as ApiError).status === 401) {
-						// Token 无效
-						isAuthenticated = false;
-						api.setAuthToken('');
-					} else {
-						toast.error('加载视频来源失败', {
-							description: (error as ApiError).message
-						});
-					}
+			api.setAuthToken(token);
+			try {
+				// 验证token有效性
+				await api.getVideoSources();
+				isAuthenticated = true;
+				// 初始化视频源数据，所有组件都会用到
+				if (!$videoSourceStore) {
+					setVideoSources((await api.getVideoSources()).data);
+				}
+			} catch (error) {
+				console.error('Token验证失败:', error);
+				if ((error as ApiError).status === 401) {
+					// Token 无效，清除
+					isAuthenticated = false;
+					api.setAuthToken('');
+					localStorage.removeItem('auth_token');
+				} else {
+					toast.error('加载视频来源失败', {
+						description: (error as ApiError).message
+					});
 				}
 			}
+		} else {
+			isAuthenticated = false;
 		}
 		dataLoaded = true;
+	}
+
+	// 初始化共用数据
+	onMount(async () => {
+		await checkAuthStatus();
+		// 监听登录成功事件
+		window.addEventListener('login-success', () => {
+			isAuthenticated = true;
+			checkAuthStatus();
+		});
 	});
 
 	// 从全局状态获取当前查询值

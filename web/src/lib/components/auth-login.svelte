@@ -30,6 +30,7 @@
 
 			// 如果成功，说明Token正确
 			dispatch('login-success', { token: authToken });
+			window.dispatchEvent(new CustomEvent('login-success'));
 			toast.success('登录成功');
 		} catch (error: any) {
 			// 清除无效的 Token
