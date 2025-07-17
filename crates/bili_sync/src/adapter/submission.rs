@@ -21,6 +21,8 @@ impl VideoSource for submission::Model {
 
     fn set_relation_id(&self, video_model: &mut video::ActiveModel) {
         video_model.submission_id = Set(Some(self.id));
+        // 同时设置source_submission_id，用于合作视频的归类
+        video_model.source_submission_id = Set(Some(self.id));
     }
 
     fn path(&self) -> &Path {

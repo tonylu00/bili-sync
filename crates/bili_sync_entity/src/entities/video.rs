@@ -16,6 +16,8 @@ pub struct Model {
     pub upper_id: i64,
     pub upper_name: String,
     pub upper_face: String,
+    pub staff_info: Option<serde_json::Value>,
+    pub source_submission_id: Option<i32>,
     pub name: String,
     pub path: String,
     pub category: i32,

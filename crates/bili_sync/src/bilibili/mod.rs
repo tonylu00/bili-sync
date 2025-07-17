@@ -36,6 +36,20 @@ pub(crate) fn set_global_mixin_key(key: String) {
     MIXIN_KEY.store(Some(Arc::new(key)));
 }
 
+#[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
+pub struct StaffInfo {
+    pub mid: i64,
+    pub title: String,
+    pub name: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub face: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub follower: Option<i64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub label_style: Option<i32>,
+    // 忽略其他字段，如vip、official等
+}
+
 pub(crate) trait Validate {
     type Output;
 
@@ -78,6 +92,8 @@ pub enum VideoInfo {
         pages: Vec<PageInfo>,
         state: i32,
         show_title: Option<String>,
+        #[serde(default)]
+        staff: Option<Vec<StaffInfo>>,
     },
     /// 从收藏夹接口获取的视频信息
     Favorite {

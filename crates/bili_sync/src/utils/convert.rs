@@ -179,6 +179,7 @@ impl VideoInfo {
                 pubtime,
                 state,
                 show_title,
+                staff,
                 ..
             } => bili_sync_entity::video::ActiveModel {
                 bvid: Set(bvid),
@@ -206,6 +207,8 @@ impl VideoInfo {
                 upper_id: Set(upper.mid),
                 upper_name: Set(upper.name),
                 upper_face: Set(upper.face),
+                // 保存staff信息到数据库
+                staff_info: Set(staff.map(|s| serde_json::to_value(s).unwrap_or(serde_json::Value::Null))),
                 ..base_model.into_active_model()
             },
             _ => unreachable!(),
