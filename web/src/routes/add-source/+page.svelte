@@ -1087,7 +1087,7 @@
 
 			<div class="flex {isMobile ? 'flex-col' : 'gap-8'}">
 				<!-- 左侧：表单区域 -->
-				<div class={isMobile ? 'w-full' : 'w-[600px] flex-shrink-0'}>
+				<div class={isMobile ? 'w-full' : 'flex-1 min-w-[350px] max-w-[500px]'}>
 					<form
 						onsubmit={(e) => {
 							e.preventDefault();
@@ -1447,7 +1447,7 @@
 				<!-- 右侧：搜索结果区域 -->
 				{#if showSearchResults && searchResults.length > 0}
 					<div
-						class={isMobile ? 'mt-6 w-full' : 'flex-1'}
+						class={isMobile ? 'mt-6 w-full' : 'flex-1 min-w-[550px]'}
 						transition:fly={{ x: 300, duration: 300 }}
 					>
 						<div
@@ -1478,7 +1478,7 @@
 
 							<div class="flex-1 overflow-hidden p-3">
 								<div class="seasons-grid-container h-full">
-									<div class="grid {isMobile ? 'grid-cols-1 gap-3' : 'grid-cols-3 gap-4'}">
+									<div class="grid gap-4 {isMobile ? 'grid-cols-1' : ''}" style={isMobile ? '' : 'grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));'}>
 										{#each searchResults as result, i (result.bvid || result.season_id || result.mid || i)}
 											<button
 												onclick={() => selectSearchResult(result)}
@@ -1587,7 +1587,7 @@
 							</div>
 
 							<div class="flex-1 overflow-y-auto p-3">
-								<div class="grid {isMobile ? 'grid-cols-1 gap-2' : 'grid-cols-3 gap-3'}">
+								<div class="grid gap-3 {isMobile ? 'grid-cols-1' : ''}" style={isMobile ? '' : 'grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));'}>
 									{#each userFollowings as following}
 										<button
 											onclick={() => selectFollowing(following)}
@@ -1656,7 +1656,7 @@
 							</div>
 
 							<div class="flex-1 overflow-y-auto p-3">
-								<div class="grid {isMobile ? 'grid-cols-1 gap-3' : 'grid-cols-2 gap-4'}">
+								<div class="grid gap-4 {isMobile ? 'grid-cols-1' : ''}" style={isMobile ? '' : 'grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));'}>
 									{#each userCollections as collection}
 										<button
 											onclick={() => selectCollection(collection)}
@@ -1729,7 +1729,7 @@
 							</div>
 
 							<div class="flex-1 overflow-y-auto p-3">
-								<div class="grid {isMobile ? 'grid-cols-1 gap-3' : 'grid-cols-2 gap-4'}">
+								<div class="grid gap-4 {isMobile ? 'grid-cols-1' : ''}" style={isMobile ? '' : 'grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));'}>
 									{#each userFavorites as favorite}
 										<button
 											onclick={() => selectFavorite(favorite)}
@@ -1818,7 +1818,7 @@
 										<div class="text-sm text-green-700">正在获取收藏夹列表...</div>
 									</div>
 								{:else if searchedUserFavorites.length > 0}
-									<div class="grid {isMobile ? 'grid-cols-1 gap-3' : 'grid-cols-2 gap-4'}">
+									<div class="grid gap-4 {isMobile ? 'grid-cols-1' : ''}" style={isMobile ? '' : 'grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));'}>
 										{#each searchedUserFavorites as favorite}
 											<button
 												onclick={() => selectSearchedFavorite(favorite)}
@@ -1889,7 +1889,7 @@
 									</div>
 								{:else if bangumiSeasons.length > 0}
 									<div class="seasons-grid-container">
-										<div class="grid {isMobile ? 'grid-cols-1 gap-3' : 'grid-cols-3 gap-4'}">
+										<div class="grid gap-4 {isMobile ? 'grid-cols-1' : ''}" style={isMobile ? '' : 'grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));'}>
 											{#each bangumiSeasons as season, i (season.season_id)}
 												<div
 													role="button"
@@ -2001,7 +2001,7 @@
 							</div>
 
 							<div class="flex-1 overflow-y-auto p-3">
-								<div class="grid {isMobile ? 'grid-cols-1 gap-3' : 'grid-cols-2 gap-4'}">
+								<div class="grid gap-4 {isMobile ? 'grid-cols-1' : ''}" style={isMobile ? '' : 'grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));'}>
 									{#each subscribedCollections as collection}
 										<button
 											onclick={() => selectSubscribedCollection(collection)}
@@ -2183,7 +2183,7 @@
 												<p class="text-sm">没有找到视频</p>
 											</div>
 										{:else}
-											<div class="grid {isMobile ? 'grid-cols-1 gap-3' : 'grid-cols-3 gap-4'}">
+											<div class="grid gap-4 {isMobile ? 'grid-cols-1' : ''}" style={isMobile ? '' : 'grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));'}>
 												{#each filteredSubmissionVideos as video (video.bvid)}
 													<div
 														class="relative rounded-lg border p-4 transition-all duration-300 hover:bg-gray-50 hover:shadow-md {selectedSubmissionVideos.has(video.bvid) ? 'border-blue-300 bg-blue-50' : 'border-gray-200'} {isMobile ? 'h-auto' : 'h-[100px]'}"
