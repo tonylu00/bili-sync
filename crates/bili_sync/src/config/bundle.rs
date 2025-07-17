@@ -39,6 +39,12 @@ impl ConfigBundle {
 
         debug!("开始构建Handlebars模板引擎...");
         let mut handlebars = Handlebars::new();
+        
+        // 禁用HTML转义，避免文件名中的特殊字符被转义为HTML实体
+        // 例如：避免 "=" 被转义为 "&#x3D;"
+        handlebars.register_escape_fn(|s| s.to_string());
+        debug!("已禁用Handlebars HTML转义");
+        
 
         // 注册自定义 helper
         handlebars_helper!(truncate: |s: String, len: usize| {
@@ -415,6 +421,41 @@ mod tests {
             slash_count, 1,
             "应该只有一个路径分隔符，但发现了 {}，结果: {}",
             slash_count, result
+        );
+    }
+
+    #[test]
+    fn test_html_escape_disabled() {
+        // 测试Handlebars HTML转义已被正确禁用
+        let config = Config { 
+            video_name: Cow::Borrowed("{{upper_name}}"), 
+            ..Default::default() 
+        };
+
+        let bundle = ConfigBundle::from_config(config).unwrap();
+
+        // 测试包含等号的数据（等号不应该被HTML转义）
+        let data = json!({
+            "upper_name": "=咬人猫="
+        });
+
+        let result = bundle.render_video_template(&data).unwrap();
+
+        // 打印结果用于调试
+        println!("修复后的渲染结果: {}", result);
+
+        // 验证HTML转义已被禁用
+        assert!(
+            !result.contains("&#x3D;"),
+            "HTML转义应该被禁用，等号不应该被转义为 &#x3D;，实际结果: {}",
+            result
+        );
+        
+        // 验证原始等号保持不变
+        assert_eq!(
+            result, "=咬人猫=",
+            "等号应该保持原样，实际结果: {}",
+            result
         );
     }
 }
