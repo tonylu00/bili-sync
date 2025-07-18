@@ -41,8 +41,7 @@ pub struct StaffInfo {
     pub mid: i64,
     pub title: String,
     pub name: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub face: Option<String>,
+    pub face: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub follower: Option<i64>,
     #[serde(skip_serializing_if = "Option::is_none")]

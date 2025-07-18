@@ -588,10 +588,18 @@ pub async fn fetch_video_details(
                                     
                                     // 如果找到了匹配的订阅UP主，进行归类
                                     if let Some(submission) = matched_submission {
-                                        // 直接使用submission的信息更新视频
+                                        // 从staff信息中找到匹配UP主的头像
+                                        let matched_staff_face = staff_list.iter()
+                                            .find(|staff| staff.mid == submission.upper_id)
+                                            .map(|staff| staff.face.clone())
+                                            .unwrap_or_default();
+                                        
+                                        debug!("为合作视频匹配UP主头像: {} -> {}", submission.upper_name, matched_staff_face);
+                                        
+                                        // 使用submission的信息更新视频，包括正确的头像
                                         video_model_mut.upper_id = submission.upper_id;
                                         video_model_mut.upper_name = submission.upper_name.clone();
-                                        video_model_mut.upper_face = String::new(); // 暂时设为空，因为submission没有face信息
+                                        video_model_mut.upper_face = matched_staff_face;
                                         collaboration_video_updated = true;
                                         info!(
                                             "合作视频 {} 归类到订阅UP主「{}」(来源：{})",
@@ -927,6 +935,86 @@ pub async fn download_video_pages(
             debug!("无法重新加载视频信息，使用原始模型");
             video_model.clone()
         }
+    };
+
+    // 对于已经获取过详情但可能需要合作视频重新归类的普通视频，进行检测
+    let final_video_model = if !is_bangumi {
+        // 检查是否需要进行合作视频检测（只对有staff信息的视频）
+        if let Some(staff_info) = &final_video_model.staff_info {
+            if let Ok(staff_list) = serde_json::from_value::<Vec<crate::bilibili::StaffInfo>>(staff_info.clone()) {
+                debug!("视频 {} 有staff信息，成员数量: {} (下载阶段检测)", final_video_model.bvid, staff_list.len());
+                
+                if staff_list.len() > 1 {
+                    // 获取所有启用的订阅
+                    let submissions = submission::Entity::find()
+                        .filter(submission::Column::Enabled.eq(true))
+                        .all(connection)
+                        .await
+                        .context("get submissions failed")?;
+                    
+                    let mut matched_submission = None;
+                    // 检查staff中是否有已订阅的UP主
+                    for submission in &submissions {
+                        for staff_member in &staff_list {
+                            if staff_member.mid == submission.upper_id {
+                                debug!("在staff中找到已订阅的UP主：{} ({})", staff_member.name, staff_member.mid);
+                                matched_submission = Some(submission);
+                                break;
+                            }
+                        }
+                    }
+                    
+                    // 如果找到了匹配的订阅UP主，进行归类
+                    if let Some(submission) = matched_submission {
+                        // 从staff信息中找到匹配UP主的头像
+                        let matched_staff_face = staff_list.iter()
+                            .find(|staff| staff.mid == submission.upper_id)
+                            .map(|staff| staff.face.clone())
+                            .unwrap_or_default();
+                        
+                        debug!("为合作视频匹配UP主头像 (下载阶段): {} -> {}", submission.upper_name, matched_staff_face);
+                        
+                        // 创建更新后的视频模型
+                        let mut updated_model = final_video_model.clone();
+                        updated_model.upper_id = submission.upper_id;
+                        updated_model.upper_name = submission.upper_name.clone();
+                        updated_model.upper_face = matched_staff_face.clone();
+                        
+                        // 立即保存到数据库
+                        let mut active_model: video::ActiveModel = updated_model.clone().into();
+                        active_model.upper_id = Set(submission.upper_id);
+                        active_model.upper_name = Set(submission.upper_name.clone());
+                        active_model.upper_face = Set(matched_staff_face);
+                        
+                        if let Err(e) = active_model.update(connection).await {
+                            warn!("更新合作视频信息失败: {}", e);
+                        } else {
+                            info!(
+                                "合作视频 {} 归类到订阅UP主「{}」(下载阶段处理)",
+                                updated_model.bvid, 
+                                submission.upper_name
+                            );
+                        }
+                        
+                        updated_model
+                    } else {
+                        debug!("staff列表中没有找到已订阅的UP主 (下载阶段)");
+                        final_video_model
+                    }
+                } else {
+                    debug!("staff列表只有{}个成员，不是合作视频 (下载阶段)", staff_list.len());
+                    final_video_model
+                }
+            } else {
+                debug!("解析staff信息失败 (下载阶段)");
+                final_video_model
+            }
+        } else {
+            debug!("视频 {} 没有staff信息 (下载阶段)", final_video_model.bvid);
+            final_video_model
+        }
+    } else {
+        final_video_model
     };
 
     // 为番剧获取API数据用于NFO生成
@@ -1531,7 +1619,7 @@ pub async fn download_video_pages(
         // 下载 Up 主头像（番剧跳过，因为番剧没有UP主信息）
         fetch_upper_face(
             separate_status[2] && should_download_upper && !is_bangumi,
-            &video_model,
+            &final_video_model,
             downloader,
             base_upper_path.join("folder.jpg"),
             token.clone(),
@@ -1539,7 +1627,7 @@ pub async fn download_video_pages(
         // 生成 Up 主信息的 nfo（番剧跳过，因为番剧没有UP主信息）
         generate_upper_nfo(
             separate_status[3] && should_download_upper && !is_bangumi,
-            &video_model,
+            &final_video_model,
             base_upper_path.join("person.nfo"),
         ),
         // 分发并执行分 P 下载的任务
@@ -1548,7 +1636,7 @@ pub async fn download_video_pages(
                 should_run: separate_status[4],
                 bili_client,
                 video_source,
-                video_model: &video_model,
+                video_model: &final_video_model,
                 pages,
                 connection,
                 downloader,
@@ -1590,7 +1678,7 @@ pub async fn download_video_pages(
         "季度图片",
     ];
     let _has_87007_error =
-        detect_and_handle_auto_delete_errors(&all_results, &task_names, &video_model, connection, None).await?;
+        detect_and_handle_auto_delete_errors(&all_results, &task_names, &final_video_model, connection, None).await?;
 
     all_results
         .iter()
@@ -1703,7 +1791,7 @@ pub async fn download_video_pages(
             return Err(e);
         }
     }
-    let mut video_active_model: video::ActiveModel = video_model.into();
+    let mut video_active_model: video::ActiveModel = final_video_model.into();
     video_active_model.download_status = Set(status.into());
 
     // 对于番剧和多P视频使用Season结构时，保存根文件夹路径而不是Season文件夹路径
