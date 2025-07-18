@@ -536,6 +536,7 @@ pub async fn fetch_video_details(
                             
                             // 检查是否为合作视频，支持submission和收藏夹来源
                             let mut video_model_mut = video_model.clone();
+                            let mut collaboration_video_updated = false;
                             if let Some(staff_list) = staff {
                                 debug!("视频 {} 有staff信息，成员数量: {}", video_model.bvid, staff_list.len());
                                 for staff_member in staff_list.iter() {
@@ -591,6 +592,7 @@ pub async fn fetch_video_details(
                                         video_model_mut.upper_id = submission.upper_id;
                                         video_model_mut.upper_name = submission.upper_name.clone();
                                         video_model_mut.upper_face = String::new(); // 暂时设为空，因为submission没有face信息
+                                        collaboration_video_updated = true;
                                         info!(
                                             "合作视频 {} 归类到订阅UP主「{}」(来源：{})",
                                             video_model_mut.bvid, 
@@ -615,10 +617,15 @@ pub async fn fetch_video_details(
                             video_active_model.single_page = Set(Some(pages_len == 1));
                             video_active_model.tags = Set(Some(serde_json::to_value(tags)?));
                             
-                            // 确保合作视频的upper信息被正确保存到数据库
-                            video_active_model.upper_id = Set(video_model_mut.upper_id);
-                            video_active_model.upper_name = Set(video_model_mut.upper_name.clone());
-                            video_active_model.upper_face = Set(video_model_mut.upper_face.clone());
+                            // 只有合作视频更新时才覆盖upper信息，保持其他视频的API更新不被影响
+                            if collaboration_video_updated {
+                                debug!("合作视频检测到更新，覆盖upper信息到数据库");
+                                video_active_model.upper_id = Set(video_model_mut.upper_id);
+                                video_active_model.upper_name = Set(video_model_mut.upper_name.clone());
+                                video_active_model.upper_face = Set(video_model_mut.upper_face.clone());
+                            } else {
+                                debug!("非合作视频或未发生更新，保持API返回的upper信息");
+                            }
                             
                             video_active_model.save(&txn).await?;
                             txn.commit().await?;
