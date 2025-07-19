@@ -4,6 +4,7 @@ extern crate tracing;
 mod adapter;
 mod api;
 mod aria2_downloader;
+mod auth;
 mod bilibili;
 mod config;
 mod database;

@@ -500,6 +500,32 @@ pub struct UpdateCredentialResponse {
     pub message: String,
 }
 
+// 扫码登录相关响应
+
+// 生成二维码响应
+#[derive(Serialize, ToSchema)]
+pub struct QRGenerateResponse {
+    pub session_id: String,
+    pub qr_url: String,
+    pub expires_in: u64, // 过期时间（秒）
+}
+
+// 轮询二维码状态响应
+#[derive(Serialize, ToSchema)]
+pub struct QRPollResponse {
+    pub status: String, // "pending", "scanned", "confirmed", "expired"
+    pub message: String,
+    pub user_info: Option<QRUserInfo>,
+}
+
+// 扫码登录成功后的用户信息
+#[derive(Serialize, ToSchema)]
+pub struct QRUserInfo {
+    pub user_id: String,
+    pub username: String,
+    pub avatar_url: String,
+}
+
 /// 任务控制响应
 #[derive(Serialize, ToSchema)]
 pub struct TaskControlResponse {

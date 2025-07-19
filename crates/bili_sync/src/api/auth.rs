@@ -11,6 +11,8 @@ use crate::api::wrapper::ApiResponse;
 pub async fn auth(headers: HeaderMap, request: Request, next: Next) -> Result<Response, StatusCode> {
     // 排除不需要认证的路径
     let path = request.uri().path();
+    tracing::debug!("认证中间件: 检查路径 {}", path);
+    
     let excluded_paths = [
         "/api/search",              // 搜索API不需要认证
         "/api/proxy/image",         // 图片代理不需要认证
@@ -19,6 +21,8 @@ pub async fn auth(headers: HeaderMap, request: Request, next: Next) -> Result<Re
         "/api/credential",          // 更新凭证在初始设置时不需要认证
         "/api/videos/stream",       // 视频流API不需要认证（供播放器使用）
         "/api/videos/proxy-stream", // 视频流代理API不需要认证（供在线播放器使用）
+        "/api/auth/qr/generate",    // 生成登录二维码不需要认证
+        "/api/auth/qr/poll",        // 轮询登录状态不需要认证
     ];
 
     let needs_auth = path.starts_with("/api/") && !excluded_paths.iter().any(|&excluded| path.starts_with(excluded));

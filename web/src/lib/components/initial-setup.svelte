@@ -6,6 +6,8 @@
 	import api from '$lib/api';
 	import { toast } from 'svelte-sonner';
 	import * as AlertDialog from './ui/alert-dialog';
+	import * as Tabs from './ui/tabs';
+	import QrLogin from './qr-login.svelte';
 
 	const dispatch = createEventDispatcher();
 
@@ -135,6 +137,20 @@
 			action();
 		}
 	}
+	
+	// 处理扫码登录成功
+	async function handleQrLoginSuccess(userInfo: any) {
+		// 扫码登录成功后，凭证已经在后端保存
+		// 直接触发完成事件
+		toast.success(`欢迎，${userInfo.username}！登录成功`);
+		dispatch('setup-complete');
+	}
+	
+	// 处理扫码登录错误
+	function handleQrLoginError(error: string) {
+		credentialError = error;
+		toast.error('扫码登录失败: ' + error);
+	}
 </script>
 
 <div class="flex min-h-screen items-center justify-center bg-gray-50">
@@ -213,110 +229,131 @@
 						<p class="mt-2 text-sm text-gray-600">设置B站登录凭证以启用视频下载功能</p>
 					</div>
 
-					<div class="space-y-4">
-						<div>
-							<Label for="sessdata" class="text-sm font-medium text-gray-700">SESSDATA *</Label>
-							<Input
-								id="sessdata"
-								type="password"
-								placeholder="请输入SESSDATA"
-								bind:value={sessdata}
-								class="mt-1 w-full"
-								disabled={isSavingCredential}
-							/>
-						</div>
+					<Tabs.Root value="manual" class="w-full">
+						<Tabs.List class="grid w-full grid-cols-2">
+							<Tabs.Trigger value="manual">手动输入凭证</Tabs.Trigger>
+							<Tabs.Trigger value="qr">扫码登录</Tabs.Trigger>
+						</Tabs.List>
+						
+						<Tabs.Content value="manual" class="space-y-4">
+							<div>
+								<Label for="sessdata" class="text-sm font-medium text-gray-700">SESSDATA *</Label>
+								<Input
+									id="sessdata"
+									type="password"
+									placeholder="请输入SESSDATA"
+									bind:value={sessdata}
+									class="mt-1 w-full"
+									disabled={isSavingCredential}
+								/>
+							</div>
 
-						<div>
-							<Label for="bili_jct" class="text-sm font-medium text-gray-700">bili_jct *</Label>
-							<Input
-								id="bili_jct"
-								type="password"
-								placeholder="请输入bili_jct"
-								bind:value={bili_jct}
-								class="mt-1 w-full"
-								disabled={isSavingCredential}
-							/>
-						</div>
+							<div>
+								<Label for="bili_jct" class="text-sm font-medium text-gray-700">bili_jct *</Label>
+								<Input
+									id="bili_jct"
+									type="password"
+									placeholder="请输入bili_jct"
+									bind:value={bili_jct}
+									class="mt-1 w-full"
+									disabled={isSavingCredential}
+								/>
+							</div>
 
-						<div>
-							<Label for="buvid3" class="text-sm font-medium text-gray-700">buvid3 *</Label>
-							<Input
-								id="buvid3"
-								type="text"
-								placeholder="请输入buvid3"
-								bind:value={buvid3}
-								class="mt-1 w-full"
-								disabled={isSavingCredential}
-							/>
-						</div>
+							<div>
+								<Label for="buvid3" class="text-sm font-medium text-gray-700">buvid3 *</Label>
+								<Input
+									id="buvid3"
+									type="text"
+									placeholder="请输入buvid3"
+									bind:value={buvid3}
+									class="mt-1 w-full"
+									disabled={isSavingCredential}
+								/>
+							</div>
 
-						<div>
-							<Label for="dedeuserid" class="text-sm font-medium text-gray-700">DedeUserID *</Label>
-							<Input
-								id="dedeuserid"
-								type="text"
-								placeholder="请输入DedeUserID"
-								bind:value={dedeuserid}
-								class="mt-1 w-full"
-								disabled={isSavingCredential}
-							/>
-						</div>
+							<div>
+								<Label for="dedeuserid" class="text-sm font-medium text-gray-700">DedeUserID *</Label>
+								<Input
+									id="dedeuserid"
+									type="text"
+									placeholder="请输入DedeUserID"
+									bind:value={dedeuserid}
+									class="mt-1 w-full"
+									disabled={isSavingCredential}
+								/>
+							</div>
 
-						<div>
-							<Label for="ac_time_value" class="text-sm font-medium text-gray-700">
-								ac_time_value (可选)
-							</Label>
-							<Input
-								id="ac_time_value"
-								type="password"
-								placeholder="请输入ac_time_value（可选）"
-								bind:value={ac_time_value}
-								class="mt-1 w-full"
-								disabled={isSavingCredential}
-							/>
-						</div>
+							<div>
+								<Label for="ac_time_value" class="text-sm font-medium text-gray-700">
+									ac_time_value (可选)
+								</Label>
+								<Input
+									id="ac_time_value"
+									type="password"
+									placeholder="请输入ac_time_value（可选）"
+									bind:value={ac_time_value}
+									class="mt-1 w-full"
+									disabled={isSavingCredential}
+								/>
+							</div>
 
-						{#if credentialError}
-							<p class="text-sm text-red-600">{credentialError}</p>
-						{/if}
+							{#if credentialError}
+								<p class="text-sm text-red-600">{credentialError}</p>
+							{/if}
 
-						<div class="rounded-md bg-yellow-50 p-4">
-							<div class="flex">
-								<div class="ml-3">
-									<h3 class="text-sm font-medium text-yellow-800">获取凭证信息</h3>
-									<div class="mt-2 text-sm text-yellow-700">
-										<p>请按以下步骤获取B站登录凭证：</p>
-										<ol class="mt-1 list-inside list-decimal space-y-1">
-											<li>在浏览器中登录B站</li>
-											<li>按F12打开开发者工具</li>
-											<li>切换到"网络"或"Network"标签</li>
-											<li>刷新页面，找到任意请求</li>
-											<li>在请求头中找到Cookie字段</li>
-											<li>复制对应的值到上面的输入框中</li>
-										</ol>
-										<Button
-											variant="link"
-											onclick={() => (showHelpDialog = true)}
-											class="mt-2 h-auto p-0 text-yellow-700 underline"
-										>
-											查看详细教程
-										</Button>
+							<div class="rounded-md bg-yellow-50 p-4">
+								<div class="flex">
+									<div class="ml-3">
+										<h3 class="text-sm font-medium text-yellow-800">获取凭证信息</h3>
+										<div class="mt-2 text-sm text-yellow-700">
+											<p>请按以下步骤获取B站登录凭证：</p>
+											<ol class="mt-1 list-inside list-decimal space-y-1">
+												<li>在浏览器中登录B站</li>
+												<li>按F12打开开发者工具</li>
+												<li>切换到"网络"或"Network"标签</li>
+												<li>刷新页面，找到任意请求</li>
+												<li>在请求头中找到Cookie字段</li>
+												<li>复制对应的值到上面的输入框中</li>
+											</ol>
+											<Button
+												variant="link"
+												onclick={() => (showHelpDialog = true)}
+												class="mt-2 h-auto p-0 text-yellow-700 underline"
+											>
+												查看详细教程
+											</Button>
+										</div>
 									</div>
 								</div>
 							</div>
-						</div>
 
-						<div class="flex space-x-3">
-							<Button variant="outline" onclick={goBack} class="flex-1">上一步</Button>
-							<Button onclick={saveCredential} disabled={isSavingCredential} class="flex-1">
-								{isSavingCredential ? '保存中...' : '完成设置'}
+							<div class="flex space-x-3">
+								<Button variant="outline" onclick={goBack} class="flex-1">上一步</Button>
+								<Button onclick={saveCredential} disabled={isSavingCredential} class="flex-1">
+									{isSavingCredential ? '保存中...' : '完成设置'}
+								</Button>
+							</div>
+
+							<Button variant="ghost" onclick={skipCredentialSetup} class="w-full text-gray-500">
+								跳过此步骤（稍后设置）
 							</Button>
-						</div>
-
-						<Button variant="ghost" onclick={skipCredentialSetup} class="w-full text-gray-500">
-							跳过此步骤（稍后设置）
-						</Button>
-					</div>
+						</Tabs.Content>
+						
+						<Tabs.Content value="qr" class="space-y-4">
+							<QrLogin 
+								onLoginSuccess={handleQrLoginSuccess}
+								onLoginError={handleQrLoginError}
+							/>
+							
+							<div class="flex space-x-3">
+								<Button variant="outline" onclick={goBack} class="flex-1">上一步</Button>
+								<Button variant="ghost" onclick={skipCredentialSetup} class="flex-1 text-gray-500">
+									跳过此步骤（稍后设置）
+								</Button>
+							</div>
+						</Tabs.Content>
+					</Tabs.Root>
 				</div>
 			{/if}
 		</div>

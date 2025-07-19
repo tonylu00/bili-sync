@@ -281,3 +281,17 @@ pub struct UpdateCredentialRequest {
     pub dedeuserid: String,
     pub ac_time_value: Option<String>,
 }
+
+// 扫码登录相关请求
+
+// 生成二维码请求
+#[derive(Deserialize, ToSchema)]
+pub struct QRGenerateRequest {
+    pub client_type: Option<String>, // "web" 或 "tv"，默认为 "web"
+}
+
+// 轮询二维码状态请求
+#[derive(Deserialize, IntoParams)]
+pub struct QRPollRequest {
+    pub session_id: String,
+}

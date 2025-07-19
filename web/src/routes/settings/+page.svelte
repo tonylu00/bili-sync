@@ -12,6 +12,8 @@
 		SheetHeader,
 		SheetTitle
 	} from '$lib/components/ui/sheet';
+	import * as Tabs from '$lib/components/ui/tabs';
+	import QrLogin from '$lib/components/qr-login.svelte';
 	import { setBreadcrumb } from '$lib/stores/breadcrumb';
 	import type { ConfigResponse, VideoInfo } from '$lib/types';
 	import {
@@ -661,6 +663,20 @@
 		} finally {
 			credentialSaving = false;
 		}
+	}
+	
+	// 处理扫码登录成功
+	async function handleQrLoginSuccess(userInfo: any) {
+		// 扫码登录成功后，凭证已经在后端保存
+		toast.success(`欢迎，${userInfo.username}！登录成功`);
+		// 重新加载配置以获取最新凭证
+		await loadConfig();
+		openSheet = null; // 关闭抽屉
+	}
+	
+	// 处理扫码登录错误
+	function handleQrLoginError(error: string) {
+		toast.error('扫码登录失败: ' + error);
 	}
 </script>
 
@@ -1827,29 +1843,37 @@
 						<span class="sr-only">关闭</span>
 					</button>
 				</SheetHeader>
-				<form
-					onsubmit={(e) => {
-						e.preventDefault();
-						saveCredential();
-					}}
-					class="flex flex-col {isMobile ? 'h-[calc(90vh-8rem)]' : 'h-[calc(100vh-12rem)]'}"
-				>
-					<div class="flex-1 space-y-6 overflow-y-auto {isMobile ? 'px-4 py-4' : 'px-6 py-6'}">
-						<div class="rounded-lg border border-amber-200 bg-amber-50 p-4">
-							<div class="space-y-2 text-sm text-amber-800">
-								<div class="font-medium">🔐 如何获取B站登录凭证：</div>
-								<ol class="ml-4 list-decimal space-y-1">
-									<li>在浏览器中登录B站</li>
-									<li>按F12打开开发者工具</li>
-									<li>切换到"网络"(Network)标签</li>
-									<li>刷新页面，找到任意一个请求</li>
-									<li>在请求头中找到Cookie字段，复制对应的值</li>
-								</ol>
-								<div class="mt-2 text-xs text-amber-600">
-									💡 提示：SESSDATA、bili_jct、buvid3、DedeUserID是必填项，ac_time_value可选
-								</div>
-							</div>
-						</div>
+				<div class="flex flex-col {isMobile ? 'h-[calc(90vh-8rem)]' : 'h-[calc(100vh-12rem)]'}">
+					<Tabs.Root value="manual" class="flex-1">
+						<Tabs.List class="grid w-full grid-cols-2 {isMobile ? 'mx-4' : 'mx-6'} mt-4" style="width: calc(100% - {isMobile ? '2rem' : '3rem'});">
+							<Tabs.Trigger value="manual">手动输入凭证</Tabs.Trigger>
+							<Tabs.Trigger value="qr">扫码登录</Tabs.Trigger>
+						</Tabs.List>
+						
+						<Tabs.Content value="manual" class="flex-1">
+							<form
+								onsubmit={(e) => {
+									e.preventDefault();
+									saveCredential();
+								}}
+								class="flex flex-col h-full"
+							>
+								<div class="flex-1 space-y-6 overflow-y-auto {isMobile ? 'px-4 py-4' : 'px-6 py-6'}">
+									<div class="rounded-lg border border-amber-200 bg-amber-50 p-4">
+										<div class="space-y-2 text-sm text-amber-800">
+											<div class="font-medium">🔐 如何获取B站登录凭证：</div>
+											<ol class="ml-4 list-decimal space-y-1">
+												<li>在浏览器中登录B站</li>
+												<li>按F12打开开发者工具</li>
+												<li>切换到"网络"(Network)标签</li>
+												<li>刷新页面，找到任意一个请求</li>
+												<li>在请求头中找到Cookie字段，复制对应的值</li>
+											</ol>
+											<div class="mt-2 text-xs text-amber-600">
+												💡 提示：SESSDATA、bili_jct、buvid3、DedeUserID是必填项，ac_time_value可选
+											</div>
+										</div>
+									</div>
 
 						<div class="grid grid-cols-1 gap-4 {isMobile ? 'sm:grid-cols-1' : 'md:grid-cols-2'}">
 							<div class="space-y-2">
@@ -1904,13 +1928,25 @@
 								</div>
 							</div>
 						</div>
-					</div>
-					<SheetFooter class={isMobile ? 'pb-safe border-t px-4 pt-3' : 'pb-safe border-t pt-4'}>
-						<Button type="submit" disabled={credentialSaving} class="w-full">
-							{credentialSaving ? '保存中...' : '保存凭证'}
-						</Button>
-					</SheetFooter>
-				</form>
+								</div>
+								<SheetFooter class={isMobile ? 'pb-safe border-t px-4 pt-3' : 'pb-safe border-t pt-4'}>
+									<Button type="submit" disabled={credentialSaving} class="w-full">
+										{credentialSaving ? '保存中...' : '保存凭证'}
+									</Button>
+								</SheetFooter>
+							</form>
+						</Tabs.Content>
+						
+						<Tabs.Content value="qr" class="flex-1 flex items-center justify-center {isMobile ? 'px-4 py-4' : 'px-6 py-6'}">
+							<div class="w-full max-w-md">
+								<QrLogin 
+									onLoginSuccess={handleQrLoginSuccess}
+									onLoginError={handleQrLoginError}
+								/>
+							</div>
+						</Tabs.Content>
+					</Tabs.Root>
+				</div>
 			</div>
 		</div>
 	</SheetContent>

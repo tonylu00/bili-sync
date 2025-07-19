@@ -25,6 +25,7 @@ use crate::api::request::{
     AddVideoSourceRequest, BatchUpdateConfigRequest, ConfigHistoryRequest, ResetSpecificTasksRequest,
     ResetVideoSourcePathRequest, SetupAuthTokenRequest, SubmissionVideosRequest, UpdateConfigItemRequest,
     UpdateConfigRequest, UpdateCredentialRequest, UpdateVideoStatusRequest, VideosRequest,
+    QRGenerateRequest, QRPollRequest,
 };
 use crate::api::response::{
     AddVideoSourceResponse, BangumiSeasonInfo, ConfigChangeInfo, ConfigHistoryResponse, ConfigItemResponse,
@@ -32,10 +33,14 @@ use crate::api::response::{
     HotReloadStatusResponse, InitialSetupCheckResponse, PageInfo, ResetAllVideosResponse, ResetVideoResponse,
     ResetVideoSourcePathResponse, SetupAuthTokenResponse, SubmissionVideosResponse, UpdateConfigResponse,
     UpdateCredentialResponse, UpdateVideoStatusResponse, VideoInfo, VideoResponse, VideoSource, VideoSourcesResponse,
-    VideosResponse,
+    VideosResponse, QRGenerateResponse, QRPollResponse,
 };
 use crate::api::wrapper::{ApiError, ApiResponse};
 use crate::utils::status::{PageStatus, VideoStatus};
+
+// 全局静态的扫码登录服务实例
+use once_cell::sync::Lazy;
+static QR_SERVICE: Lazy<crate::auth::QRLoginService> = Lazy::new(crate::auth::QRLoginService::new);
 
 /// 标准化文件路径格式
 fn normalize_file_path(path: &str) -> String {
@@ -99,7 +104,7 @@ mod rename_tests {
 
 #[derive(OpenApi)]
 #[openapi(
-    paths(get_video_sources, get_videos, get_video, reset_video, reset_all_videos, reset_specific_tasks, update_video_status, add_video_source, update_video_source_enabled, update_video_source_scan_deleted, reset_video_source_path, delete_video_source, reload_config, get_config, update_config, get_bangumi_seasons, search_bilibili, get_user_favorites, get_user_collections, get_user_followings, get_subscribed_collections, get_submission_videos, get_logs, get_queue_status, proxy_image, get_config_item, get_config_history, validate_config, get_hot_reload_status, check_initial_setup, setup_auth_token, update_credential, pause_scanning_endpoint, resume_scanning_endpoint, get_task_control_status, get_video_play_info, proxy_video_stream, validate_favorite, get_user_favorites_by_uid),
+    paths(get_video_sources, get_videos, get_video, reset_video, reset_all_videos, reset_specific_tasks, update_video_status, add_video_source, update_video_source_enabled, update_video_source_scan_deleted, reset_video_source_path, delete_video_source, reload_config, get_config, update_config, get_bangumi_seasons, search_bilibili, get_user_favorites, get_user_collections, get_user_followings, get_subscribed_collections, get_submission_videos, get_logs, get_queue_status, proxy_image, get_config_item, get_config_history, validate_config, get_hot_reload_status, check_initial_setup, setup_auth_token, update_credential, generate_qr_code, poll_qr_status, pause_scanning_endpoint, resume_scanning_endpoint, get_task_control_status, get_video_play_info, proxy_video_stream, validate_favorite, get_user_favorites_by_uid),
     modifiers(&OpenAPIAuth),
     security(
         ("Token" = []),
@@ -6710,6 +6715,143 @@ pub async fn update_credential(
 
     Ok(ApiResponse::ok(response))
 }
+
+/// 生成扫码登录二维码
+#[utoipa::path(
+    post,
+    path = "/api/auth/qr/generate",
+    request_body = QRGenerateRequest,
+    responses(
+        (status = 200, description = "生成二维码成功", body = QRGenerateResponse),
+        (status = 500, description = "服务器内部错误", body = String)
+    )
+)]
+pub async fn generate_qr_code(
+    axum::Json(_params): axum::Json<crate::api::request::QRGenerateRequest>,
+) -> Result<ApiResponse<crate::api::response::QRGenerateResponse>, ApiError> {
+    info!("收到生成二维码请求");
+    
+    // 生成二维码
+    let (session_id, qr_info) = match QR_SERVICE.generate_qr_code().await {
+        Ok(result) => {
+            info!("生成二维码成功: session_id={}", result.0);
+            result
+        }
+        Err(e) => {
+            error!("生成二维码失败: {}", e);
+            return Err(ApiError::from(anyhow!("生成二维码失败: {}", e)));
+        }
+    };
+    
+    let response = crate::api::response::QRGenerateResponse {
+        session_id,
+        qr_url: qr_info.url,
+        expires_in: 180, // 3分钟
+    };
+    
+    Ok(ApiResponse::ok(response))
+}
+
+/// 轮询扫码登录状态
+#[utoipa::path(
+    get,
+    path = "/api/auth/qr/poll",
+    params(QRPollRequest),
+    responses(
+        (status = 200, description = "获取状态成功", body = QRPollResponse),
+        (status = 400, description = "请求参数错误", body = String),
+        (status = 500, description = "服务器内部错误", body = String)
+    )
+)]
+pub async fn poll_qr_status(
+    Extension(db): Extension<Arc<DatabaseConnection>>,
+    Query(params): Query<crate::api::request::QRPollRequest>,
+) -> Result<ApiResponse<crate::api::response::QRPollResponse>, ApiError> {
+    info!("收到轮询请求: session_id={}", params.session_id);
+    
+    // 轮询登录状态
+    let status = match QR_SERVICE.poll_login_status(&params.session_id).await {
+        Ok(s) => {
+            info!("轮询成功: session_id={}, status={:?}", params.session_id, s);
+            s
+        }
+        Err(e) => {
+            error!("轮询失败: session_id={}, error={}", params.session_id, e);
+            return Err(ApiError::from(anyhow!("轮询状态失败: {}", e)));
+        }
+    };
+    
+    use crate::auth::LoginStatus;
+    let response = match status {
+        LoginStatus::Pending => crate::api::response::QRPollResponse {
+            status: "pending".to_string(),
+            message: "等待扫码".to_string(),
+            user_info: None,
+        },
+        LoginStatus::Scanned => crate::api::response::QRPollResponse {
+            status: "scanned".to_string(),
+            message: "已扫码，请在手机上确认".to_string(),
+            user_info: None,
+        },
+        LoginStatus::Confirmed(login_result) => {
+            // 保存凭证到配置系统
+            let config = crate::config::reload_config();
+            config.credential.store(Some(std::sync::Arc::new(login_result.credential.clone())));
+            
+            // 检查是否正在扫描，如果是则通过任务队列处理
+            if crate::task::is_scanning() {
+                // 将配置更新任务加入队列
+                use uuid::Uuid;
+                let reload_task = crate::task::ReloadConfigTask {
+                    task_id: Uuid::new_v4().to_string(),
+                };
+                crate::task::enqueue_reload_task(reload_task, &db).await
+                    .map_err(|e| ApiError::from(anyhow!("保存凭证失败: {}", e)))?;
+                info!("检测到正在扫描，凭证保存任务已加入队列");
+            } else {
+                // 直接保存配置到数据库
+                use crate::config::ConfigManager;
+                let manager = ConfigManager::new(db.as_ref().clone());
+                if let Err(e) = manager.save_config(&config).await {
+                    error!("保存凭证到数据库失败: {}", e);
+                    return Err(ApiError::from(anyhow!("保存凭证失败: {}", e)));
+                } else {
+                    info!("扫码登录凭证已保存到数据库");
+                }
+
+                // 重新加载全局配置包（从数据库）
+                if let Err(e) = crate::config::reload_config_bundle().await {
+                    warn!("重新加载配置包失败: {}", e);
+                    // 回退到传统的重新加载方式
+                    crate::config::reload_config();
+                }
+            }
+            
+            crate::api::response::QRPollResponse {
+                status: "confirmed".to_string(),
+                message: "登录成功".to_string(),
+                user_info: Some(crate::api::response::QRUserInfo {
+                    user_id: login_result.user_info.user_id,
+                    username: login_result.user_info.username,
+                    avatar_url: login_result.user_info.avatar_url,
+                }),
+            }
+        },
+        LoginStatus::Expired => crate::api::response::QRPollResponse {
+            status: "expired".to_string(),
+            message: "二维码已过期".to_string(),
+            user_info: None,
+        },
+        LoginStatus::Error(msg) => crate::api::response::QRPollResponse {
+            status: "error".to_string(),
+            message: msg,
+            user_info: None,
+        },
+    };
+    
+    Ok(ApiResponse::ok(response))
+}
+
 
 /// 暂停扫描功能
 #[utoipa::path(

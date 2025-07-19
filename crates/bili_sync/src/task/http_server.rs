@@ -53,6 +53,8 @@ use crate::api::handler::{
     update_config,
     update_config_item_internal,
     update_credential,
+    generate_qr_code,
+    poll_qr_status,
     update_video_source_enabled,
     update_video_source_scan_deleted,
     update_video_status,
@@ -130,6 +132,9 @@ pub async fn http_server(database_connection: Arc<DatabaseConnection>) -> Result
         .route("/api/setup/check", get(check_initial_setup))
         .route("/api/setup/auth-token", post(setup_auth_token))
         .route("/api/credential", put(update_credential))
+        // 扫码登录API路由
+        .route("/api/auth/qr/generate", post(generate_qr_code))
+        .route("/api/auth/qr/poll", get(poll_qr_status))
         .route("/api/bangumi/seasons/{season_id}", get(get_bangumi_seasons))
         .route("/api/search", get(search_bilibili))
         .route("/api/user/favorites", get(get_user_favorites))
