@@ -10,6 +10,10 @@
   
   export let onLoginSuccess: (userInfo: any) => void = () => {};
   export let onLoginError: (error: string) => void = () => {};
+  export let onLogout: () => void = () => {};
+  
+  // 目前未使用onLogout，但保留以便将来扩展
+  $: onLogout;
   
   let qrCodeDataUrl = '';
   let status: 'idle' | 'loading' | 'waiting' | 'scanned' | 'expired' | 'error' | 'success' = 'idle';
@@ -17,6 +21,7 @@
   let sessionId = '';
   let pollInterval: number | null = null;
   let isGenerating = false;
+	let autoRegenerate = true; // 控制是否自动重新生成二维码
   
   interface QRResponse {
     session_id: string;
@@ -151,6 +156,14 @@
             stopPolling();
             toast.success('登录成功！');
             onLoginSuccess(data.user_info);
+            // 3秒后重置状态，如果设置了自动重新生成
+            if (autoRegenerate) {
+              setTimeout(() => {
+                if (status === 'success') {
+                  resetQRCode();
+                }
+              }, 3000);
+            }
             break;
             
           case 'expired':
@@ -189,7 +202,16 @@
     generateQRCode();
   }
   
-  onMount(() => {
+  onMount(async () => {
+    // 在设置页面中，不自动重新生成二维码
+    // 让用户手动点击生成，避免干扰
+    if (typeof window !== 'undefined' && window.location.pathname === '/settings') {
+      autoRegenerate = false;
+      // 在设置页面，只有在idle状态且用户没有凭证时才自动生成
+      // 否则让用户手动生成
+      return;
+    }
+    // 其他页面（如初始设置）正常生成二维码
     if (status === 'idle') {
       generateQRCode();
     }
@@ -207,7 +229,14 @@
   </CardHeader>
   
   <CardContent class="flex flex-col items-center space-y-4">
-    {#if status === 'loading'}
+    {#if status === 'idle' && !autoRegenerate}
+      <div class="w-64 h-64 flex flex-col items-center justify-center space-y-4">
+        <div class="text-6xl text-gray-400">📱</div>
+        <p class="text-sm text-gray-600 text-center">点击下方按钮生成登录二维码</p>
+        <Button onclick={generateQRCode} variant="default">生成二维码</Button>
+      </div>
+      
+    {:else if status === 'loading'}
       <div class="w-64 h-64 flex items-center justify-center">
         <Skeleton class="w-full h-full" />
       </div>
@@ -217,20 +246,23 @@
       <div class="w-64 h-64 flex flex-col items-center justify-center space-y-4">
         <div class="text-6xl">⚠️</div>
         <p class="text-sm text-red-600 text-center">{statusMessage}</p>
-        <Button on:click={resetQRCode} variant="default">重新生成</Button>
+        <Button onclick={resetQRCode} variant="default">重新生成</Button>
       </div>
       
     {:else if status === 'expired'}
       <div class="w-64 h-64 flex flex-col items-center justify-center space-y-4">
         <div class="text-6xl">⏱️</div>
         <p class="text-sm text-yellow-600 text-center">{statusMessage}</p>
-        <Button on:click={resetQRCode} variant="default">重新生成</Button>
+        <Button onclick={resetQRCode} variant="default">重新生成</Button>
       </div>
       
     {:else if status === 'success'}
       <div class="w-64 h-64 flex flex-col items-center justify-center space-y-4">
         <div class="text-6xl text-green-500">✓</div>
         <p class="text-sm text-green-600 text-center font-medium">{statusMessage}</p>
+        {#if !autoRegenerate}
+          <Button onclick={resetQRCode} variant="default" size="sm">切换账号</Button>
+        {/if}
       </div>
       
     {:else if qrCodeDataUrl}

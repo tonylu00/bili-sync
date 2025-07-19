@@ -33,7 +33,7 @@ use crate::api::response::{
     HotReloadStatusResponse, InitialSetupCheckResponse, PageInfo, ResetAllVideosResponse, ResetVideoResponse,
     ResetVideoSourcePathResponse, SetupAuthTokenResponse, SubmissionVideosResponse, UpdateConfigResponse,
     UpdateCredentialResponse, UpdateVideoStatusResponse, VideoInfo, VideoResponse, VideoSource, VideoSourcesResponse,
-    VideosResponse, QRGenerateResponse, QRPollResponse,
+    VideosResponse, QRGenerateResponse, QRPollResponse, QRUserInfo,
 };
 use crate::api::wrapper::{ApiError, ApiResponse};
 use crate::utils::status::{PageStatus, VideoStatus};
@@ -104,7 +104,7 @@ mod rename_tests {
 
 #[derive(OpenApi)]
 #[openapi(
-    paths(get_video_sources, get_videos, get_video, reset_video, reset_all_videos, reset_specific_tasks, update_video_status, add_video_source, update_video_source_enabled, update_video_source_scan_deleted, reset_video_source_path, delete_video_source, reload_config, get_config, update_config, get_bangumi_seasons, search_bilibili, get_user_favorites, get_user_collections, get_user_followings, get_subscribed_collections, get_submission_videos, get_logs, get_queue_status, proxy_image, get_config_item, get_config_history, validate_config, get_hot_reload_status, check_initial_setup, setup_auth_token, update_credential, generate_qr_code, poll_qr_status, pause_scanning_endpoint, resume_scanning_endpoint, get_task_control_status, get_video_play_info, proxy_video_stream, validate_favorite, get_user_favorites_by_uid),
+    paths(get_video_sources, get_videos, get_video, reset_video, reset_all_videos, reset_specific_tasks, update_video_status, add_video_source, update_video_source_enabled, update_video_source_scan_deleted, reset_video_source_path, delete_video_source, reload_config, get_config, update_config, get_bangumi_seasons, search_bilibili, get_user_favorites, get_user_collections, get_user_followings, get_subscribed_collections, get_submission_videos, get_logs, get_queue_status, proxy_image, get_config_item, get_config_history, validate_config, get_hot_reload_status, check_initial_setup, setup_auth_token, update_credential, generate_qr_code, poll_qr_status, get_current_user, pause_scanning_endpoint, resume_scanning_endpoint, get_task_control_status, get_video_play_info, proxy_video_stream, validate_favorite, get_user_favorites_by_uid),
     modifiers(&OpenAPIAuth),
     security(
         ("Token" = []),
@@ -6852,6 +6852,62 @@ pub async fn poll_qr_status(
     Ok(ApiResponse::ok(response))
 }
 
+/// 获取当前用户信息
+#[utoipa::path(
+    get,
+    path = "/api/auth/current-user",
+    responses(
+        (status = 200, description = "获取成功", body = QRUserInfo),
+        (status = 401, description = "未登录或凭证无效"),
+        (status = 500, description = "服务器内部错误")
+    )
+)]
+pub async fn get_current_user() -> Result<ApiResponse<crate::api::response::QRUserInfo>, ApiError> {
+    // 获取当前凭证
+    let config = crate::config::with_config(|bundle| bundle.config.clone());
+    let credential = config.credential.load();
+    
+    let cred = match credential.as_deref() {
+        Some(cred) => cred,
+        None => return Err(anyhow::anyhow!("未找到有效凭证").into()),
+    };
+    
+    // 构建cookie字符串
+    let cookie_str = format!(
+        "SESSDATA={}; bili_jct={}; buvid3={}; DedeUserID={}",
+        cred.sessdata, cred.bili_jct, cred.buvid3, cred.dedeuserid
+    );
+    
+    // 创建 HTTP 客户端
+    let client = reqwest::Client::new();
+    
+    // 调用B站API获取用户信息
+    let response = client
+        .get("https://api.bilibili.com/x/web-interface/nav")
+        .header("Cookie", cookie_str)
+        .header("Referer", "https://www.bilibili.com")
+        .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
+        .send()
+        .await
+        .map_err(|e| anyhow::anyhow!("请求B站API失败: {}", e))?;
+        
+    let data: serde_json::Value = response.json().await
+        .map_err(|e| anyhow::anyhow!("解析响应失败: {}", e))?;
+    
+    if data["code"].as_i64() != Some(0) {
+        return Err(anyhow::anyhow!(
+            "获取用户信息失败: {}", 
+            data["message"].as_str().unwrap_or("Unknown error")
+        ).into());
+    }
+    
+    let user_data = &data["data"];
+    Ok(ApiResponse::ok(crate::api::response::QRUserInfo {
+        user_id: user_data["mid"].as_i64().unwrap_or(0).to_string(),
+        username: user_data["uname"].as_str().unwrap_or("").to_string(),
+        avatar_url: user_data["face"].as_str().unwrap_or("").to_string(),
+    }))
+}
 
 /// 暂停扫描功能
 #[utoipa::path(

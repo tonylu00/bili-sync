@@ -151,6 +151,12 @@
 		credentialError = error;
 		toast.error('扫码登录失败: ' + error);
 	}
+	
+	// 处理退出登录
+	function handleLogout() {
+		// 在初始设置页面，用户可以切换账号
+		toast.info('请扫码登录新账号');
+	}
 </script>
 
 <div class="flex min-h-screen items-center justify-center bg-gray-50">
@@ -344,6 +350,7 @@
 							<QrLogin 
 								onLoginSuccess={handleQrLoginSuccess}
 								onLoginError={handleQrLoginError}
+								onLogout={handleLogout}
 							/>
 							
 							<div class="flex space-x-3">

@@ -4,6 +4,7 @@
 	import { Card, CardDescription, CardHeader, CardTitle } from '$lib/components/ui/card';
 	import { Input } from '$lib/components/ui/input';
 	import { Label } from '$lib/components/ui/label';
+	import { Badge } from '$lib/components/ui/badge';
 	import {
 		Sheet,
 		SheetContent,
@@ -162,6 +163,7 @@
 	let dedeUserId = '';
 	let acTimeValue = '';
 	let credentialSaving = false;
+	let currentUser: { user_id: string; username: string; avatar_url: string } | null = null;
 
 	// UP主投稿风控配置
 	let largeSubmissionThreshold = 100;
@@ -338,6 +340,8 @@
 
 		await loadConfig();
 		await loadRandomCovers();
+		// 检查当前用户信息
+		await checkCurrentUser();
 	});
 
 	async function loadRandomCovers() {
@@ -669,6 +673,8 @@
 	async function handleQrLoginSuccess(userInfo: any) {
 		// 扫码登录成功后，凭证已经在后端保存
 		toast.success(`欢迎，${userInfo.username}！登录成功`);
+		// 更新当前用户信息
+		currentUser = userInfo;
 		// 重新加载配置以获取最新凭证
 		await loadConfig();
 		openSheet = null; // 关闭抽屉
@@ -677,6 +683,30 @@
 	// 处理扫码登录错误
 	function handleQrLoginError(error: string) {
 		toast.error('扫码登录失败: ' + error);
+	}
+	
+	// 处理退出登录
+	function handleLogout() {
+		// 可以在这里清除凭证，但通常用户只是想切换账号
+		toast.info('请扫码登录新账号');
+	}
+	
+	// 检查当前用户信息
+	async function checkCurrentUser() {
+		try {
+			const response = await fetch('/api/auth/current-user');
+			if (response.ok) {
+				const result = await response.json();
+				if (result.status_code === 200 && result.data) {
+					currentUser = result.data;
+				}
+			} else {
+				currentUser = null;
+			}
+		} catch (error) {
+			console.error('检查用户信息失败:', error);
+			currentUser = null;
+		}
 	}
 </script>
 
@@ -1824,8 +1854,37 @@
 					: 'bg-card/95 w-full max-w-4xl rounded-lg border shadow-2xl backdrop-blur-sm'} relative overflow-hidden"
 			>
 				<SheetHeader class="{isMobile ? 'border-b p-4' : 'border-b p-6'} relative">
-					<SheetTitle>B站凭证设置</SheetTitle>
-					<SheetDescription>配置B站登录凭证信息</SheetDescription>
+					<div class="pr-8">
+						<SheetTitle>B站凭证设置</SheetTitle>
+						<SheetDescription>配置B站登录凭证信息</SheetDescription>
+						{#if currentUser}
+							<div class="mt-4 rounded-lg border border-green-200 bg-green-50 p-3">
+								<div class="flex items-center space-x-3">
+									<div class="relative h-10 w-10 overflow-hidden rounded-full bg-muted">
+										{#if currentUser.avatar_url}
+											<img 
+												src={getProxiedImageUrl(currentUser.avatar_url)} 
+												alt={currentUser.username}
+												class="h-full w-full object-cover"
+												loading="lazy"
+											/>
+										{:else}
+											<div class="flex h-full w-full items-center justify-center bg-muted text-xs font-semibold">
+												{currentUser.username.slice(0, 2).toUpperCase()}
+											</div>
+										{/if}
+									</div>
+									<div class="flex-1">
+										<div class="text-sm font-semibold text-green-800">当前登录：{currentUser.username}</div>
+										<div class="text-xs text-green-600">UID: {currentUser.user_id}</div>
+									</div>
+									<Badge variant="default" class="bg-green-500">
+										已登录
+									</Badge>
+								</div>
+							</div>
+						{/if}
+					</div>
 					<!-- 自定义关闭按钮 -->
 					<button
 						onclick={() => (openSheet = null)}
@@ -1859,6 +1918,7 @@
 								class="flex flex-col h-full"
 							>
 								<div class="flex-1 space-y-6 overflow-y-auto {isMobile ? 'px-4 py-4' : 'px-6 py-6'}">
+									
 									<div class="rounded-lg border border-amber-200 bg-amber-50 p-4">
 										<div class="space-y-2 text-sm text-amber-800">
 											<div class="font-medium">🔐 如何获取B站登录凭证：</div>
@@ -1937,12 +1997,15 @@
 							</form>
 						</Tabs.Content>
 						
-						<Tabs.Content value="qr" class="flex-1 flex items-center justify-center {isMobile ? 'px-4 py-4' : 'px-6 py-6'}">
-							<div class="w-full max-w-md">
-								<QrLogin 
-									onLoginSuccess={handleQrLoginSuccess}
-									onLoginError={handleQrLoginError}
-								/>
+						<Tabs.Content value="qr" class="flex-1">
+							<div class="flex flex-col h-full {isMobile ? 'px-4 py-4' : 'px-6 py-6'}">
+								<div class="w-full max-w-md mx-auto">
+									<QrLogin 
+										onLoginSuccess={handleQrLoginSuccess}
+										onLoginError={handleQrLoginError}
+										onLogout={handleLogout}
+									/>
+								</div>
 							</div>
 						</Tabs.Content>
 					</Tabs.Root>
