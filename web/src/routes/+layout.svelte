@@ -1,11 +1,8 @@
 <script lang="ts">
 	import '../app.css';
 	import AppSidebar from '$lib/components/app-sidebar.svelte';
-	import SearchBar from '$lib/components/search-bar.svelte';
 	import * as Sidebar from '$lib/components/ui/sidebar/index.js';
-	import { Button } from '$lib/components/ui/button';
 	import { goto } from '$app/navigation';
-	import { appStateStore, setQuery, ToQuery } from '$lib/stores/filter';
 	import { Toaster } from '$lib/components/ui/sonner/index.js';
 	import { breadcrumbStore } from '$lib/stores/breadcrumb';
 	import BreadCrumb from '$lib/components/bread-crumb.svelte';
@@ -14,17 +11,11 @@
 	import api from '$lib/api';
 	import { toast } from 'svelte-sonner';
 	import type { ApiError } from '$lib/types';
-	import { page } from '$app/stores';
-	import { Plus, Settings, LogOut } from '@lucide/svelte';
+	import { LogOut } from '@lucide/svelte';
 	import ResponsiveButton from '$lib/components/responsive-button.svelte';
 
 	let dataLoaded = false;
 	let isAuthenticated = false;
-
-	async function handleSearch(query: string) {
-		setQuery(query);
-		goto(`/${ToQuery($appStateStore)}`);
-	}
 
 	// 退出登录
 	function handleLogout() {
@@ -76,10 +67,6 @@
 		});
 	});
 
-	// 从全局状态获取当前查询值
-	$: searchValue = $appStateStore.query;
-	// 判断是否在主页
-	$: isHomePage = $page.route.id === '/';
 </script>
 
 <Toaster />
@@ -99,27 +86,9 @@
 					<div class="flex w-full items-center gap-2 px-4 py-2 sm:gap-4 sm:px-6">
 						<Sidebar.Trigger class="shrink-0" data-sidebar="trigger" />
 						<div class="min-w-0 flex-1">
-							<SearchBar onSearch={handleSearch} value={searchValue} />
+							<!-- 保留空间保持布局一致性 -->
 						</div>
 						<div class="flex items-center gap-1 sm:gap-2">
-							{#if isHomePage}
-								<ResponsiveButton
-									size="sm"
-									variant="outline"
-									onclick={() => goto('/add-source')}
-									icon={Plus}
-									text="添加视频源"
-									title="添加视频源"
-								/>
-							{/if}
-							<ResponsiveButton
-								size="sm"
-								variant="outline"
-								onclick={() => goto('/settings')}
-								icon={Settings}
-								text="配置"
-								title="配置"
-							/>
 							<ResponsiveButton
 								size="sm"
 								variant="outline"
