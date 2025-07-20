@@ -103,8 +103,13 @@
 	function handleSetupComplete() {
 		needsInitialSetup = false;
 		checkingSetup = true;
-		// 重新检查设置状态
-		checkInitialSetup();
+		// 重新检查设置状态并触发登录成功事件
+		checkInitialSetup().then(() => {
+			if (isAuthenticated) {
+				// 触发全局登录成功事件，通知layout.svelte更新状态
+				window.dispatchEvent(new CustomEvent('login-success'));
+			}
+		});
 	}
 
 	// 退出登录

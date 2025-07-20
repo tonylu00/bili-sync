@@ -287,6 +287,7 @@ pub struct UpdateCredentialRequest {
 // 生成二维码请求
 #[derive(Deserialize, ToSchema)]
 pub struct QRGenerateRequest {
+    #[allow(dead_code)]
     pub client_type: Option<String>, // "web" 或 "tv"，默认为 "web"
 }
 

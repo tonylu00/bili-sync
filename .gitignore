@@ -123,3 +123,4 @@ config_migration_fix.md
 .claude/settings.local.json
 开发进度-TODO清单.md
 cursor_.md
+*.py

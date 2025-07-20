@@ -63,6 +63,7 @@ impl IntoResponse for ApiError {
             match inner_error {
                 InnerApiError::NotFound(_) => return ApiResponse::not_found(self.0.to_string()).into_response(),
                 InnerApiError::BadRequest(_) => return ApiResponse::bad_request(self.0.to_string()).into_response(),
+                InnerApiError::DatabaseError(_) => return ApiResponse::internal_server_error(self.0.to_string()).into_response(),
             }
         }
         ApiResponse::internal_server_error(self.0.to_string()).into_response()
