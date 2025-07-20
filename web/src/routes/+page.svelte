@@ -1,101 +1,67 @@
 <script lang="ts">
-	import VideoCard from '$lib/components/video-card.svelte';
-	import FilterBadge from '$lib/components/filter-badge.svelte';
-	import Pagination from '$lib/components/pagination.svelte';
+	import { onMount, onDestroy } from 'svelte';
+	import { Card, CardContent, CardHeader, CardTitle } from '$lib/components/ui/card/index.js';
+	import { Progress } from '$lib/components/ui/progress/index.js';
+	import { Badge } from '$lib/components/ui/badge/index.js';
+	import { Button } from '$lib/components/ui/button/index.js';
+	import * as Chart from '$lib/components/ui/chart/index.js';
+	import MyChartTooltip from '$lib/components/custom/my-chart-tooltip.svelte';
+	import { curveNatural } from 'd3-shape';
+	import { BarChart, AreaChart } from 'layerchart';
+	import { setBreadcrumb } from '$lib/stores/breadcrumb';
+	import { toast } from 'svelte-sonner';
+	import api from '$lib/api';
+	import { wsManager } from '$lib/ws';
+	import type { DashBoardResponse, SysInfo, ApiError, TaskStatus, TaskControlStatusResponse } from '$lib/types';
 	import AuthLogin from '$lib/components/auth-login.svelte';
 	import InitialSetup from '$lib/components/initial-setup.svelte';
-	import api from '$lib/api';
-	import type {
-		VideosResponse,
-		VideoSourcesResponse,
-		ApiError,
-		TaskControlStatusResponse
-	} from '$lib/types';
-	import { onMount } from 'svelte';
-	import { page } from '$app/stores';
-	import { goto } from '$app/navigation';
-	import { setVideoSources, videoSourceStore } from '$lib/stores/video-source';
-	import { VIDEO_SOURCES } from '$lib/consts';
-	import { setBreadcrumb } from '$lib/stores/breadcrumb';
-	import {
-		appStateStore,
-		clearVideoSourceFilter,
-		setQuery,
-		setVideoSourceFilter,
-		ToQuery
-	} from '$lib/stores/filter';
-	import { toast } from 'svelte-sonner';
-	import { Button } from '$lib/components/ui/button/index.js';
-	import * as AlertDialog from '$lib/components/ui/alert-dialog/index.js';
-	import { Label } from '$lib/components/ui/label/index.js';
-	import RotateCcwIcon from '@lucide/svelte/icons/rotate-ccw';
-	import PauseIcon from '@lucide/svelte/icons/pause';
+	
+	// 图标导入
+	import CloudDownloadIcon from '@lucide/svelte/icons/cloud-download';
+	import DatabaseIcon from '@lucide/svelte/icons/database';
+	import HeartIcon from '@lucide/svelte/icons/heart';
+	import FolderIcon from '@lucide/svelte/icons/folder';
+	import UserIcon from '@lucide/svelte/icons/user';
+	import ClockIcon from '@lucide/svelte/icons/clock';
+	import VideoIcon from '@lucide/svelte/icons/video';
+	import HardDriveIcon from '@lucide/svelte/icons/hard-drive';
+	import CpuIcon from '@lucide/svelte/icons/cpu';
+	import MemoryStickIcon from '@lucide/svelte/icons/memory-stick';
 	import PlayIcon from '@lucide/svelte/icons/play';
-	import FilterIcon from '@lucide/svelte/icons/filter';
-	import { onDestroy } from 'svelte';
+	import CheckCircleIcon from '@lucide/svelte/icons/check-circle';
+	import CalendarIcon from '@lucide/svelte/icons/calendar';
+	import PauseIcon from '@lucide/svelte/icons/pause';
+	import SettingsIcon from '@lucide/svelte/icons/settings';
 
 	// 认证状态
 	let isAuthenticated = false;
 	let needsInitialSetup = false;
 	let checkingSetup = true;
-	let videosData: VideosResponse | null = null;
-	let loading = false;
-	let currentPage = 0;
-	let pageSize = 20; // 改为可变的
-	let currentFilter: { type: string; id: string } | null = null;
-	let lastSearch: string | null = null;
 
-	// 任务控制状态
+	let dashboardData: DashBoardResponse | null = null;
+	let sysInfo: SysInfo | null = null;
+	let taskStatus: TaskStatus | null = null;
 	let taskControlStatus: TaskControlStatusResponse | null = null;
+	let loading = false;
 	let loadingTaskControl = false;
-	let statusUpdateInterval: ReturnType<typeof setInterval> | null = null;
+	let unsubscribeSysInfo: (() => void) | null = null;
+	let unsubscribeTasks: (() => void) | null = null;
 
-	// 失败任务筛选状态
-	let showFailedOnly = false;
-
-	// 响应式变量
-	let innerWidth = 0;
-	let innerHeight = 0;
-
-	// 动态计算每页数量
-	function calculateOptimalPageSize(): number {
-		if (innerWidth === 0 || innerHeight === 0) return 20;
-
-		// 卡片最小宽度260px，间距16px
-		const cardMinWidth = 260 + 16;
-		const availableWidth = innerWidth - 300; // 减去侧边栏宽度
-		const cardsPerRow = Math.floor(availableWidth / cardMinWidth);
-
-		// 卡片高度约200px，间距16px
-		const cardHeight = 200 + 16;
-		const availableHeight = innerHeight - 200; // 减去头部和分页区域
-		const rowsPerPage = Math.floor(availableHeight / cardHeight);
-
-		const optimalSize = Math.max(cardsPerRow * rowsPerPage, 12); // 最少12个
-		return Math.min(optimalSize, 100); // 最多100个
+	function formatBytes(bytes: number): string {
+		if (bytes === 0) return '0 B';
+		const k = 1024;
+		const sizes = ['B', 'KB', 'MB', 'GB', 'TB'];
+		const i = Math.floor(Math.log(bytes) / Math.log(k));
+		return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
 	}
 
-	// 自动调整页面大小
-	let autoPageSize = true;
-
-	// 批量重置状态
-	let resetAllDialogOpen = false;
-	let resettingAll = false;
-
-	// 批量重置选项
-	let resetOptions = {
-		all: true, // 重置所有失败任务
-		videoCover: false, // 重置视频封面
-		videoContent: false, // 重置视频内容
-		videoInfo: false, // 重置视频信息
-		videoDanmaku: false, // 重置视频弹幕
-		videoSubtitle: false // 重置视频字幕
-	};
+	function formatCpu(cpu: number): string {
+		return `${cpu.toFixed(1)}%`;
+	}
 
 	// 处理登录成功
 	function handleLoginSuccess(event: CustomEvent) {
 		isAuthenticated = true;
-		// 登录成功后加载数据
 		loadInitialData();
 	}
 
@@ -103,43 +69,28 @@
 	function handleSetupComplete() {
 		needsInitialSetup = false;
 		checkingSetup = true;
-		// 重新检查设置状态并触发登录成功事件
 		checkInitialSetup().then(() => {
 			if (isAuthenticated) {
-				// 触发全局登录成功事件，通知layout.svelte更新状态
 				window.dispatchEvent(new CustomEvent('login-success'));
 			}
 		});
 	}
 
-	// 退出登录
-	function logout() {
-		isAuthenticated = false;
-		api.setAuthToken('');
-		videosData = null;
-		toast.info('已退出登录');
-	}
-
 	// 检查是否需要初始设置
 	async function checkInitialSetup() {
 		try {
-			// 检查本地是否有token
 			const storedToken = localStorage.getItem('auth_token');
 
 			if (!storedToken) {
-				// 没有token，检查是否是全新系统还是新浏览器
 				try {
 					const setupCheck = await api.checkInitialSetup();
 					if (setupCheck.data.needs_setup) {
-						// 全新系统，显示初始设置
 						needsInitialSetup = true;
 					} else {
-						// 系统已配置但新浏览器，显示登录界面
 						needsInitialSetup = false;
 						isAuthenticated = false;
 					}
 				} catch (error) {
-					// 无法连接后端，显示初始设置
 					console.log('无法检查后端状态，显示初始设置:', error);
 					needsInitialSetup = true;
 				}
@@ -147,37 +98,30 @@
 				return;
 			}
 
-			// 有token，尝试验证
 			api.setAuthToken(storedToken);
 			try {
 				await api.getVideoSources();
 				isAuthenticated = true;
 				loadInitialData();
 			} catch (error) {
-				// Token无效，清除无效token
 				localStorage.removeItem('auth_token');
 				api.setAuthToken('');
 
-				// 检查是否是系统问题还是token问题
 				try {
 					const setupCheck = await api.checkInitialSetup();
 					if (setupCheck.data.needs_setup) {
-						// 系统未配置，显示初始设置
 						needsInitialSetup = true;
 					} else {
-						// 系统已配置但token无效，显示登录界面
 						needsInitialSetup = false;
 						isAuthenticated = false;
 					}
 				} catch (apiError) {
-					// 无法检查后端状态，显示登录界面
 					needsInitialSetup = false;
 					isAuthenticated = false;
 				}
 			}
 		} catch (error) {
 			console.error('检查初始设置失败:', error);
-			// 如果检查失败，显示登录界面（比较安全的选择）
 			needsInitialSetup = false;
 			isAuthenticated = false;
 		} finally {
@@ -185,30 +129,18 @@
 		}
 	}
 
-	// 加载初始数据
-	async function loadInitialData() {
+	async function loadDashboard() {
+		loading = true;
 		try {
-			// 获取视频源
-			const sources = await api.getVideoSources();
-			setVideoSources(sources.data);
-
-			// 加载任务控制状态
-			await loadTaskControlStatus();
-
-			// 启动定时更新任务状态（每5秒更新一次）
-			if (!statusUpdateInterval) {
-				statusUpdateInterval = setInterval(async () => {
-					if (isAuthenticated) {
-						await loadTaskControlStatus();
-					}
-				}, 5000);
-			}
-
-			// 加载视频列表
-			handleSearchParamsChange();
+			const response = await api.getDashboard();
+			dashboardData = response.data;
 		} catch (error) {
-			console.error('加载数据失败:', error);
-			toast.error('加载数据失败');
+			console.error('加载仪表盘数据失败:', error);
+			toast.error('加载仪表盘数据失败', {
+				description: (error as ApiError).message
+			});
+		} finally {
+			loading = false;
 		}
 	}
 
@@ -264,268 +196,110 @@
 		}
 	}
 
-	// 从URL参数获取筛选条件
-	function getFilterFromURL(searchParams: URLSearchParams) {
-		for (const source of Object.values(VIDEO_SOURCES)) {
-			const value = searchParams.get(source.type);
-			if (value) {
-				return { type: source.type, id: value };
-			}
-		}
-		return null;
-	}
-
-	// 从URL参数获取失败任务筛选状态
-	function getShowFailedOnlyFromURL(searchParams: URLSearchParams): boolean {
-		return searchParams.get('failed') === 'true';
-	}
-
-	// 获取筛选项名称
-	function getFilterName(type: string, id: string): string {
-		const videoSources = $videoSourceStore;
-		if (!videoSources || !type || !id) return '';
-
-		const sources = videoSources[type as keyof VideoSourcesResponse];
-		const source = sources?.find((s) => s.id.toString() === id);
-		return source?.name || '';
-	}
-
-	// 获取筛选项标题
-	function getFilterTitle(type: string): string {
-		const sourceConfig = Object.values(VIDEO_SOURCES).find((s) => s.type === type);
-		return sourceConfig?.title || '';
-	}
-
-	async function loadVideos(
-		query?: string,
-		pageNum: number = 0,
-		filter?: { type: string; id: string } | null,
-		failedOnly: boolean = false
-	) {
-		loading = true;
+	async function loadInitialData() {
 		try {
-			const params: Record<string, string | number | boolean> = {
-				page: pageNum,
-				page_size: pageSize
-			};
-
-			if (query) {
-				params.query = query;
-			}
-
-			// 添加筛选参数
-			if (filter) {
-				params[filter.type] = parseInt(filter.id);
-			}
-
-			// 添加失败任务筛选参数
-			if (failedOnly) {
-				params.show_failed_only = true;
-			}
-
-			const result = await api.getVideos(params);
-			videosData = result.data;
-			currentPage = pageNum;
+			// 加载任务控制状态
+			await loadTaskControlStatus();
+			// 加载仪表盘数据
+			await loadDashboard();
 		} catch (error) {
-			console.error('加载视频失败:', error);
-			toast.error('加载视频失败', {
-				description: (error as ApiError).message
-			});
-		} finally {
-			loading = false;
+			console.error('加载数据失败:', error);
+			toast.error('加载数据失败');
 		}
 	}
 
-	async function handlePageChange(pageNum: number) {
-		const query = ToQuery($appStateStore);
-		const failedParam = showFailedOnly ? '&failed=true' : '';
-		if (query) {
-			goto(`/${query}&page=${pageNum}${failedParam}`);
-		} else {
-			goto(`/?page=${pageNum}${failedParam}`);
-		}
-	}
+	onMount(() => {
+		setBreadcrumb([{ label: '首页' }]);
 
-	async function handleSearchParamsChange() {
-		const query = $page.url.searchParams.get('query');
-		currentFilter = getFilterFromURL($page.url.searchParams);
-		showFailedOnly = getShowFailedOnlyFromURL($page.url.searchParams);
-		setQuery(query || '');
-		if (currentFilter) {
-			setVideoSourceFilter(currentFilter.type, currentFilter.id);
-		} else {
-			clearVideoSourceFilter();
-		}
-		loadVideos(
-			query || '',
-			parseInt($page.url.searchParams.get('page') || '0'),
-			currentFilter,
-			showFailedOnly
-		);
-	}
+		// 订阅WebSocket事件
+		unsubscribeSysInfo = wsManager.subscribeToSysInfo((data) => {
+			sysInfo = data;
+		});
+		unsubscribeTasks = wsManager.subscribeToTasks((data: TaskStatus) => {
+			taskStatus = data;
+		});
 
-	function handleFilterRemove() {
-		clearVideoSourceFilter();
-		const failedParam = showFailedOnly ? '&failed=true' : '';
-		goto(`/${ToQuery($appStateStore)}${failedParam}`);
-	}
+		// 检查认证状态
+		checkInitialSetup();
 
-	// 切换失败任务筛选状态
-	function toggleFailedTasksFilter() {
-		showFailedOnly = !showFailedOnly;
-		currentPage = 0; // 重置到第一页
-
-		const query = ToQuery($appStateStore);
-		const failedParam = showFailedOnly ? '&failed=true' : '';
-		if (query) {
-			goto(`/${query}${failedParam}`);
-		} else {
-			goto(`/${failedParam ? '?' + failedParam.slice(1) : ''}`);
-		}
-	}
-
-	// 批量重置所有视频
-	async function handleResetAllVideos() {
-		resettingAll = true;
-		try {
-			let result;
-
-			if (resetOptions.all) {
-				// 重置所有失败任务，根据当前过滤器传递参数
-				const filterParams = currentFilter
-					? {
-							[currentFilter.type]: parseInt(currentFilter.id)
-						}
-					: undefined;
-				result = await api.resetAllVideos(filterParams);
-			} else {
-				// 选择性重置特定任务
-				const taskIndexes = [];
-
-				// 根据选择的选项确定要重置的任务索引
-				// 注意：一个task_index会同时影响VideoStatus和PageStatus的相同索引
-				//
-				// 后端状态定义：
-				// VideoStatus: [视频封面(0), 视频信息(1), Up主头像(2), Up主信息(3), 分P下载(4)]
-				// PageStatus: [视频封面(0), 视频内容(1), 视频信息(2), 视频弹幕(3), 视频字幕(4)]
-				//
-				// 最终修复的索引映射关系：
-				// index 0: Video封面 + Page封面 → 封面图片文件
-				// index 1: Video信息(普通视频) + Page内容 → 视频文件(.mp4)，番剧无NFO副作用
-				// index 2: Video信息(番剧tvshow.nfo) + Page信息 → tvshow.nfo + 单集NFO文件
-				// index 3: Video Up主信息 + Page弹幕 → Up主信息 + 弹幕文件(.ass)
-				// index 4: Video 分P下载 + Page字幕 → 分P下载 + 字幕文件
-				
-				if (resetOptions.videoCover) taskIndexes.push(0);     // 重置封面文件
-				if (resetOptions.videoContent) taskIndexes.push(1);   // 重置视频内容 (纯视频文件，番剧无NFO)
-				if (resetOptions.videoInfo) taskIndexes.push(2);      // 重置视频信息 (tvshow.nfo + 单集NFO)
-				if (resetOptions.videoDanmaku) taskIndexes.push(3);   // 重置弹幕文件 (弹幕 + Up主信息)
-				if (resetOptions.videoSubtitle) taskIndexes.push(4);  // 重置字幕文件 (字幕 + 分P下载)
-
-				// 去重任务索引
-				const uniqueTaskIndexes = [...new Set(taskIndexes)];
-
-				if (uniqueTaskIndexes.length === 0) {
-					toast.error('请至少选择一个要重置的任务');
-					return;
-				}
-
-				// 调用选择性重置API，根据当前过滤器传递参数
-				const filterParams = currentFilter
-					? {
-							[currentFilter.type]: parseInt(currentFilter.id)
-						}
-					: undefined;
-				result = await api.resetSpecificTasks(uniqueTaskIndexes, filterParams);
-			}
-
-			const data = result.data;
-			if (data.resetted) {
-				toast.success('重置成功', {
-					description: `已重置 ${data.resetted_videos_count} 个视频和 ${data.resetted_pages_count} 个分页`
-				});
-				// 重新加载当前页面数据
-				handleSearchParamsChange();
-			} else {
-				toast.info('没有需要重置的视频');
-			}
-		} catch (error) {
-			console.error('重置失败:', error);
-			toast.error('重置失败', {
-				description: (error as ApiError).message
-			});
-		} finally {
-			resettingAll = false;
-			resetAllDialogOpen = false;
-		}
-	}
-
-	// 处理重置选项变化
-	function handleResetOptionChange(option: string, checked: boolean) {
-		if (option === 'all') {
-			resetOptions.all = checked;
-			if (checked) {
-				// 选择"重置所有"时，取消其他选项
-				resetOptions.videoCover = false;
-				resetOptions.videoContent = false;
-				resetOptions.videoInfo = false;
-				resetOptions.videoDanmaku = false;
-				resetOptions.videoSubtitle = false;
-			}
-		} else {
-			// 选择具体任务时，取消"重置所有"
-			resetOptions.all = false;
-			if (option === 'videoCover') resetOptions.videoCover = checked;
-			else if (option === 'videoContent') resetOptions.videoContent = checked;
-			else if (option === 'videoInfo') resetOptions.videoInfo = checked;
-			else if (option === 'videoDanmaku') resetOptions.videoDanmaku = checked;
-			else if (option === 'videoSubtitle') resetOptions.videoSubtitle = checked;
-		}
-	}
-
-	$: if ($page.url.search !== lastSearch) {
-		lastSearch = $page.url.search;
-		handleSearchParamsChange();
-	}
-
-	// 检查认证状态和初始设置
-	onMount(async () => {
-		setBreadcrumb([{ label: '主页', isActive: true }]);
-
-		// 检查是否需要初始设置
-		await checkInitialSetup();
+		// 连接WebSocket
+		wsManager.connect().catch(error => {
+			console.error('WebSocket连接失败:', error);
+		});
 	});
 
-	// 清理定时器
 	onDestroy(() => {
-		if (statusUpdateInterval) {
-			clearInterval(statusUpdateInterval);
-			statusUpdateInterval = null;
+		if (unsubscribeSysInfo) {
+			unsubscribeSysInfo();
+			unsubscribeSysInfo = null;
+		}
+		if (unsubscribeTasks) {
+			unsubscribeTasks();
+			unsubscribeTasks = null;
 		}
 	});
 
-	$: totalPages = videosData ? Math.ceil(videosData.total_count / pageSize) : 0;
-	$: filterTitle = currentFilter ? getFilterTitle(currentFilter.type) : '';
-	$: filterName = currentFilter ? getFilterName(currentFilter.type, currentFilter.id) : '';
+	let memoryHistory: Array<{ time: Date; used: number; process: number }> = [];
+	let cpuHistory: Array<{ time: Date; used: number; process: number }> = [];
 
-	// 响应式调整页面大小
-	$: if (autoPageSize && innerWidth > 0 && innerHeight > 0) {
-		const newPageSize = calculateOptimalPageSize();
-		if (newPageSize !== pageSize) {
-			pageSize = newPageSize;
-			// 重新加载当前页面
-			if (isAuthenticated && videosData) {
-				handleSearchParamsChange();
+	$: if (sysInfo) {
+		memoryHistory = [
+			...memoryHistory.slice(-19),
+			{
+				time: new Date(),
+				used: sysInfo.used_memory,
+				process: sysInfo.process_memory
 			}
-		}
+		];
+		cpuHistory = [
+			...cpuHistory.slice(-19),
+			{
+				time: new Date(),
+				used: sysInfo.used_cpu,
+				process: sysInfo.process_cpu
+			}
+		];
 	}
+
+	// 计算磁盘使用率
+	$: diskUsagePercent = sysInfo
+		? ((sysInfo.total_disk - sysInfo.available_disk) / sysInfo.total_disk) * 100
+		: 0;
+
+	// 图表配置
+	const videoChartConfig = {
+		videos: {
+			label: '视频数量',
+			color: 'var(--color-slate-700)'
+		}
+	} satisfies Chart.ChartConfig;
+
+	const memoryChartConfig = {
+		used: {
+			label: '整体占用',
+			color: 'var(--color-slate-700)'
+		},
+		process: {
+			label: '程序占用',
+			color: 'var(--color-slate-950)'
+		}
+	} satisfies Chart.ChartConfig;
+
+	const cpuChartConfig = {
+		used: {
+			label: '整体占用',
+			color: 'var(--color-slate-700)'
+		},
+		process: {
+			label: '程序占用',
+			color: 'var(--color-slate-950)'
+		}
+	} satisfies Chart.ChartConfig;
 </script>
 
 <svelte:head>
-	<title>主页 - Bili Sync</title>
+	<title>首页 - Bili Sync</title>
 </svelte:head>
-
-<svelte:window bind:innerWidth bind:innerHeight />
 
 {#if checkingSetup}
 	<div class="flex min-h-screen items-center justify-center bg-gray-50">
@@ -539,263 +313,417 @@
 {:else if !isAuthenticated}
 	<AuthLogin on:login-success={handleLoginSuccess} />
 {:else}
-	<FilterBadge {filterTitle} {filterName} onRemove={handleFilterRemove} />
-
-	<!-- 失败任务筛选徽章 -->
-	{#if showFailedOnly}
-		<div class="mb-4">
-			<div
-				class="inline-flex items-center gap-2 rounded-full bg-red-100 px-3 py-1 text-sm text-red-800"
-			>
-				<FilterIcon class="h-4 w-4" />
-				<span>仅显示失败任务</span>
-				<button
-					onclick={toggleFailedTasksFilter}
-					class="ml-1 rounded-full p-1 hover:bg-red-200"
-					title="清除失败任务筛选"
-					aria-label="清除失败任务筛选"
-				>
-					<svg class="h-3 w-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-						<path
-							stroke-linecap="round"
-							stroke-linejoin="round"
-							stroke-width="2"
-							d="M6 18L18 6M6 6l12 12"
-						/>
-					</svg>
-				</button>
+	<div class="space-y-6">
+		{#if loading}
+			<div class="flex items-center justify-center py-12">
+				<div class="text-muted-foreground">加载中...</div>
 			</div>
-		</div>
-	{/if}
-
-	<!-- 统计信息和操作按钮 -->
-	{#if videosData}
-		<div class="mb-6 space-y-4 lg:flex lg:items-center lg:justify-between lg:space-y-0">
-			<!-- 统计信息 -->
-			<div class="flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-4">
-				<div class="text-muted-foreground text-sm">
-					{#if showFailedOnly}
-						共 {videosData.total_count} 个失败任务，{totalPages} 页
-					{:else}
-						共 {videosData.total_count} 个视频，{totalPages} 页
-					{/if}
-				</div>
-				<div class="text-muted-foreground text-xs">
-					每页 {pageSize} 个
-				</div>
-			</div>
-
-			<!-- 操作按钮区域 -->
-			<div class="flex flex-col items-start gap-3 sm:flex-row sm:items-center sm:flex-wrap lg:flex-nowrap sm:gap-2">
-				<!-- 页面大小控制 -->
-				<div class="flex items-center gap-2">
-					<label for="page-size-select" class="text-muted-foreground text-sm whitespace-nowrap"
-						>每页:</label
-					>
-					<select
-						id="page-size-select"
-						value={autoPageSize ? 'auto' : pageSize}
-						onchange={(e) => {
-							const value = e.currentTarget.value;
-							if (value === 'auto') {
-								autoPageSize = true;
-								pageSize = calculateOptimalPageSize();
-							} else {
-								autoPageSize = false;
-								pageSize = parseInt(value);
-							}
-							currentPage = 0;
-							handleSearchParamsChange();
-						}}
-						class="border-input bg-background h-8 min-w-[80px] rounded-md border px-2 py-1 text-sm"
-					>
-						<option value="auto">自动</option>
-						<option value={12}>12</option>
-						<option value={20}>20</option>
-						<option value={30}>30</option>
-						<option value={50}>50</option>
-						<option value={100}>100</option>
-					</select>
-				</div>
-
-				<!-- 任务控制按钮 -->
-				{#if taskControlStatus}
-					<Button
-						size="sm"
-						variant={taskControlStatus.is_paused ? 'default' : 'destructive'}
-						onclick={taskControlStatus.is_paused ? resumeAllTasks : pauseAllTasks}
-						disabled={loadingTaskControl}
-						class="w-full sm:w-auto"
-						title={taskControlStatus.is_paused
-							? '恢复所有下载和扫描任务'
-							: '停止所有下载和扫描任务'}
-					>
-						{#if loadingTaskControl}
-							<RotateCcwIcon class="mr-2 h-4 w-4 animate-spin" />
-							处理中...
-						{:else if taskControlStatus.is_paused}
-							<PlayIcon class="mr-2 h-4 w-4" />
-							恢复任务
+		{:else}
+			<!-- 第一行：存储空间 + 当前监听 -->
+			<div class="grid gap-4 md:grid-cols-3">
+				<Card class="md:col-span-1">
+					<CardHeader class="flex flex-row items-center justify-between space-y-0 pb-2">
+						<CardTitle class="text-sm font-medium">存储空间</CardTitle>
+						<HardDriveIcon class="text-muted-foreground h-4 w-4" />
+					</CardHeader>
+					<CardContent>
+						{#if sysInfo}
+							<div class="space-y-2">
+								<div class="flex items-center justify-between">
+									<div class="text-2xl font-bold">{formatBytes(sysInfo.available_disk)} 可用</div>
+									<div class="text-muted-foreground text-sm">
+										共 {formatBytes(sysInfo.total_disk)}
+									</div>
+								</div>
+								<Progress value={diskUsagePercent} class="h-2" />
+								<div class="text-muted-foreground text-xs">
+									已使用 {diskUsagePercent.toFixed(1)}% 的存储空间
+								</div>
+							</div>
 						{:else}
-							<PauseIcon class="mr-2 h-4 w-4" />
-							停止任务
+							<div class="text-muted-foreground text-sm">加载中...</div>
 						{/if}
-					</Button>
-				{/if}
-
-				<!-- 失败任务筛选按钮 -->
-				<Button
-					size="sm"
-					variant={showFailedOnly ? 'default' : 'outline'}
-					onclick={toggleFailedTasksFilter}
-					class="w-full sm:w-auto"
-					title={showFailedOnly ? '显示所有任务' : '仅显示失败任务'}
-				>
-					<FilterIcon class="mr-2 h-4 w-4" />
-					{showFailedOnly ? '失败任务' : '显示失败'}
-				</Button>
-
-				<!-- 强制重置按钮 -->
-				<Button
-					size="sm"
-					variant="outline"
-					onclick={() => (resetAllDialogOpen = true)}
-					disabled={resettingAll}
-					class="w-full sm:w-auto"
-				>
-					<RotateCcwIcon class="mr-2 h-4 w-4 {resettingAll ? 'animate-spin' : ''}" />
-					强制重置
-				</Button>
-			</div>
-		</div>
-	{/if}
-
-	<!-- 视频卡片网格 -->
-	{#if loading}
-		<div class="flex items-center justify-center py-12">
-			<div class="text-muted-foreground">加载中...</div>
-		</div>
-	{:else if videosData?.videos.length}
-		<div class="grid w-full gap-4 grid-cols-1 xs:grid-cols-2 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6">
-			{#each videosData.videos as video (video.id)}
-				<div class="w-full">
-					<VideoCard {video} />
-				</div>
-			{/each}
-		</div>
-
-		<!-- 翻页组件 -->
-		<Pagination {currentPage} {totalPages} onPageChange={handlePageChange} />
-	{:else}
-		<div class="flex items-center justify-center py-12">
-			<div class="space-y-2 text-center">
-				<p class="text-muted-foreground">暂无视频数据</p>
-				<p class="text-muted-foreground text-sm">尝试搜索或检查视频来源配置</p>
-			</div>
-		</div>
-	{/if}
-
-	<!-- 批量重置确认对话框 -->
-	<AlertDialog.Root bind:open={resetAllDialogOpen}>
-		<AlertDialog.Content class="max-w-md">
-			<AlertDialog.Header>
-				<AlertDialog.Title>强制批量重置</AlertDialog.Title>
-				<AlertDialog.Description>
-					<p class="mb-4">选择要强制重置的任务类型（不管当前状态）：</p>
-				</AlertDialog.Description>
-			</AlertDialog.Header>
-
-			<div class="space-y-4">
-				<!-- 重置所有失败任务 -->
-				<div class="flex items-center space-x-2">
-					<input
-						type="checkbox"
-						id="reset-all"
-						bind:checked={resetOptions.all}
-						onchange={(e) => handleResetOptionChange('all', e.currentTarget.checked)}
-						class="h-4 w-4 rounded border-gray-300"
-					/>
-					<Label for="reset-all" class="text-sm font-medium">强制重置所有任务</Label>
-				</div>
-
-				<div class="border-t pt-3">
-					<p class="text-muted-foreground mb-3 text-sm">或选择特定任务：</p>
-
-					<!-- 视频封面 -->
-					<div class="mb-2 flex items-center space-x-2">
-						<input
-							type="checkbox"
-							id="reset-cover"
-							bind:checked={resetOptions.videoCover}
-							onchange={(e) => handleResetOptionChange('videoCover', e.currentTarget.checked)}
-							class="h-4 w-4 rounded border-gray-300"
-						/>
-						<Label for="reset-cover" class="text-sm">强制重置视频封面</Label>
-					</div>
-
-					<!-- 视频内容 -->
-					<div class="mb-2 flex items-center space-x-2">
-						<input
-							type="checkbox"
-							id="reset-content"
-							bind:checked={resetOptions.videoContent}
-							onchange={(e) => handleResetOptionChange('videoContent', e.currentTarget.checked)}
-							class="h-4 w-4 rounded border-gray-300"
-						/>
-						<Label for="reset-content" class="text-sm">强制重置视频内容</Label>
-					</div>
-
-					<!-- 视频信息 -->
-					<div class="mb-2 flex items-center space-x-2">
-						<input
-							type="checkbox"
-							id="reset-info"
-							bind:checked={resetOptions.videoInfo}
-							onchange={(e) => handleResetOptionChange('videoInfo', e.currentTarget.checked)}
-							class="h-4 w-4 rounded border-gray-300"
-						/>
-						<Label for="reset-info" class="text-sm">强制重置视频信息</Label>
-					</div>
-
-					<!-- 视频弹幕 -->
-					<div class="mb-2 flex items-center space-x-2">
-						<input
-							type="checkbox"
-							id="reset-danmaku"
-							bind:checked={resetOptions.videoDanmaku}
-							onchange={(e) => handleResetOptionChange('videoDanmaku', e.currentTarget.checked)}
-							class="h-4 w-4 rounded border-gray-300"
-						/>
-						<Label for="reset-danmaku" class="text-sm">强制重置视频弹幕</Label>
-					</div>
-
-					<!-- 视频字幕 -->
-					<div class="mb-2 flex items-center space-x-2">
-						<input
-							type="checkbox"
-							id="reset-subtitle"
-							bind:checked={resetOptions.videoSubtitle}
-							onchange={(e) => handleResetOptionChange('videoSubtitle', e.currentTarget.checked)}
-							class="h-4 w-4 rounded border-gray-300"
-						/>
-						<Label for="reset-subtitle" class="text-sm">强制重置视频字幕</Label>
-					</div>
-				</div>
-
-				<div class="rounded-lg border border-yellow-200 bg-yellow-50 p-3">
-					<p class="text-sm text-yellow-800">
-						<strong>注意：</strong
-						>强制重置会将选中的任务状态重置为"未开始"，不管当前是否已完成。选择特定任务重置时，会同时重置对应的分P下载状态。
-					</p>
-				</div>
+					</CardContent>
+				</Card>
+				<Card class="md:col-span-2">
+					<CardHeader class="flex flex-row items-center justify-between space-y-0 pb-2">
+						<CardTitle class="text-sm font-medium">当前监听</CardTitle>
+						<DatabaseIcon class="text-muted-foreground h-4 w-4" />
+					</CardHeader>
+					<CardContent>
+						{#if dashboardData}
+							<div class="space-y-4">
+								<!-- 视频源统计 -->
+								<div class="grid grid-cols-2 gap-4">
+									<div class="flex items-center justify-between">
+										<div class="flex items-center gap-2">
+											<HeartIcon class="text-muted-foreground h-4 w-4" />
+											<span class="text-sm">收藏夹</span>
+										</div>
+										<Badge variant="outline">{dashboardData.enabled_favorites}</Badge>
+									</div>
+									<div class="flex items-center justify-between">
+										<div class="flex items-center gap-2">
+											<FolderIcon class="text-muted-foreground h-4 w-4" />
+											<span class="text-sm">合集 / 列表</span>
+										</div>
+										<Badge variant="outline">{dashboardData.enabled_collections}</Badge>
+									</div>
+									<div class="flex items-center justify-between">
+										<div class="flex items-center gap-2">
+											<UserIcon class="text-muted-foreground h-4 w-4" />
+											<span class="text-sm">投稿</span>
+										</div>
+										<Badge variant="outline">{dashboardData.enabled_submissions}</Badge>
+									</div>
+									<div class="flex items-center justify-between">
+										<div class="flex items-center gap-2">
+											<ClockIcon class="text-muted-foreground h-4 w-4" />
+											<span class="text-sm">稍后再看</span>
+										</div>
+										<Badge variant="outline">
+											{dashboardData.enable_watch_later ? '启用' : '禁用'}
+										</Badge>
+									</div>
+								</div>
+								
+								<!-- 监听状态信息 -->
+								<div class="border-t pt-4">
+									<div class="space-y-3">
+										<div class="flex items-center justify-between">
+											<span class="text-sm font-medium">总计视频源</span>
+											<Badge variant="secondary">{dashboardData.monitoring_status.total_sources}</Badge>
+										</div>
+										<div class="flex items-center justify-between">
+											<span class="text-sm">活跃监听</span>
+											<Badge variant="default">{dashboardData.monitoring_status.active_sources}</Badge>
+										</div>
+										<div class="flex items-center justify-between">
+											<span class="text-sm">禁用源</span>
+											<Badge variant="secondary">{dashboardData.monitoring_status.inactive_sources}</Badge>
+										</div>
+										<div class="flex items-center justify-between">
+											<span class="text-sm">当前状态</span>
+											<Badge variant={dashboardData.monitoring_status.is_scanning ? "destructive" : "outline"}>
+												{dashboardData.monitoring_status.is_scanning ? '扫描中' : '等待中'}
+											</Badge>
+										</div>
+										{#if dashboardData.monitoring_status.last_scan_time}
+											<div class="flex items-center justify-between">
+												<span class="text-sm">上次扫描</span>
+												<span class="text-xs text-muted-foreground">
+													{new Date(dashboardData.monitoring_status.last_scan_time).toLocaleString()}
+												</span>
+											</div>
+										{/if}
+										{#if dashboardData.monitoring_status.next_scan_time}
+											<div class="flex items-center justify-between">
+												<span class="text-sm">下次扫描</span>
+												<span class="text-xs text-muted-foreground">
+													{new Date(dashboardData.monitoring_status.next_scan_time).toLocaleString()}
+												</span>
+											</div>
+										{/if}
+									</div>
+								</div>
+							</div>
+						{:else}
+							<div class="text-muted-foreground text-sm">加载中...</div>
+						{/if}
+					</CardContent>
+				</Card>
 			</div>
 
-			<AlertDialog.Footer>
-				<AlertDialog.Cancel>取消</AlertDialog.Cancel>
-				<AlertDialog.Action onclick={handleResetAllVideos} disabled={resettingAll}>
-					{resettingAll ? '重置中...' : '确认重置'}
-				</AlertDialog.Action>
-			</AlertDialog.Footer>
-		</AlertDialog.Content>
-	</AlertDialog.Root>
+			<!-- 第二行：最近入库 + 下载任务状态 -->
+			<div class="grid gap-4 md:grid-cols-3">
+				<Card class="max-w-full overflow-hidden md:col-span-2">
+					<CardHeader class="flex flex-row items-center justify-between space-y-0 pb-2">
+						<CardTitle class="text-sm font-medium">最近入库</CardTitle>
+						<VideoIcon class="text-muted-foreground h-4 w-4" />
+					</CardHeader>
+					<CardContent>
+						{#if dashboardData && dashboardData.videos_by_day.length > 0}
+							<div class="mb-4 space-y-2">
+								<div class="flex items-center justify-between text-sm">
+									<span>近七日新增视频</span>
+									<span class="font-medium"
+										>{dashboardData.videos_by_day.reduce((sum, v) => sum + v.cnt, 0)} 个</span
+									>
+								</div>
+							</div>
+							<Chart.Container config={videoChartConfig} class="h-[200px] w-full">
+								<BarChart
+									data={dashboardData.videos_by_day}
+									x="day"
+									axis="x"
+									series={[
+										{
+											key: 'cnt',
+											label: '新增视频',
+											color: videoChartConfig.videos.color
+										}
+									]}
+									props={{
+										bars: {
+											stroke: 'none',
+											rounded: 'all',
+											radius: 8,
+											initialHeight: 0
+										},
+										highlight: { area: { fill: 'none' } },
+										xAxis: { format: () => '' }
+									}}
+								>
+									{#snippet tooltip()}
+										<MyChartTooltip indicator="line" />
+									{/snippet}
+								</BarChart>
+							</Chart.Container>
+						{:else}
+							<div class="text-muted-foreground flex h-[200px] items-center justify-center text-sm">
+								暂无视频统计数据
+							</div>
+						{/if}
+					</CardContent>
+				</Card>
+				<Card class="max-w-full md:col-span-1">
+					<CardHeader class="flex flex-row items-center justify-between space-y-0 pb-2">
+						<CardTitle class="text-sm font-medium">下载任务状态</CardTitle>
+						<CloudDownloadIcon class="text-muted-foreground h-4 w-4" />
+					</CardHeader>
+					<CardContent>
+						{#if taskStatus}
+							<div class="space-y-4">
+								<div class="grid grid-cols-1 gap-6">
+									<div class="mb-4 space-y-2">
+										<div class="flex items-center justify-between text-sm">
+											<span>当前任务状态</span>
+											<Badge variant={taskStatus.is_running ? 'default' : 'outline'}>
+												{taskStatus.is_running ? '运行中' : '未运行'}
+											</Badge>
+										</div>
+									</div>
+									<div class="flex items-center justify-between">
+										<div class="flex items-center gap-2">
+											<PlayIcon class="text-muted-foreground h-4 w-4" />
+											<span class="text-sm">开始运行</span>
+										</div>
+										<span class="text-muted-foreground text-sm">
+											{taskStatus.last_run
+												? new Date(taskStatus.last_run).toLocaleString('en-US', {
+													hour: '2-digit',
+													minute: '2-digit',
+													second: '2-digit',
+													hour12: true
+												})
+												: '-'}
+										</span>
+									</div>
+									<div class="flex items-center justify-between">
+										<div class="flex items-center gap-2">
+											<CheckCircleIcon class="text-muted-foreground h-4 w-4" />
+											<span class="text-sm">运行结束</span>
+										</div>
+										<span class="text-muted-foreground text-sm">
+											{taskStatus.last_finish
+												? new Date(taskStatus.last_finish).toLocaleString('en-US', {
+													hour: '2-digit',
+													minute: '2-digit',
+													second: '2-digit',
+													hour12: true
+												})
+												: '-'}
+										</span>
+									</div>
+									<div class="flex items-center justify-between">
+										<div class="flex items-center gap-2">
+											<CalendarIcon class="text-muted-foreground h-4 w-4" />
+											<span class="text-sm">下次运行</span>
+										</div>
+										<span class="text-muted-foreground text-sm">
+											{taskStatus.next_run
+												? new Date(taskStatus.next_run).toLocaleString('en-US', {
+													hour: '2-digit',
+													minute: '2-digit',
+													second: '2-digit',
+													hour12: true
+												})
+												: '-'}
+										</span>
+									</div>
+								</div>
+
+								<!-- 任务控制按钮 -->
+								{#if taskControlStatus}
+									<Button
+										size="sm"
+										variant={taskControlStatus.is_paused ? 'default' : 'destructive'}
+										onclick={taskControlStatus.is_paused ? resumeAllTasks : pauseAllTasks}
+										disabled={loadingTaskControl}
+										class="w-full"
+										title={taskControlStatus.is_paused
+											? '恢复所有下载和扫描任务'
+											: '停止所有下载和扫描任务'}
+									>
+										{#if loadingTaskControl}
+											<SettingsIcon class="mr-2 h-4 w-4 animate-spin" />
+											处理中...
+										{:else if taskControlStatus.is_paused}
+											<PlayIcon class="mr-2 h-4 w-4" />
+											恢复任务
+										{:else}
+											<PauseIcon class="mr-2 h-4 w-4" />
+											停止任务
+										{/if}
+									</Button>
+								{/if}
+							</div>
+						{:else}
+							<div class="text-muted-foreground text-sm">加载中...</div>
+						{/if}
+					</CardContent>
+				</Card>
+			</div>
+
+			<!-- 第三行：系统监控 -->
+			<div class="grid gap-4 md:grid-cols-2">
+				<!-- 内存使用情况 -->
+				<Card class="overflow-hidden">
+					<CardHeader class="flex flex-row items-center justify-between space-y-0 pb-2">
+						<CardTitle class="text-sm font-medium">内存使用情况</CardTitle>
+						<MemoryStickIcon class="text-muted-foreground h-4 w-4" />
+					</CardHeader>
+					<CardContent>
+						{#if sysInfo}
+							<div class="mb-4 space-y-2">
+								<div class="flex items-center justify-between text-sm">
+									<span>当前内存使用</span>
+									<span class="font-medium"
+										>{formatBytes(sysInfo.used_memory)} / {formatBytes(sysInfo.total_memory)}</span
+									>
+								</div>
+							</div>
+						{/if}
+						{#if memoryHistory.length > 0}
+							<Chart.Container config={memoryChartConfig} class="h-[150px] w-full">
+								<AreaChart
+									data={memoryHistory}
+									x="time"
+									axis="x"
+									series={[
+										{
+											key: 'used',
+											label: memoryChartConfig.used.label,
+											color: memoryChartConfig.used.color
+										},
+										{
+											key: 'process',
+											label: memoryChartConfig.process.label,
+											color: memoryChartConfig.process.color
+										}
+									]}
+									props={{
+										area: {
+											curve: curveNatural,
+											line: { class: 'stroke-1' },
+											'fill-opacity': 0.4
+										},
+										xAxis: {
+											format: () => ''
+										}
+									}}
+								>
+									{#snippet tooltip()}
+										<MyChartTooltip
+											labelFormatter={(v: Date) => {
+												return v.toLocaleString('en-US', {
+													hour: '2-digit',
+													minute: '2-digit',
+													second: '2-digit',
+													hour12: true
+												});
+											}}
+											valueFormatter={(v: number) => formatBytes(v)}
+											indicator="line"
+										/>
+									{/snippet}
+								</AreaChart>
+							</Chart.Container>
+						{:else}
+							<div class="text-muted-foreground flex h-[150px] items-center justify-center text-sm">
+								等待数据...
+							</div>
+						{/if}
+					</CardContent>
+				</Card>
+
+				<Card class="overflow-hidden">
+					<CardHeader class="flex flex-row items-center justify-between space-y-0 pb-2">
+						<CardTitle class="text-sm font-medium">CPU 使用情况</CardTitle>
+						<CpuIcon class="text-muted-foreground h-4 w-4" />
+					</CardHeader>
+					<CardContent class="overflow-hidden">
+						{#if sysInfo}
+							<div class="mb-4 space-y-2">
+								<div class="flex items-center justify-between text-sm">
+									<span>当前 CPU 使用率</span>
+									<span class="font-medium">{formatCpu(sysInfo.used_cpu)}</span>
+								</div>
+							</div>
+						{/if}
+						{#if cpuHistory.length > 0}
+							<Chart.Container config={cpuChartConfig} class="h-[150px] w-full">
+								<AreaChart
+									data={cpuHistory}
+									x="time"
+									axis="x"
+									series={[
+										{
+											key: 'used',
+											label: cpuChartConfig.used.label,
+											color: cpuChartConfig.used.color
+										},
+										{
+											key: 'process',
+											label: cpuChartConfig.process.label,
+											color: cpuChartConfig.process.color
+										}
+									]}
+									props={{
+										area: {
+											curve: curveNatural,
+											line: { class: 'stroke-1' },
+											'fill-opacity': 0.4
+										},
+										xAxis: {
+											format: () => ''
+										}
+									}}
+								>
+									{#snippet tooltip()}
+										<MyChartTooltip
+											labelFormatter={(v: Date) => {
+												return v.toLocaleString('en-US', {
+													hour: '2-digit',
+													minute: '2-digit',
+													second: '2-digit',
+													hour12: true
+												});
+											}}
+											valueFormatter={(v: number) => formatCpu(v)}
+											indicator="line"
+										/>
+									{/snippet}
+								</AreaChart>
+							</Chart.Container>
+						{:else}
+							<div class="text-muted-foreground flex h-[150px] items-center justify-center text-sm">
+								等待数据...
+							</div>
+						{/if}
+					</CardContent>
+				</Card>
+			</div>
+		{/if}
+	</div>
 {/if}
