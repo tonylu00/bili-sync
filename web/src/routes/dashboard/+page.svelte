@@ -21,6 +21,7 @@
 	import UserIcon from '@lucide/svelte/icons/user';
 	import ClockIcon from '@lucide/svelte/icons/clock';
 	import VideoIcon from '@lucide/svelte/icons/video';
+	import TvIcon from '@lucide/svelte/icons/tv';
 	import HardDriveIcon from '@lucide/svelte/icons/hard-drive';
 	import CpuIcon from '@lucide/svelte/icons/cpu';
 	import MemoryStickIcon from '@lucide/svelte/icons/memory-stick';
@@ -195,27 +196,27 @@
 					{#if dashboardData}
 						<div class="space-y-4">
 							<!-- 视频源统计 -->
-							<div class="grid grid-cols-2 gap-4">
+							<div class="grid grid-cols-2 md:grid-cols-3 gap-4">
 								<div class="flex items-center justify-between">
 									<div class="flex items-center gap-2">
 										<HeartIcon class="text-muted-foreground h-4 w-4" />
 										<span class="text-sm">收藏夹</span>
 									</div>
-									<Badge variant="outline">{dashboardData.enabled_favorites}</Badge>
+									<Badge variant="outline">{dashboardData.enabled_favorites} / {dashboardData.total_favorites}</Badge>
 								</div>
 								<div class="flex items-center justify-between">
 									<div class="flex items-center gap-2">
 										<FolderIcon class="text-muted-foreground h-4 w-4" />
 										<span class="text-sm">合集 / 列表</span>
 									</div>
-									<Badge variant="outline">{dashboardData.enabled_collections}</Badge>
+									<Badge variant="outline">{dashboardData.enabled_collections} / {dashboardData.total_collections}</Badge>
 								</div>
 								<div class="flex items-center justify-between">
 									<div class="flex items-center gap-2">
 										<UserIcon class="text-muted-foreground h-4 w-4" />
 										<span class="text-sm">投稿</span>
 									</div>
-									<Badge variant="outline">{dashboardData.enabled_submissions}</Badge>
+									<Badge variant="outline">{dashboardData.enabled_submissions} / {dashboardData.total_submissions}</Badge>
 								</div>
 								<div class="flex items-center justify-between">
 									<div class="flex items-center gap-2">
@@ -223,48 +224,15 @@
 										<span class="text-sm">稍后再看</span>
 									</div>
 									<Badge variant="outline">
-										{dashboardData.enable_watch_later ? '启用' : '禁用'}
+										{dashboardData.enable_watch_later ? `启用 (${dashboardData.total_watch_later})` : `禁用 (${dashboardData.total_watch_later})`}
 									</Badge>
 								</div>
-							</div>
-							
-							<!-- 监听状态信息 -->
-							<div class="border-t pt-4">
-								<div class="space-y-3">
-									<div class="flex items-center justify-between">
-										<span class="text-sm font-medium">总计视频源</span>
-										<Badge variant="secondary">{dashboardData.monitoring_status.total_sources}</Badge>
+								<div class="flex items-center justify-between">
+									<div class="flex items-center gap-2">
+										<TvIcon class="text-muted-foreground h-4 w-4" />
+										<span class="text-sm">番剧</span>
 									</div>
-									<div class="flex items-center justify-between">
-										<span class="text-sm">活跃监听</span>
-										<Badge variant="default">{dashboardData.monitoring_status.active_sources}</Badge>
-									</div>
-									<div class="flex items-center justify-between">
-										<span class="text-sm">禁用源</span>
-										<Badge variant="secondary">{dashboardData.monitoring_status.inactive_sources}</Badge>
-									</div>
-									<div class="flex items-center justify-between">
-										<span class="text-sm">当前状态</span>
-										<Badge variant={dashboardData.monitoring_status.is_scanning ? "destructive" : "outline"}>
-											{dashboardData.monitoring_status.is_scanning ? '扫描中' : '等待中'}
-										</Badge>
-									</div>
-									{#if dashboardData.monitoring_status.last_scan_time}
-										<div class="flex items-center justify-between">
-											<span class="text-sm">上次扫描</span>
-											<span class="text-xs text-muted-foreground">
-												{new Date(dashboardData.monitoring_status.last_scan_time).toLocaleString()}
-											</span>
-										</div>
-									{/if}
-									{#if dashboardData.monitoring_status.next_scan_time}
-										<div class="flex items-center justify-between">
-											<span class="text-sm">下次扫描</span>
-											<span class="text-xs text-muted-foreground">
-												{new Date(dashboardData.monitoring_status.next_scan_time).toLocaleString()}
-											</span>
-										</div>
-									{/if}
+									<Badge variant="outline">{dashboardData.enabled_bangumi} / {dashboardData.total_bangumi}</Badge>
 								</div>
 							</div>
 						</div>

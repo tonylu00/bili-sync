@@ -663,7 +663,13 @@ export interface DashBoardResponse {
 	enabled_favorites: number;
 	enabled_collections: number;
 	enabled_submissions: number;
+	enabled_bangumi: number;
 	enable_watch_later: boolean;
+	total_favorites: number;
+	total_collections: number;
+	total_submissions: number;
+	total_bangumi: number;
+	total_watch_later: number;
 	videos_by_day: DayCountPair[];
 	monitoring_status: MonitoringStatus;
 }

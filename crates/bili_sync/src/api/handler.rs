@@ -8994,7 +8994,13 @@ ORDER BY
         enabled_favorites,
         enabled_collections,
         enabled_submissions,
+        enabled_bangumi,
         enable_watch_later: enabled_watch_later > 0,
+        total_favorites,
+        total_collections,
+        total_submissions,
+        total_bangumi,
+        total_watch_later,
         videos_by_day,
         monitoring_status,
     }))

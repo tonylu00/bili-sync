@@ -598,7 +598,13 @@ pub struct DashBoardResponse {
     pub enabled_favorites: u64,
     pub enabled_collections: u64,
     pub enabled_submissions: u64,
+    pub enabled_bangumi: u64,
     pub enable_watch_later: bool,
+    pub total_favorites: u64,
+    pub total_collections: u64,
+    pub total_submissions: u64,
+    pub total_bangumi: u64,
+    pub total_watch_later: u64,
     pub videos_by_day: Vec<DayCountPair>,
     /// 当前监听状态
     pub monitoring_status: MonitoringStatus,
