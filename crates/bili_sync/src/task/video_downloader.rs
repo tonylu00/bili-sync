@@ -219,6 +219,9 @@ pub async fn video_downloader(connection: Arc<DatabaseConnection>) {
             // 标记扫描开始并重置取消令牌
             TASK_CONTROLLER.set_scanning(true);
             TASK_CONTROLLER.reset_cancellation_token().await;
+            
+            // 标记任务状态为运行中
+            crate::utils::task_notifier::TASK_STATUS_NOTIFIER.set_running();
 
             match bili_client.wbi_img().await.map(|wbi_img| wbi_img.into()) {
                 Ok(Some(mixin_key)) => bilibili::set_global_mixin_key(mixin_key),
@@ -226,6 +229,7 @@ pub async fn video_downloader(connection: Arc<DatabaseConnection>) {
                     error!("解析 mixin key 失败，等待下一轮执行");
                     // 扫描失败，标记扫描结束
                     TASK_CONTROLLER.set_scanning(false);
+                    crate::utils::task_notifier::TASK_STATUS_NOTIFIER.set_finished();
                     break 'inner;
                 }
                 Err(e) => {
@@ -253,6 +257,7 @@ pub async fn video_downloader(connection: Arc<DatabaseConnection>) {
 
                     // 扫描失败，标记扫描结束
                     TASK_CONTROLLER.set_scanning(false);
+                    crate::utils::task_notifier::TASK_STATUS_NOTIFIER.set_finished();
                     break 'inner;
                 }
             }
@@ -272,6 +277,7 @@ pub async fn video_downloader(connection: Arc<DatabaseConnection>) {
                     debug!("在处理视频源时检测到暂停信号，停止当前轮次扫描");
                     // 重要：暂停时必须重置扫描状态
                     TASK_CONTROLLER.set_scanning(false);
+                    crate::utils::task_notifier::TASK_STATUS_NOTIFIER.set_finished();
                     break;
                 }
 
@@ -307,6 +313,9 @@ pub async fn video_downloader(connection: Arc<DatabaseConnection>) {
 
             // 标记扫描结束
             TASK_CONTROLLER.set_scanning(false);
+            
+            // 标记任务状态为结束
+            crate::utils::task_notifier::TASK_STATUS_NOTIFIER.set_finished();
 
             if processed_sources == video_sources.len() {
                 if sources_with_new_content > 0 {

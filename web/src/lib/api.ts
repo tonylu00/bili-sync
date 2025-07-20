@@ -34,9 +34,11 @@ import type {
 	VideoPlayInfoResponse,
 	ValidateFavoriteResponse,
 	SubmissionVideosRequest,
-	SubmissionVideosResponse
+	SubmissionVideosResponse,
+	DashBoardResponse
 } from './types';
 import { ErrorType } from './types';
+import { wsManager } from './ws';
 
 // API 基础配置
 const API_BASE_URL = '/api';
@@ -501,6 +503,13 @@ class ApiClient {
 			page_size: params.page_size
 		});
 	}
+
+	/**
+	 * 获取仪表盘数据
+	 */
+	async getDashboard(): Promise<ApiResponse<DashBoardResponse>> {
+		return this.get<DashBoardResponse>('/dashboard');
+	}
 }
 
 // 创建默认的 API 客户端实例
@@ -697,7 +706,22 @@ export const api = {
 	/**
 	 * 获取UP主投稿列表
 	 */
-	getSubmissionVideos: (params: SubmissionVideosRequest) => apiClient.getSubmissionVideos(params)
+	getSubmissionVideos: (params: SubmissionVideosRequest) => apiClient.getSubmissionVideos(params),
+
+	/**
+	 * 获取仪表盘数据
+	 */
+	getDashboard: () => apiClient.getDashboard(),
+
+	/**
+	 * 订阅系统信息WebSocket事件
+	 */
+	subscribeToSysInfo: (callback: (data: any) => void) => wsManager.subscribeToSysInfo(callback),
+
+	/**
+	 * 订阅任务状态WebSocket事件
+	 */
+	subscribeToTasks: (callback: (data: any) => void) => wsManager.subscribeToTasks(callback)
 };
 
 // 默认导出

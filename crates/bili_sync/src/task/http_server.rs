@@ -56,6 +56,7 @@ use crate::api::handler::{
     generate_qr_code,
     poll_qr_status,
     get_current_user,
+    get_dashboard_data,
     clear_credential,
     update_video_source_enabled,
     update_video_source_scan_deleted,
@@ -67,6 +68,7 @@ use crate::api::handler::{
 use crate::api::request::{BatchUpdateConfigRequest, UpdateConfigItemRequest};
 use crate::api::video_stream::stream_video;
 use crate::api::wrapper::ApiResponse;
+use crate::api::ws;
 // CONFIG导入已移除 - 现在使用动态配置
 
 #[derive(Embed)]
@@ -97,6 +99,7 @@ pub async fn http_server(database_connection: Arc<DatabaseConnection>) -> Result
         .route("/api/videos/{id}/update-status", post(update_video_status))
         .route("/api/videos/reset-all", post(reset_all_videos))
         .route("/api/videos/reset-specific-tasks", post(reset_specific_tasks))
+        .route("/api/dashboard", get(get_dashboard_data))
         .route("/api/reload-config", post(reload_config))
         .route("/api/config", get(get_config))
         .route("/api/config", put(update_config))
@@ -159,6 +162,11 @@ pub async fn http_server(database_connection: Arc<DatabaseConnection>) -> Result
         // 新增在线播放API
         .route("/api/videos/{video_id}/play-info", get(get_video_play_info))
         .route("/api/videos/proxy-stream", get(proxy_video_stream))
+        // 先应用认证中间件
+        .layer(Extension(database_connection))
+        .layer(middleware::from_fn(auth::auth))
+        // WebSocket API需要在认证中间件之后
+        .merge(ws::router())
         .merge(
             SwaggerUi::new("/swagger-ui/")
                 .url("/api-docs/openapi.json", ApiDoc::openapi())
@@ -169,9 +177,7 @@ pub async fn http_server(database_connection: Arc<DatabaseConnection>) -> Result
                         .validator_url("none"),
                 ),
         )
-        .fallback_service(get(frontend_files))
-        .layer(Extension(database_connection))
-        .layer(middleware::from_fn(auth::auth));
+        .fallback_service(get(frontend_files));
     // 使用动态配置而非静态CONFIG
     let config = crate::config::reload_config();
     let listener = tokio::net::TcpListener::bind(&config.bind_address)

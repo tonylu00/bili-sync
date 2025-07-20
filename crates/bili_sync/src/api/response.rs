@@ -591,3 +591,45 @@ pub struct ValidateFavoriteResponse {
     pub title: String,
     pub message: String,
 }
+
+/// 仪表盘响应
+#[derive(Serialize, ToSchema)]
+pub struct DashBoardResponse {
+    pub enabled_favorites: u64,
+    pub enabled_collections: u64,
+    pub enabled_submissions: u64,
+    pub enable_watch_later: bool,
+    pub videos_by_day: Vec<DayCountPair>,
+    /// 当前监听状态
+    pub monitoring_status: MonitoringStatus,
+}
+
+/// 监听状态信息
+#[derive(Serialize, ToSchema)]
+pub struct MonitoringStatus {
+    pub total_sources: u64,
+    pub active_sources: u64,
+    pub inactive_sources: u64,
+    pub last_scan_time: Option<String>,
+    pub next_scan_time: Option<String>,
+    pub is_scanning: bool,
+}
+
+/// 每日视频计数
+#[derive(Serialize, ToSchema, FromQueryResult)]
+pub struct DayCountPair {
+    pub day: String,
+    pub cnt: i64,
+}
+
+/// 系统信息
+#[derive(Serialize, ToSchema)]
+pub struct SysInfo {
+    pub total_memory: u64,
+    pub used_memory: u64,
+    pub process_memory: u64,
+    pub used_cpu: f32,
+    pub process_cpu: f32,
+    pub total_disk: u64,
+    pub available_disk: u64,
+}

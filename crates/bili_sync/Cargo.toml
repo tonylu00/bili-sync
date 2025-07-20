@@ -13,6 +13,7 @@ build = "build.rs"
 anyhow = { workspace = true }
 arc-swap = { workspace = true }
 async-stream = { workspace = true }
+base64 = { workspace = true }
 # atty = "0.2.14" # 已移除：未使用
 axum = { workspace = true }
 bili_sync_entity = { workspace = true }
@@ -21,6 +22,7 @@ chrono = { workspace = true }
 clap = { workspace = true }
 cookie = { workspace = true }
 cow-utils = { workspace = true }
+dashmap = { workspace = true }
 dirs = { workspace = true }
 enum_dispatch = { workspace = true }
 float-ord = { workspace = true }
@@ -35,6 +37,7 @@ md5 = { workspace = true }
 memchr = { workspace = true }
 mime_guess = { workspace = true }
 once_cell = { workspace = true }
+parking_lot = { workspace = true }
 prost = { workspace = true }
 quick-xml = { workspace = true }
 rand = { workspace = true }
@@ -47,9 +50,12 @@ serde = { workspace = true }
 serde_json = { workspace = true }
 serde_urlencoded = { workspace = true }
 strum = { workspace = true }
+sysinfo = { workspace = true }
 thiserror = { workspace = true }
 tokio = { workspace = true }
+tokio-stream = { workspace = true }
 tokio-util = { workspace = true }
+tokio-tungstenite = { workspace = true }
 # toml = { workspace = true } # 已移除：配置已迁移到数据库
 # toml_edit = { workspace = true } # 已移除：配置已迁移到数据库
 # tower = { workspace = true } # 已移除：未使用
@@ -57,7 +63,7 @@ tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
 utoipa = { workspace = true }
 utoipa-swagger-ui = { workspace = true }
-uuid = { version = "1.0", features = ["v4"] }
+uuid = { workspace = true }
 
 [dev-dependencies]
 arc-swap.workspace = true

@@ -6,6 +6,7 @@ pub mod model;
 pub mod nfo;
 pub mod signal;
 pub mod status;
+pub mod task_notifier;
 
 use std::fmt;
 use tracing::{Event, Subscriber};

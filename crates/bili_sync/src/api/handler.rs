@@ -4,13 +4,13 @@ use std::sync::Arc;
 use anyhow::{anyhow, Context, Result};
 use axum::extract::{Extension, Path, Query};
 
-use bili_sync_entity::*;
+use bili_sync_entity::{favorite, collection, submission, watch_later, video, page, video_source};
 use bili_sync_migration::Expr;
 use chrono::Utc;
 use reqwest;
 use sea_orm::{
     ColumnTrait, Condition, DatabaseConnection, EntityTrait, PaginatorTrait, QueryFilter, QueryOrder, QuerySelect, Set,
-    TransactionTrait, Unchanged,
+    TransactionTrait, Unchanged, FromQueryResult, ConnectionTrait,
 };
 use serde::{Deserialize, Serialize};
 use std::collections::VecDeque;
@@ -33,7 +33,7 @@ use crate::api::response::{
     HotReloadStatusResponse, InitialSetupCheckResponse, PageInfo, ResetAllVideosResponse, ResetVideoResponse,
     ResetVideoSourcePathResponse, SetupAuthTokenResponse, SubmissionVideosResponse, UpdateConfigResponse,
     UpdateCredentialResponse, UpdateVideoStatusResponse, VideoInfo, VideoResponse, VideoSource, VideoSourcesResponse,
-    VideosResponse, QRGenerateResponse, QRPollResponse, QRUserInfo,
+    VideosResponse, QRGenerateResponse, QRPollResponse, QRUserInfo, DashBoardResponse, MonitoringStatus,
 };
 use crate::api::wrapper::{ApiError, ApiResponse};
 use crate::utils::status::{PageStatus, VideoStatus};
@@ -8897,4 +8897,105 @@ async fn fetch_and_cache_season_title(season_id: &str) -> Option<String> {
     }
 
     None
+}
+
+/// 获取仪表盘数据
+#[utoipa::path(
+    get,
+    path = "/api/dashboard",
+    responses(
+        (status = 200, body = ApiResponse<DashBoardResponse>),
+    ),
+    security(
+        ("auth_token" = [])
+    )
+)]
+pub async fn get_dashboard_data(
+    Extension(db): Extension<Arc<DatabaseConnection>>,
+) -> Result<ApiResponse<crate::api::response::DashBoardResponse>, ApiError> {
+    let (enabled_favorites, enabled_collections, enabled_submissions, enabled_watch_later, enabled_bangumi,
+         total_favorites, total_collections, total_submissions, total_watch_later, total_bangumi, videos_by_day) = tokio::try_join!(
+        favorite::Entity::find()
+            .filter(favorite::Column::Enabled.eq(true))
+            .count(db.as_ref()),
+        collection::Entity::find()
+            .filter(collection::Column::Enabled.eq(true))
+            .count(db.as_ref()),
+        submission::Entity::find()
+            .filter(submission::Column::Enabled.eq(true))
+            .count(db.as_ref()),
+        watch_later::Entity::find()
+            .filter(watch_later::Column::Enabled.eq(true))
+            .count(db.as_ref()),
+        video_source::Entity::find()
+            .filter(video_source::Column::Type.eq(1))
+            .filter(video_source::Column::Enabled.eq(true))
+            .count(db.as_ref()),
+        // 统计所有视频源（包括禁用的）
+        favorite::Entity::find()
+            .count(db.as_ref()),
+        collection::Entity::find()
+            .count(db.as_ref()),
+        submission::Entity::find()
+            .count(db.as_ref()),
+        watch_later::Entity::find()
+            .count(db.as_ref()),
+        video_source::Entity::find()
+            .filter(video_source::Column::Type.eq(1))
+            .count(db.as_ref()),
+        crate::api::response::DayCountPair::find_by_statement(sea_orm::Statement::from_string(
+            db.get_database_backend(),
+            // 用 SeaORM 太复杂了，直接写个裸 SQL
+            "
+SELECT
+    dates.day AS day,
+    COUNT(video.id) AS cnt
+FROM
+    (
+        SELECT
+            STRFTIME('%Y-%m-%d', DATE('now', '-' || n || ' days', 'localtime')) AS day,
+            DATETIME(DATE('now', '-' || n || ' days', 'localtime'), 'utc') AS start_utc_datetime,
+            DATETIME(DATE('now', '-' || n || ' days', '+1 day', 'localtime'), 'utc') AS end_utc_datetime
+        FROM
+            (
+                SELECT 0 AS n UNION ALL SELECT 1 UNION ALL SELECT 2 UNION ALL SELECT 3 UNION ALL SELECT 4 UNION ALL SELECT 5 UNION ALL SELECT 6
+            )
+    ) AS dates
+LEFT JOIN
+    video ON video.created_at >= dates.start_utc_datetime AND video.created_at < dates.end_utc_datetime
+GROUP BY
+    dates.day
+ORDER BY
+    dates.day;
+    "
+        ))
+        .all(db.as_ref()),
+    )?;
+
+    // 获取监听状态信息
+    let active_sources = enabled_favorites + enabled_collections + enabled_submissions + enabled_bangumi + if enabled_watch_later > 0 { 1 } else { 0 };
+    let total_all_sources = total_favorites + total_collections + total_submissions + total_bangumi + if total_watch_later > 0 { 1 } else { 0 };
+    let inactive_sources = total_all_sources - active_sources;
+    
+    // 从任务状态获取扫描时间信息
+    let task_status = crate::utils::task_notifier::TASK_STATUS_NOTIFIER.subscribe().borrow().clone();
+    let is_scanning = crate::task::TASK_CONTROLLER.is_scanning();
+    
+    let monitoring_status = MonitoringStatus {
+        total_sources: total_all_sources,
+        active_sources,
+        inactive_sources,
+        last_scan_time: task_status.last_run.map(|t| t.to_rfc3339()),
+        next_scan_time: task_status.next_run.map(|t| t.to_rfc3339()),
+        is_scanning,
+    };
+    
+    Ok(ApiResponse::ok(crate::api::response::DashBoardResponse {
+        enabled_favorites,
+        enabled_collections,
+        enabled_submissions,
+        enable_watch_later: enabled_watch_later > 0,
+        videos_by_day,
+        monitoring_status,
+    }))
 }
