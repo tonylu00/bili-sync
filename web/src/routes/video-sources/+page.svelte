@@ -19,9 +19,14 @@
 	import FolderOpenIcon from '@lucide/svelte/icons/folder-open';
 	import TrashIcon from '@lucide/svelte/icons/trash-2';
 	import RotateCcwIcon from '@lucide/svelte/icons/rotate-ccw';
+	import ChevronDownIcon from '@lucide/svelte/icons/chevron-down';
+	import ChevronRightIcon from '@lucide/svelte/icons/chevron-right';
 	import { goto } from '$app/navigation';
 
 	let loading = false;
+
+	// 折叠状态管理 - 默认所有分类都是折叠状态
+	let collapsedSections: Record<string, boolean> = {};
 
 	// 删除对话框状态
 	let showDeleteDialog = false;
@@ -193,6 +198,18 @@
 		showResetPathDialog = false;
 	}
 
+	// 切换折叠状态
+	function toggleCollapse(sectionKey: string) {
+		// 如果未设置，默认为折叠状态(true)，点击后变为展开状态(false)
+		// 如果已设置，则切换状态
+		if (collapsedSections[sectionKey] === undefined) {
+			collapsedSections[sectionKey] = false; // 第一次点击展开
+		} else {
+			collapsedSections[sectionKey] = !collapsedSections[sectionKey];
+		}
+		collapsedSections = { ...collapsedSections };
+	}
+
 	function navigateToAddSource() {
 		goto('/add-source');
 	}
@@ -231,8 +248,13 @@
 			{#each Object.entries(VIDEO_SOURCES) as [sourceKey, sourceConfig]}
 				{@const sources = $videoSourceStore ? $videoSourceStore[sourceConfig.type] : []}
 				<Card>
-					<CardHeader>
+					<CardHeader class="cursor-pointer" onclick={() => toggleCollapse(sourceKey)}>
 						<CardTitle class="flex items-center gap-2">
+							{#if collapsedSections[sourceKey] !== false}
+								<ChevronRightIcon class="h-4 w-4 text-muted-foreground" />
+							{:else}
+								<ChevronDownIcon class="h-4 w-4 text-muted-foreground" />
+							{/if}
 							<sourceConfig.icon class="h-5 w-5" />
 							{sourceConfig.title}
 							<Badge variant="outline" class="ml-auto">
@@ -240,92 +262,94 @@
 							</Badge>
 						</CardTitle>
 					</CardHeader>
-					<CardContent>
-						{#if sources && sources.length > 0}
-							<div class="space-y-3">
-								{#each sources as source}
-									<div class="flex items-center justify-between p-3 border rounded-lg">
-										<div class="flex-1 min-w-0">
-											<div class="flex items-center gap-2 mb-1">
-												<span class="font-medium truncate">{source.name}</span>
-												<Badge variant={source.enabled ? 'default' : 'secondary'} class="text-xs">
-													{source.enabled ? '已启用' : '已禁用'}
-												</Badge>
+					{#if collapsedSections[sourceKey] === false}
+						<CardContent>
+							{#if sources && sources.length > 0}
+								<div class="space-y-3">
+									{#each sources as source}
+										<div class="flex items-center justify-between p-3 border rounded-lg">
+											<div class="flex-1 min-w-0">
+												<div class="flex items-center gap-2 mb-1">
+													<span class="font-medium truncate">{source.name}</span>
+													<Badge variant={source.enabled ? 'default' : 'secondary'} class="text-xs">
+														{source.enabled ? '已启用' : '已禁用'}
+													</Badge>
+												</div>
+												<div class="text-sm text-muted-foreground truncate" title={source.path}>
+													{source.path || '未设置路径'}
+												</div>
+												{#if source.scan_deleted_videos}
+													<div class="text-xs text-blue-600 mt-1">扫描删除视频已启用</div>
+												{/if}
 											</div>
-											<div class="text-sm text-muted-foreground truncate" title={source.path}>
-												{source.path || '未设置路径'}
+											
+											<div class="flex items-center gap-1 ml-4">
+												<!-- 启用/禁用 -->
+												<Button
+													size="sm"
+													variant="ghost"
+													onclick={() => handleToggleEnabled(sourceConfig.type, source.id, source.enabled, source.name)}
+													title={source.enabled ? '禁用' : '启用'}
+												>
+													<PowerIcon class="h-4 w-4 {source.enabled ? 'text-green-600' : 'text-gray-400'}" />
+												</Button>
+												
+												<!-- 重设路径 -->
+												<Button
+													size="sm"
+													variant="ghost"
+													onclick={() => handleResetPath(sourceConfig.type, source.id, source.name, source.path)}
+													title="重设路径"
+												>
+													<FolderOpenIcon class="h-4 w-4 text-orange-600" />
+												</Button>
+												
+												<!-- 扫描删除视频设置 -->
+												<Button
+													size="sm"
+													variant="ghost"
+													onclick={() => handleToggleScanDeleted(sourceConfig.type, source.id, source.scan_deleted_videos)}
+													title={source.scan_deleted_videos ? '禁用扫描已删除' : '启用扫描已删除'}
+												>
+													<RotateCcwIcon class="h-4 w-4 {source.scan_deleted_videos ? 'text-blue-600' : 'text-gray-400'}" />
+												</Button>
+												
+												<!-- 删除 -->
+												<Button
+													size="sm"
+													variant="ghost"
+													onclick={() => handleDeleteSource(sourceConfig.type, source.id, source.name)}
+													title="删除"
+												>
+													<TrashIcon class="h-4 w-4 text-destructive" />
+												</Button>
 											</div>
-											{#if source.scan_deleted_videos}
-												<div class="text-xs text-blue-600 mt-1">扫描删除视频已启用</div>
-											{/if}
 										</div>
-										
-										<div class="flex items-center gap-1 ml-4">
-											<!-- 启用/禁用 -->
-											<Button
-												size="sm"
-												variant="ghost"
-												onclick={() => handleToggleEnabled(sourceConfig.type, source.id, source.enabled, source.name)}
-												title={source.enabled ? '禁用' : '启用'}
-											>
-												<PowerIcon class="h-4 w-4 {source.enabled ? 'text-green-600' : 'text-gray-400'}" />
-											</Button>
-											
-											<!-- 重设路径 -->
-											<Button
-												size="sm"
-												variant="ghost"
-												onclick={() => handleResetPath(sourceConfig.type, source.id, source.name, source.path)}
-												title="重设路径"
-											>
-												<FolderOpenIcon class="h-4 w-4 text-orange-600" />
-											</Button>
-											
-											<!-- 扫描删除视频设置 -->
-											<Button
-												size="sm"
-												variant="ghost"
-												onclick={() => handleToggleScanDeleted(sourceConfig.type, source.id, source.scan_deleted_videos)}
-												title={source.scan_deleted_videos ? '禁用扫描已删除' : '启用扫描已删除'}
-											>
-												<RotateCcwIcon class="h-4 w-4 {source.scan_deleted_videos ? 'text-blue-600' : 'text-gray-400'}" />
-											</Button>
-											
-											<!-- 删除 -->
-											<Button
-												size="sm"
-												variant="ghost"
-												onclick={() => handleDeleteSource(sourceConfig.type, source.id, source.name)}
-												title="删除"
-											>
-												<TrashIcon class="h-4 w-4 text-destructive" />
-											</Button>
-										</div>
-									</div>
-								{/each}
-							</div>
-						{:else}
-							<div class="flex flex-col items-center justify-center py-8 text-center">
-								<sourceConfig.icon class="h-12 w-12 text-muted-foreground mb-4" />
-								<div class="text-muted-foreground mb-2">暂无{sourceConfig.title}</div>
-								<p class="text-sm text-muted-foreground mb-4">
-									{#if sourceConfig.type === 'favorite'}
-										还没有添加任何收藏夹订阅
-									{:else if sourceConfig.type === 'collection'}
-										还没有添加任何合集或列表订阅
-									{:else if sourceConfig.type === 'submission'}
-										还没有添加任何用户投稿订阅
-									{:else}
-										还没有添加稍后再看订阅
-									{/if}
-								</p>
-								<Button size="sm" variant="outline" onclick={navigateToAddSource}>
-									<PlusIcon class="h-4 w-4 mr-2" />
-									添加{sourceConfig.title}
-								</Button>
-							</div>
-						{/if}
-					</CardContent>
+									{/each}
+								</div>
+							{:else}
+								<div class="flex flex-col items-center justify-center py-8 text-center">
+									<sourceConfig.icon class="h-12 w-12 text-muted-foreground mb-4" />
+									<div class="text-muted-foreground mb-2">暂无{sourceConfig.title}</div>
+									<p class="text-sm text-muted-foreground mb-4">
+										{#if sourceConfig.type === 'favorite'}
+											还没有添加任何收藏夹订阅
+										{:else if sourceConfig.type === 'collection'}
+											还没有添加任何合集或列表订阅
+										{:else if sourceConfig.type === 'submission'}
+											还没有添加任何用户投稿订阅
+										{:else}
+											还没有添加稍后再看订阅
+										{/if}
+									</p>
+									<Button size="sm" variant="outline" onclick={navigateToAddSource}>
+										<PlusIcon class="h-4 w-4 mr-2" />
+										添加{sourceConfig.title}
+									</Button>
+								</div>
+							{/if}
+						</CardContent>
+					{/if}
 				</Card>
 			{/each}
 		</div>

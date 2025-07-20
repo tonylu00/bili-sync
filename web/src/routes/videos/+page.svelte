@@ -312,7 +312,7 @@
 
 	<!-- 筛选面板 -->
 	{#if showFilters && videoSources}
-		<div class="border rounded-lg p-4 space-y-4">
+		<div class="border rounded-lg p-3 space-y-3">
 			<div class="flex items-center justify-between">
 				<h3 class="text-sm font-medium">按视频源筛选</h3>
 				{#if selectedSourceType}
@@ -322,7 +322,7 @@
 				{/if}
 			</div>
 			
-			<div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+			<div class="space-y-3">
 				{#each Object.entries(VIDEO_SOURCES) as [sourceKey, sourceConfig]}
 					{@const sources = videoSources[sourceConfig.type]}
 					{#if sources && sources.length > 0}
@@ -330,18 +330,21 @@
 							<div class="flex items-center gap-2">
 								<sourceConfig.icon class="h-4 w-4 text-muted-foreground" />
 								<span class="text-sm font-medium">{sourceConfig.title}</span>
+								<Badge variant="outline" class="text-xs">{sources.length}</Badge>
 							</div>
-							<div class="space-y-1">
+							<div class="flex flex-wrap gap-1">
 								{#each sources as source}
-									<button
-										class="w-full text-left text-sm p-2 rounded border hover:bg-accent transition-colors {selectedSourceType === sourceConfig.type && selectedSourceId === source.id.toString() ? 'bg-accent border-primary' : ''}"
+									<Button
+										variant={selectedSourceType === sourceConfig.type && selectedSourceId === source.id.toString() ? 'default' : 'outline'}
+										size="sm"
+										class="h-7 text-xs {!source.enabled ? 'opacity-60' : ''}"
 										onclick={() => handleSourceFilter(sourceConfig.type, source.id.toString())}
 									>
-										<div class="truncate">{source.name}</div>
+										{source.name}
 										{#if !source.enabled}
-											<div class="text-xs text-muted-foreground">(已禁用)</div>
+											<span class="ml-1 text-xs opacity-70">(禁用)</span>
 										{/if}
-									</button>
+									</Button>
 								{/each}
 							</div>
 						</div>

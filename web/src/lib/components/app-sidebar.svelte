@@ -41,9 +41,12 @@
 		</a>
 	</Sidebar.Header>
 	<Sidebar.Content class="flex flex-col px-2 py-3">
-		<div class="flex-1">
-			<!-- 主要功能导航 -->
-			<div class="border-border border-b pb-4">
+		<div class="flex-1 space-y-6">
+			<!-- 总览 -->
+			<div>
+				<div class="text-muted-foreground mb-2 px-3 text-xs font-medium uppercase tracking-wider">
+					总览
+				</div>
 				<Sidebar.Menu class="space-y-1">
 					<Sidebar.MenuItem>
 						<Sidebar.MenuButton>
@@ -62,11 +65,33 @@
 						<Sidebar.MenuButton>
 							<button
 								class="hover:bg-accent/50 text-foreground flex w-full cursor-pointer items-center rounded-lg px-3 py-2.5 font-medium transition-all duration-200"
+								on:click={() => handleNavClick('/logs')}
+							>
+								<div class="flex flex-1 items-center gap-3">
+									<FileText class="text-muted-foreground h-4 w-4" />
+									<span class="text-sm">日志</span>
+								</div>
+							</button>
+						</Sidebar.MenuButton>
+					</Sidebar.MenuItem>
+				</Sidebar.Menu>
+			</div>
+
+			<!-- 内容管理 -->
+			<div>
+				<div class="text-muted-foreground mb-2 px-3 text-xs font-medium uppercase tracking-wider">
+					内容管理
+				</div>
+				<Sidebar.Menu class="space-y-1">
+					<Sidebar.MenuItem>
+						<Sidebar.MenuButton>
+							<button
+								class="hover:bg-accent/50 text-foreground flex w-full cursor-pointer items-center rounded-lg px-3 py-2.5 font-medium transition-all duration-200"
 								on:click={() => handleNavClick('/videos')}
 							>
 								<div class="flex flex-1 items-center gap-3">
 									<Video class="text-muted-foreground h-4 w-4" />
-									<span class="text-sm">视频管理</span>
+									<span class="text-sm">视频</span>
 								</div>
 							</button>
 						</Sidebar.MenuButton>
@@ -79,7 +104,7 @@
 							>
 								<div class="flex flex-1 items-center gap-3">
 									<Database class="text-muted-foreground h-4 w-4" />
-									<span class="text-sm">视频源管理</span>
+									<span class="text-sm">视频源</span>
 								</div>
 							</button>
 						</Sidebar.MenuButton>
@@ -100,19 +125,6 @@
 							<div class="flex flex-1 items-center gap-3">
 								<ListTodo class="text-muted-foreground h-4 w-4" />
 								<span class="text-sm">任务队列</span>
-							</div>
-						</button>
-					</Sidebar.MenuButton>
-				</Sidebar.MenuItem>
-				<Sidebar.MenuItem>
-					<Sidebar.MenuButton>
-						<button
-							class="hover:bg-accent/50 text-foreground flex w-full cursor-pointer items-center rounded-lg px-3 py-2.5 font-medium transition-all duration-200"
-							on:click={() => handleNavClick('/logs')}
-						>
-							<div class="flex flex-1 items-center gap-3">
-								<FileText class="text-muted-foreground h-4 w-4" />
-								<span class="text-sm">系统日志</span>
 							</div>
 						</button>
 					</Sidebar.MenuButton>
