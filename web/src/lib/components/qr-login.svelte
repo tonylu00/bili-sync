@@ -193,12 +193,45 @@
     }
   }
   
-  function resetQRCode() {
+  async function resetQRCode() {
     stopPolling();
     qrCodeDataUrl = '';
     sessionId = '';
     status = 'idle';
     statusMessage = '';
+    
+    // 重新生成二维码
+    generateQRCode();
+  }
+  
+  // 新增：切换账号函数，这个才需要清除凭证
+  async function switchAccount() {
+    stopPolling();
+    qrCodeDataUrl = '';
+    sessionId = '';
+    status = 'idle';
+    statusMessage = '';
+    
+    // 清除现有凭证
+    try {
+      console.log('清除现有凭证...');
+      const response = await fetch('/api/auth/clear-credential', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+      });
+      
+      if (!response.ok) {
+        console.error('清除凭证失败:', response.status);
+      } else {
+        console.log('凭证已清除');
+      }
+    } catch (error) {
+      console.error('清除凭证时出错:', error);
+    }
+    
+    // 重新生成二维码
     generateQRCode();
   }
   
@@ -261,7 +294,7 @@
         <div class="text-6xl text-green-500">✓</div>
         <p class="text-sm text-green-600 text-center font-medium">{statusMessage}</p>
         {#if !autoRegenerate}
-          <Button onclick={resetQRCode} variant="default" size="sm">切换账号</Button>
+          <Button onclick={switchAccount} variant="default" size="sm">切换账号</Button>
         {/if}
       </div>
       

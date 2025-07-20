@@ -104,7 +104,7 @@ mod rename_tests {
 
 #[derive(OpenApi)]
 #[openapi(
-    paths(get_video_sources, get_videos, get_video, reset_video, reset_all_videos, reset_specific_tasks, update_video_status, add_video_source, update_video_source_enabled, update_video_source_scan_deleted, reset_video_source_path, delete_video_source, reload_config, get_config, update_config, get_bangumi_seasons, search_bilibili, get_user_favorites, get_user_collections, get_user_followings, get_subscribed_collections, get_submission_videos, get_logs, get_queue_status, proxy_image, get_config_item, get_config_history, validate_config, get_hot_reload_status, check_initial_setup, setup_auth_token, update_credential, generate_qr_code, poll_qr_status, get_current_user, pause_scanning_endpoint, resume_scanning_endpoint, get_task_control_status, get_video_play_info, proxy_video_stream, validate_favorite, get_user_favorites_by_uid),
+    paths(get_video_sources, get_videos, get_video, reset_video, reset_all_videos, reset_specific_tasks, update_video_status, add_video_source, update_video_source_enabled, update_video_source_scan_deleted, reset_video_source_path, delete_video_source, reload_config, get_config, update_config, get_bangumi_seasons, search_bilibili, get_user_favorites, get_user_collections, get_user_followings, get_subscribed_collections, get_submission_videos, get_logs, get_queue_status, proxy_image, get_config_item, get_config_history, validate_config, get_hot_reload_status, check_initial_setup, setup_auth_token, update_credential, generate_qr_code, poll_qr_status, get_current_user, clear_credential, pause_scanning_endpoint, resume_scanning_endpoint, get_task_control_status, get_video_play_info, proxy_video_stream, validate_favorite, get_user_favorites_by_uid),
     modifiers(&OpenAPIAuth),
     security(
         ("Token" = []),
@@ -6906,6 +6906,43 @@ pub async fn get_current_user() -> Result<ApiResponse<crate::api::response::QRUs
         user_id: user_data["mid"].as_i64().unwrap_or(0).to_string(),
         username: user_data["uname"].as_str().unwrap_or("").to_string(),
         avatar_url: user_data["face"].as_str().unwrap_or("").to_string(),
+    }))
+}
+
+/// 清除当前凭证
+#[utoipa::path(
+    post,
+    path = "/api/auth/clear-credential",
+    responses(
+        (status = 200, description = "清除成功", body = ApiResponse<UpdateCredentialResponse>),
+        (status = 500, description = "服务器内部错误")
+    )
+)]
+pub async fn clear_credential() -> Result<ApiResponse<UpdateCredentialResponse>, ApiError> {
+    use crate::bilibili::Credential;
+    
+    // 清空凭证
+    let empty_credential = Credential {
+        sessdata: String::new(),
+        bili_jct: String::new(),
+        buvid3: String::new(),
+        dedeuserid: String::new(),
+        ac_time_value: String::new(),
+    };
+    
+    // 获取配置管理器并保存空凭证
+    let config_manager = crate::config::get_config_manager()
+        .ok_or_else(|| anyhow::anyhow!("配置管理器未初始化"))?;
+    config_manager.update_config_item("credential", serde_json::to_value(&empty_credential)?).await?;
+    
+    // 更新内存中的配置
+    crate::config::with_config(|bundle| {
+        bundle.config.credential.store(None);
+    });
+    
+    Ok(ApiResponse::ok(UpdateCredentialResponse {
+        success: true,
+        message: "凭证已清除".to_string(),
     }))
 }
 

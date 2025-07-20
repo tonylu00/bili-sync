@@ -24,6 +24,7 @@ pub async fn auth(headers: HeaderMap, request: Request, next: Next) -> Result<Re
         "/api/auth/qr/generate",    // 生成登录二维码不需要认证
         "/api/auth/qr/poll",        // 轮询登录状态不需要认证
         "/api/auth/current-user",   // 获取当前用户信息不需要认证
+        "/api/auth/clear-credential", // 清除凭证不需要认证
     ];
 
     let needs_auth = path.starts_with("/api/") && !excluded_paths.iter().any(|&excluded| path.starts_with(excluded));
