@@ -31,10 +31,13 @@
 		MonitorIcon,
 		SettingsIcon,
 		ShieldIcon,
-		VideoIcon
+		VideoIcon,
+		PaletteIcon
 	} from 'lucide-svelte';
 	import { onMount } from 'svelte';
 	import { toast } from 'svelte-sonner';
+	import { theme, setTheme, type Theme } from '$lib/stores/theme';
+	import ThemeToggle from '$lib/components/theme-toggle.svelte';
 
 	let config: ConfigResponse | null = null;
 	let loading = false;
@@ -97,6 +100,12 @@
 			title: 'Aria2监控',
 			description: '下载器健康检查和自动重启配置',
 			icon: MonitorIcon
+		},
+		{
+			id: 'interface',
+			title: '界面设置',
+			description: '主题模式、显示选项等界面配置',
+			icon: PaletteIcon
 		},
 		{
 			id: 'system',
@@ -2484,6 +2493,127 @@
 						</Button>
 					</SheetFooter>
 				</form>
+			</div>
+		</div>
+	</SheetContent>
+</Sheet>
+
+<!-- 界面设置抽屉 -->
+<Sheet
+	open={openSheet === 'interface'}
+	onOpenChange={(open) => {
+		if (!open) openSheet = null;
+	}}
+>
+	<SheetContent
+		side={isMobile ? 'bottom' : 'right'}
+		class="{isMobile
+			? 'h-[90vh] max-h-[90vh] w-full max-w-none overflow-hidden'
+			: '!inset-y-0 !right-0 !h-screen !w-screen !max-w-none'} [&>button]:hidden"
+	>
+		{#if !isMobile && randomCovers.length > 0}
+			<!-- 电脑端背景图 -->
+			<div class="absolute inset-0 z-0 overflow-hidden">
+				<img
+					src={randomCovers[(currentBackgroundIndex + 7) % randomCovers.length]}
+					alt="背景"
+					class="h-full w-full object-cover"
+					style="opacity: 0.6; filter: contrast(1.1) brightness(0.9);"
+					loading="lazy"
+				/>
+				<div
+					class="absolute inset-0"
+					style="background: linear-gradient(to bottom right, rgba(255,255,255,0.85), rgba(255,255,255,0.5));"
+				></div>
+			</div>
+		{/if}
+		<div class="flex h-full items-center justify-center {isMobile ? '' : 'p-8'} relative z-10">
+			<div
+				class="{isMobile
+					? 'bg-background h-full w-full max-w-none'
+					: 'bg-card/95 w-full max-w-4xl rounded-lg border shadow-2xl backdrop-blur-sm'} relative overflow-hidden"
+			>
+				<SheetHeader class="{isMobile ? 'border-b p-4' : 'border-b p-6'} relative">
+					<SheetTitle>界面设置</SheetTitle>
+					<SheetDescription>主题模式、显示选项等界面配置</SheetDescription>
+					<!-- 自定义关闭按钮 -->
+					<button
+						onclick={() => (openSheet = null)}
+						class="ring-offset-background focus:ring-ring absolute right-2 top-2 rounded-sm p-1 opacity-70 transition-opacity hover:bg-gray-100 hover:opacity-100 focus:outline-none focus:ring-2 focus:ring-offset-2 disabled:pointer-events-none"
+						type="button"
+					>
+						<svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+							<path
+								stroke-linecap="round"
+								stroke-linejoin="round"
+								stroke-width="2"
+								d="M6 18L18 6M6 6l12 12"
+							></path>
+						</svg>
+						<span class="sr-only">关闭</span>
+					</button>
+				</SheetHeader>
+				<div class="bg-background/50 {isMobile ? 'flex-1 overflow-y-auto px-4 pb-4' : 'flex-1 overflow-y-auto p-6'}">
+					<div class="mx-auto max-w-4xl space-y-6">
+						<!-- 主题设置 -->
+						<div class="space-y-4">
+							<div class="flex items-center justify-between">
+								<div>
+									<h3 class="text-lg font-medium">主题模式</h3>
+									<p class="text-muted-foreground text-sm">选择您偏好的界面主题</p>
+								</div>
+								<div class="flex items-center gap-2">
+									<span class="text-sm text-muted-foreground">快速切换:</span>
+									<ThemeToggle />
+								</div>
+							</div>
+							
+							<div class="space-y-3">
+								<h4 class="text-sm font-medium">快速切换</h4>
+								<div class="grid grid-cols-3 gap-3">
+									<button
+										class="border rounded-lg p-3 text-center hover:bg-accent transition-colors {$theme === 'light' ? 'border-primary bg-primary/10' : 'border-border'}"
+										onclick={() => setTheme('light')}
+									>
+										<div class="bg-background rounded-md border p-2 mb-2">
+											<div class="h-8 bg-gradient-to-r from-gray-100 to-gray-200 rounded"></div>
+										</div>
+										<span class="text-xs font-medium">浅色模式</span>
+									</button>
+									
+									<button
+										class="border rounded-lg p-3 text-center hover:bg-accent transition-colors {$theme === 'dark' ? 'border-primary bg-primary/10' : 'border-border'}"
+										onclick={() => setTheme('dark')}
+									>
+										<div class="bg-slate-900 rounded-md border p-2 mb-2">
+											<div class="h-8 bg-gradient-to-r from-slate-700 to-slate-800 rounded"></div>
+										</div>
+										<span class="text-xs font-medium">深色模式</span>
+									</button>
+									
+									<button
+										class="border rounded-lg p-3 text-center hover:bg-accent transition-colors {$theme === 'system' ? 'border-primary bg-primary/10' : 'border-border'}"
+										onclick={() => setTheme('system')}
+									>
+										<div class="bg-gradient-to-r from-gray-100 to-slate-900 rounded-md border p-2 mb-2">
+											<div class="h-8 bg-gradient-to-r from-gray-200 to-slate-700 rounded"></div>
+										</div>
+										<span class="text-xs font-medium">跟随系统</span>
+									</button>
+								</div>
+							</div>
+							
+							<div class="rounded-lg border border-blue-200 bg-blue-50 p-3">
+								<h5 class="mb-2 font-medium text-blue-800">主题说明</h5>
+								<div class="space-y-1 text-sm text-blue-700">
+									<p><strong>浅色模式：</strong>适合在明亮环境下使用，提供清晰的视觉体验</p>
+									<p><strong>深色模式：</strong>适合在昏暗环境下使用，减少眼部疲劳</p>
+									<p><strong>跟随系统：</strong>根据操作系统的主题设置自动切换</p>
+								</div>
+							</div>
+						</div>
+					</div>
+				</div>
 			</div>
 		</div>
 	</SheetContent>

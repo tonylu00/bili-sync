@@ -372,12 +372,12 @@
 
 		<!-- 下载路径信息 -->
 		{#if videoData.pages && videoData.pages.length > 0 && videoData.pages[0].path}
-			<div class="mb-4 rounded-lg border bg-gray-50 p-4">
-				<h3 class="mb-2 text-sm font-medium text-gray-700">📁 下载保存路径</h3>
-				<div class="rounded border bg-white px-3 py-2 font-mono text-sm break-all">
+			<div class="mb-4 rounded-lg border bg-muted p-4">
+				<h3 class="mb-2 text-sm font-medium text-foreground">📁 下载保存路径</h3>
+				<div class="rounded border bg-card px-3 py-2 font-mono text-sm break-all">
 					{videoData.pages[0].path}
 				</div>
-				<p class="mt-1 text-xs text-gray-500">视频文件将保存到此路径下</p>
+				<p class="mt-1 text-xs text-muted-foreground">视频文件将保存到此路径下</p>
 			</div>
 		{/if}
 	</section>

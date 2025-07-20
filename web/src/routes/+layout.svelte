@@ -13,6 +13,8 @@
 	import type { ApiError } from '$lib/types';
 	import { LogOut } from '@lucide/svelte';
 	import ResponsiveButton from '$lib/components/responsive-button.svelte';
+	import { initTheme } from '$lib/stores/theme';
+	import ThemeToggle from '$lib/components/theme-toggle.svelte';
 
 	let dataLoaded = false;
 	let isAuthenticated = false;
@@ -59,6 +61,8 @@
 
 	// 初始化共用数据
 	onMount(async () => {
+		// 初始化主题
+		initTheme();
 		await checkAuthStatus();
 		// 监听登录成功事件
 		window.addEventListener('login-success', () => {
@@ -89,6 +93,7 @@
 							<!-- 保留空间保持布局一致性 -->
 						</div>
 						<div class="flex items-center gap-1 sm:gap-2">
+							<ThemeToggle />
 							<ResponsiveButton
 								size="sm"
 								variant="outline"
