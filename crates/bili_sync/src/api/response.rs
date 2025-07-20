@@ -132,6 +132,13 @@ pub struct VideoSource {
     pub enabled: bool,
     pub path: String,
     pub scan_deleted_videos: bool,
+    // 类型特有的ID字段
+    pub f_id: Option<i64>,        // 收藏夹ID
+    pub s_id: Option<i64>,        // 合集ID
+    pub m_id: Option<i64>,        // UP主ID (用于合集)
+    pub upper_id: Option<i64>,    // UP主ID (用于投稿)
+    pub season_id: Option<String>, // 番剧season_id
+    pub media_id: Option<String>,  // 番剧media_id
 }
 
 #[derive(Serialize, ToSchema)]

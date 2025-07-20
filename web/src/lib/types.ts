@@ -24,6 +24,13 @@ export interface VideoSource {
 	enabled: boolean;
 	path: string;
 	scan_deleted_videos: boolean;
+	// 类型特有的ID字段
+	f_id?: number;        // 收藏夹ID
+	s_id?: number;        // 合集ID
+	m_id?: number;        // UP主ID (用于合集)
+	upper_id?: number;    // UP主ID (用于投稿)
+	season_id?: string;   // 番剧season_id
+	media_id?: string;    // 番剧media_id
 }
 
 // 视频来源响应类型

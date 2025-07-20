@@ -278,6 +278,22 @@
 												<div class="text-sm text-muted-foreground truncate" title={source.path}>
 													{source.path || '未设置路径'}
 												</div>
+												<!-- 显示对应类型的ID -->
+												<div class="text-xs text-muted-foreground mt-1">
+													{#if sourceConfig.type === 'favorite' && source.f_id}
+														收藏夹ID: {source.f_id}
+													{:else if sourceConfig.type === 'collection' && source.s_id}
+														合集ID: {source.s_id}
+														{#if source.m_id} | UP主ID: {source.m_id}{/if}
+													{:else if sourceConfig.type === 'submission' && source.upper_id}
+														UP主ID: {source.upper_id}
+													{:else if sourceConfig.type === 'bangumi'}
+														{#if source.season_id}Season ID: {source.season_id}{/if}
+														{#if source.media_id}{source.season_id ? ' | ' : ''}Media ID: {source.media_id}{/if}
+													{:else if sourceConfig.type === 'watch_later'}
+														稍后再看 (无特定ID)
+													{/if}
+												</div>
 												{#if source.scan_deleted_videos}
 													<div class="text-xs text-blue-600 mt-1">扫描删除视频已启用</div>
 												{/if}

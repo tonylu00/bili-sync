@@ -141,10 +141,31 @@ pub async fn get_video_sources(
             collection::Column::Enabled,
             collection::Column::Path,
             collection::Column::ScanDeletedVideos,
+            collection::Column::SId,
+            collection::Column::MId,
         ])
-        .into_model::<VideoSource>()
+        .column_as(Expr::value(None::<i64>), "f_id")
+        .column_as(Expr::value(None::<i64>), "upper_id")
+        .column_as(Expr::value(None::<String>), "season_id")
+        .column_as(Expr::value(None::<String>), "media_id")
+        .into_tuple::<(i32, String, bool, String, bool, i64, i64, Option<i64>, Option<i64>, Option<String>, Option<String>)>()
         .all(db.as_ref())
-        .await?;
+        .await?
+        .into_iter()
+        .map(|(id, name, enabled, path, scan_deleted_videos, s_id, m_id, f_id, upper_id, season_id, media_id)| VideoSource {
+            id,
+            name,
+            enabled,
+            path,
+            scan_deleted_videos,
+            f_id,
+            s_id: Some(s_id),
+            m_id: Some(m_id),
+            upper_id,
+            season_id,
+            media_id,
+        })
+        .collect();
 
     let favorite_sources = favorite::Entity::find()
         .select_only()
@@ -154,10 +175,31 @@ pub async fn get_video_sources(
             favorite::Column::Enabled,
             favorite::Column::Path,
             favorite::Column::ScanDeletedVideos,
+            favorite::Column::FId,
         ])
-        .into_model::<VideoSource>()
+        .column_as(Expr::value(None::<i64>), "s_id")
+        .column_as(Expr::value(None::<i64>), "m_id")
+        .column_as(Expr::value(None::<i64>), "upper_id")
+        .column_as(Expr::value(None::<String>), "season_id")
+        .column_as(Expr::value(None::<String>), "media_id")
+        .into_tuple::<(i32, String, bool, String, bool, i64, Option<i64>, Option<i64>, Option<i64>, Option<String>, Option<String>)>()
         .all(db.as_ref())
-        .await?;
+        .await?
+        .into_iter()
+        .map(|(id, name, enabled, path, scan_deleted_videos, f_id, s_id, m_id, upper_id, season_id, media_id)| VideoSource {
+            id,
+            name,
+            enabled,
+            path,
+            scan_deleted_videos,
+            f_id: Some(f_id),
+            s_id,
+            m_id,
+            upper_id,
+            season_id,
+            media_id,
+        })
+        .collect();
 
     let submission_sources = submission::Entity::find()
         .select_only()
@@ -166,11 +208,32 @@ pub async fn get_video_sources(
             submission::Column::Enabled,
             submission::Column::Path,
             submission::Column::ScanDeletedVideos,
+            submission::Column::UpperId,
         ])
         .column_as(submission::Column::UpperName, "name")
-        .into_model::<VideoSource>()
+        .column_as(Expr::value(None::<i64>), "f_id")
+        .column_as(Expr::value(None::<i64>), "s_id")
+        .column_as(Expr::value(None::<i64>), "m_id")
+        .column_as(Expr::value(None::<String>), "season_id")
+        .column_as(Expr::value(None::<String>), "media_id")
+        .into_tuple::<(i32, bool, String, bool, i64, String, Option<i64>, Option<i64>, Option<i64>, Option<String>, Option<String>)>()
         .all(db.as_ref())
-        .await?;
+        .await?
+        .into_iter()
+        .map(|(id, enabled, path, scan_deleted_videos, upper_id, name, f_id, s_id, m_id, season_id, media_id)| VideoSource {
+            id,
+            name,
+            enabled,
+            path,
+            scan_deleted_videos,
+            f_id,
+            s_id,
+            m_id,
+            upper_id: Some(upper_id),
+            season_id,
+            media_id,
+        })
+        .collect();
 
     let watch_later_sources = watch_later::Entity::find()
         .select_only()
@@ -181,9 +244,30 @@ pub async fn get_video_sources(
             watch_later::Column::ScanDeletedVideos,
         ])
         .column_as(Expr::value("稍后再看"), "name")
-        .into_model::<VideoSource>()
+        .column_as(Expr::value(None::<i64>), "f_id")
+        .column_as(Expr::value(None::<i64>), "s_id")
+        .column_as(Expr::value(None::<i64>), "m_id")
+        .column_as(Expr::value(None::<i64>), "upper_id")
+        .column_as(Expr::value(None::<String>), "season_id")
+        .column_as(Expr::value(None::<String>), "media_id")
+        .into_tuple::<(i32, bool, String, bool, String, Option<i64>, Option<i64>, Option<i64>, Option<i64>, Option<String>, Option<String>)>()
         .all(db.as_ref())
-        .await?;
+        .await?
+        .into_iter()
+        .map(|(id, enabled, path, scan_deleted_videos, name, f_id, s_id, m_id, upper_id, season_id, media_id)| VideoSource {
+            id,
+            name,
+            enabled,
+            path,
+            scan_deleted_videos,
+            f_id,
+            s_id,
+            m_id,
+            upper_id,
+            season_id,
+            media_id,
+        })
+        .collect();
 
     // 确保bangumi_sources是一个数组，即使为空
     let bangumi_sources = video_source::Entity::find()
@@ -195,10 +279,31 @@ pub async fn get_video_sources(
             video_source::Column::Enabled,
             video_source::Column::Path,
             video_source::Column::ScanDeletedVideos,
+            video_source::Column::SeasonId,
+            video_source::Column::MediaId,
         ])
-        .into_model::<VideoSource>()
+        .column_as(Expr::value(None::<i64>), "f_id")
+        .column_as(Expr::value(None::<i64>), "s_id")
+        .column_as(Expr::value(None::<i64>), "m_id")
+        .column_as(Expr::value(None::<i64>), "upper_id")
+        .into_tuple::<(i32, String, bool, String, bool, Option<String>, Option<String>, Option<i64>, Option<i64>, Option<i64>, Option<i64>)>()
         .all(db.as_ref())
-        .await?;
+        .await?
+        .into_iter()
+        .map(|(id, name, enabled, path, scan_deleted_videos, season_id, media_id, f_id, s_id, m_id, upper_id)| VideoSource {
+            id,
+            name,
+            enabled,
+            path,
+            scan_deleted_videos,
+            f_id,
+            s_id,
+            m_id,
+            upper_id,
+            season_id,
+            media_id,
+        })
+        .collect();
 
     // 返回响应，确保每个分类都是一个数组
     Ok(ApiResponse::ok(VideoSourcesResponse {
