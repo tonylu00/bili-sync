@@ -31,6 +31,13 @@ pub struct VideoResponse {
 }
 
 #[derive(Serialize, ToSchema)]
+pub struct VideoBvidResponse {
+    pub bvid: String,
+    pub title: String,
+    pub bilibili_url: String,
+}
+
+#[derive(Serialize, ToSchema)]
 pub struct ResetVideoResponse {
     pub resetted: bool,
     pub video: VideoInfo,
@@ -559,6 +566,10 @@ pub struct VideoPlayInfoResponse {
     pub video_title: String,
     pub video_duration: Option<u32>,
     pub video_quality_description: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub video_bvid: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub bilibili_url: Option<String>,
 }
 
 /// 视频流信息

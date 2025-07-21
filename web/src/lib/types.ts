@@ -602,6 +602,15 @@ export interface VideoPlayInfoResponse {
 	video_title: string;
 	video_duration?: number;
 	video_quality_description: string;
+	video_bvid?: string;
+	bilibili_url?: string;
+}
+
+// 视频BVID信息响应类型
+export interface VideoBvidResponse {
+	bvid: string;
+	title: string;
+	bilibili_url: string;
 }
 
 // 视频流信息类型

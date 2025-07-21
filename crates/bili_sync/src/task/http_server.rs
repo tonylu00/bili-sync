@@ -35,6 +35,7 @@ use crate::api::handler::{
     get_user_favorites_by_uid,
     get_user_followings,
     get_video,
+    get_video_bvid,
     get_video_play_info,
     get_video_sources,
     get_videos,
@@ -161,6 +162,7 @@ pub async fn http_server(database_connection: Arc<DatabaseConnection>) -> Result
         .route("/api/videos/stream/{video_id}", get(stream_video))
         // 新增在线播放API
         .route("/api/videos/{video_id}/play-info", get(get_video_play_info))
+        .route("/api/videos/{video_id}/bvid", get(get_video_bvid))
         .route("/api/videos/proxy-stream", get(proxy_video_stream))
         // 先应用认证中间件
         .layer(Extension(database_connection))

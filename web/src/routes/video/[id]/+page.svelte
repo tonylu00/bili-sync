@@ -102,7 +102,8 @@
 			{
 				label: '主页',
 				onClick: () => {
-					goto(`/${ToQuery($appStateStore)}`);
+					const query = ToQuery($appStateStore);
+					goto(query ? `/?${query}` : '/');
 				}
 			},
 			{ label: '视频详情', isActive: true }
@@ -160,6 +161,32 @@
 			onlinePlayInfo = null;
 		} finally {
 			loadingPlayInfo = false;
+		}
+	}
+
+	// 打开B站页面
+	async function openBilibiliPage() {
+		try {
+			const videoId = getPlayVideoId();
+			const result = await api.getVideoPlayInfo(videoId);
+			const bilibiliUrl = result.data.bilibili_url;
+			
+			if (bilibiliUrl) {
+				console.log('获取到B站链接:', bilibiliUrl);
+				window.open(bilibiliUrl, '_blank');
+			} else if (result.data.video_bvid) {
+				// 如果没有bilibili_url但有bvid，手动构建链接
+				const manualUrl = `https://www.bilibili.com/video/${result.data.video_bvid}`;
+				console.log('手动构建B站链接:', manualUrl);
+				window.open(manualUrl, '_blank');
+			} else {
+				throw new Error('无法获取视频的B站标识信息');
+			}
+		} catch (error) {
+			console.error('获取B站链接失败:', error);
+			toast.error('无法获取B站链接', {
+				description: '该视频可能没有有效的B站链接信息'
+			});
 		}
 	}
 
@@ -308,6 +335,18 @@
 		<div class="mb-4 flex {isMobile ? 'flex-col gap-3' : 'items-center justify-between'}">
 			<h2 class="{isMobile ? 'text-lg' : 'text-xl'} font-semibold">视频信息</h2>
 			<div class="flex {isMobile ? 'flex-col gap-2' : 'gap-2'}">
+				<Button
+					size="sm"
+					variant="outline"
+					class="{isMobile ? 'w-full' : 'shrink-0'} cursor-pointer"
+					onclick={openBilibiliPage}
+					title="在B站打开此视频"
+				>
+					<svg class="mr-2 h-4 w-4" viewBox="0 0 24 24" fill="currentColor">
+						<path d="M9.64 7.64c.23-.5.36-1.05.36-1.64 0-2.21-1.79-4-4-4S2 3.79 2 6s1.79 4 4 4c.59 0 1.14-.13 1.64-.36L10 12l-2.36 2.36c-.5-.23-1.05-.36-1.64-.36-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4c0-.59-.13-1.14-.36-1.64L12 14l2.36 2.36c-.23.5-.36 1.05-.36 1.64 0 2.21 1.79 4 4 4s4-1.79 4-4-1.79-4-4-4c-.59 0-1.14.13-1.64.36L14 12l2.36-2.36c.5.23 1.05.36 1.64.36 2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4c0 .59.13 1.14.36 1.64L12 10 9.64 7.64z"/>
+					</svg>
+					访问B站
+				</Button>
 				<Button
 					size="sm"
 					variant="outline"

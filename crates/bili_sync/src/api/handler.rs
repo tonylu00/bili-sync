@@ -7114,6 +7114,37 @@ pub async fn get_task_control_status() -> Result<ApiResponse<crate::api::respons
     }))
 }
 
+/// 获取视频的BVID信息（用于构建B站链接）
+#[utoipa::path(
+    get,
+    path = "/api/videos/{video_id}/bvid",
+    params(
+        ("video_id" = String, Path, description = "视频ID或分页ID")
+    ),
+    responses(
+        (status = 200, description = "获取BVID成功", body = crate::api::response::VideoBvidResponse),
+        (status = 404, description = "视频不存在"),
+        (status = 500, description = "内部错误")
+    )
+)]
+pub async fn get_video_bvid(
+    Path(video_id): Path<String>,
+    Extension(db): Extension<Arc<DatabaseConnection>>,
+) -> Result<ApiResponse<crate::api::response::VideoBvidResponse>, ApiError> {
+    use crate::api::response::VideoBvidResponse;
+
+    // 查找视频信息
+    let video_info = find_video_info(&video_id, &db)
+        .await
+        .map_err(|e| ApiError::from(anyhow!("获取视频信息失败: {}", e)))?;
+
+    Ok(ApiResponse::ok(VideoBvidResponse {
+        bvid: video_info.bvid.clone(),
+        title: video_info.title.clone(),
+        bilibili_url: format!("https://www.bilibili.com/video/{}", video_info.bvid),
+    }))
+}
+
 /// 获取视频播放信息（在线播放用）
 #[utoipa::path(
     get,
@@ -7295,6 +7326,8 @@ pub async fn get_video_play_info(
         video_title: video_info.title,
         video_duration: Some(page_info.duration),
         video_quality_description: quality_desc,
+        video_bvid: Some(video_info.bvid.clone()),
+        bilibili_url: Some(format!("https://www.bilibili.com/video/{}", video_info.bvid)),
     }))
 }
 

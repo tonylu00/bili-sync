@@ -485,6 +485,14 @@ class ApiClient {
 	}
 
 	/**
+	 * 获取视频BVID信息（用于构建B站链接）
+	 * @param videoId 视频ID或分页ID
+	 */
+	async getVideoBvid(videoId: string | number): Promise<ApiResponse<VideoBvidResponse>> {
+		return this.get<VideoBvidResponse>(`/videos/${videoId}/bvid`);
+	}
+
+	/**
 	 * 获取代理视频流URL
 	 * @param streamUrl 原始视频流URL
 	 */
@@ -697,6 +705,11 @@ export const api = {
 	 * 获取视频播放信息（在线播放用）
 	 */
 	getVideoPlayInfo: (videoId: string | number) => apiClient.getVideoPlayInfo(videoId),
+
+	/**
+	 * 获取视频BVID信息（用于构建B站链接）
+	 */
+	getVideoBvid: (videoId: string | number) => apiClient.getVideoBvid(videoId),
 
 	/**
 	 * 获取代理视频流URL
