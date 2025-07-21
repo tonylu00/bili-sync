@@ -404,8 +404,8 @@
 				selectedSeasons = [];
 				selectedVideos = [];
 				selectedUpName = '';
-				// 跳转到首页
-				goto('/');
+				// 跳转到视频源管理页面
+				goto('/video-sources');
 			} else {
 				toast.error('添加失败', { description: result.data.message });
 			}
