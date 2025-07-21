@@ -31,6 +31,13 @@
 	let deleteDialogOpen = false;
 	let deleting = false;
 
+	// 响应式相关
+	let innerWidth: number;
+	let isMobile: boolean = false;
+	let isTablet: boolean = false;
+	$: isMobile = innerWidth < 768; // sm断点
+	$: isTablet = innerWidth >= 768 && innerWidth < 1024; // md断点
+
 	// 根据视频类型动态生成任务名称
 	$: videoTaskNames = (() => {
 		if (!videoData?.video) return ['视频封面', '视频信息', 'UP主头像', 'UP主信息', '分P下载'];
@@ -277,6 +284,8 @@
 	<title>{videoData?.video.name || '视频详情'} - Bili Sync</title>
 </svelte:head>
 
+<svelte:window bind:innerWidth />
+
 {#if loading}
 	<div class="flex items-center justify-center py-12">
 		<div class="text-muted-foreground">加载中...</div>
@@ -296,41 +305,13 @@
 {:else if videoData}
 	<!-- 视频信息区域 -->
 	<section>
-		<div class="mb-4 flex items-center justify-between">
-			<h2 class="text-xl font-semibold">视频信息</h2>
-			<div class="flex gap-2">
-				{#if isVideoPlayable(videoData.video)}
-					<Button
-						size="sm"
-						variant="default"
-						class="shrink-0 cursor-pointer"
-						onclick={() => (showVideoPlayer = true)}
-					>
-						<PlayIcon class="mr-2 h-4 w-4" />
-						本地播放
-					</Button>
-				{/if}
+		<div class="mb-4 flex {isMobile ? 'flex-col gap-3' : 'items-center justify-between'}">
+			<h2 class="{isMobile ? 'text-lg' : 'text-xl'} font-semibold">视频信息</h2>
+			<div class="flex {isMobile ? 'flex-col gap-2' : 'gap-2'}">
 				<Button
 					size="sm"
 					variant="outline"
-					class="shrink-0 cursor-pointer"
-					onclick={() => {
-						onlinePlayMode = true;
-						showVideoPlayer = true;
-						if (!onlinePlayInfo) {
-							const videoId = getPlayVideoId();
-							loadOnlinePlayInfo(videoId);
-						}
-					}}
-					disabled={loadingPlayInfo}
-				>
-					<PlayIcon class="mr-2 h-4 w-4" />
-					{loadingPlayInfo ? '加载中...' : '在线播放'}
-				</Button>
-				<Button
-					size="sm"
-					variant="outline"
-					class="shrink-0 cursor-pointer"
+					class="{isMobile ? 'w-full' : 'shrink-0'} cursor-pointer"
 					onclick={() => (statusEditorOpen = true)}
 					disabled={statusEditorLoading}
 				>
@@ -340,7 +321,7 @@
 				<Button
 					size="sm"
 					variant="destructive"
-					class="shrink-0 cursor-pointer"
+					class="{isMobile ? 'w-full' : 'shrink-0'} cursor-pointer"
 					onclick={() => (deleteDialogOpen = true)}
 					disabled={deleting}
 				>
@@ -372,9 +353,9 @@
 
 		<!-- 下载路径信息 -->
 		{#if videoData.pages && videoData.pages.length > 0 && videoData.pages[0].path}
-			<div class="mb-4 rounded-lg border bg-muted p-4">
+			<div class="mb-4 rounded-lg border bg-muted {isMobile ? 'p-3' : 'p-4'}">
 				<h3 class="mb-2 text-sm font-medium text-foreground">📁 下载保存路径</h3>
-				<div class="rounded border bg-card px-3 py-2 font-mono text-sm break-all">
+				<div class="rounded border bg-card {isMobile ? 'px-2 py-2' : 'px-3 py-2'} font-mono {isMobile ? 'text-xs' : 'text-sm'} break-all">
 					{videoData.pages[0].path}
 				</div>
 				<p class="mt-1 text-xs text-muted-foreground">视频文件将保存到此路径下</p>
@@ -384,8 +365,8 @@
 
 	<section>
 		{#if videoData.pages && videoData.pages.length > 0}
-			<div class="mb-4 flex items-center justify-between">
-				<h2 class="text-xl font-semibold">分页列表</h2>
+			<div class="mb-4 flex {isMobile ? 'flex-col gap-2' : 'items-center justify-between'}">
+				<h2 class="{isMobile ? 'text-lg' : 'text-xl'} font-semibold">分页列表</h2>
 				<div class="text-muted-foreground text-sm">
 					共 {videoData.pages.length} 个分页
 				</div>
@@ -397,7 +378,7 @@
 				<div class="min-w-0 flex-1">
 					<div
 						class="grid gap-4"
-						style="grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));"
+						style="grid-template-columns: repeat(auto-fill, minmax({isMobile ? '280px' : '320px'}, 1fr));"
 					>
 						{#each videoData.pages as pageInfo, index (pageInfo.id)}
 							<div class="space-y-3">

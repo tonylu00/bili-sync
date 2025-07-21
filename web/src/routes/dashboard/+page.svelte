@@ -150,11 +150,20 @@
 			color: 'var(--color-slate-950)'
 		}
 	} satisfies Chart.ChartConfig;
+
+	// 响应式相关
+	let innerWidth: number;
+	let isMobile: boolean = false;
+	let isTablet: boolean = false;
+	$: isMobile = innerWidth < 768; // sm断点
+	$: isTablet = innerWidth >= 768 && innerWidth < 1024; // md断点
 </script>
 
 <svelte:head>
 	<title>仪表盘 - Bili Sync</title>
 </svelte:head>
+
+<svelte:window bind:innerWidth />
 
 <div class="space-y-6">
 	{#if loading}
@@ -162,8 +171,9 @@
 			<div class="text-muted-foreground">加载中...</div>
 		</div>
 	{:else}
-		<div class="grid gap-4 md:grid-cols-3">
-			<Card class="md:col-span-1">
+		<!-- 第一行：存储和监听统计 -->
+		<div class="grid gap-4 {isMobile ? 'grid-cols-1' : isTablet ? 'grid-cols-2' : 'grid-cols-3'}">
+			<Card class="lg:col-span-1">
 				<CardHeader class="flex flex-row items-center justify-between space-y-0 pb-2">
 					<CardTitle class="text-sm font-medium">存储空间</CardTitle>
 					<HardDriveIcon class="text-muted-foreground h-4 w-4" />
@@ -171,8 +181,8 @@
 				<CardContent>
 					{#if sysInfo}
 						<div class="space-y-2">
-							<div class="flex items-center justify-between">
-								<div class="text-2xl font-bold">{formatBytes(sysInfo.available_disk)} 可用</div>
+							<div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1">
+								<div class="text-xl sm:text-2xl font-bold">{formatBytes(sysInfo.available_disk)} 可用</div>
 								<div class="text-muted-foreground text-sm">
 									共 {formatBytes(sysInfo.total_disk)}
 								</div>
@@ -187,7 +197,7 @@
 					{/if}
 				</CardContent>
 			</Card>
-			<Card class="md:col-span-2">
+			<Card class="lg:col-span-2">
 				<CardHeader class="flex flex-row items-center justify-between space-y-0 pb-2">
 					<CardTitle class="text-sm font-medium">当前监听</CardTitle>
 					<DatabaseIcon class="text-muted-foreground h-4 w-4" />
@@ -196,7 +206,7 @@
 					{#if dashboardData}
 						<div class="space-y-4">
 							<!-- 视频源统计 -->
-							<div class="grid grid-cols-2 md:grid-cols-3 gap-4">
+							<div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
 								<div class="flex items-center justify-between">
 									<div class="flex items-center gap-2">
 										<HeartIcon class="text-muted-foreground h-4 w-4" />
@@ -243,8 +253,9 @@
 			</Card>
 		</div>
 
-		<div class="grid gap-4 md:grid-cols-3">
-			<Card class="max-w-full overflow-hidden md:col-span-2">
+		<!-- 第二行：视频统计和任务状态 -->
+		<div class="grid gap-4 {isMobile ? 'grid-cols-1' : isTablet ? 'grid-cols-2' : 'grid-cols-3'}">
+			<Card class="max-w-full overflow-hidden lg:col-span-2">
 				<CardHeader class="flex flex-row items-center justify-between space-y-0 pb-2">
 					<CardTitle class="text-sm font-medium">最近入库</CardTitle>
 					<VideoIcon class="text-muted-foreground h-4 w-4" />
@@ -259,7 +270,7 @@
 								>
 							</div>
 						</div>
-						<Chart.Container config={videoChartConfig} class="h-[200px] w-full">
+						<Chart.Container config={videoChartConfig} class="{isMobile ? 'h-[150px]' : 'h-[200px]'} w-full">
 							<BarChart
 								data={dashboardData.videos_by_day}
 								x="day"
@@ -294,7 +305,7 @@
 					{/if}
 				</CardContent>
 			</Card>
-			<Card class="max-w-full md:col-span-1">
+			<Card class="max-w-full lg:col-span-1">
 				<CardHeader class="flex flex-row items-center justify-between space-y-0 pb-2">
 					<CardTitle class="text-sm font-medium">下载任务状态</CardTitle>
 					<CloudDownloadIcon class="text-muted-foreground h-4 w-4" />
@@ -369,7 +380,7 @@
 		</div>
 
 		<!-- 第三行：系统监控 -->
-		<div class="grid gap-4 md:grid-cols-2">
+		<div class="grid gap-4 sm:grid-cols-1 lg:grid-cols-2">
 			<!-- 内存使用情况 -->
 			<Card class="overflow-hidden">
 				<CardHeader class="flex flex-row items-center justify-between space-y-0 pb-2">
@@ -388,7 +399,7 @@
 						</div>
 					{/if}
 					{#if memoryHistory.length > 0}
-						<Chart.Container config={memoryChartConfig} class="h-[150px] w-full">
+						<Chart.Container config={memoryChartConfig} class="{isMobile ? 'h-[120px]' : 'h-[150px]'} w-full">
 							<AreaChart
 								data={memoryHistory}
 								x="time"
@@ -433,7 +444,7 @@
 							</AreaChart>
 						</Chart.Container>
 					{:else}
-						<div class="text-muted-foreground flex h-[150px] items-center justify-center text-sm">
+						<div class="text-muted-foreground flex {isMobile ? 'h-[120px]' : 'h-[150px]'} items-center justify-center text-sm">
 							等待数据...
 						</div>
 					{/if}
@@ -455,7 +466,7 @@
 						</div>
 					{/if}
 					{#if cpuHistory.length > 0}
-						<Chart.Container config={cpuChartConfig} class="h-[150px] w-full">
+						<Chart.Container config={cpuChartConfig} class="{isMobile ? 'h-[120px]' : 'h-[150px]'} w-full">
 							<AreaChart
 								data={cpuHistory}
 								x="time"
@@ -500,7 +511,7 @@
 							</AreaChart>
 						</Chart.Container>
 					{:else}
-						<div class="text-muted-foreground flex h-[150px] items-center justify-center text-sm">
+						<div class="text-muted-foreground flex {isMobile ? 'h-[120px]' : 'h-[150px]'} items-center justify-center text-sm">
 							等待数据...
 						</div>
 					{/if}

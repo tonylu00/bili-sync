@@ -296,7 +296,9 @@
 	// 响应式相关
 	let innerWidth: number;
 	let isMobile: boolean = false;
-	$: isMobile = innerWidth < 768; // md断点
+	let isTablet: boolean = false;
+	$: isMobile = innerWidth < 768; // sm断点
+	$: isTablet = innerWidth >= 768 && innerWidth < 1024; // md断点
 
 	// 拖拽排序相关
 	let draggedIndex: number | null = null;
@@ -727,8 +729,8 @@
 
 <div class="py-2">
 	<div class="mx-auto px-4">
-		<div class="bg-card rounded-lg border p-6 shadow-sm">
-			<h1 class="mb-6 text-2xl font-bold">系统设置</h1>
+		<div class="bg-card rounded-lg border shadow-sm {isMobile ? 'p-4' : 'p-6'}">
+			<h1 class="font-bold {isMobile ? 'mb-4 text-xl' : 'mb-6 text-2xl'}">系统设置</h1>
 
 			{#if loading}
 				<div class="flex items-center justify-center py-12">
@@ -737,23 +739,21 @@
 			{:else}
 				<!-- 设置分类卡片列表 -->
 				<div
-					class="grid grid-cols-1 gap-4 {isMobile
-						? 'xs:grid-cols-1'
-						: 'sm:grid-cols-2 lg:grid-cols-3'}"
+					class="grid gap-4 {isMobile ? 'grid-cols-1' : isTablet ? 'grid-cols-2' : 'grid-cols-3'}"
 				>
 					{#each settingCategories as category}
 						<Card
-							class="hover:border-primary/50 cursor-pointer transition-all hover:shadow-md"
+							class="hover:border-primary/50 cursor-pointer transition-all hover:shadow-md {isMobile ? 'min-h-[80px]' : ''}"
 							onclick={() => (openSheet = category.id)}
 						>
 							<CardHeader>
-								<div class="flex items-start gap-3">
-									<div class="bg-primary/10 rounded-lg p-2">
-										<svelte:component this={category.icon} class="text-primary h-5 w-5" />
+								<div class="flex {isMobile ? 'flex-col gap-2' : 'items-start gap-3'}">
+									<div class="bg-primary/10 rounded-lg p-2 {isMobile ? 'self-start' : ''}">
+										<svelte:component this={category.icon} class="text-primary {isMobile ? 'h-4 w-4' : 'h-5 w-5'}" />
 									</div>
 									<div class="flex-1">
-										<CardTitle class="text-base">{category.title}</CardTitle>
-										<CardDescription class="mt-1 text-sm">{category.description}</CardDescription>
+										<CardTitle class="{isMobile ? 'text-sm' : 'text-base'}">{category.title}</CardTitle>
+										<CardDescription class="mt-1 {isMobile ? 'text-xs' : 'text-sm'} line-clamp-2">{category.description}</CardDescription>
 									</div>
 								</div>
 							</CardHeader>

@@ -25,6 +25,13 @@
 
 	let loading = false;
 
+	// 响应式相关
+	let innerWidth: number;
+	let isMobile: boolean = false;
+	let isTablet: boolean = false;
+	$: isMobile = innerWidth < 768; // sm断点
+	$: isTablet = innerWidth >= 768 && innerWidth < 1024; // md断点
+
 	// 折叠状态管理 - 默认所有分类都是折叠状态
 	let collapsedSections: Record<string, boolean> = {};
 
@@ -224,14 +231,16 @@
 	<title>视频源管理 - Bili Sync</title>
 </svelte:head>
 
+<svelte:window bind:innerWidth />
+
 <div class="space-y-6">
 	<!-- 页面头部 -->
-	<div class="flex items-center justify-between">
+	<div class="flex {isMobile ? 'flex-col gap-4' : 'flex-row items-center justify-between gap-4'}">
 		<div>
-			<h1 class="text-2xl font-bold">视频源管理</h1>
-			<p class="text-muted-foreground">管理和配置您的视频源，包括收藏夹、合集、投稿和稍后再看</p>
+			<h1 class="{isMobile ? 'text-xl' : 'text-2xl'} font-bold">视频源管理</h1>
+			<p class="{isMobile ? 'text-sm' : 'text-base'} text-muted-foreground">管理和配置您的视频源，包括收藏夹、合集、投稿和稍后再看</p>
 		</div>
-		<Button onclick={navigateToAddSource} class="flex items-center gap-2">
+		<Button onclick={navigateToAddSource} class="flex items-center gap-2 {isMobile ? 'w-full' : 'w-auto'}">
 			<PlusIcon class="h-4 w-4" />
 			添加视频源
 		</Button>
@@ -267,11 +276,11 @@
 							{#if sources && sources.length > 0}
 								<div class="space-y-3">
 									{#each sources as source}
-										<div class="flex items-center justify-between p-3 border rounded-lg">
+										<div class="flex {isMobile ? 'flex-col gap-3' : 'flex-row items-center justify-between gap-3'} p-3 border rounded-lg">
 											<div class="flex-1 min-w-0">
-												<div class="flex items-center gap-2 mb-1">
+												<div class="flex {isMobile ? 'flex-col gap-2' : 'flex-row items-center gap-2'} mb-1">
 													<span class="font-medium truncate">{source.name}</span>
-													<Badge variant={source.enabled ? 'default' : 'secondary'} class="text-xs">
+													<Badge variant={source.enabled ? 'default' : 'secondary'} class="text-xs w-fit">
 														{source.enabled ? '已启用' : '已禁用'}
 													</Badge>
 												</div>
@@ -299,13 +308,14 @@
 												{/if}
 											</div>
 											
-											<div class="flex items-center gap-1 ml-4">
+											<div class="flex items-center gap-1 justify-end sm:ml-4">
 												<!-- 启用/禁用 -->
 												<Button
 													size="sm"
 													variant="ghost"
 													onclick={() => handleToggleEnabled(sourceConfig.type, source.id, source.enabled, source.name)}
 													title={source.enabled ? '禁用' : '启用'}
+													class="h-8 w-8 p-0"
 												>
 													<PowerIcon class="h-4 w-4 {source.enabled ? 'text-green-600' : 'text-gray-400'}" />
 												</Button>
@@ -316,6 +326,7 @@
 													variant="ghost"
 													onclick={() => handleResetPath(sourceConfig.type, source.id, source.name, source.path)}
 													title="重设路径"
+													class="h-8 w-8 p-0"
 												>
 													<FolderOpenIcon class="h-4 w-4 text-orange-600" />
 												</Button>
@@ -326,6 +337,7 @@
 													variant="ghost"
 													onclick={() => handleToggleScanDeleted(sourceConfig.type, source.id, source.scan_deleted_videos)}
 													title={source.scan_deleted_videos ? '禁用扫描已删除' : '启用扫描已删除'}
+													class="h-8 w-8 p-0"
 												>
 													<RotateCcwIcon class="h-4 w-4 {source.scan_deleted_videos ? 'text-blue-600' : 'text-gray-400'}" />
 												</Button>
@@ -336,6 +348,7 @@
 													variant="ghost"
 													onclick={() => handleDeleteSource(sourceConfig.type, source.id, source.name)}
 													title="删除"
+													class="h-8 w-8 p-0"
 												>
 													<TrashIcon class="h-4 w-4 text-destructive" />
 												</Button>
