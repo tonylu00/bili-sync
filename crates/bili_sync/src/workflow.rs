@@ -4200,6 +4200,8 @@ mod tests {
                 show_season_type: None,
                 actors: None,
                 auto_download: false,
+                source_submission_id: None,
+                staff_info: None,
             };
 
             // 注意：这个测试不能真正连接数据库，所以我们只验证函数的逻辑部分

@@ -19,6 +19,7 @@ struct ServerChanResponse {
     code: i32,
     message: String,
     #[serde(default)]
+    #[allow(dead_code)]
     data: Option<serde_json::Value>,
 }
 
@@ -30,6 +31,7 @@ pub struct NotificationClient {
 
 // 扫描结果数据结构
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 pub struct NewVideoInfo {
     pub title: String,
     pub bvid: String,
@@ -203,12 +205,14 @@ pub async fn send_scan_notification(summary: ScanSummary) -> Result<()> {
     client.send_scan_completion(&summary).await
 }
 
+#[allow(dead_code)]
 pub async fn test_notification() -> Result<()> {
     let config = crate::config::reload_config().notification;
     let client = NotificationClient::new(config);
     client.test_notification().await
 }
 
+#[allow(dead_code)]
 pub async fn send_custom_test_notification(message: &str) -> Result<()> {
     let config = crate::config::reload_config().notification;
     let client = NotificationClient::new(config);

@@ -36,6 +36,7 @@ impl ScanCollector {
     }
 
     /// 记录新增的视频信息
+    #[allow(dead_code)]
     pub fn add_new_video(&mut self, video_source: &VideoSourceEnum, video_info: NewVideoInfo) {
         let key = self.get_source_key(video_source);
         if let Some(result) = self.source_results.get_mut(&key) {
@@ -72,6 +73,7 @@ impl ScanCollector {
     }
 
     /// 获取当前总的新增视频数量
+    #[allow(dead_code)]
     pub fn total_new_videos(&self) -> usize {
         self.source_results
             .values()
@@ -81,7 +83,7 @@ impl ScanCollector {
 
     /// 生成视频源的唯一键
     fn get_source_key(&self, video_source: &VideoSourceEnum) -> String {
-        format!("{}:{}", video_source.source_type_display(), video_source.source_id_display())
+        format!("{}:{}", video_source.source_type_display(), video_source.source_name_display())
     }
 }
 
@@ -92,6 +94,7 @@ impl Default for ScanCollector {
 }
 
 /// 从视频信息创建NewVideoInfo结构
+#[allow(dead_code)]
 pub fn create_new_video_info(
     title: &str,
     bvid: &str,

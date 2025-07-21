@@ -150,10 +150,6 @@ impl VideoSource for submission::Model {
     fn source_name_display(&self) -> String {
         self.upper_name.clone()
     }
-
-    fn source_id_display(&self) -> String {
-        self.upper_id.to_string()
-    }
 }
 
 #[allow(dead_code)]

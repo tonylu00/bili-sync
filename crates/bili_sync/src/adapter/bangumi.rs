@@ -340,16 +340,4 @@ impl VideoSource for BangumiSource {
     fn source_name_display(&self) -> String {
         self.name.clone()
     }
-
-    fn source_id_display(&self) -> String {
-        if let Some(ref season_id) = self.season_id {
-            format!("season_{}", season_id)
-        } else if let Some(ref media_id) = self.media_id {
-            format!("media_{}", media_id)
-        } else if let Some(ref ep_id) = self.ep_id {
-            format!("ep_{}", ep_id)
-        } else {
-            format!("bangumi_{}", self.id)
-        }
-    }
 }

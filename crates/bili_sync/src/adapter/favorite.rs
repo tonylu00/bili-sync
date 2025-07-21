@@ -82,10 +82,6 @@ impl VideoSource for favorite::Model {
     fn source_name_display(&self) -> String {
         self.name.clone()
     }
-
-    fn source_id_display(&self) -> String {
-        self.f_id.to_string()
-    }
 }
 
 #[allow(dead_code)]

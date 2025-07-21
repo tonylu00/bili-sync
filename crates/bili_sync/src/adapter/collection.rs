@@ -92,10 +92,6 @@ impl VideoSource for collection::Model {
     fn source_name_display(&self) -> String {
         self.name.clone()
     }
-
-    fn source_id_display(&self) -> String {
-        self.s_id.to_string()
-    }
 }
 
 // 修改初始化合集源的方法中的类型转换问题

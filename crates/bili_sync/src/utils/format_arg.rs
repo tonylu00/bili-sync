@@ -327,6 +327,8 @@ mod tests {
             ctime: test_time,
             pubtime: test_time,
             favtime: test_time,
+            source_submission_id: None,
+            staff_info: None,
             download_status: 0,
             valid: true,
             tags: None,

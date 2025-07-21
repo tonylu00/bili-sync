@@ -82,10 +82,6 @@ impl VideoSource for watch_later::Model {
     fn source_name_display(&self) -> String {
         "稍后再看".to_string()
     }
-
-    fn source_id_display(&self) -> String {
-        "watch_later".to_string()
-    }
 }
 
 // 稍后观看源的初始化现在通过Web API完成，不再需要这个函数

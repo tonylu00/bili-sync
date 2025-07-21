@@ -254,6 +254,7 @@ impl Default for NotificationConfig {
 }
 
 impl NotificationConfig {
+    #[allow(dead_code)]
     pub fn validate(&self) -> Result<(), String> {
         if self.enable_scan_notifications && self.serverchan_key.is_none() {
             return Err("启用推送通知时必须配置Server酱密钥".to_string());
