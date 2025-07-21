@@ -52,7 +52,7 @@
 						<Sidebar.MenuButton>
 							<button
 								class="hover:bg-accent/50 text-foreground flex w-full cursor-pointer items-center rounded-lg px-3 py-2.5 font-medium transition-all duration-200"
-								on:click={() => handleNavClick('/dashboard')}
+								on:click={() => handleNavClick('/')}
 							>
 								<div class="flex flex-1 items-center gap-3">
 									<BarChart3 class="text-muted-foreground h-4 w-4" />
