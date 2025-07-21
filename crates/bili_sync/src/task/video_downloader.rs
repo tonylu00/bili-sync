@@ -11,6 +11,7 @@ use crate::config::Config;
 use crate::initialization;
 use crate::task::TASK_CONTROLLER;
 use crate::unified_downloader::UnifiedDownloader;
+use crate::utils::scan_collector::ScanCollector;
 use crate::workflow::process_video_source;
 use bili_sync_entity::entities;
 
@@ -269,6 +270,9 @@ pub async fn video_downloader(connection: Arc<DatabaseConnection>) {
             let downloader_arc = std::sync::Arc::new(downloader);
             TASK_CONTROLLER.set_downloader(Some(downloader_arc.clone())).await;
 
+            // 初始化扫描收集器来统计本轮扫描结果
+            let mut scan_collector = ScanCollector::new();
+
             let mut processed_sources = 0;
             let mut sources_with_new_content = 0;
             for (args, path) in &video_sources {
@@ -284,6 +288,11 @@ pub async fn video_downloader(connection: Arc<DatabaseConnection>) {
                 // 获取全局取消令牌，用于下载任务控制
                 let cancellation_token = TASK_CONTROLLER.get_cancellation_token().await;
 
+                // 在处理视频源前记录到收集器
+                if let Ok((video_source, _)) = crate::adapter::video_source_from(args, path, &bili_client, &connection).await {
+                    scan_collector.start_source(&video_source);
+                }
+
                 match process_video_source(
                     args,
                     &bili_client,
@@ -294,10 +303,14 @@ pub async fn video_downloader(connection: Arc<DatabaseConnection>) {
                 )
                 .await
                 {
-                    Ok(new_video_count) => {
+                    Ok((new_video_count, new_videos)) => {
                         processed_sources += 1;
                         if new_video_count > 0 {
                             sources_with_new_content += 1;
+                            // 将新增视频信息添加到收集器
+                            if let Ok((video_source, _)) = crate::adapter::video_source_from(args, path, &bili_client, &connection).await {
+                                scan_collector.add_new_videos(&video_source, new_videos);
+                            }
                         }
                     }
                     Err(e) => {
@@ -313,6 +326,12 @@ pub async fn video_downloader(connection: Arc<DatabaseConnection>) {
 
             // 标记扫描结束
             TASK_CONTROLLER.set_scanning(false);
+
+            // 生成扫描摘要并发送推送通知
+            let scan_summary = scan_collector.generate_summary();
+            if let Err(e) = crate::utils::notification::send_scan_notification(scan_summary).await {
+                warn!("发送扫描完成推送失败: {}", e);
+            }
 
             // 标记任务状态为结束
             crate::utils::task_notifier::TASK_STATUS_NOTIFIER.set_finished();

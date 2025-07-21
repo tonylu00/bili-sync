@@ -30,6 +30,8 @@ use crate::api::handler::{
     get_dashboard_data,
     get_hot_reload_status,
     get_logs,
+    get_notification_config,
+    get_notification_status,
     get_queue_status,
     get_submission_videos,
     get_subscribed_collections,
@@ -56,9 +58,11 @@ use crate::api::handler::{
     resume_scanning_endpoint,
     search_bilibili,
     setup_auth_token,
+    test_notification_handler,
     update_config,
     update_config_item_internal,
     update_credential,
+    update_notification_config,
     update_video_source_enabled,
     update_video_source_scan_deleted,
     update_video_status,
@@ -158,6 +162,11 @@ pub async fn http_server(database_connection: Arc<DatabaseConnection>) -> Result
         .route("/api/task-control/status", get(get_task_control_status))
         .route("/api/task-control/pause", post(pause_scanning_endpoint))
         .route("/api/task-control/resume", post(resume_scanning_endpoint))
+        // 推送通知API
+        .route("/api/notification/test", post(test_notification_handler))
+        .route("/api/config/notification", get(get_notification_config))
+        .route("/api/config/notification", post(update_notification_config))
+        .route("/api/notification/status", get(get_notification_status))
         // 视频流API
         .route("/api/videos/stream/{video_id}", get(stream_video))
         // 新增在线播放API

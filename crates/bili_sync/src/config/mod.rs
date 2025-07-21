@@ -189,6 +189,9 @@ pub struct Config {
     // 番剧是否使用Season文件夹结构
     #[serde(default = "default_bangumi_use_season_structure")]
     pub bangumi_use_season_structure: bool,
+    // 推送通知配置
+    #[serde(default)]
+    pub notification: NotificationConfig,
 }
 
 fn default_skip_bangumi_preview() -> bool {
@@ -209,6 +212,67 @@ fn default_collection_use_season_structure() -> bool {
 
 fn default_bangumi_use_season_structure() -> bool {
     false // 默认不使用Season结构，保持向后兼容
+}
+
+// 推送通知配置结构体
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct NotificationConfig {
+    #[serde(default)]
+    pub serverchan_key: Option<String>,
+    #[serde(default)]
+    pub enable_scan_notifications: bool,
+    #[serde(default = "default_notification_min_videos")]
+    pub notification_min_videos: usize,
+    #[serde(default = "default_notification_timeout")]
+    pub notification_timeout: u64,
+    #[serde(default = "default_notification_retry_count")]
+    pub notification_retry_count: u8,
+}
+
+fn default_notification_min_videos() -> usize {
+    1
+}
+
+fn default_notification_timeout() -> u64 {
+    10
+}
+
+fn default_notification_retry_count() -> u8 {
+    3
+}
+
+impl Default for NotificationConfig {
+    fn default() -> Self {
+        Self {
+            serverchan_key: None,
+            enable_scan_notifications: false,
+            notification_min_videos: default_notification_min_videos(),
+            notification_timeout: default_notification_timeout(),
+            notification_retry_count: default_notification_retry_count(),
+        }
+    }
+}
+
+impl NotificationConfig {
+    pub fn validate(&self) -> Result<(), String> {
+        if self.enable_scan_notifications && self.serverchan_key.is_none() {
+            return Err("启用推送通知时必须配置Server酱密钥".to_string());
+        }
+        
+        if self.notification_min_videos == 0 {
+            return Err("推送阈值必须大于0".to_string());
+        }
+        
+        if self.notification_timeout < 5 || self.notification_timeout > 60 {
+            return Err("推送超时时间必须在5-60秒之间".to_string());
+        }
+        
+        if self.notification_retry_count < 1 || self.notification_retry_count > 5 {
+            return Err("推送重试次数必须在1-5次之间".to_string());
+        }
+        
+        Ok(())
+    }
 }
 
 impl Clone for Config {
@@ -267,6 +331,7 @@ impl Clone for Config {
             multi_page_use_season_structure: self.multi_page_use_season_structure,
             collection_use_season_structure: self.collection_use_season_structure,
             bangumi_use_season_structure: self.bangumi_use_season_structure,
+            notification: self.notification.clone(),
         }
     }
 }
@@ -304,6 +369,7 @@ impl Default for Config {
             multi_page_use_season_structure: default_multi_page_use_season_structure(),
             collection_use_season_structure: default_collection_use_season_structure(),
             bangumi_use_season_structure: default_bangumi_use_season_structure(),
+            notification: NotificationConfig::default(),
         }
     }
 }

@@ -287,6 +287,8 @@ pub struct ConfigResponse {
     pub bangumi_use_season_structure: bool,
     // B站凭证信息
     pub credential: Option<CredentialInfo>,
+    // 推送通知配置
+    pub notification: NotificationConfigResponse,
 }
 
 // B站凭证信息结构体
@@ -656,4 +658,31 @@ pub struct SysInfo {
     pub process_cpu: f32,
     pub total_disk: u64,
     pub available_disk: u64,
+}
+
+// 推送配置响应
+#[derive(Serialize, ToSchema)]
+pub struct NotificationConfigResponse {
+    pub serverchan_key: Option<String>,
+    pub enable_scan_notifications: bool,
+    pub notification_min_videos: usize,
+    pub notification_timeout: u64,
+    pub notification_retry_count: u8,
+}
+
+// 测试推送响应
+#[derive(Serialize, ToSchema)]
+pub struct TestNotificationResponse {
+    pub success: bool,
+    pub message: String,
+}
+
+// 推送状态响应
+#[derive(Serialize, ToSchema)]
+pub struct NotificationStatusResponse {
+    pub configured: bool,
+    pub enabled: bool,
+    pub last_notification_time: Option<String>,
+    pub total_notifications_sent: u64,
+    pub last_error: Option<String>,
 }

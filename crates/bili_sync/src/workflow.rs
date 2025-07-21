@@ -35,6 +35,7 @@ use crate::utils::model::{
 };
 use crate::utils::nfo::NFO;
 use crate::utils::status::{PageStatus, VideoStatus, STATUS_OK};
+use crate::utils::notification::NewVideoInfo;
 
 /// 检测并处理需要自动删除的错误（主要是87007充电专享视频错误）
 ///
@@ -147,7 +148,7 @@ pub struct EpisodeInfo {
 
 /// 创建一个配置了 truncate 辅助函数的 handlebars 实例
 ///
-/// 完整地处理某个视频来源，返回新增的视频数量
+/// 完整地处理某个视频来源，返回新增的视频数量和视频信息
 pub async fn process_video_source(
     args: &Args,
     bili_client: &BiliClient,
@@ -155,7 +156,7 @@ pub async fn process_video_source(
     connection: &DatabaseConnection,
     downloader: &UnifiedDownloader,
     token: CancellationToken,
-) -> Result<usize> {
+) -> Result<(usize, Vec<NewVideoInfo>)> {
     // 记录当前处理的参数和路径
     if let Args::Bangumi {
         season_id,
@@ -212,9 +213,9 @@ pub async fn process_video_source(
         }
     };
 
-    // 从视频流中获取新视频的简要信息，写入数据库，并获取新增视频数量
-    let new_video_count = match refresh_video_source(&video_source, video_streams, connection, token.clone()).await {
-        Ok(count) => count,
+    // 从视频流中获取新视频的简要信息，写入数据库，并获取新增视频数量和信息
+    let (new_video_count, new_videos) = match refresh_video_source(&video_source, video_streams, connection, token.clone()).await {
+        Ok(result) => result,
         Err(e) => {
             let error_msg = format!("{:#}", e);
             if retry_with_refresh(error_msg).await.is_ok() {
@@ -270,7 +271,7 @@ pub async fn process_video_source(
             // 重试失败不中断主流程，继续执行
         }
     }
-    Ok(new_video_count)
+    Ok((new_video_count, new_videos))
 }
 
 /// 请求接口，获取视频列表中所有新添加的视频信息，将其写入数据库
@@ -279,7 +280,7 @@ pub async fn refresh_video_source<'a>(
     video_streams: Pin<Box<dyn Stream<Item = Result<VideoInfo>> + 'a + Send>>,
     connection: &DatabaseConnection,
     token: CancellationToken,
-) -> Result<usize> {
+) -> Result<(usize, Vec<NewVideoInfo>)> {
     video_source.log_refresh_video_start();
     let latest_row_at = video_source.get_latest_row_at().and_utc();
     let mut max_datetime = latest_row_at;
@@ -309,15 +310,60 @@ pub async fn refresh_video_source<'a>(
         .filter_map(|res| futures::future::ready(res.ok()))
         .chunks(10);
     let mut count = 0;
+    let mut new_videos = Vec::new();
+    
     while let Some(videos_info) = video_streams.next().await {
         // 获取插入前的视频数量
         let before_count = get_video_count_for_source(video_source, connection).await?;
 
+        // 先收集需要的视频信息
+        let mut temp_video_infos = Vec::new();
+        for video_info in &videos_info {
+            let (title, bvid, upper_name) = match video_info {
+                VideoInfo::Detail { title, bvid, upper, .. } => {
+                    (title.clone(), bvid.clone(), upper.name.clone())
+                },
+                VideoInfo::Favorite { title, bvid, upper, .. } => {
+                    (title.clone(), bvid.clone(), upper.name.clone())
+                },
+                VideoInfo::Collection { bvid, .. } => {
+                    // Collection 没有 title 和 upper，使用默认值
+                    ("未知".to_string(), bvid.clone(), "未知".to_string())
+                },
+                VideoInfo::WatchLater { title, bvid, upper, .. } => {
+                    (title.clone(), bvid.clone(), upper.name.clone())
+                },
+                VideoInfo::Submission { title, bvid, .. } => {
+                    // Submission 没有 upper 信息，使用默认值
+                    (title.clone(), bvid.clone(), "未知".to_string())
+                },
+                VideoInfo::Bangumi { title, bvid, .. } => {
+                    // Bangumi 没有 upper 信息，使用番剧名称
+                    (title.clone(), bvid.clone(), "番剧".to_string())
+                },
+            };
+            temp_video_infos.push((title, bvid, upper_name));
+        }
+        
         create_videos(videos_info, video_source, connection).await?;
 
         // 获取插入后的视频数量，计算实际新增数量
         let after_count = get_video_count_for_source(video_source, connection).await?;
-        count += after_count - before_count;
+        let new_count = after_count - before_count;
+        count += new_count;
+        
+        // 如果有新增视频，收集视频信息
+        if new_count > 0 {
+            for (title, bvid, upper_name) in temp_video_infos.iter().take(new_count) {
+                new_videos.push(NewVideoInfo {
+                    title: title.clone(),
+                    bvid: bvid.clone(),
+                    upper_name: upper_name.clone(),
+                    source_type: video_source.source_type_display(),
+                    source_name: video_source.source_name_display(),
+                });
+            }
+        }
     }
     // 如果获取视频分页过程中发生了错误，直接在此处返回，不更新 latest_row_at
     error?;
@@ -328,7 +374,7 @@ pub async fn refresh_video_source<'a>(
             .await?;
     }
     video_source.log_refresh_video_end(count);
-    Ok(count)
+    Ok((count, new_videos))
 }
 
 /// 筛选出所有未获取到全部信息的视频，尝试补充其详细信息

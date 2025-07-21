@@ -84,6 +84,18 @@ impl VideoSource for collection::Model {
     fn scan_deleted_videos(&self) -> bool {
         self.scan_deleted_videos
     }
+
+    fn source_type_display(&self) -> String {
+        CollectionType::from(self.r#type).to_string()
+    }
+
+    fn source_name_display(&self) -> String {
+        self.name.clone()
+    }
+
+    fn source_id_display(&self) -> String {
+        self.s_id.to_string()
+    }
 }
 
 // 修改初始化合集源的方法中的类型转换问题

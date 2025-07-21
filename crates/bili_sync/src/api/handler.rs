@@ -104,7 +104,7 @@ mod rename_tests {
 
 #[derive(OpenApi)]
 #[openapi(
-    paths(get_video_sources, get_videos, get_video, reset_video, reset_all_videos, reset_specific_tasks, update_video_status, add_video_source, update_video_source_enabled, update_video_source_scan_deleted, reset_video_source_path, delete_video_source, reload_config, get_config, update_config, get_bangumi_seasons, search_bilibili, get_user_favorites, get_user_collections, get_user_followings, get_subscribed_collections, get_submission_videos, get_logs, get_queue_status, proxy_image, get_config_item, get_config_history, validate_config, get_hot_reload_status, check_initial_setup, setup_auth_token, update_credential, generate_qr_code, poll_qr_status, get_current_user, clear_credential, pause_scanning_endpoint, resume_scanning_endpoint, get_task_control_status, get_video_play_info, proxy_video_stream, validate_favorite, get_user_favorites_by_uid),
+    paths(get_video_sources, get_videos, get_video, reset_video, reset_all_videos, reset_specific_tasks, update_video_status, add_video_source, update_video_source_enabled, update_video_source_scan_deleted, reset_video_source_path, delete_video_source, reload_config, get_config, update_config, get_bangumi_seasons, search_bilibili, get_user_favorites, get_user_collections, get_user_followings, get_subscribed_collections, get_submission_videos, get_logs, get_queue_status, proxy_image, get_config_item, get_config_history, validate_config, get_hot_reload_status, check_initial_setup, setup_auth_token, update_credential, generate_qr_code, poll_qr_status, get_current_user, clear_credential, pause_scanning_endpoint, resume_scanning_endpoint, get_task_control_status, get_video_play_info, proxy_video_stream, validate_favorite, get_user_favorites_by_uid, test_notification_handler, get_notification_config, update_notification_config, get_notification_status),
     modifiers(&OpenAPIAuth),
     security(
         ("Token" = []),
@@ -3927,6 +3927,14 @@ pub async fn get_config() -> Result<ApiResponse<crate::api::response::ConfigResp
                 dedeuserid: cred.dedeuserid.clone(),
                 ac_time_value: cred.ac_time_value.clone(),
             })
+        },
+        // 推送通知配置
+        notification: crate::api::response::NotificationConfigResponse {
+            serverchan_key: config.notification.serverchan_key.clone(),
+            enable_scan_notifications: config.notification.enable_scan_notifications,
+            notification_min_videos: config.notification.notification_min_videos,
+            notification_timeout: config.notification.notification_timeout,
+            notification_retry_count: config.notification.notification_retry_count,
         },
     }))
 }
@@ -9236,4 +9244,174 @@ ORDER BY
         videos_by_day,
         monitoring_status,
     }))
+}
+
+/// 测试推送通知
+#[utoipa::path(
+    post,
+    path = "/api/notification/test",
+    request_body = crate::api::request::TestNotificationRequest,
+    responses(
+        (status = 200, description = "测试推送结果", body = ApiResponse<crate::api::response::TestNotificationResponse>),
+        (status = 400, description = "配置错误", body = String),
+        (status = 500, description = "服务器内部错误", body = String)
+    )
+)]
+pub async fn test_notification_handler(
+    axum::Json(request): axum::Json<crate::api::request::TestNotificationRequest>,
+) -> Result<ApiResponse<crate::api::response::TestNotificationResponse>, ApiError> {
+    let config = crate::config::reload_config().notification;
+    
+    if !config.enable_scan_notifications {
+        return Ok(ApiResponse::bad_request(crate::api::response::TestNotificationResponse {
+            success: false,
+            message: "推送通知功能未启用".to_string(),
+        }));
+    }
+
+    if config.serverchan_key.is_none() {
+        return Ok(ApiResponse::bad_request(crate::api::response::TestNotificationResponse {
+            success: false,
+            message: "未配置Server酱密钥".to_string(),
+        }));
+    }
+
+    let client = crate::utils::notification::NotificationClient::new(config);
+    
+    match if let Some(custom_msg) = request.custom_message {
+        client.send_custom_test(&custom_msg).await
+    } else {
+        client.test_notification().await
+    } {
+        Ok(_) => Ok(ApiResponse::ok(crate::api::response::TestNotificationResponse {
+            success: true,
+            message: "测试推送发送成功".to_string(),
+        })),
+        Err(e) => Ok(ApiResponse::bad_request(crate::api::response::TestNotificationResponse {
+            success: false,
+            message: format!("推送发送失败: {}", e),
+        })),
+    }
+}
+
+/// 获取推送配置
+#[utoipa::path(
+    get,
+    path = "/api/config/notification",
+    responses(
+        (status = 200, description = "推送配置", body = ApiResponse<crate::api::response::NotificationConfigResponse>),
+        (status = 500, description = "服务器内部错误", body = String)
+    )
+)]
+pub async fn get_notification_config() -> Result<ApiResponse<crate::api::response::NotificationConfigResponse>, ApiError> {
+    let config = crate::config::reload_config().notification;
+    
+    Ok(ApiResponse::ok(crate::api::response::NotificationConfigResponse {
+        serverchan_key: config.serverchan_key,
+        enable_scan_notifications: config.enable_scan_notifications,
+        notification_min_videos: config.notification_min_videos,
+        notification_timeout: config.notification_timeout,
+        notification_retry_count: config.notification_retry_count,
+    }))
+}
+
+/// 更新推送配置
+#[utoipa::path(
+    post,
+    path = "/api/config/notification",
+    request_body = crate::api::request::UpdateNotificationConfigRequest,
+    responses(
+        (status = 200, description = "配置更新成功", body = ApiResponse<String>),
+        (status = 400, description = "配置验证失败", body = String),
+        (status = 500, description = "服务器内部错误", body = String)
+    )
+)]
+pub async fn update_notification_config(
+    Extension(db): Extension<Arc<DatabaseConnection>>,
+    axum::Json(request): axum::Json<crate::api::request::UpdateNotificationConfigRequest>,
+) -> Result<ApiResponse<String>, ApiError> {
+    use crate::config::ConfigManager;
+    
+    let config_manager = ConfigManager::new(db.as_ref().clone());
+    
+    // 更新配置字段
+    if let Some(key) = request.serverchan_key {
+        let value = if key.trim().is_empty() {
+            serde_json::Value::Null
+        } else {
+            serde_json::Value::String(key.trim().to_string())
+        };
+        config_manager
+            .update_config_item("notification.serverchan_key", value)
+            .await
+            .map_err(|e| ApiError::from(anyhow!("更新Server酱密钥失败: {}", e)))?;
+    }
+    
+    if let Some(enabled) = request.enable_scan_notifications {
+        config_manager
+            .update_config_item("notification.enable_scan_notifications", serde_json::Value::Bool(enabled))
+            .await
+            .map_err(|e| ApiError::from(anyhow!("更新推送启用状态失败: {}", e)))?;
+    }
+    
+    if let Some(min_videos) = request.notification_min_videos {
+        if min_videos < 1 || min_videos > 100 {
+            return Err(ApiError::from(anyhow!("推送阈值必须在1-100之间")));
+        }
+        config_manager
+            .update_config_item("notification.notification_min_videos", serde_json::Value::Number(min_videos.into()))
+            .await
+            .map_err(|e| ApiError::from(anyhow!("更新推送阈值失败: {}", e)))?;
+    }
+    
+    if let Some(timeout) = request.notification_timeout {
+        if timeout < 5 || timeout > 60 {
+            return Err(ApiError::from(anyhow!("超时时间必须在5-60秒之间")));
+        }
+        config_manager
+            .update_config_item("notification.notification_timeout", serde_json::Value::Number(timeout.into()))
+            .await
+            .map_err(|e| ApiError::from(anyhow!("更新超时时间失败: {}", e)))?;
+    }
+    
+    if let Some(retry_count) = request.notification_retry_count {
+        if retry_count < 1 || retry_count > 5 {
+            return Err(ApiError::from(anyhow!("重试次数必须在1-5次之间")));
+        }
+        config_manager
+            .update_config_item("notification.notification_retry_count", serde_json::Value::Number(retry_count.into()))
+            .await
+            .map_err(|e| ApiError::from(anyhow!("更新重试次数失败: {}", e)))?;
+    }
+    
+    // 重新加载配置
+    crate::config::reload_config_bundle()
+        .await
+        .map_err(|e| ApiError::from(anyhow!("重新加载配置失败: {}", e)))?;
+    
+    Ok(ApiResponse::ok("推送配置更新成功".to_string()))
+}
+
+/// 获取推送状态
+#[utoipa::path(
+    get,
+    path = "/api/notification/status",
+    responses(
+        (status = 200, description = "推送状态", body = ApiResponse<crate::api::response::NotificationStatusResponse>),
+        (status = 500, description = "服务器内部错误", body = String)
+    )
+)]
+pub async fn get_notification_status() -> Result<ApiResponse<crate::api::response::NotificationStatusResponse>, ApiError> {
+    let config = crate::config::reload_config().notification;
+    
+    // 这里可以从数据库或缓存中获取推送统计信息
+    let status = crate::api::response::NotificationStatusResponse {
+        configured: config.serverchan_key.is_some(),
+        enabled: config.enable_scan_notifications,
+        last_notification_time: None, // TODO: 从存储中获取
+        total_notifications_sent: 0,   // TODO: 从存储中获取
+        last_error: None,              // TODO: 从存储中获取
+    };
+    
+    Ok(ApiResponse::ok(status))
 }

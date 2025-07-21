@@ -74,6 +74,18 @@ impl VideoSource for favorite::Model {
     fn scan_deleted_videos(&self) -> bool {
         self.scan_deleted_videos
     }
+
+    fn source_type_display(&self) -> String {
+        "收藏夹".to_string()
+    }
+
+    fn source_name_display(&self) -> String {
+        self.name.clone()
+    }
+
+    fn source_id_display(&self) -> String {
+        self.f_id.to_string()
+    }
 }
 
 #[allow(dead_code)]

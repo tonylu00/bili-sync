@@ -197,6 +197,22 @@ pub struct StatusUpdate {
     pub status_value: u32,   // 状态值 (0, 1, 2, 3)
 }
 
+// 推送配置更新请求
+#[derive(Deserialize, ToSchema)]
+pub struct UpdateNotificationConfigRequest {
+    pub serverchan_key: Option<String>,
+    pub enable_scan_notifications: Option<bool>,
+    pub notification_min_videos: Option<usize>,
+    pub notification_timeout: Option<u64>,
+    pub notification_retry_count: Option<u8>,
+}
+
+// 测试推送请求（可选消息内容）
+#[derive(Deserialize, ToSchema)]
+pub struct TestNotificationRequest {
+    pub custom_message: Option<String>,
+}
+
 // 分页状态更新结构
 #[derive(Deserialize, ToSchema)]
 pub struct PageStatusUpdate {

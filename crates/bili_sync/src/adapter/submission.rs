@@ -142,6 +142,18 @@ impl VideoSource for submission::Model {
             })
             .ok()
     }
+
+    fn source_type_display(&self) -> String {
+        "UP主投稿".to_string()
+    }
+
+    fn source_name_display(&self) -> String {
+        self.upper_name.clone()
+    }
+
+    fn source_id_display(&self) -> String {
+        self.upper_id.to_string()
+    }
 }
 
 #[allow(dead_code)]

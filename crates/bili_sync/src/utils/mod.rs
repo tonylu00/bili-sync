@@ -4,6 +4,8 @@ pub mod filenamify;
 pub mod format_arg;
 pub mod model;
 pub mod nfo;
+pub mod notification;
+pub mod scan_collector;
 pub mod signal;
 pub mod status;
 pub mod task_notifier;
