@@ -13,6 +13,7 @@
 	import { setBreadcrumb } from '$lib/stores/breadcrumb';
 	import { toast } from 'svelte-sonner';
 	import api from '$lib/api';
+	import type { VideoInfo } from '$lib/types';
 	import type { VideosResponse, VideoSourcesResponse, ApiError } from '$lib/types';
 	import { VIDEO_SOURCES } from '$lib/consts';
 	import {
@@ -124,7 +125,7 @@
 		loadVideos(query, pageNum, videoSource);
 	}
 
-	async function handleResetVideo(video: any, forceReset: boolean) {
+	async function handleResetVideo(video: VideoInfo, forceReset: boolean) {
 		try {
 			const result = await api.resetVideo(video.id, { force: forceReset });
 			const data = result.data;

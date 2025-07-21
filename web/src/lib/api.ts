@@ -35,7 +35,9 @@ import type {
 	ValidateFavoriteResponse,
 	SubmissionVideosRequest,
 	SubmissionVideosResponse,
-	DashBoardResponse
+	DashBoardResponse,
+	SysInfo,
+	TaskStatus
 } from './types';
 import { ErrorType } from './types';
 import { wsManager } from './ws';
@@ -524,13 +526,15 @@ class ApiClient {
 	/**
 	 * 获取推送通知状态
 	 */
-	async getNotificationStatus(): Promise<ApiResponse<{
-		configured: boolean;
-		enabled: boolean;
-		last_notification_time: string | null;
-		total_notifications_sent: number;
-		last_error: string | null;
-	}>> {
+	async getNotificationStatus(): Promise<
+		ApiResponse<{
+			configured: boolean;
+			enabled: boolean;
+			last_notification_time: string | null;
+			total_notifications_sent: number;
+			last_error: string | null;
+		}>
+	> {
 		return this.get<{
 			configured: boolean;
 			enabled: boolean;
@@ -543,13 +547,15 @@ class ApiClient {
 	/**
 	 * 获取推送通知配置
 	 */
-	async getNotificationConfig(): Promise<ApiResponse<{
-		enable_scan_notifications: boolean;
-		serverchan_key?: string;
-		notification_min_videos: number;
-		notification_timeout: number;
-		notification_retry_count: number;
-	}>> {
+	async getNotificationConfig(): Promise<
+		ApiResponse<{
+			enable_scan_notifications: boolean;
+			serverchan_key?: string;
+			notification_min_videos: number;
+			notification_timeout: number;
+			notification_retry_count: number;
+		}>
+	> {
 		return this.get<{
 			enable_scan_notifications: boolean;
 			serverchan_key?: string;
@@ -566,10 +572,12 @@ class ApiClient {
 		enable_scan_notifications?: boolean;
 		serverchan_key?: string;
 		notification_min_videos?: number;
-	}): Promise<ApiResponse<{
-		success: boolean;
-		message: string;
-	}>> {
+	}): Promise<
+		ApiResponse<{
+			success: boolean;
+			message: string;
+		}>
+	> {
 		return this.post<{
 			success: boolean;
 			message: string;
@@ -579,10 +587,12 @@ class ApiClient {
 	/**
 	 * 测试推送通知
 	 */
-	async testNotification(message?: string): Promise<ApiResponse<{
-		success: boolean;
-		message: string;
-	}>> {
+	async testNotification(message?: string): Promise<
+		ApiResponse<{
+			success: boolean;
+			message: string;
+		}>
+	> {
 		return this.post<{
 			success: boolean;
 			message: string;
@@ -823,12 +833,12 @@ export const api = {
 	/**
 	 * 订阅系统信息WebSocket事件
 	 */
-	subscribeToSysInfo: (callback: (data: any) => void) => wsManager.subscribeToSysInfo(callback),
+	subscribeToSysInfo: (callback: (data: SysInfo) => void) => wsManager.subscribeToSysInfo(callback),
 
 	/**
 	 * 订阅任务状态WebSocket事件
 	 */
-	subscribeToTasks: (callback: (data: any) => void) => wsManager.subscribeToTasks(callback)
+	subscribeToTasks: (callback: (data: TaskStatus) => void) => wsManager.subscribeToTasks(callback)
 };
 
 // 默认导出

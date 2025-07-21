@@ -41,7 +41,7 @@
 			const response = await api.getQueueStatus();
 			queueStatus = response.data;
 			error = null;
-		} catch (err: any) {
+		} catch (err: unknown) {
 			console.error('获取队列状态失败:', err);
 			error = err.message || '获取队列状态失败';
 			toast.error('获取队列状态失败', {

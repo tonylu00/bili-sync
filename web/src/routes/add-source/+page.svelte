@@ -1101,7 +1101,7 @@
 								bind:value={sourceType}
 								class="border-input bg-background ring-offset-background focus-visible:ring-ring flex h-10 w-full rounded-md border px-3 py-2 text-sm focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:outline-none"
 							>
-								{#each sourceTypeOptions as option}
+								{#each sourceTypeOptions as option (option.value)}
 									<option value={option.value}>{option.label}</option>
 								{/each}
 							</select>
@@ -1286,7 +1286,7 @@
 									bind:value={collectionType}
 									class="border-input bg-background ring-offset-background focus-visible:ring-ring flex h-10 w-full rounded-md border px-3 py-2 text-sm focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:outline-none"
 								>
-									{#each collectionTypeOptions as option}
+									{#each collectionTypeOptions as option (option.value)}
 										<option value={option.value}>{option.label}</option>
 									{/each}
 								</select>
@@ -1619,7 +1619,7 @@
 										? ''
 										: 'grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));'}
 								>
-									{#each userFollowings as following}
+									{#each userFollowings as following (following.mid)}
 										<button
 											onclick={() => selectFollowing(following)}
 											class="hover:bg-muted rounded-lg border p-3 text-left transition-colors"
@@ -1703,7 +1703,7 @@
 										? ''
 										: 'grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));'}
 								>
-									{#each userCollections as collection}
+									{#each userCollections as collection (collection.sid)}
 										<button
 											onclick={() => selectCollection(collection)}
 											class="hover:bg-muted rounded-lg border p-4 text-left transition-colors"
@@ -1789,7 +1789,7 @@
 										? ''
 										: 'grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));'}
 								>
-									{#each userFavorites as favorite}
+									{#each userFavorites as favorite (favorite.id)}
 										<button
 											onclick={() => selectFavorite(favorite)}
 											class="hover:bg-muted rounded-lg border p-4 text-left transition-colors"
@@ -1891,7 +1891,7 @@
 											? ''
 											: 'grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));'}
 									>
-										{#each searchedUserFavorites as favorite}
+										{#each searchedUserFavorites as favorite (favorite.fid)}
 											<button
 												onclick={() => selectSearchedFavorite(favorite)}
 												class="hover:bg-muted rounded-lg border p-4 text-left transition-colors"
@@ -2110,7 +2110,7 @@
 										? ''
 										: 'grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));'}
 								>
-									{#each subscribedCollections as collection}
+									{#each subscribedCollections as collection (collection.sid)}
 										<button
 											onclick={() => selectSubscribedCollection(collection)}
 											class="hover:bg-muted rounded-lg border p-4 text-left transition-colors"

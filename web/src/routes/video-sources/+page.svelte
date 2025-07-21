@@ -71,7 +71,7 @@
 		sourceType: string,
 		sourceId: number,
 		currentEnabled: boolean,
-		sourceName: string
+		_sourceName: string
 	) {
 		try {
 			const result = await api.updateVideoSourceEnabled(sourceType, sourceId, !currentEnabled);
@@ -81,7 +81,7 @@
 			} else {
 				toast.error('操作失败', { description: result.data.message });
 			}
-		} catch (error: any) {
+		} catch (error: unknown) {
 			console.error('切换视频源状态失败:', error);
 			toast.error('操作失败', { description: error.message });
 		}
@@ -131,7 +131,7 @@
 			} else {
 				toast.error('设置更新失败', { description: result.data.message });
 			}
-		} catch (error: any) {
+		} catch (error: unknown) {
 			console.error('设置更新失败:', error);
 			toast.error('设置更新失败', { description: error.message });
 		}
@@ -156,7 +156,7 @@
 			} else {
 				toast.error('删除失败', { description: result.data.message });
 			}
-		} catch (error: any) {
+		} catch (error: unknown) {
 			console.error('删除视频源失败:', error);
 			toast.error('删除失败', { description: error.message });
 		}
@@ -193,7 +193,7 @@
 			} else {
 				toast.error('路径重设失败', { description: result.data.message });
 			}
-		} catch (error: any) {
+		} catch (error: unknown) {
 			console.error('路径重设失败:', error);
 			toast.error('路径重设失败', { description: error.message });
 		}
@@ -257,7 +257,7 @@
 	{:else}
 		<!-- 视频源分类展示 -->
 		<div class="grid gap-6">
-			{#each Object.entries(VIDEO_SOURCES) as [sourceKey, sourceConfig]}
+			{#each Object.entries(VIDEO_SOURCES) as [sourceKey, sourceConfig] (sourceKey)}
 				{@const sources = $videoSourceStore ? $videoSourceStore[sourceConfig.type] : []}
 				<Card>
 					<CardHeader class="cursor-pointer" onclick={() => toggleCollapse(sourceKey)}>
@@ -278,7 +278,7 @@
 						<CardContent>
 							{#if sources && sources.length > 0}
 								<div class="space-y-3">
-									{#each sources as source}
+									{#each sources as source (source.id)}
 										<div
 											class="flex {isMobile
 												? 'flex-col gap-3'

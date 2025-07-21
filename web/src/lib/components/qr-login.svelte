@@ -11,7 +11,7 @@
 	} from '$lib/components/ui/card';
 	import { Skeleton } from '$lib/components/ui/skeleton';
 	import { Badge } from '$lib/components/ui/badge';
-	// @ts-ignore
+	// @ts-expect-error
 	import QRCode from 'qrcode';
 
 	export let onLoginSuccess: (userInfo: any) => void = () => {};
