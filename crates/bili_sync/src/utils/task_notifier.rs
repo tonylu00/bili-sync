@@ -4,7 +4,7 @@ use serde::Serialize;
 
 pub static TASK_STATUS_NOTIFIER: LazyLock<TaskStatusNotifier> = LazyLock::new(TaskStatusNotifier::new);
 
-#[derive(Serialize, Clone)]
+#[derive(Serialize, Clone, Default)]
 pub struct TaskStatus {
     pub is_running: bool,
     pub last_run: Option<chrono::DateTime<chrono::Local>>,
@@ -17,16 +17,6 @@ pub struct TaskStatusNotifier {
     rx: tokio::sync::watch::Receiver<Arc<TaskStatus>>,
 }
 
-impl Default for TaskStatus {
-    fn default() -> Self {
-        Self {
-            is_running: false,
-            last_run: None,
-            last_finish: None,
-            next_run: None,
-        }
-    }
-}
 
 impl TaskStatusNotifier {
     pub fn new() -> Self {
@@ -47,7 +37,7 @@ impl TaskStatusNotifier {
     /// 简单的结束运行方法，不需要锁
     pub fn set_finished(&self) {
         let last_status = self.tx.borrow();
-        let last_run = last_status.last_run.clone();
+        let last_run = last_status.last_run;
         drop(last_status);
 
         // 简化实现，使用固定的2小时间隔

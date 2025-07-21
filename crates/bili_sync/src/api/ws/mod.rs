@@ -100,7 +100,7 @@ impl WebSocketHandler {
                                 let tx_clone = tx.clone();
                                 task_handle = Some(tokio::spawn(async move {
                                     let mut stream = WatchStream::new(TASK_STATUS_NOTIFIER.subscribe())
-                                        .map(|status| ServerEvent::Tasks(status));
+                                        .map(ServerEvent::Tasks);
                                     while let Some(event) = stream.next().await {
                                         if let Err(e) = tx_clone.send(event).await {
                                             error!("Failed to send task status: {:?}", e);
@@ -137,7 +137,7 @@ impl WebSocketHandler {
     // 添加订阅者
     async fn add_sysinfo_subscriber(&self, uuid: Uuid, sender: tokio::sync::mpsc::Sender<ServerEvent>) {
         self.sysinfo_subscribers.insert(uuid, sender);
-        if self.sysinfo_subscribers.len() > 0
+        if !self.sysinfo_subscribers.is_empty()
             && self
                 .sysinfo_handles
                 .read()
