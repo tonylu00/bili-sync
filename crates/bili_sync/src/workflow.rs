@@ -522,62 +522,91 @@ pub async fn fetch_video_details(
                             };
                             let pages = std::mem::take(pages);
                             let pages_len = pages.len();
-                            
+
                             // 调试日志：检查staff信息
                             if let Some(staff_list) = staff {
                                 debug!("视频 {} 有staff信息，成员数量: {}", video_model.bvid, staff_list.len());
                                 for staff_member in staff_list.iter() {
-                                    debug!("  - staff: mid={}, title={}, name={}", 
-                                        staff_member.mid, staff_member.title, staff_member.name);
+                                    debug!(
+                                        "  - staff: mid={}, title={}, name={}",
+                                        staff_member.mid, staff_member.title, staff_member.name
+                                    );
                                 }
                             } else {
                                 debug!("视频 {} 没有staff信息", video_model.bvid);
                             }
-                            
+
                             // 检查是否为合作视频，支持submission和收藏夹来源
                             let mut video_model_mut = video_model.clone();
                             let mut collaboration_video_updated = false;
                             if let Some(staff_list) = staff {
                                 debug!("视频 {} 有staff信息，成员数量: {}", video_model.bvid, staff_list.len());
                                 for staff_member in staff_list.iter() {
-                                    debug!("  - staff: mid={}, title={}, name={}", 
-                                        staff_member.mid, staff_member.title, staff_member.name);
+                                    debug!(
+                                        "  - staff: mid={}, title={}, name={}",
+                                        staff_member.mid, staff_member.title, staff_member.name
+                                    );
                                 }
-                                
+
                                 if staff_list.len() > 1 {
-                                    debug!("发现合作视频：bvid={}, staff_count={}", video_model.bvid, staff_list.len());
-                                    
+                                    debug!(
+                                        "发现合作视频：bvid={}, staff_count={}",
+                                        video_model.bvid,
+                                        staff_list.len()
+                                    );
+
                                     // 查找所有可能的订阅UP主
                                     let mut matched_submission: Option<submission::Model> = None;
-                                    
+
                                     // 1. 如果是submission来源，直接使用source_submission_id
                                     if let Some(source_submission_id) = video_model.source_submission_id {
                                         debug!("submission来源视频，source_submission_id: {}", source_submission_id);
-                                        if let Ok(Some(submission)) = submission::Entity::find_by_id(source_submission_id)
-                                            .one(connection)
-                                            .await {
-                                            debug!("找到来源submission: {} ({})", submission.upper_name, submission.upper_id);
+                                        if let Ok(Some(submission)) =
+                                            submission::Entity::find_by_id(source_submission_id)
+                                                .one(connection)
+                                                .await
+                                        {
+                                            debug!(
+                                                "找到来源submission: {} ({})",
+                                                submission.upper_name, submission.upper_id
+                                            );
                                             // 检查这个submission的UP主是否在staff列表中
                                             if staff_list.iter().any(|staff| staff.mid == submission.upper_id) {
-                                                debug!("submission UP主 {} ({}) 在staff列表中", submission.upper_name, submission.upper_id);
+                                                debug!(
+                                                    "submission UP主 {} ({}) 在staff列表中",
+                                                    submission.upper_name, submission.upper_id
+                                                );
                                                 matched_submission = Some(submission);
                                             } else {
-                                                debug!("submission UP主 {} ({}) 不在staff列表中", submission.upper_name, submission.upper_id);
+                                                debug!(
+                                                    "submission UP主 {} ({}) 不在staff列表中",
+                                                    submission.upper_name, submission.upper_id
+                                                );
                                             }
                                         } else {
-                                            debug!("找不到source_submission_id对应的submission记录: {}", source_submission_id);
+                                            debug!(
+                                                "找不到source_submission_id对应的submission记录: {}",
+                                                source_submission_id
+                                            );
                                         }
                                     } else {
                                         debug!("非submission来源视频，检查staff中是否有已订阅的UP主");
                                         // 2. 如果不是submission来源（如收藏夹），查找所有subscription中匹配的UP主
                                         for staff_member in staff_list.iter() {
-                                            debug!("检查staff成员 {} ({}) 是否已订阅", staff_member.name, staff_member.mid);
+                                            debug!(
+                                                "检查staff成员 {} ({}) 是否已订阅",
+                                                staff_member.name, staff_member.mid
+                                            );
                                             if let Ok(Some(submission)) = submission::Entity::find()
                                                 .filter(submission::Column::UpperId.eq(staff_member.mid))
                                                 .filter(submission::Column::Enabled.eq(true))
                                                 .one(connection)
-                                                .await {
-                                                debug!("在staff中找到已订阅的UP主：{} ({})", staff_member.name, staff_member.mid);
+                                                .await
+                                            {
+                                                debug!(
+                                                    "在staff中找到已订阅的UP主：{} ({})",
+                                                    staff_member.name, staff_member.mid
+                                                );
                                                 matched_submission = Some(submission);
                                                 break;
                                             } else {
@@ -585,17 +614,21 @@ pub async fn fetch_video_details(
                                             }
                                         }
                                     }
-                                    
+
                                     // 如果找到了匹配的订阅UP主，进行归类
                                     if let Some(submission) = matched_submission {
                                         // 从staff信息中找到匹配UP主的头像
-                                        let matched_staff_face = staff_list.iter()
+                                        let matched_staff_face = staff_list
+                                            .iter()
                                             .find(|staff| staff.mid == submission.upper_id)
                                             .map(|staff| staff.face.clone())
                                             .unwrap_or_default();
-                                        
-                                        debug!("为合作视频匹配UP主头像: {} -> {}", submission.upper_name, matched_staff_face);
-                                        
+
+                                        debug!(
+                                            "为合作视频匹配UP主头像: {} -> {}",
+                                            submission.upper_name, matched_staff_face
+                                        );
+
                                         // 使用submission的信息更新视频，包括正确的头像
                                         video_model_mut.upper_id = submission.upper_id;
                                         video_model_mut.upper_name = submission.upper_name.clone();
@@ -603,9 +636,13 @@ pub async fn fetch_video_details(
                                         collaboration_video_updated = true;
                                         info!(
                                             "合作视频 {} 归类到订阅UP主「{}」(来源：{})",
-                                            video_model_mut.bvid, 
+                                            video_model_mut.bvid,
                                             submission.upper_name,
-                                            if video_model.source_submission_id.is_some() { "投稿订阅" } else { "收藏夹" }
+                                            if video_model.source_submission_id.is_some() {
+                                                "投稿订阅"
+                                            } else {
+                                                "收藏夹"
+                                            }
                                         );
                                     } else {
                                         debug!("staff列表中没有找到已订阅的UP主");
@@ -616,7 +653,7 @@ pub async fn fetch_video_details(
                             } else {
                                 debug!("视频 {} 没有staff信息", video_model.bvid);
                             }
-                            
+
                             let txn = connection.begin().await?;
                             // 将分页信息写入数据库
                             create_pages(pages, &video_model_mut, &txn).await?;
@@ -624,7 +661,7 @@ pub async fn fetch_video_details(
                             video_source.set_relation_id(&mut video_active_model);
                             video_active_model.single_page = Set(Some(pages_len == 1));
                             video_active_model.tags = Set(Some(serde_json::to_value(tags)?));
-                            
+
                             // 只有合作视频更新时才覆盖upper信息，保持其他视频的API更新不被影响
                             if collaboration_video_updated {
                                 debug!("合作视频检测到更新，覆盖upper信息到数据库");
@@ -634,7 +671,7 @@ pub async fn fetch_video_details(
                             } else {
                                 debug!("非合作视频或未发生更新，保持API返回的upper信息");
                             }
-                            
+
                             video_active_model.save(&txn).await?;
                             txn.commit().await?;
                         }
@@ -926,10 +963,11 @@ pub async fn download_video_pages(
         video_model.clone()
     } else {
         // 对于非番剧，重新从数据库加载视频信息，以获取可能在fetch_video_details中更新的upper信息
-        if let Ok(Some(updated)) = video::Entity::find_by_id(video_model.id)
-            .one(connection)
-            .await {
-            debug!("重新加载视频信息: upper_name={}, upper_id={}", updated.upper_name, updated.upper_id);
+        if let Ok(Some(updated)) = video::Entity::find_by_id(video_model.id).one(connection).await {
+            debug!(
+                "重新加载视频信息: upper_name={}, upper_id={}",
+                updated.upper_name, updated.upper_id
+            );
             updated
         } else {
             debug!("无法重新加载视频信息，使用原始模型");
@@ -942,8 +980,12 @@ pub async fn download_video_pages(
         // 检查是否需要进行合作视频检测（只对有staff信息的视频）
         if let Some(staff_info) = &final_video_model.staff_info {
             if let Ok(staff_list) = serde_json::from_value::<Vec<crate::bilibili::StaffInfo>>(staff_info.clone()) {
-                debug!("视频 {} 有staff信息，成员数量: {} (下载阶段检测)", final_video_model.bvid, staff_list.len());
-                
+                debug!(
+                    "视频 {} 有staff信息，成员数量: {} (下载阶段检测)",
+                    final_video_model.bvid,
+                    staff_list.len()
+                );
+
                 if staff_list.len() > 1 {
                     // 获取所有启用的订阅
                     let submissions = submission::Entity::find()
@@ -951,51 +993,57 @@ pub async fn download_video_pages(
                         .all(connection)
                         .await
                         .context("get submissions failed")?;
-                    
+
                     let mut matched_submission = None;
                     // 检查staff中是否有已订阅的UP主
                     for submission in &submissions {
                         for staff_member in &staff_list {
                             if staff_member.mid == submission.upper_id {
-                                debug!("在staff中找到已订阅的UP主：{} ({})", staff_member.name, staff_member.mid);
+                                debug!(
+                                    "在staff中找到已订阅的UP主：{} ({})",
+                                    staff_member.name, staff_member.mid
+                                );
                                 matched_submission = Some(submission);
                                 break;
                             }
                         }
                     }
-                    
+
                     // 如果找到了匹配的订阅UP主，进行归类
                     if let Some(submission) = matched_submission {
                         // 从staff信息中找到匹配UP主的头像
-                        let matched_staff_face = staff_list.iter()
+                        let matched_staff_face = staff_list
+                            .iter()
                             .find(|staff| staff.mid == submission.upper_id)
                             .map(|staff| staff.face.clone())
                             .unwrap_or_default();
-                        
-                        debug!("为合作视频匹配UP主头像 (下载阶段): {} -> {}", submission.upper_name, matched_staff_face);
-                        
+
+                        debug!(
+                            "为合作视频匹配UP主头像 (下载阶段): {} -> {}",
+                            submission.upper_name, matched_staff_face
+                        );
+
                         // 创建更新后的视频模型
                         let mut updated_model = final_video_model.clone();
                         updated_model.upper_id = submission.upper_id;
                         updated_model.upper_name = submission.upper_name.clone();
                         updated_model.upper_face = matched_staff_face.clone();
-                        
+
                         // 立即保存到数据库
                         let mut active_model: video::ActiveModel = updated_model.clone().into();
                         active_model.upper_id = Set(submission.upper_id);
                         active_model.upper_name = Set(submission.upper_name.clone());
                         active_model.upper_face = Set(matched_staff_face);
-                        
+
                         if let Err(e) = active_model.update(connection).await {
                             warn!("更新合作视频信息失败: {}", e);
                         } else {
                             info!(
                                 "合作视频 {} 归类到订阅UP主「{}」(下载阶段处理)",
-                                updated_model.bvid, 
-                                submission.upper_name
+                                updated_model.bvid, submission.upper_name
                             );
                         }
-                        
+
                         updated_model
                     } else {
                         debug!("staff列表中没有找到已订阅的UP主 (下载阶段)");
@@ -1154,7 +1202,10 @@ pub async fn download_video_pages(
         debug!("=== 路径计算开始 ===");
         debug!("视频源基础路径: {:?}", video_source_base_path);
         debug!("视频BVID: {}", final_video_model.bvid);
-        debug!("视频UP主: {} ({})", final_video_model.upper_name, final_video_model.upper_id);
+        debug!(
+            "视频UP主: {} ({})",
+            final_video_model.upper_name, final_video_model.upper_id
+        );
         debug!("数据库中保存的路径: {:?}", final_video_model.path);
         debug!("注意：将忽略数据库中的路径，从视频源基础路径重新计算");
 
@@ -1199,9 +1250,10 @@ pub async fn download_video_pages(
             }
         } else {
             // 其他类型的视频源使用原来的逻辑
-            let base_folder_name =
-                crate::config::with_config(|bundle| bundle.render_video_template(&video_format_args(&final_video_model)))
-                    .map_err(|e| anyhow::anyhow!("模板渲染失败: {}", e))?;
+            let base_folder_name = crate::config::with_config(|bundle| {
+                bundle.render_video_template(&video_format_args(&final_video_model))
+            })
+            .map_err(|e| anyhow::anyhow!("模板渲染失败: {}", e))?;
 
             debug!("普通视频源 - 渲染的文件夹名: '{}'", base_folder_name);
             debug!("普通视频源 - 基础路径: {:?}", video_source_base_path);

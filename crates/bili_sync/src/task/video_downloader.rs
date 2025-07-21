@@ -219,7 +219,7 @@ pub async fn video_downloader(connection: Arc<DatabaseConnection>) {
             // 标记扫描开始并重置取消令牌
             TASK_CONTROLLER.set_scanning(true);
             TASK_CONTROLLER.reset_cancellation_token().await;
-            
+
             // 标记任务状态为运行中
             crate::utils::task_notifier::TASK_STATUS_NOTIFIER.set_running();
 
@@ -313,7 +313,7 @@ pub async fn video_downloader(connection: Arc<DatabaseConnection>) {
 
             // 标记扫描结束
             TASK_CONTROLLER.set_scanning(false);
-            
+
             // 标记任务状态为结束
             crate::utils::task_notifier::TASK_STATUS_NOTIFIER.set_finished();
 

@@ -493,11 +493,11 @@ impl BiliClient {
         // 循环获取所有页面的数据
         let mut current_page = 1u32;
         let mut total_count = 0u32;
-        
+
         loop {
             let mut retry_count = 0;
             let max_retries = 2;
-            
+
             // 添加重试机制获取当前页数据
             let seasons_response = loop {
                 match self
@@ -699,8 +699,13 @@ impl BiliClient {
 
             // 添加当前页的合集到总列表
             all_collections.extend(current_page_collections);
-            debug!("UP主 {} 第 {} 页获取到 {} 个合集，累计 {} 个", 
-                   mid, current_page, all_collections.len() - (current_page as usize - 1) * page_size as usize, all_collections.len());
+            debug!(
+                "UP主 {} 第 {} 页获取到 {} 个合集，累计 {} 个",
+                mid,
+                current_page,
+                all_collections.len() - (current_page as usize - 1) * page_size as usize,
+                all_collections.len()
+            );
 
             // 检查是否已经获取了所有合集
             if total_count > 0 && all_collections.len() >= total_count as usize {
@@ -711,13 +716,15 @@ impl BiliClient {
             // 如果当前页的合集数量少于page_size，说明是最后一页
             let current_page_size = all_collections.len() - (current_page as usize - 1) * page_size as usize;
             if current_page_size < page_size as usize {
-                debug!("UP主 {} 第 {} 页合集数量 {} 少于页面大小 {}，已获取完毕", 
-                       mid, current_page, current_page_size, page_size);
+                debug!(
+                    "UP主 {} 第 {} 页合集数量 {} 少于页面大小 {}，已获取完毕",
+                    mid, current_page, current_page_size, page_size
+                );
                 break;
             }
 
             current_page += 1;
-            
+
             // 添加延迟以避免请求过于频繁
             tokio::time::sleep(tokio::time::Duration::from_millis(200)).await;
         }
@@ -729,7 +736,7 @@ impl BiliClient {
             success: true,
             collections: all_collections,
             total: total_count,
-            page: 1, // 返回固定值，因为我们返回的是所有合集
+            page: 1,                            // 返回固定值，因为我们返回的是所有合集
             page_size: collection_count as u32, // 返回实际获取的合集数量
         })
     }

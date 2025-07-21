@@ -39,12 +39,11 @@ impl ConfigBundle {
 
         debug!("开始构建Handlebars模板引擎...");
         let mut handlebars = Handlebars::new();
-        
+
         // 禁用HTML转义，避免文件名中的特殊字符被转义为HTML实体
         // 例如：避免 "=" 被转义为 "&#x3D;"
         handlebars.register_escape_fn(|s| s.to_string());
         debug!("已禁用Handlebars HTML转义");
-        
 
         // 注册自定义 helper
         handlebars_helper!(truncate: |s: String, len: usize| {
@@ -267,9 +266,9 @@ mod tests {
     #[test]
     fn test_video_template_path_separator_handling() {
         // 设置包含路径分隔符的模板，模拟用户问题中的场景
-        let config = Config { 
-            video_name: Cow::Borrowed("{{upper_name}}/{{title}}"), 
-            ..Default::default() 
+        let config = Config {
+            video_name: Cow::Borrowed("{{upper_name}}/{{title}}"),
+            ..Default::default()
         };
         let bundle = ConfigBundle::from_config(config).unwrap();
 
@@ -327,9 +326,9 @@ mod tests {
         });
 
         // 创建第一个配置
-        let config1 = Config { 
-            video_name: Cow::Borrowed("{{upper_name}}-{{title}}"), 
-            ..Default::default() 
+        let config1 = Config {
+            video_name: Cow::Borrowed("{{upper_name}}-{{title}}"),
+            ..Default::default()
         };
         let bundle1 = ConfigBundle::from_config(config1).unwrap();
 
@@ -337,9 +336,9 @@ mod tests {
         assert_eq!(result1, "TestUpper-TestVideo");
 
         // 创建第二个配置，模拟配置更改
-        let config2 = Config { 
-            video_name: Cow::Borrowed("{{upper_name}}/{{title}}"), 
-            ..Default::default() 
+        let config2 = Config {
+            video_name: Cow::Borrowed("{{upper_name}}/{{title}}"),
+            ..Default::default()
         };
         let bundle2 = ConfigBundle::from_config(config2).unwrap();
 
@@ -353,10 +352,10 @@ mod tests {
 
     #[test]
     fn test_template_render_consistency() {
-        let config = Config { 
-            video_name: Cow::Borrowed("{{upper_name}}/{{title}}"), 
-            page_name: Cow::Borrowed("{{upper_name}}/{{title}}/Page{{page}}"), 
-            ..Default::default() 
+        let config = Config {
+            video_name: Cow::Borrowed("{{upper_name}}/{{title}}"),
+            page_name: Cow::Borrowed("{{upper_name}}/{{title}}/Page{{page}}"),
+            ..Default::default()
         };
 
         let bundle = ConfigBundle::from_config(config).unwrap();
@@ -382,9 +381,9 @@ mod tests {
     #[test]
     fn test_content_slash_handling() {
         // 创建一个测试配置
-        let config = Config { 
-            video_name: Cow::Borrowed("{{upper_name}}/{{title}}"), 
-            ..Default::default() 
+        let config = Config {
+            video_name: Cow::Borrowed("{{upper_name}}/{{title}}"),
+            ..Default::default()
         };
 
         let bundle = ConfigBundle::from_config(config).unwrap();
@@ -427,9 +426,9 @@ mod tests {
     #[test]
     fn test_html_escape_disabled() {
         // 测试Handlebars HTML转义已被正确禁用
-        let config = Config { 
-            video_name: Cow::Borrowed("{{upper_name}}"), 
-            ..Default::default() 
+        let config = Config {
+            video_name: Cow::Borrowed("{{upper_name}}"),
+            ..Default::default()
         };
 
         let bundle = ConfigBundle::from_config(config).unwrap();
@@ -450,12 +449,8 @@ mod tests {
             "HTML转义应该被禁用，等号不应该被转义为 &#x3D;，实际结果: {}",
             result
         );
-        
+
         // 验证原始等号保持不变
-        assert_eq!(
-            result, "=咬人猫=",
-            "等号应该保持原样，实际结果: {}",
-            result
-        );
+        assert_eq!(result, "=咬人猫=", "等号应该保持原样，实际结果: {}", result);
     }
 }

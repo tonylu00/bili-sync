@@ -1,25 +1,23 @@
 use std::sync::{Arc, LazyLock};
 use std::time::Duration;
 
-use axum::extract::WebSocketUpgrade;
 use axum::extract::ws::{Message, WebSocket};
+use axum::extract::WebSocketUpgrade;
 use axum::response::IntoResponse;
 use axum::routing::any;
 use axum::Router;
 use dashmap::DashMap;
 use futures::stream::{SplitSink, SplitStream};
-use futures::{SinkExt, StreamExt, future};
+use futures::{future, SinkExt, StreamExt};
 use parking_lot::RwLock;
 use serde::{Deserialize, Serialize};
-use sysinfo::{
-    Disks, System, get_current_pid,
-};
+use sysinfo::{get_current_pid, Disks, System};
 use tokio::task::JoinHandle;
 use tokio_stream::wrappers::{IntervalStream, WatchStream};
 use uuid::Uuid;
 
 use crate::api::response::SysInfo;
-use crate::utils::task_notifier::{TASK_STATUS_NOTIFIER, TaskStatus};
+use crate::utils::task_notifier::{TaskStatus, TASK_STATUS_NOTIFIER};
 
 static WEBSOCKET_HANDLER: LazyLock<WebSocketHandler> = LazyLock::new(WebSocketHandler::new);
 
@@ -208,5 +206,3 @@ async fn handle_socket(socket: WebSocket) {
     tokio::spawn(WEBSOCKET_HANDLER.handle_sender(ws_sender, rx));
     tokio::spawn(WEBSOCKET_HANDLER.handle_receiver(ws_receiver, tx, uuid));
 }
-
-

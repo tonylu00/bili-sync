@@ -15,7 +15,7 @@ impl MigrationTrait for Migration {
                         ColumnDef::new(Video::StaffInfo)
                             .json()
                             .null() // 允许为空，向后兼容
-                            .comment("视频创作团队信息，JSON格式")
+                            .comment("视频创作团队信息，JSON格式"),
                     )
                     .to_owned(),
             )
@@ -30,7 +30,7 @@ impl MigrationTrait for Migration {
                         ColumnDef::new(Video::SourceSubmissionId)
                             .integer()
                             .null() // 允许为空，向后兼容
-                            .comment("视频来源的UP主订阅ID")
+                            .comment("视频来源的UP主订阅ID"),
                     )
                     .to_owned(),
             )

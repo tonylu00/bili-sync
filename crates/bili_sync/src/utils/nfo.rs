@@ -2268,9 +2268,9 @@ mod tests {
         };
 
         // 测试Skip策略（默认）
-        let config = NFOConfig { 
-            empty_upper_strategy: EmptyUpperStrategy::Skip, 
-            ..Default::default() 
+        let config = NFOConfig {
+            empty_upper_strategy: EmptyUpperStrategy::Skip,
+            ..Default::default()
         };
 
         // 创建一个自定义的Movie结构并手动生成NFO
@@ -2279,20 +2279,20 @@ mod tests {
         assert_eq!(actor_name, None);
 
         // 测试Placeholder策略
-        let config = NFOConfig { 
+        let config = NFOConfig {
             empty_upper_strategy: EmptyUpperStrategy::Placeholder,
             empty_upper_placeholder: "官方内容".to_string(),
-            ..Default::default() 
+            ..Default::default()
         };
 
         let actor_name = NFO::get_actor_name(movie.upper_name, &config);
         assert_eq!(actor_name, Some("官方内容".to_string()));
 
         // 测试Default策略
-        let config = NFOConfig { 
+        let config = NFOConfig {
             empty_upper_strategy: EmptyUpperStrategy::Default,
             empty_upper_default_name: "哔哩哔哩".to_string(),
-            ..Default::default() 
+            ..Default::default()
         };
 
         let actor_name = NFO::get_actor_name(movie.upper_name, &config);

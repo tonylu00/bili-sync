@@ -2,37 +2,37 @@ use axum::extract::Request;
 use axum::http::HeaderMap;
 use axum::middleware::Next;
 use axum::response::{IntoResponse, Response};
+use base64::prelude::BASE64_URL_SAFE_NO_PAD;
+use base64::Engine;
 use reqwest::StatusCode;
 use utoipa::openapi::security::{ApiKey, ApiKeyValue, SecurityScheme};
 use utoipa::Modify;
-use base64::Engine;
-use base64::prelude::BASE64_URL_SAFE_NO_PAD;
 
 use crate::api::wrapper::ApiResponse;
 
-pub async fn auth(mut headers: HeaderMap, request: Request, next: Next) -> Result<Response, StatusCode> {
+pub async fn auth(headers: HeaderMap, request: Request, next: Next) -> Result<Response, StatusCode> {
     // 排除不需要认证的路径
     let path = request.uri().path();
     tracing::debug!("认证中间件: 检查路径 {}", path);
-    
+
     let excluded_paths = [
-        "/api/search",              // 搜索API不需要认证
-        "/api/proxy/image",         // 图片代理不需要认证
-        "/api/setup/check",         // 初始设置检查不需要认证
-        "/api/setup/auth-token",    // 设置auth token不需要认证
-        "/api/credential",          // 更新凭证在初始设置时不需要认证
-        "/api/videos/stream",       // 视频流API不需要认证（供播放器使用）
-        "/api/videos/proxy-stream", // 视频流代理API不需要认证（供在线播放器使用）
-        "/api/auth/qr/generate",    // 生成登录二维码不需要认证
-        "/api/auth/qr/poll",        // 轮询登录状态不需要认证
-        "/api/auth/current-user",   // 获取当前用户信息不需要认证
+        "/api/search",                // 搜索API不需要认证
+        "/api/proxy/image",           // 图片代理不需要认证
+        "/api/setup/check",           // 初始设置检查不需要认证
+        "/api/setup/auth-token",      // 设置auth token不需要认证
+        "/api/credential",            // 更新凭证在初始设置时不需要认证
+        "/api/videos/stream",         // 视频流API不需要认证（供播放器使用）
+        "/api/videos/proxy-stream",   // 视频流代理API不需要认证（供在线播放器使用）
+        "/api/auth/qr/generate",      // 生成登录二维码不需要认证
+        "/api/auth/qr/poll",          // 轮询登录状态不需要认证
+        "/api/auth/current-user",     // 获取当前用户信息不需要认证
         "/api/auth/clear-credential", // 清除凭证不需要认证
-        "/api/ws",                  // WebSocket使用协议头认证，不使用Authorization头
+        "/api/ws",                    // WebSocket使用协议头认证，不使用Authorization头
     ];
 
     let current_config = crate::config::reload_config();
     let token = current_config.auth_token.as_deref().unwrap_or("");
-    
+
     // 检查标准的Authorization头
     if headers
         .get("Authorization")
@@ -41,7 +41,7 @@ pub async fn auth(mut headers: HeaderMap, request: Request, next: Next) -> Resul
     {
         return Ok(next.run(request).await);
     }
-    
+
     // 检查WebSocket协议头（用于WebSocket认证）
     if let Some(protocol) = headers.get("Sec-WebSocket-Protocol") {
         tracing::debug!("WebSocket协议头: {:?}", protocol);
@@ -63,13 +63,6 @@ pub async fn auth(mut headers: HeaderMap, request: Request, next: Next) -> Resul
         return Ok(ApiResponse::unauthorized(()).into_response());
     }
     Ok(next.run(request).await)
-}
-
-fn get_token(headers: &HeaderMap) -> Option<String> {
-    headers
-        .get("Authorization")
-        .and_then(|v| v.to_str().ok())
-        .map(Into::into)
 }
 
 pub(super) struct OpenAPIAuth;

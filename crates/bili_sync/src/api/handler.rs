@@ -4,13 +4,13 @@ use std::sync::Arc;
 use anyhow::{anyhow, Context, Result};
 use axum::extract::{Extension, Path, Query};
 
-use bili_sync_entity::{favorite, collection, submission, watch_later, video, page, video_source};
+use bili_sync_entity::{collection, favorite, page, submission, video, video_source, watch_later};
 use bili_sync_migration::Expr;
 use chrono::Utc;
 use reqwest;
 use sea_orm::{
-    ColumnTrait, Condition, DatabaseConnection, EntityTrait, PaginatorTrait, QueryFilter, QueryOrder, QuerySelect, Set,
-    TransactionTrait, Unchanged, FromQueryResult, ConnectionTrait,
+    ColumnTrait, Condition, ConnectionTrait, DatabaseConnection, EntityTrait, FromQueryResult, PaginatorTrait,
+    QueryFilter, QueryOrder, QuerySelect, Set, TransactionTrait, Unchanged,
 };
 use serde::{Deserialize, Serialize};
 use std::collections::VecDeque;
@@ -22,18 +22,18 @@ use utoipa::OpenApi;
 use crate::api::auth::OpenAPIAuth;
 use crate::api::error::InnerApiError;
 use crate::api::request::{
-    AddVideoSourceRequest, BatchUpdateConfigRequest, ConfigHistoryRequest, ResetSpecificTasksRequest,
-    ResetVideoSourcePathRequest, SetupAuthTokenRequest, SubmissionVideosRequest, UpdateConfigItemRequest,
-    UpdateConfigRequest, UpdateCredentialRequest, UpdateVideoStatusRequest, VideosRequest,
-    QRGenerateRequest, QRPollRequest,
+    AddVideoSourceRequest, BatchUpdateConfigRequest, ConfigHistoryRequest, QRGenerateRequest, QRPollRequest,
+    ResetSpecificTasksRequest, ResetVideoSourcePathRequest, SetupAuthTokenRequest, SubmissionVideosRequest,
+    UpdateConfigItemRequest, UpdateConfigRequest, UpdateCredentialRequest, UpdateVideoStatusRequest, VideosRequest,
 };
 use crate::api::response::{
     AddVideoSourceResponse, BangumiSeasonInfo, ConfigChangeInfo, ConfigHistoryResponse, ConfigItemResponse,
-    ConfigReloadResponse, ConfigResponse, ConfigValidationResponse, DeleteVideoResponse, DeleteVideoSourceResponse,
-    HotReloadStatusResponse, InitialSetupCheckResponse, PageInfo, ResetAllVideosResponse, ResetVideoResponse,
+    ConfigReloadResponse, ConfigResponse, ConfigValidationResponse, DashBoardResponse, DeleteVideoResponse,
+    DeleteVideoSourceResponse, HotReloadStatusResponse, InitialSetupCheckResponse, MonitoringStatus, PageInfo,
+    QRGenerateResponse, QRPollResponse, QRUserInfo, ResetAllVideosResponse, ResetVideoResponse,
     ResetVideoSourcePathResponse, SetupAuthTokenResponse, SubmissionVideosResponse, UpdateConfigResponse,
     UpdateCredentialResponse, UpdateVideoStatusResponse, VideoInfo, VideoResponse, VideoSource, VideoSourcesResponse,
-    VideosResponse, QRGenerateResponse, QRPollResponse, QRUserInfo, DashBoardResponse, MonitoringStatus,
+    VideosResponse,
 };
 use crate::api::wrapper::{ApiError, ApiResponse};
 use crate::utils::status::{PageStatus, VideoStatus};
@@ -148,23 +148,39 @@ pub async fn get_video_sources(
         .column_as(Expr::value(None::<i64>), "upper_id")
         .column_as(Expr::value(None::<String>), "season_id")
         .column_as(Expr::value(None::<String>), "media_id")
-        .into_tuple::<(i32, String, bool, String, bool, i64, i64, Option<i64>, Option<i64>, Option<String>, Option<String>)>()
+        .into_tuple::<(
+            i32,
+            String,
+            bool,
+            String,
+            bool,
+            i64,
+            i64,
+            Option<i64>,
+            Option<i64>,
+            Option<String>,
+            Option<String>,
+        )>()
         .all(db.as_ref())
         .await?
         .into_iter()
-        .map(|(id, name, enabled, path, scan_deleted_videos, s_id, m_id, f_id, upper_id, season_id, media_id)| VideoSource {
-            id,
-            name,
-            enabled,
-            path,
-            scan_deleted_videos,
-            f_id,
-            s_id: Some(s_id),
-            m_id: Some(m_id),
-            upper_id,
-            season_id,
-            media_id,
-        })
+        .map(
+            |(id, name, enabled, path, scan_deleted_videos, s_id, m_id, f_id, upper_id, season_id, media_id)| {
+                VideoSource {
+                    id,
+                    name,
+                    enabled,
+                    path,
+                    scan_deleted_videos,
+                    f_id,
+                    s_id: Some(s_id),
+                    m_id: Some(m_id),
+                    upper_id,
+                    season_id,
+                    media_id,
+                }
+            },
+        )
         .collect();
 
     let favorite_sources = favorite::Entity::find()
@@ -182,23 +198,39 @@ pub async fn get_video_sources(
         .column_as(Expr::value(None::<i64>), "upper_id")
         .column_as(Expr::value(None::<String>), "season_id")
         .column_as(Expr::value(None::<String>), "media_id")
-        .into_tuple::<(i32, String, bool, String, bool, i64, Option<i64>, Option<i64>, Option<i64>, Option<String>, Option<String>)>()
+        .into_tuple::<(
+            i32,
+            String,
+            bool,
+            String,
+            bool,
+            i64,
+            Option<i64>,
+            Option<i64>,
+            Option<i64>,
+            Option<String>,
+            Option<String>,
+        )>()
         .all(db.as_ref())
         .await?
         .into_iter()
-        .map(|(id, name, enabled, path, scan_deleted_videos, f_id, s_id, m_id, upper_id, season_id, media_id)| VideoSource {
-            id,
-            name,
-            enabled,
-            path,
-            scan_deleted_videos,
-            f_id: Some(f_id),
-            s_id,
-            m_id,
-            upper_id,
-            season_id,
-            media_id,
-        })
+        .map(
+            |(id, name, enabled, path, scan_deleted_videos, f_id, s_id, m_id, upper_id, season_id, media_id)| {
+                VideoSource {
+                    id,
+                    name,
+                    enabled,
+                    path,
+                    scan_deleted_videos,
+                    f_id: Some(f_id),
+                    s_id,
+                    m_id,
+                    upper_id,
+                    season_id,
+                    media_id,
+                }
+            },
+        )
         .collect();
 
     let submission_sources = submission::Entity::find()
@@ -216,23 +248,39 @@ pub async fn get_video_sources(
         .column_as(Expr::value(None::<i64>), "m_id")
         .column_as(Expr::value(None::<String>), "season_id")
         .column_as(Expr::value(None::<String>), "media_id")
-        .into_tuple::<(i32, bool, String, bool, i64, String, Option<i64>, Option<i64>, Option<i64>, Option<String>, Option<String>)>()
+        .into_tuple::<(
+            i32,
+            bool,
+            String,
+            bool,
+            i64,
+            String,
+            Option<i64>,
+            Option<i64>,
+            Option<i64>,
+            Option<String>,
+            Option<String>,
+        )>()
         .all(db.as_ref())
         .await?
         .into_iter()
-        .map(|(id, enabled, path, scan_deleted_videos, upper_id, name, f_id, s_id, m_id, season_id, media_id)| VideoSource {
-            id,
-            name,
-            enabled,
-            path,
-            scan_deleted_videos,
-            f_id,
-            s_id,
-            m_id,
-            upper_id: Some(upper_id),
-            season_id,
-            media_id,
-        })
+        .map(
+            |(id, enabled, path, scan_deleted_videos, upper_id, name, f_id, s_id, m_id, season_id, media_id)| {
+                VideoSource {
+                    id,
+                    name,
+                    enabled,
+                    path,
+                    scan_deleted_videos,
+                    f_id,
+                    s_id,
+                    m_id,
+                    upper_id: Some(upper_id),
+                    season_id,
+                    media_id,
+                }
+            },
+        )
         .collect();
 
     let watch_later_sources = watch_later::Entity::find()
@@ -250,23 +298,39 @@ pub async fn get_video_sources(
         .column_as(Expr::value(None::<i64>), "upper_id")
         .column_as(Expr::value(None::<String>), "season_id")
         .column_as(Expr::value(None::<String>), "media_id")
-        .into_tuple::<(i32, bool, String, bool, String, Option<i64>, Option<i64>, Option<i64>, Option<i64>, Option<String>, Option<String>)>()
+        .into_tuple::<(
+            i32,
+            bool,
+            String,
+            bool,
+            String,
+            Option<i64>,
+            Option<i64>,
+            Option<i64>,
+            Option<i64>,
+            Option<String>,
+            Option<String>,
+        )>()
         .all(db.as_ref())
         .await?
         .into_iter()
-        .map(|(id, enabled, path, scan_deleted_videos, name, f_id, s_id, m_id, upper_id, season_id, media_id)| VideoSource {
-            id,
-            name,
-            enabled,
-            path,
-            scan_deleted_videos,
-            f_id,
-            s_id,
-            m_id,
-            upper_id,
-            season_id,
-            media_id,
-        })
+        .map(
+            |(id, enabled, path, scan_deleted_videos, name, f_id, s_id, m_id, upper_id, season_id, media_id)| {
+                VideoSource {
+                    id,
+                    name,
+                    enabled,
+                    path,
+                    scan_deleted_videos,
+                    f_id,
+                    s_id,
+                    m_id,
+                    upper_id,
+                    season_id,
+                    media_id,
+                }
+            },
+        )
         .collect();
 
     // 确保bangumi_sources是一个数组，即使为空
@@ -286,23 +350,39 @@ pub async fn get_video_sources(
         .column_as(Expr::value(None::<i64>), "s_id")
         .column_as(Expr::value(None::<i64>), "m_id")
         .column_as(Expr::value(None::<i64>), "upper_id")
-        .into_tuple::<(i32, String, bool, String, bool, Option<String>, Option<String>, Option<i64>, Option<i64>, Option<i64>, Option<i64>)>()
+        .into_tuple::<(
+            i32,
+            String,
+            bool,
+            String,
+            bool,
+            Option<String>,
+            Option<String>,
+            Option<i64>,
+            Option<i64>,
+            Option<i64>,
+            Option<i64>,
+        )>()
         .all(db.as_ref())
         .await?
         .into_iter()
-        .map(|(id, name, enabled, path, scan_deleted_videos, season_id, media_id, f_id, s_id, m_id, upper_id)| VideoSource {
-            id,
-            name,
-            enabled,
-            path,
-            scan_deleted_videos,
-            f_id,
-            s_id,
-            m_id,
-            upper_id,
-            season_id,
-            media_id,
-        })
+        .map(
+            |(id, name, enabled, path, scan_deleted_videos, season_id, media_id, f_id, s_id, m_id, upper_id)| {
+                VideoSource {
+                    id,
+                    name,
+                    enabled,
+                    path,
+                    scan_deleted_videos,
+                    f_id,
+                    s_id,
+                    m_id,
+                    upper_id,
+                    season_id,
+                    media_id,
+                }
+            },
+        )
         .collect();
 
     // 返回响应，确保每个分类都是一个数组
@@ -4904,7 +4984,7 @@ async fn rename_existing_files(
 
                 // **修复：为合集和多P视频的Season结构添加例外处理**
                 // 对于启用Season结构的合集和多P视频，相同路径是期望行为，不应该被当作冲突
-                let should_skip_deduplication = 
+                let should_skip_deduplication =
                     // 合集视频且启用合集Season结构
                     (is_collection && config.collection_use_season_structure) ||
                     // 多P视频且启用多P Season结构
@@ -6835,7 +6915,7 @@ pub async fn generate_qr_code(
     axum::Json(_params): axum::Json<crate::api::request::QRGenerateRequest>,
 ) -> Result<ApiResponse<crate::api::response::QRGenerateResponse>, ApiError> {
     info!("收到生成二维码请求");
-    
+
     // 生成二维码
     let (session_id, qr_info) = match QR_SERVICE.generate_qr_code().await {
         Ok(result) => {
@@ -6847,13 +6927,13 @@ pub async fn generate_qr_code(
             return Err(ApiError::from(anyhow!("生成二维码失败: {}", e)));
         }
     };
-    
+
     let response = crate::api::response::QRGenerateResponse {
         session_id,
         qr_url: qr_info.url,
         expires_in: 180, // 3分钟
     };
-    
+
     Ok(ApiResponse::ok(response))
 }
 
@@ -6873,7 +6953,7 @@ pub async fn poll_qr_status(
     Query(params): Query<crate::api::request::QRPollRequest>,
 ) -> Result<ApiResponse<crate::api::response::QRPollResponse>, ApiError> {
     info!("收到轮询请求: session_id={}", params.session_id);
-    
+
     // 轮询登录状态
     let status = match QR_SERVICE.poll_login_status(&params.session_id).await {
         Ok(s) => {
@@ -6885,7 +6965,7 @@ pub async fn poll_qr_status(
             return Err(ApiError::from(anyhow!("轮询状态失败: {}", e)));
         }
     };
-    
+
     use crate::auth::LoginStatus;
     let response = match status {
         LoginStatus::Pending => crate::api::response::QRPollResponse {
@@ -6901,8 +6981,10 @@ pub async fn poll_qr_status(
         LoginStatus::Confirmed(login_result) => {
             // 保存凭证到配置系统
             let config = crate::config::reload_config();
-            config.credential.store(Some(std::sync::Arc::new(login_result.credential.clone())));
-            
+            config
+                .credential
+                .store(Some(std::sync::Arc::new(login_result.credential.clone())));
+
             // 检查是否正在扫描，如果是则通过任务队列处理
             if crate::task::is_scanning() {
                 // 将配置更新任务加入队列
@@ -6910,7 +6992,8 @@ pub async fn poll_qr_status(
                 let reload_task = crate::task::ReloadConfigTask {
                     task_id: Uuid::new_v4().to_string(),
                 };
-                crate::task::enqueue_reload_task(reload_task, &db).await
+                crate::task::enqueue_reload_task(reload_task, &db)
+                    .await
                     .map_err(|e| ApiError::from(anyhow!("保存凭证失败: {}", e)))?;
                 info!("检测到正在扫描，凭证保存任务已加入队列");
             } else {
@@ -6931,7 +7014,7 @@ pub async fn poll_qr_status(
                     crate::config::reload_config();
                 }
             }
-            
+
             crate::api::response::QRPollResponse {
                 status: "confirmed".to_string(),
                 message: "登录成功".to_string(),
@@ -6941,7 +7024,7 @@ pub async fn poll_qr_status(
                     avatar_url: login_result.user_info.avatar_url,
                 }),
             }
-        },
+        }
         LoginStatus::Expired => crate::api::response::QRPollResponse {
             status: "expired".to_string(),
             message: "二维码已过期".to_string(),
@@ -6953,7 +7036,7 @@ pub async fn poll_qr_status(
             user_info: None,
         },
     };
-    
+
     Ok(ApiResponse::ok(response))
 }
 
@@ -6971,21 +7054,21 @@ pub async fn get_current_user() -> Result<ApiResponse<crate::api::response::QRUs
     // 获取当前凭证
     let config = crate::config::with_config(|bundle| bundle.config.clone());
     let credential = config.credential.load();
-    
+
     let cred = match credential.as_deref() {
         Some(cred) => cred,
         None => return Err(anyhow::anyhow!("未找到有效凭证").into()),
     };
-    
+
     // 构建cookie字符串
     let cookie_str = format!(
         "SESSDATA={}; bili_jct={}; buvid3={}; DedeUserID={}",
         cred.sessdata, cred.bili_jct, cred.buvid3, cred.dedeuserid
     );
-    
+
     // 创建 HTTP 客户端
     let client = reqwest::Client::new();
-    
+
     // 调用B站API获取用户信息
     let response = client
         .get("https://api.bilibili.com/x/web-interface/nav")
@@ -6995,17 +7078,20 @@ pub async fn get_current_user() -> Result<ApiResponse<crate::api::response::QRUs
         .send()
         .await
         .map_err(|e| anyhow::anyhow!("请求B站API失败: {}", e))?;
-        
-    let data: serde_json::Value = response.json().await
+
+    let data: serde_json::Value = response
+        .json()
+        .await
         .map_err(|e| anyhow::anyhow!("解析响应失败: {}", e))?;
-    
+
     if data["code"].as_i64() != Some(0) {
         return Err(anyhow::anyhow!(
-            "获取用户信息失败: {}", 
+            "获取用户信息失败: {}",
             data["message"].as_str().unwrap_or("Unknown error")
-        ).into());
+        )
+        .into());
     }
-    
+
     let user_data = &data["data"];
     Ok(ApiResponse::ok(crate::api::response::QRUserInfo {
         user_id: user_data["mid"].as_i64().unwrap_or(0).to_string(),
@@ -7025,7 +7111,7 @@ pub async fn get_current_user() -> Result<ApiResponse<crate::api::response::QRUs
 )]
 pub async fn clear_credential() -> Result<ApiResponse<UpdateCredentialResponse>, ApiError> {
     use crate::bilibili::Credential;
-    
+
     // 清空凭证
     let empty_credential = Credential {
         sessdata: String::new(),
@@ -7034,17 +7120,18 @@ pub async fn clear_credential() -> Result<ApiResponse<UpdateCredentialResponse>,
         dedeuserid: String::new(),
         ac_time_value: String::new(),
     };
-    
+
     // 获取配置管理器并保存空凭证
-    let config_manager = crate::config::get_config_manager()
-        .ok_or_else(|| anyhow::anyhow!("配置管理器未初始化"))?;
-    config_manager.update_config_item("credential", serde_json::to_value(&empty_credential)?).await?;
-    
+    let config_manager = crate::config::get_config_manager().ok_or_else(|| anyhow::anyhow!("配置管理器未初始化"))?;
+    config_manager
+        .update_config_item("credential", serde_json::to_value(&empty_credential)?)
+        .await?;
+
     // 更新内存中的配置
     crate::config::with_config(|bundle| {
         bundle.config.credential.store(None);
     });
-    
+
     Ok(ApiResponse::ok(UpdateCredentialResponse {
         success: true,
         message: "凭证已清除".to_string(),
@@ -8387,9 +8474,7 @@ async fn update_bangumi_video_path_in_database(
             debug!("新基础路径: {}", new_base_path);
 
             // 🔧 标准化路径分隔符：统一转换为当前平台的分隔符
-            let normalized_path = video
-                .path
-                .replace(['/', '\\'], std::path::MAIN_SEPARATOR_STR);
+            let normalized_path = video.path.replace(['/', '\\'], std::path::MAIN_SEPARATOR_STR);
             debug!("标准化后的路径: {}", normalized_path);
 
             // 🔍 从标准化路径中提取番剧文件夹名称
@@ -8516,9 +8601,7 @@ async fn move_bangumi_files_to_new_path(
         // 数据库中的路径可能包含混合的路径分隔符，如：D:/Downloads/00111\名侦探柯南 绝海的侦探
         let api_title = {
             // 标准化路径分隔符：统一转换为当前平台的分隔符
-            let normalized_path = video
-                .path
-                .replace(['/', '\\'], std::path::MAIN_SEPARATOR_STR);
+            let normalized_path = video.path.replace(['/', '\\'], std::path::MAIN_SEPARATOR_STR);
 
             // 从标准化路径中提取番剧文件夹名称
             let current_path = std::path::Path::new(&normalized_path);
@@ -9111,14 +9194,25 @@ ORDER BY
     )?;
 
     // 获取监听状态信息
-    let active_sources = enabled_favorites + enabled_collections + enabled_submissions + enabled_bangumi + if enabled_watch_later > 0 { 1 } else { 0 };
-    let total_all_sources = total_favorites + total_collections + total_submissions + total_bangumi + if total_watch_later > 0 { 1 } else { 0 };
+    let active_sources = enabled_favorites
+        + enabled_collections
+        + enabled_submissions
+        + enabled_bangumi
+        + if enabled_watch_later > 0 { 1 } else { 0 };
+    let total_all_sources = total_favorites
+        + total_collections
+        + total_submissions
+        + total_bangumi
+        + if total_watch_later > 0 { 1 } else { 0 };
     let inactive_sources = total_all_sources - active_sources;
-    
+
     // 从任务状态获取扫描时间信息
-    let task_status = crate::utils::task_notifier::TASK_STATUS_NOTIFIER.subscribe().borrow().clone();
+    let task_status = crate::utils::task_notifier::TASK_STATUS_NOTIFIER
+        .subscribe()
+        .borrow()
+        .clone();
     let is_scanning = crate::task::TASK_CONTROLLER.is_scanning();
-    
+
     let monitoring_status = MonitoringStatus {
         total_sources: total_all_sources,
         active_sources,
@@ -9127,7 +9221,7 @@ ORDER BY
         next_scan_time: task_status.next_run.map(|t| t.to_rfc3339()),
         is_scanning,
     };
-    
+
     Ok(ApiResponse::ok(crate::api::response::DashBoardResponse {
         enabled_favorites,
         enabled_collections,
