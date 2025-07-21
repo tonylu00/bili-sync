@@ -70,13 +70,12 @@
 			checkAuthStatus();
 		});
 	});
-
 </script>
 
 <Toaster />
 
 <Sidebar.Provider>
-	<div class="flex h-screen w-full overflow-hidden prevent-horizontal-scroll">
+	<div class="prevent-horizontal-scroll flex h-screen w-full overflow-hidden">
 		{#if isAuthenticated}
 			<div data-sidebar="sidebar">
 				<AppSidebar />
@@ -106,7 +105,7 @@
 					</div>
 				</div>
 			{/if}
-			<div class="bg-background flex-1 overflow-auto smooth-scroll">
+			<div class="bg-background smooth-scroll flex-1 overflow-auto">
 				<div class="w-full px-4 py-4 sm:px-6 sm:py-6">
 					{#if isAuthenticated && $breadcrumbStore.length > 0}
 						<div class="mb-6">

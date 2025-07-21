@@ -44,7 +44,7 @@
 		<div class="flex-1 space-y-6">
 			<!-- 总览 -->
 			<div>
-				<div class="text-muted-foreground mb-2 px-3 text-xs font-medium uppercase tracking-wider">
+				<div class="text-muted-foreground mb-2 px-3 text-xs font-medium tracking-wider uppercase">
 					总览
 				</div>
 				<Sidebar.Menu class="space-y-1">
@@ -79,7 +79,7 @@
 
 			<!-- 内容管理 -->
 			<div>
-				<div class="text-muted-foreground mb-2 px-3 text-xs font-medium uppercase tracking-wider">
+				<div class="text-muted-foreground mb-2 px-3 text-xs font-medium tracking-wider uppercase">
 					内容管理
 				</div>
 				<Sidebar.Menu class="space-y-1">

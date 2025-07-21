@@ -8,7 +8,7 @@
 	export let variant: any = 'default';
 	export let onclick: (() => void) | undefined = undefined;
 	export let title: string = '';
-	
+
 	let className: string = '';
 	export { className as class };
 </script>

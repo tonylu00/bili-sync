@@ -679,7 +679,7 @@
 			credentialSaving = false;
 		}
 	}
-	
+
 	// 处理扫码登录成功
 	async function handleQrLoginSuccess(userInfo: any) {
 		// 扫码登录成功后，凭证已经在后端保存
@@ -690,18 +690,18 @@
 		await loadConfig();
 		openSheet = null; // 关闭抽屉
 	}
-	
+
 	// 处理扫码登录错误
 	function handleQrLoginError(error: string) {
 		toast.error('扫码登录失败: ' + error);
 	}
-	
+
 	// 处理退出登录
 	function handleLogout() {
 		// 可以在这里清除凭证，但通常用户只是想切换账号
 		toast.info('请扫码登录新账号');
 	}
-	
+
 	// 检查当前用户信息
 	async function checkCurrentUser() {
 		try {
@@ -743,17 +743,26 @@
 				>
 					{#each settingCategories as category}
 						<Card
-							class="hover:border-primary/50 cursor-pointer transition-all hover:shadow-md {isMobile ? 'min-h-[80px]' : ''}"
+							class="hover:border-primary/50 cursor-pointer transition-all hover:shadow-md {isMobile
+								? 'min-h-[80px]'
+								: ''}"
 							onclick={() => (openSheet = category.id)}
 						>
 							<CardHeader>
 								<div class="flex {isMobile ? 'flex-col gap-2' : 'items-start gap-3'}">
 									<div class="bg-primary/10 rounded-lg p-2 {isMobile ? 'self-start' : ''}">
-										<svelte:component this={category.icon} class="text-primary {isMobile ? 'h-4 w-4' : 'h-5 w-5'}" />
+										<svelte:component
+											this={category.icon}
+											class="text-primary {isMobile ? 'h-4 w-4' : 'h-5 w-5'}"
+										/>
 									</div>
 									<div class="flex-1">
-										<CardTitle class="{isMobile ? 'text-sm' : 'text-base'}">{category.title}</CardTitle>
-										<CardDescription class="mt-1 {isMobile ? 'text-xs' : 'text-sm'} line-clamp-2">{category.description}</CardDescription>
+										<CardTitle class={isMobile ? 'text-sm' : 'text-base'}
+											>{category.title}</CardTitle
+										>
+										<CardDescription class="mt-1 {isMobile ? 'text-xs' : 'text-sm'} line-clamp-2"
+											>{category.description}</CardDescription
+										>
 									</div>
 								</div>
 							</CardHeader>
@@ -807,7 +816,7 @@
 					<!-- 自定义关闭按钮 -->
 					<button
 						onclick={() => (openSheet = null)}
-						class="ring-offset-background focus:ring-ring absolute right-2 top-2 rounded-sm p-1 opacity-70 transition-opacity hover:bg-gray-100 hover:opacity-100 focus:outline-none focus:ring-2 focus:ring-offset-2 disabled:pointer-events-none"
+						class="ring-offset-background focus:ring-ring absolute top-2 right-2 rounded-sm p-1 opacity-70 transition-opacity hover:bg-gray-100 hover:opacity-100 focus:ring-2 focus:ring-offset-2 focus:outline-none disabled:pointer-events-none"
 						type="button"
 					>
 						<svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -874,7 +883,7 @@
 												</div>
 											{/each}
 										</div>
-										<h4 class="mb-2 mt-4 font-medium text-blue-900">通用函数</h4>
+										<h4 class="mt-4 mb-2 font-medium text-blue-900">通用函数</h4>
 										<div class="space-y-1">
 											{#each variableHelp.common as item}
 												<div class="flex">
@@ -1005,7 +1014,7 @@
 									/>
 									<Label
 										for="multi-page-season"
-										class="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
+										class="text-sm leading-none font-medium peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
 									>
 										多P视频使用Season文件夹结构
 									</Label>
@@ -1026,7 +1035,7 @@
 									/>
 									<Label
 										for="collection-season"
-										class="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
+										class="text-sm leading-none font-medium peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
 									>
 										合集使用Season文件夹结构
 									</Label>
@@ -1047,13 +1056,14 @@
 									/>
 									<Label
 										for="bangumi-season"
-										class="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
+										class="text-sm leading-none font-medium peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
 									>
 										番剧使用统一Season文件夹结构
 									</Label>
 								</div>
 								<p class="text-muted-foreground text-xs">
-									启用后多季番剧将创建统一根目录，在其下按"Season 01"、"Season 02"分季存放，提升媒体库识别度
+									启用后多季番剧将创建统一根目录，在其下按"Season 01"、"Season
+									02"分季存放，提升媒体库识别度
 								</p>
 							</div>
 
@@ -1086,7 +1096,7 @@
 								<select
 									id="collection-folder-mode"
 									bind:value={collectionFolderMode}
-									class="border-input bg-background ring-offset-background focus-visible:ring-ring flex h-10 w-full rounded-md border px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2"
+									class="border-input bg-background ring-offset-background focus-visible:ring-ring flex h-10 w-full rounded-md border px-3 py-2 text-sm focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:outline-none"
 								>
 									<option value="separate">分离模式</option>
 									<option value="unified" selected>统一模式</option>
@@ -1109,7 +1119,7 @@
 							<select
 								id="nfo-time-type"
 								bind:value={nfoTimeType}
-								class="border-input bg-background ring-offset-background focus-visible:ring-ring flex h-10 w-full rounded-md border px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2"
+								class="border-input bg-background ring-offset-background focus-visible:ring-ring flex h-10 w-full rounded-md border px-3 py-2 text-sm focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:outline-none"
 							>
 								{#each nfoTimeTypeOptions as option}
 									<option value={option.value}>{option.label}</option>
@@ -1205,7 +1215,7 @@
 					<!-- 自定义关闭按钮 -->
 					<button
 						onclick={() => (openSheet = null)}
-						class="ring-offset-background focus:ring-ring absolute right-2 top-2 rounded-sm p-1 opacity-70 transition-opacity hover:bg-gray-100 hover:opacity-100 focus:outline-none focus:ring-2 focus:ring-offset-2 disabled:pointer-events-none"
+						class="ring-offset-background focus:ring-ring absolute top-2 right-2 rounded-sm p-1 opacity-70 transition-opacity hover:bg-gray-100 hover:opacity-100 focus:ring-2 focus:ring-offset-2 focus:outline-none disabled:pointer-events-none"
 						type="button"
 					>
 						<svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -1233,7 +1243,7 @@
 								<select
 									id="video-max-quality"
 									bind:value={videoMaxQuality}
-									class="border-input bg-background ring-offset-background focus-visible:ring-ring flex h-10 w-full rounded-md border px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2"
+									class="border-input bg-background ring-offset-background focus-visible:ring-ring flex h-10 w-full rounded-md border px-3 py-2 text-sm focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:outline-none"
 								>
 									{#each videoQualityOptions as option}
 										<option value={option.value}>{option.label}</option>
@@ -1246,7 +1256,7 @@
 								<select
 									id="video-min-quality"
 									bind:value={videoMinQuality}
-									class="border-input bg-background ring-offset-background focus-visible:ring-ring flex h-10 w-full rounded-md border px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2"
+									class="border-input bg-background ring-offset-background focus-visible:ring-ring flex h-10 w-full rounded-md border px-3 py-2 text-sm focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:outline-none"
 								>
 									{#each videoQualityOptions as option}
 										<option value={option.value}>{option.label}</option>
@@ -1259,7 +1269,7 @@
 								<select
 									id="audio-max-quality"
 									bind:value={audioMaxQuality}
-									class="border-input bg-background ring-offset-background focus-visible:ring-ring flex h-10 w-full rounded-md border px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2"
+									class="border-input bg-background ring-offset-background focus-visible:ring-ring flex h-10 w-full rounded-md border px-3 py-2 text-sm focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:outline-none"
 								>
 									{#each audioQualityOptions as option}
 										<option value={option.value}>{option.label}</option>
@@ -1272,7 +1282,7 @@
 								<select
 									id="audio-min-quality"
 									bind:value={audioMinQuality}
-									class="border-input bg-background ring-offset-background focus-visible:ring-ring flex h-10 w-full rounded-md border px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2"
+									class="border-input bg-background ring-offset-background focus-visible:ring-ring flex h-10 w-full rounded-md border px-3 py-2 text-sm focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:outline-none"
 								>
 									{#each audioQualityOptions as option}
 										<option value={option.value}>{option.label}</option>
@@ -1465,7 +1475,7 @@
 					<!-- 自定义关闭按钮 -->
 					<button
 						onclick={() => (openSheet = null)}
-						class="ring-offset-background focus:ring-ring absolute right-2 top-2 rounded-sm p-1 opacity-70 transition-opacity hover:bg-gray-100 hover:opacity-100 focus:outline-none focus:ring-2 focus:ring-offset-2 disabled:pointer-events-none"
+						class="ring-offset-background focus:ring-ring absolute top-2 right-2 rounded-sm p-1 opacity-70 transition-opacity hover:bg-gray-100 hover:opacity-100 focus:ring-2 focus:ring-offset-2 focus:outline-none disabled:pointer-events-none"
 						type="button"
 					>
 						<svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -1499,7 +1509,7 @@
 								/>
 								<Label
 									for="parallel-download"
-									class="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
+									class="text-sm leading-none font-medium peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
 								>
 									启用多线程下载
 								</Label>
@@ -1587,7 +1597,6 @@
 								<p><strong>总并行度：</strong>约等于 视频并发数 × 分页并发数</p>
 							</div>
 						</div>
-
 					</div>
 					<SheetFooter class={isMobile ? 'pb-safe border-t px-4 pt-3' : 'pb-safe border-t pt-4'}>
 						<Button type="submit" disabled={saving} class="w-full">
@@ -1641,7 +1650,7 @@
 					<!-- 自定义关闭按钮 -->
 					<button
 						onclick={() => (openSheet = null)}
-						class="ring-offset-background focus:ring-ring absolute right-2 top-2 rounded-sm p-1 opacity-70 transition-opacity hover:bg-gray-100 hover:opacity-100 focus:outline-none focus:ring-2 focus:ring-offset-2 disabled:pointer-events-none"
+						class="ring-offset-background focus:ring-ring absolute top-2 right-2 rounded-sm p-1 opacity-70 transition-opacity hover:bg-gray-100 hover:opacity-100 focus:ring-2 focus:ring-offset-2 focus:outline-none disabled:pointer-events-none"
 						type="button"
 					>
 						<svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -1869,27 +1878,29 @@
 						{#if currentUser}
 							<div class="mt-4 rounded-lg border border-green-200 bg-green-50 p-3">
 								<div class="flex items-center space-x-3">
-									<div class="relative h-10 w-10 overflow-hidden rounded-full bg-muted">
+									<div class="bg-muted relative h-10 w-10 overflow-hidden rounded-full">
 										{#if currentUser.avatar_url}
-											<img 
-												src={getProxiedImageUrl(currentUser.avatar_url)} 
+											<img
+												src={getProxiedImageUrl(currentUser.avatar_url)}
 												alt={currentUser.username}
 												class="h-full w-full object-cover"
 												loading="lazy"
 											/>
 										{:else}
-											<div class="flex h-full w-full items-center justify-center bg-muted text-xs font-semibold">
+											<div
+												class="bg-muted flex h-full w-full items-center justify-center text-xs font-semibold"
+											>
 												{currentUser.username.slice(0, 2).toUpperCase()}
 											</div>
 										{/if}
 									</div>
 									<div class="flex-1">
-										<div class="text-sm font-semibold text-green-800">当前登录：{currentUser.username}</div>
+										<div class="text-sm font-semibold text-green-800">
+											当前登录：{currentUser.username}
+										</div>
 										<div class="text-xs text-green-600">UID: {currentUser.user_id}</div>
 									</div>
-									<Badge variant="default" class="bg-green-500">
-										已登录
-									</Badge>
+									<Badge variant="default" class="bg-green-500">已登录</Badge>
 								</div>
 							</div>
 						{/if}
@@ -1897,7 +1908,7 @@
 					<!-- 自定义关闭按钮 -->
 					<button
 						onclick={() => (openSheet = null)}
-						class="ring-offset-background focus:ring-ring absolute right-2 top-2 rounded-sm p-1 opacity-70 transition-opacity hover:bg-gray-100 hover:opacity-100 focus:outline-none focus:ring-2 focus:ring-offset-2 disabled:pointer-events-none"
+						class="ring-offset-background focus:ring-ring absolute top-2 right-2 rounded-sm p-1 opacity-70 transition-opacity hover:bg-gray-100 hover:opacity-100 focus:ring-2 focus:ring-offset-2 focus:outline-none disabled:pointer-events-none"
 						type="button"
 					>
 						<svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -1913,21 +1924,25 @@
 				</SheetHeader>
 				<div class="flex flex-col {isMobile ? 'h-[calc(90vh-8rem)]' : 'h-[calc(100vh-12rem)]'}">
 					<Tabs.Root value="manual" class="flex-1">
-						<Tabs.List class="grid w-full grid-cols-2 {isMobile ? 'mx-4' : 'mx-6'} mt-4" style="width: calc(100% - {isMobile ? '2rem' : '3rem'});">
+						<Tabs.List
+							class="grid w-full grid-cols-2 {isMobile ? 'mx-4' : 'mx-6'} mt-4"
+							style="width: calc(100% - {isMobile ? '2rem' : '3rem'});"
+						>
 							<Tabs.Trigger value="manual">手动输入凭证</Tabs.Trigger>
 							<Tabs.Trigger value="qr">扫码登录</Tabs.Trigger>
 						</Tabs.List>
-						
+
 						<Tabs.Content value="manual" class="flex-1">
 							<form
 								onsubmit={(e) => {
 									e.preventDefault();
 									saveCredential();
 								}}
-								class="flex flex-col h-full"
+								class="flex h-full flex-col"
 							>
-								<div class="flex-1 space-y-6 overflow-y-auto {isMobile ? 'px-4 py-4' : 'px-6 py-6'}">
-									
+								<div
+									class="flex-1 space-y-6 overflow-y-auto {isMobile ? 'px-4 py-4' : 'px-6 py-6'}"
+								>
 									<div class="rounded-lg border border-amber-200 bg-amber-50 p-4">
 										<div class="space-y-2 text-sm text-amber-800">
 											<div class="font-medium">🔐 如何获取B站登录凭证：</div>
@@ -1944,72 +1959,80 @@
 										</div>
 									</div>
 
-						<div class="grid grid-cols-1 gap-4 {isMobile ? 'sm:grid-cols-1' : 'md:grid-cols-2'}">
-							<div class="space-y-2">
-								<Label for="sessdata">SESSDATA *</Label>
-								<Input
-									id="sessdata"
-									type="password"
-									bind:value={sessdata}
-									placeholder="请输入SESSDATA"
-								/>
-							</div>
+									<div
+										class="grid grid-cols-1 gap-4 {isMobile ? 'sm:grid-cols-1' : 'md:grid-cols-2'}"
+									>
+										<div class="space-y-2">
+											<Label for="sessdata">SESSDATA *</Label>
+											<Input
+												id="sessdata"
+												type="password"
+												bind:value={sessdata}
+												placeholder="请输入SESSDATA"
+											/>
+										</div>
 
-							<div class="space-y-2">
-								<Label for="bili-jct">bili_jct *</Label>
-								<Input
-									id="bili-jct"
-									type="password"
-									bind:value={biliJct}
-									placeholder="请输入bili_jct"
-								/>
-							</div>
+										<div class="space-y-2">
+											<Label for="bili-jct">bili_jct *</Label>
+											<Input
+												id="bili-jct"
+												type="password"
+												bind:value={biliJct}
+												placeholder="请输入bili_jct"
+											/>
+										</div>
 
-							<div class="space-y-2">
-								<Label for="buvid3">buvid3 *</Label>
-								<Input id="buvid3" bind:value={buvid3} placeholder="请输入buvid3" />
-							</div>
+										<div class="space-y-2">
+											<Label for="buvid3">buvid3 *</Label>
+											<Input id="buvid3" bind:value={buvid3} placeholder="请输入buvid3" />
+										</div>
 
-							<div class="space-y-2">
-								<Label for="dedeuserid">DedeUserID *</Label>
-								<Input id="dedeuserid" bind:value={dedeUserId} placeholder="请输入DedeUserID" />
-							</div>
+										<div class="space-y-2">
+											<Label for="dedeuserid">DedeUserID *</Label>
+											<Input
+												id="dedeuserid"
+												bind:value={dedeUserId}
+												placeholder="请输入DedeUserID"
+											/>
+										</div>
 
-							<div class="space-y-2 md:col-span-2">
-								<Label for="ac-time-value">ac_time_value (可选)</Label>
-								<Input
-									id="ac-time-value"
-									bind:value={acTimeValue}
-									placeholder="请输入ac_time_value（可选）"
-								/>
-							</div>
-						</div>
+										<div class="space-y-2 md:col-span-2">
+											<Label for="ac-time-value">ac_time_value (可选)</Label>
+											<Input
+												id="ac-time-value"
+												bind:value={acTimeValue}
+												placeholder="请输入ac_time_value（可选）"
+											/>
+										</div>
+									</div>
 
-						<div class="rounded-lg border border-green-200 bg-green-50 p-3">
-							<div class="text-sm text-green-800">
-								<div class="mb-1 font-medium">✅ 凭证状态检查：</div>
-								<div class="text-xs">
-									{#if sessdata && biliJct && buvid3 && dedeUserId}
-										<span class="text-green-600">✓ 必填凭证已填写完整</span>
-									{:else}
-										<span class="text-orange-600">⚠ 请填写所有必填凭证项</span>
-									{/if}
+									<div class="rounded-lg border border-green-200 bg-green-50 p-3">
+										<div class="text-sm text-green-800">
+											<div class="mb-1 font-medium">✅ 凭证状态检查：</div>
+											<div class="text-xs">
+												{#if sessdata && biliJct && buvid3 && dedeUserId}
+													<span class="text-green-600">✓ 必填凭证已填写完整</span>
+												{:else}
+													<span class="text-orange-600">⚠ 请填写所有必填凭证项</span>
+												{/if}
+											</div>
+										</div>
+									</div>
 								</div>
-							</div>
-						</div>
-								</div>
-								<SheetFooter class={isMobile ? 'pb-safe border-t px-4 pt-3' : 'pb-safe border-t pt-4'}>
+								<SheetFooter
+									class={isMobile ? 'pb-safe border-t px-4 pt-3' : 'pb-safe border-t pt-4'}
+								>
 									<Button type="submit" disabled={credentialSaving} class="w-full">
 										{credentialSaving ? '保存中...' : '保存凭证'}
 									</Button>
 								</SheetFooter>
 							</form>
 						</Tabs.Content>
-						
+
 						<Tabs.Content value="qr" class="flex-1">
-							<div class="flex flex-col h-full {isMobile ? 'px-4 py-4' : 'px-6 py-6'}">
-								<div class="w-full max-w-md mx-auto">
-									<QrLogin 
+							<div class="flex h-full flex-col {isMobile ? 'px-4 py-4' : 'px-6 py-6'}">
+								<div class="mx-auto w-full max-w-md">
+									<QrLogin
 										onLoginSuccess={handleQrLoginSuccess}
 										onLoginError={handleQrLoginError}
 										onLogout={handleLogout}
@@ -2065,7 +2088,7 @@
 					<!-- 自定义关闭按钮 -->
 					<button
 						onclick={() => (openSheet = null)}
-						class="ring-offset-background focus:ring-ring absolute right-2 top-2 rounded-sm p-1 opacity-70 transition-opacity hover:bg-gray-100 hover:opacity-100 focus:outline-none focus:ring-2 focus:ring-offset-2 disabled:pointer-events-none"
+						class="ring-offset-background focus:ring-ring absolute top-2 right-2 rounded-sm p-1 opacity-70 transition-opacity hover:bg-gray-100 hover:opacity-100 focus:ring-2 focus:ring-offset-2 focus:outline-none disabled:pointer-events-none"
 						type="button"
 					>
 						<svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -2356,7 +2379,7 @@
 					<!-- 自定义关闭按钮 -->
 					<button
 						onclick={() => (openSheet = null)}
-						class="ring-offset-background focus:ring-ring absolute right-2 top-2 rounded-sm p-1 opacity-70 transition-opacity hover:bg-gray-100 hover:opacity-100 focus:outline-none focus:ring-2 focus:ring-offset-2 disabled:pointer-events-none"
+						class="ring-offset-background focus:ring-ring absolute top-2 right-2 rounded-sm p-1 opacity-70 transition-opacity hover:bg-gray-100 hover:opacity-100 focus:ring-2 focus:ring-offset-2 focus:outline-none disabled:pointer-events-none"
 						type="button"
 					>
 						<svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -2539,7 +2562,7 @@
 					<!-- 自定义关闭按钮 -->
 					<button
 						onclick={() => (openSheet = null)}
-						class="ring-offset-background focus:ring-ring absolute right-2 top-2 rounded-sm p-1 opacity-70 transition-opacity hover:bg-gray-100 hover:opacity-100 focus:outline-none focus:ring-2 focus:ring-offset-2 disabled:pointer-events-none"
+						class="ring-offset-background focus:ring-ring absolute top-2 right-2 rounded-sm p-1 opacity-70 transition-opacity hover:bg-gray-100 hover:opacity-100 focus:ring-2 focus:ring-offset-2 focus:outline-none disabled:pointer-events-none"
 						type="button"
 					>
 						<svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -2553,7 +2576,11 @@
 						<span class="sr-only">关闭</span>
 					</button>
 				</SheetHeader>
-				<div class="bg-background/50 {isMobile ? 'flex-1 overflow-y-auto px-4 pb-4' : 'flex-1 overflow-y-auto p-6'}">
+				<div
+					class="bg-background/50 {isMobile
+						? 'flex-1 overflow-y-auto px-4 pb-4'
+						: 'flex-1 overflow-y-auto p-6'}"
+				>
 					<div class="mx-auto max-w-4xl space-y-6">
 						<!-- 主题设置 -->
 						<div class="space-y-4">
@@ -2563,46 +2590,57 @@
 									<p class="text-muted-foreground text-sm">选择您偏好的界面主题</p>
 								</div>
 								<div class="flex items-center gap-2">
-									<span class="text-sm text-muted-foreground">快速切换:</span>
+									<span class="text-muted-foreground text-sm">快速切换:</span>
 									<ThemeToggle />
 								</div>
 							</div>
-							
+
 							<div class="space-y-3">
 								<h4 class="text-sm font-medium">快速切换</h4>
 								<div class="grid grid-cols-3 gap-3">
 									<button
-										class="border rounded-lg p-3 text-center hover:bg-accent transition-colors {$theme === 'light' ? 'border-primary bg-primary/10' : 'border-border'}"
+										class="hover:bg-accent rounded-lg border p-3 text-center transition-colors {$theme ===
+										'light'
+											? 'border-primary bg-primary/10'
+											: 'border-border'}"
 										onclick={() => setTheme('light')}
 									>
-										<div class="bg-background rounded-md border p-2 mb-2">
-											<div class="h-8 bg-gradient-to-r from-gray-100 to-gray-200 rounded"></div>
+										<div class="bg-background mb-2 rounded-md border p-2">
+											<div class="h-8 rounded bg-gradient-to-r from-gray-100 to-gray-200"></div>
 										</div>
 										<span class="text-xs font-medium">浅色模式</span>
 									</button>
-									
+
 									<button
-										class="border rounded-lg p-3 text-center hover:bg-accent transition-colors {$theme === 'dark' ? 'border-primary bg-primary/10' : 'border-border'}"
+										class="hover:bg-accent rounded-lg border p-3 text-center transition-colors {$theme ===
+										'dark'
+											? 'border-primary bg-primary/10'
+											: 'border-border'}"
 										onclick={() => setTheme('dark')}
 									>
-										<div class="bg-slate-900 rounded-md border p-2 mb-2">
-											<div class="h-8 bg-gradient-to-r from-slate-700 to-slate-800 rounded"></div>
+										<div class="mb-2 rounded-md border bg-slate-900 p-2">
+											<div class="h-8 rounded bg-gradient-to-r from-slate-700 to-slate-800"></div>
 										</div>
 										<span class="text-xs font-medium">深色模式</span>
 									</button>
-									
+
 									<button
-										class="border rounded-lg p-3 text-center hover:bg-accent transition-colors {$theme === 'system' ? 'border-primary bg-primary/10' : 'border-border'}"
+										class="hover:bg-accent rounded-lg border p-3 text-center transition-colors {$theme ===
+										'system'
+											? 'border-primary bg-primary/10'
+											: 'border-border'}"
 										onclick={() => setTheme('system')}
 									>
-										<div class="bg-gradient-to-r from-gray-100 to-slate-900 rounded-md border p-2 mb-2">
-											<div class="h-8 bg-gradient-to-r from-gray-200 to-slate-700 rounded"></div>
+										<div
+											class="mb-2 rounded-md border bg-gradient-to-r from-gray-100 to-slate-900 p-2"
+										>
+											<div class="h-8 rounded bg-gradient-to-r from-gray-200 to-slate-700"></div>
 										</div>
 										<span class="text-xs font-medium">跟随系统</span>
 									</button>
 								</div>
 							</div>
-							
+
 							<div class="rounded-lg border border-blue-200 bg-blue-50 p-3">
 								<h5 class="mb-2 font-medium text-blue-800">主题说明</h5>
 								<div class="space-y-1 text-sm text-blue-700">
@@ -2660,7 +2698,7 @@
 					<!-- 自定义关闭按钮 -->
 					<button
 						onclick={() => (openSheet = null)}
-						class="ring-offset-background focus:ring-ring absolute right-2 top-2 rounded-sm p-1 opacity-70 transition-opacity hover:bg-gray-100 hover:opacity-100 focus:outline-none focus:ring-2 focus:ring-offset-2 disabled:pointer-events-none"
+						class="ring-offset-background focus:ring-ring absolute top-2 right-2 rounded-sm p-1 opacity-70 transition-opacity hover:bg-gray-100 hover:opacity-100 focus:ring-2 focus:ring-offset-2 focus:outline-none disabled:pointer-events-none"
 						type="button"
 					>
 						<svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -2704,7 +2742,7 @@
 									id="timezone"
 									bind:value={timezone}
 									onchange={() => setTimezone(timezone)}
-									class="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+									class="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500 focus:outline-none"
 								>
 									{#each TIMEZONE_OPTIONS as option}
 										<option value={option.value}>{option.label}</option>

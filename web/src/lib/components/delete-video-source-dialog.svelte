@@ -1,6 +1,5 @@
 <script lang="ts">
 	import * as AlertDialog from '$lib/components/ui/alert-dialog';
-	import { Button } from '$lib/components/ui/button';
 	import { createEventDispatcher } from 'svelte';
 
 	export let isOpen = false;

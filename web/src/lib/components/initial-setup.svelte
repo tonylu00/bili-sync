@@ -137,7 +137,7 @@
 			action();
 		}
 	}
-	
+
 	// 处理扫码登录成功
 	async function handleQrLoginSuccess(userInfo: any) {
 		// 扫码登录成功后，凭证已经在后端保存
@@ -145,13 +145,13 @@
 		toast.success(`欢迎，${userInfo.username}！登录成功`);
 		dispatch('setup-complete');
 	}
-	
+
 	// 处理扫码登录错误
 	function handleQrLoginError(error: string) {
 		credentialError = error;
 		toast.error('扫码登录失败: ' + error);
 	}
-	
+
 	// 处理退出登录
 	function handleLogout() {
 		// 在初始设置页面，用户可以切换账号
@@ -240,7 +240,7 @@
 							<Tabs.Trigger value="manual">手动输入凭证</Tabs.Trigger>
 							<Tabs.Trigger value="qr">扫码登录</Tabs.Trigger>
 						</Tabs.List>
-						
+
 						<Tabs.Content value="manual" class="space-y-4">
 							<div>
 								<Label for="sessdata" class="text-sm font-medium text-gray-700">SESSDATA *</Label>
@@ -279,7 +279,9 @@
 							</div>
 
 							<div>
-								<Label for="dedeuserid" class="text-sm font-medium text-gray-700">DedeUserID *</Label>
+								<Label for="dedeuserid" class="text-sm font-medium text-gray-700"
+									>DedeUserID *</Label
+								>
 								<Input
 									id="dedeuserid"
 									type="text"
@@ -345,14 +347,14 @@
 								跳过此步骤（稍后设置）
 							</Button>
 						</Tabs.Content>
-						
+
 						<Tabs.Content value="qr" class="space-y-4">
-							<QrLogin 
+							<QrLogin
 								onLoginSuccess={handleQrLoginSuccess}
 								onLoginError={handleQrLoginError}
 								onLogout={handleLogout}
 							/>
-							
+
 							<div class="flex space-x-3">
 								<Button variant="outline" onclick={goBack} class="flex-1">上一步</Button>
 								<Button variant="ghost" onclick={skipCredentialSetup} class="flex-1 text-gray-500">

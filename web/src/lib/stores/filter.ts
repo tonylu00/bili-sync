@@ -86,7 +86,7 @@ export const clearAll = () => {
 	});
 };
 
-// 保留旧的接口以兼容现有代码  
+// 保留旧的接口以兼容现有代码
 export const filterStore = writable({ key: '', value: '' });
 export const setFilter = (key: string, value: string) => setVideoSourceFilter(key, value);
 export const clearFilter = clearVideoSourceFilter;

@@ -35,7 +35,7 @@
 	let resetAllDialogOpen = false;
 	let resettingAll = false;
 	let forceReset = false;
-	
+
 	// 重置任务类型选项
 	let resetAllTasks = true;
 	let resetTaskPages = false;
@@ -81,7 +81,7 @@
 			if (filter) {
 				params[filter.type] = parseInt(filter.id);
 			}
-			
+
 			const result = await api.getVideos(params);
 			videosData = result.data;
 		} catch (error) {
@@ -111,7 +111,7 @@
 	async function handleSearchParamsChange(searchParams: URLSearchParams) {
 		const { query, videoSource, pageNum } = getApiParams(searchParams);
 		setAll(query, pageNum, videoSource);
-		
+
 		// 同步筛选状态
 		if (videoSource) {
 			selectedSourceType = videoSource.type;
@@ -120,7 +120,7 @@
 			selectedSourceType = '';
 			selectedSourceId = '';
 		}
-		
+
 		loadVideos(query, pageNum, videoSource);
 	}
 
@@ -178,12 +178,12 @@
 				// index 2: Video信息(番剧tvshow.nfo) + Page信息 → tvshow.nfo + 单集NFO文件
 				// index 3: Video Up主信息 + Page弹幕 → Up主信息 + 弹幕文件(.ass)
 				// index 4: Video 分P下载 + Page字幕 → 分P下载 + 字幕文件
-				
-				if (resetTaskPages) taskIndexes.push(0);     // 重置封面文件
-				if (resetTaskVideo) taskIndexes.push(1);   // 重置视频内容 (纯视频文件，番剧无NFO)
-				if (resetTaskInfo) taskIndexes.push(2);      // 重置视频信息 (tvshow.nfo + 单集NFO)
-				if (resetTaskDanmaku) taskIndexes.push(3);   // 重置弹幕文件 (弹幕 + Up主信息)
-				if (resetTaskSubtitle) taskIndexes.push(4);  // 重置字幕文件 (字幕 + 分P下载)
+
+				if (resetTaskPages) taskIndexes.push(0); // 重置封面文件
+				if (resetTaskVideo) taskIndexes.push(1); // 重置视频内容 (纯视频文件，番剧无NFO)
+				if (resetTaskInfo) taskIndexes.push(2); // 重置视频信息 (tvshow.nfo + 单集NFO)
+				if (resetTaskDanmaku) taskIndexes.push(3); // 重置弹幕文件 (弹幕 + Up主信息)
+				if (resetTaskSubtitle) taskIndexes.push(4); // 重置字幕文件 (字幕 + 分P下载)
 
 				// 去重任务索引
 				const uniqueTaskIndexes = [...new Set(taskIndexes)];
@@ -249,7 +249,13 @@
 	}
 
 	function handleSpecificTaskChange() {
-		if (resetTaskPages || resetTaskVideo || resetTaskInfo || resetTaskDanmaku || resetTaskSubtitle) {
+		if (
+			resetTaskPages ||
+			resetTaskVideo ||
+			resetTaskInfo ||
+			resetTaskDanmaku ||
+			resetTaskSubtitle
+		) {
 			resetAllTasks = false;
 		}
 	}
@@ -274,7 +280,7 @@
 <div class="space-y-6">
 	<!-- 搜索和筛选栏 -->
 	<div class="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-		<div class="flex-1 max-w-md">
+		<div class="max-w-md flex-1">
 			<SearchBar
 				placeholder="搜索视频标题..."
 				value={$appStateStore.query}
@@ -285,26 +291,26 @@
 				}}
 			/>
 		</div>
-		
+
 		<div class="flex items-center gap-2">
 			<!-- 筛选按钮 -->
 			<Button
 				variant={showFilters ? 'default' : 'outline'}
 				size="sm"
-				onclick={() => showFilters = !showFilters}
+				onclick={() => (showFilters = !showFilters)}
 			>
-				<FilterIcon class="h-4 w-4 mr-2" />
+				<FilterIcon class="mr-2 h-4 w-4" />
 				筛选
 			</Button>
-			
+
 			<!-- 批量重置按钮 -->
 			<Button
 				variant="outline"
 				size="sm"
-				onclick={() => resetAllDialogOpen = true}
+				onclick={() => (resetAllDialogOpen = true)}
 				disabled={resettingAll || loading}
 			>
-				<RotateCcwIcon class="h-4 w-4 mr-2 {resettingAll ? 'animate-spin' : ''}" />
+				<RotateCcwIcon class="mr-2 h-4 w-4 {resettingAll ? 'animate-spin' : ''}" />
 				批量重置
 			</Button>
 		</div>
@@ -312,30 +318,31 @@
 
 	<!-- 筛选面板 -->
 	{#if showFilters && videoSources}
-		<div class="border rounded-lg p-3 space-y-3">
+		<div class="space-y-3 rounded-lg border p-3">
 			<div class="flex items-center justify-between">
 				<h3 class="text-sm font-medium">按视频源筛选</h3>
 				{#if selectedSourceType}
-					<Button variant="ghost" size="sm" onclick={clearFilters}>
-						清除筛选
-					</Button>
+					<Button variant="ghost" size="sm" onclick={clearFilters}>清除筛选</Button>
 				{/if}
 			</div>
-			
+
 			<div class="space-y-3">
 				{#each Object.entries(VIDEO_SOURCES) as [sourceKey, sourceConfig]}
 					{@const sources = videoSources[sourceConfig.type]}
 					{#if sources && sources.length > 0}
 						<div class="space-y-2">
 							<div class="flex items-center gap-2">
-								<sourceConfig.icon class="h-4 w-4 text-muted-foreground" />
+								<sourceConfig.icon class="text-muted-foreground h-4 w-4" />
 								<span class="text-sm font-medium">{sourceConfig.title}</span>
 								<Badge variant="outline" class="text-xs">{sources.length}</Badge>
 							</div>
 							<div class="flex flex-wrap gap-1">
 								{#each sources as source}
 									<Button
-										variant={selectedSourceType === sourceConfig.type && selectedSourceId === source.id.toString() ? 'default' : 'outline'}
+										variant={selectedSourceType === sourceConfig.type &&
+										selectedSourceId === source.id.toString()
+											? 'default'
+											: 'outline'}
 										size="sm"
 										class="h-7 text-xs {!source.enabled ? 'opacity-60' : ''}"
 										onclick={() => handleSourceFilter(sourceConfig.type, source.id.toString())}
@@ -356,16 +363,18 @@
 
 	<!-- 当前筛选状态 -->
 	{#if selectedSourceType && selectedSourceId && videoSources}
-		{@const sourceConfig = Object.values(VIDEO_SOURCES).find(config => config.type === selectedSourceType)}
+		{@const sourceConfig = Object.values(VIDEO_SOURCES).find(
+			(config) => config.type === selectedSourceType
+		)}
 		{@const sources = videoSources[selectedSourceType]}
-		{@const currentSource = sources?.find(s => s.id.toString() === selectedSourceId)}
+		{@const currentSource = sources?.find((s) => s.id.toString() === selectedSourceId)}
 		{#if sourceConfig && currentSource}
 			<div class="flex items-center gap-2">
-				<span class="text-sm text-muted-foreground">当前筛选:</span>
+				<span class="text-muted-foreground text-sm">当前筛选:</span>
 				<Badge variant="secondary" class="flex items-center gap-1">
 					<sourceConfig.icon class="h-3 w-3" />
 					{currentSource.name}
-					<button onclick={clearFilters} class="ml-1 hover:bg-muted-foreground/20 rounded">
+					<button onclick={clearFilters} class="hover:bg-muted-foreground/20 ml-1 rounded">
 						<span class="sr-only">清除筛选</span>
 						×
 					</button>
@@ -376,7 +385,7 @@
 
 	<!-- 视频列表统计 -->
 	{#if videosData}
-		<div class="flex items-center justify-between text-sm text-muted-foreground">
+		<div class="text-muted-foreground flex items-center justify-between text-sm">
 			<span>
 				共 {videosData.total_count} 个视频，当前第 {$appStateStore.currentPage + 1} / {totalPages} 页
 			</span>
@@ -410,9 +419,9 @@
 		{/if}
 	{:else}
 		<div class="flex items-center justify-center py-16">
-			<div class="text-center space-y-2">
+			<div class="space-y-2 text-center">
 				<div class="text-muted-foreground">暂无视频数据</div>
-				<p class="text-sm text-muted-foreground">尝试调整搜索条件或添加视频源</p>
+				<p class="text-muted-foreground text-sm">尝试调整搜索条件或添加视频源</p>
 			</div>
 		</div>
 	{/if}
@@ -425,9 +434,11 @@
 			<AlertDialog.Title>批量重置确认</AlertDialog.Title>
 			<AlertDialog.Description>
 				{#if selectedSourceType && selectedSourceId && videoSources}
-					{@const sourceConfig = Object.values(VIDEO_SOURCES).find(config => config.type === selectedSourceType)}
+					{@const sourceConfig = Object.values(VIDEO_SOURCES).find(
+						(config) => config.type === selectedSourceType
+					)}
 					{@const sources = videoSources[selectedSourceType]}
-					{@const currentSource = sources?.find(s => s.id.toString() === selectedSourceId)}
+					{@const currentSource = sources?.find((s) => s.id.toString() === selectedSourceId)}
 					{#if sourceConfig && currentSource}
 						确定要重置「{currentSource.name}」视频源下的所有视频状态吗？此操作将清除失败状态并重新开始下载。
 					{:else}
@@ -438,80 +449,80 @@
 				{/if}
 			</AlertDialog.Description>
 		</AlertDialog.Header>
-		<div class="py-4 space-y-4">
+		<div class="space-y-4 py-4">
 			<!-- 强制重置选项 -->
 			<label class="flex items-center gap-2">
 				<input type="checkbox" bind:checked={forceReset} />
 				<span class="text-sm">强制重置（包括已完成的视频）</span>
 			</label>
-			
+
 			<!-- 任务类型选择 -->
 			<div class="space-y-3">
 				<div class="text-sm font-medium">选择强制重置的任务类型（不管当前状态）：</div>
-				
+
 				<!-- 强制重置所有任务 -->
 				<label class="flex items-center gap-2">
-					<input 
-						type="checkbox" 
-						bind:checked={resetAllTasks} 
+					<input
+						type="checkbox"
+						bind:checked={resetAllTasks}
 						onchange={handleResetAllTasksChange}
 						class="rounded border-gray-300"
 					/>
 					<span class="text-sm font-medium">强制重置所有任务</span>
 				</label>
-				
+
 				<!-- 或选择特定任务 -->
 				<div class="ml-4 space-y-2">
-					<div class="text-sm text-muted-foreground">或选择特定任务：</div>
-					
+					<div class="text-muted-foreground text-sm">或选择特定任务：</div>
+
 					<label class="flex items-center gap-2">
-						<input 
-							type="checkbox" 
-							bind:checked={resetTaskPages} 
+						<input
+							type="checkbox"
+							bind:checked={resetTaskPages}
 							onchange={handleSpecificTaskChange}
 							disabled={resetAllTasks}
 							class="rounded border-gray-300"
 						/>
 						<span class="text-sm">强制重置视频封面</span>
 					</label>
-					
+
 					<label class="flex items-center gap-2">
-						<input 
-							type="checkbox" 
-							bind:checked={resetTaskVideo} 
+						<input
+							type="checkbox"
+							bind:checked={resetTaskVideo}
 							onchange={handleSpecificTaskChange}
 							disabled={resetAllTasks}
 							class="rounded border-gray-300"
 						/>
 						<span class="text-sm">强制重置视频内容</span>
 					</label>
-					
+
 					<label class="flex items-center gap-2">
-						<input 
-							type="checkbox" 
-							bind:checked={resetTaskInfo} 
+						<input
+							type="checkbox"
+							bind:checked={resetTaskInfo}
 							onchange={handleSpecificTaskChange}
 							disabled={resetAllTasks}
 							class="rounded border-gray-300"
 						/>
 						<span class="text-sm">强制重置视频信息</span>
 					</label>
-					
+
 					<label class="flex items-center gap-2">
-						<input 
-							type="checkbox" 
-							bind:checked={resetTaskDanmaku} 
+						<input
+							type="checkbox"
+							bind:checked={resetTaskDanmaku}
 							onchange={handleSpecificTaskChange}
 							disabled={resetAllTasks}
 							class="rounded border-gray-300"
 						/>
 						<span class="text-sm">强制重置视频弹幕</span>
 					</label>
-					
+
 					<label class="flex items-center gap-2">
-						<input 
-							type="checkbox" 
-							bind:checked={resetTaskSubtitle} 
+						<input
+							type="checkbox"
+							bind:checked={resetTaskSubtitle}
 							onchange={handleSpecificTaskChange}
 							disabled={resetAllTasks}
 							class="rounded border-gray-300"
@@ -519,9 +530,9 @@
 						<span class="text-sm">强制重置视频字幕</span>
 					</label>
 				</div>
-				
+
 				<!-- 注意事项 -->
-				<div class="mt-4 p-3 bg-yellow-50 border border-yellow-200 rounded-lg">
+				<div class="mt-4 rounded-lg border border-yellow-200 bg-yellow-50 p-3">
 					<div class="text-sm text-yellow-800">
 						<strong>注意：</strong> 强制重置会将选中的任务状态重置为"未开始"，不管当前是否已完成。选择特定任务重置时，会同时重置对应的分P下载状态。
 					</div>

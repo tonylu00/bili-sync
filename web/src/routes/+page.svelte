@@ -12,10 +12,16 @@
 	import { toast } from 'svelte-sonner';
 	import api from '$lib/api';
 	import { wsManager } from '$lib/ws';
-	import type { DashBoardResponse, SysInfo, ApiError, TaskStatus, TaskControlStatusResponse } from '$lib/types';
+	import type {
+		DashBoardResponse,
+		SysInfo,
+		ApiError,
+		TaskStatus,
+		TaskControlStatusResponse
+	} from '$lib/types';
 	import AuthLogin from '$lib/components/auth-login.svelte';
 	import InitialSetup from '$lib/components/initial-setup.svelte';
-	
+
 	// 图标导入
 	import CloudDownloadIcon from '@lucide/svelte/icons/cloud-download';
 	import DatabaseIcon from '@lucide/svelte/icons/database';
@@ -61,7 +67,7 @@
 	}
 
 	// 处理登录成功
-	function handleLoginSuccess(event: CustomEvent) {
+	function handleLoginSuccess() {
 		isAuthenticated = true;
 		loadInitialData();
 	}
@@ -91,8 +97,8 @@
 						needsInitialSetup = false;
 						isAuthenticated = false;
 					}
-				} catch (error) {
-					console.log('无法检查后端状态，显示初始设置:', error);
+				} catch {
+					console.log('无法检查后端状态，显示初始设置');
 					needsInitialSetup = true;
 				}
 				checkingSetup = false;
@@ -224,7 +230,7 @@
 		checkInitialSetup();
 
 		// 连接WebSocket
-		wsManager.connect().catch(error => {
+		wsManager.connect().catch((error) => {
 			console.error('WebSocket连接失败:', error);
 		});
 	});
@@ -355,27 +361,33 @@
 						{#if dashboardData}
 							<div class="space-y-4">
 								<!-- 视频源统计 -->
-								<div class="grid grid-cols-2 md:grid-cols-3 gap-4">
+								<div class="grid grid-cols-2 gap-4 md:grid-cols-3">
 									<div class="flex items-center justify-between">
 										<div class="flex items-center gap-2">
 											<HeartIcon class="text-muted-foreground h-4 w-4" />
 											<span class="text-sm">收藏夹</span>
 										</div>
-										<Badge variant="outline">{dashboardData.enabled_favorites} / {dashboardData.total_favorites}</Badge>
+										<Badge variant="outline"
+											>{dashboardData.enabled_favorites} / {dashboardData.total_favorites}</Badge
+										>
 									</div>
 									<div class="flex items-center justify-between">
 										<div class="flex items-center gap-2">
 											<FolderIcon class="text-muted-foreground h-4 w-4" />
 											<span class="text-sm">合集 / 列表</span>
 										</div>
-										<Badge variant="outline">{dashboardData.enabled_collections} / {dashboardData.total_collections}</Badge>
+										<Badge variant="outline"
+											>{dashboardData.enabled_collections} / {dashboardData.total_collections}</Badge
+										>
 									</div>
 									<div class="flex items-center justify-between">
 										<div class="flex items-center gap-2">
 											<UserIcon class="text-muted-foreground h-4 w-4" />
 											<span class="text-sm">投稿</span>
 										</div>
-										<Badge variant="outline">{dashboardData.enabled_submissions} / {dashboardData.total_submissions}</Badge>
+										<Badge variant="outline"
+											>{dashboardData.enabled_submissions} / {dashboardData.total_submissions}</Badge
+										>
 									</div>
 									<div class="flex items-center justify-between">
 										<div class="flex items-center gap-2">
@@ -383,7 +395,9 @@
 											<span class="text-sm">稍后再看</span>
 										</div>
 										<Badge variant="outline">
-											{dashboardData.enable_watch_later ? `启用 (${dashboardData.total_watch_later})` : `禁用 (${dashboardData.total_watch_later})`}
+											{dashboardData.enable_watch_later
+												? `启用 (${dashboardData.total_watch_later})`
+												: `禁用 (${dashboardData.total_watch_later})`}
 										</Badge>
 									</div>
 									<div class="flex items-center justify-between">
@@ -391,7 +405,9 @@
 											<TvIcon class="text-muted-foreground h-4 w-4" />
 											<span class="text-sm">番剧</span>
 										</div>
-										<Badge variant="outline">{dashboardData.enabled_bangumi} / {dashboardData.total_bangumi}</Badge>
+										<Badge variant="outline"
+											>{dashboardData.enabled_bangumi} / {dashboardData.total_bangumi}</Badge
+										>
 									</div>
 								</div>
 							</div>
@@ -479,11 +495,11 @@
 										<span class="text-muted-foreground text-sm">
 											{taskStatus.last_run
 												? new Date(taskStatus.last_run).toLocaleString('en-US', {
-													hour: '2-digit',
-													minute: '2-digit',
-													second: '2-digit',
-													hour12: true
-												})
+														hour: '2-digit',
+														minute: '2-digit',
+														second: '2-digit',
+														hour12: true
+													})
 												: '-'}
 										</span>
 									</div>
@@ -495,11 +511,11 @@
 										<span class="text-muted-foreground text-sm">
 											{taskStatus.last_finish
 												? new Date(taskStatus.last_finish).toLocaleString('en-US', {
-													hour: '2-digit',
-													minute: '2-digit',
-													second: '2-digit',
-													hour12: true
-												})
+														hour: '2-digit',
+														minute: '2-digit',
+														second: '2-digit',
+														hour12: true
+													})
 												: '-'}
 										</span>
 									</div>
@@ -511,11 +527,11 @@
 										<span class="text-muted-foreground text-sm">
 											{taskStatus.next_run
 												? new Date(taskStatus.next_run).toLocaleString('en-US', {
-													hour: '2-digit',
-													minute: '2-digit',
-													second: '2-digit',
-													hour12: true
-												})
+														hour: '2-digit',
+														minute: '2-digit',
+														second: '2-digit',
+														hour12: true
+													})
 												: '-'}
 										</span>
 									</div>

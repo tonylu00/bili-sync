@@ -14,11 +14,13 @@
 		const themeContents = [];
 		for (let [_theme, prefix] of Object.entries(THEMES)) {
 			let content = `${prefix} [data-chart="${id}"] {\n`;
-			const colors = colorConfig.map(([key, itemConfig]) => {
-				const theme = _theme as keyof typeof itemConfig.theme;
-				const color = itemConfig.theme?.[theme] || itemConfig.color;
-				return color ? `\t--color-${key}: ${color};` : null;
-			}).filter(Boolean);
+			const colors = colorConfig
+				.map(([key, itemConfig]) => {
+					const theme = _theme as keyof typeof itemConfig.theme;
+					const color = itemConfig.theme?.[theme] || itemConfig.color;
+					return color ? `\t--color-${key}: ${color};` : null;
+				})
+				.filter(Boolean);
 
 			content += colors.join('\n') + '\n}';
 			themeContents.push(content);

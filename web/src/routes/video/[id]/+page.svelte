@@ -41,7 +41,7 @@
 	// 根据视频类型动态生成任务名称
 	$: videoTaskNames = (() => {
 		if (!videoData?.video) return ['视频封面', '视频信息', 'UP主头像', 'UP主信息', '分P下载'];
-		
+
 		const isBangumi = videoData.video.bangumi_title !== undefined;
 		if (isBangumi) {
 			// 番剧任务名称：VideoStatus[2] 对应 tvshow.nfo 生成
@@ -170,7 +170,7 @@
 			const videoId = getPlayVideoId();
 			const result = await api.getVideoPlayInfo(videoId);
 			const bilibiliUrl = result.data.bilibili_url;
-			
+
 			if (bilibiliUrl) {
 				console.log('获取到B站链接:', bilibiliUrl);
 				window.open(bilibiliUrl, '_blank');
@@ -343,7 +343,9 @@
 					title="在B站打开此视频"
 				>
 					<svg class="mr-2 h-4 w-4" viewBox="0 0 24 24" fill="currentColor">
-						<path d="M9.64 7.64c.23-.5.36-1.05.36-1.64 0-2.21-1.79-4-4-4S2 3.79 2 6s1.79 4 4 4c.59 0 1.14-.13 1.64-.36L10 12l-2.36 2.36c-.5-.23-1.05-.36-1.64-.36-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4c0-.59-.13-1.14-.36-1.64L12 14l2.36 2.36c-.23.5-.36 1.05-.36 1.64 0 2.21 1.79 4 4 4s4-1.79 4-4-1.79-4-4-4c-.59 0-1.14.13-1.64.36L14 12l2.36-2.36c.5.23 1.05.36 1.64.36 2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4c0 .59.13 1.14.36 1.64L12 10 9.64 7.64z"/>
+						<path
+							d="M9.64 7.64c.23-.5.36-1.05.36-1.64 0-2.21-1.79-4-4-4S2 3.79 2 6s1.79 4 4 4c.59 0 1.14-.13 1.64-.36L10 12l-2.36 2.36c-.5-.23-1.05-.36-1.64-.36-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4c0-.59-.13-1.14-.36-1.64L12 14l2.36 2.36c-.23.5-.36 1.05-.36 1.64 0 2.21 1.79 4 4 4s4-1.79 4-4-1.79-4-4-4c-.59 0-1.14.13-1.64.36L14 12l2.36-2.36c.5.23 1.05.36 1.64.36 2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4c0 .59.13 1.14.36 1.64L12 10 9.64 7.64z"
+						/>
 					</svg>
 					访问B站
 				</Button>
@@ -392,12 +394,16 @@
 
 		<!-- 下载路径信息 -->
 		{#if videoData.pages && videoData.pages.length > 0 && videoData.pages[0].path}
-			<div class="mb-4 rounded-lg border bg-muted {isMobile ? 'p-3' : 'p-4'}">
-				<h3 class="mb-2 text-sm font-medium text-foreground">📁 下载保存路径</h3>
-				<div class="rounded border bg-card {isMobile ? 'px-2 py-2' : 'px-3 py-2'} font-mono {isMobile ? 'text-xs' : 'text-sm'} break-all">
+			<div class="bg-muted mb-4 rounded-lg border {isMobile ? 'p-3' : 'p-4'}">
+				<h3 class="text-foreground mb-2 text-sm font-medium">📁 下载保存路径</h3>
+				<div
+					class="bg-card rounded border {isMobile ? 'px-2 py-2' : 'px-3 py-2'} font-mono {isMobile
+						? 'text-xs'
+						: 'text-sm'} break-all"
+				>
 					{videoData.pages[0].path}
 				</div>
-				<p class="mt-1 text-xs text-muted-foreground">视频文件将保存到此路径下</p>
+				<p class="text-muted-foreground mt-1 text-xs">视频文件将保存到此路径下</p>
 			</div>
 		{/if}
 	</section>
@@ -417,7 +423,9 @@
 				<div class="min-w-0 flex-1">
 					<div
 						class="grid gap-4"
-						style="grid-template-columns: repeat(auto-fill, minmax({isMobile ? '280px' : '320px'}, 1fr));"
+						style="grid-template-columns: repeat(auto-fill, minmax({isMobile
+							? '280px'
+							: '320px'}, 1fr));"
 					>
 						{#each videoData.pages as pageInfo, index (pageInfo.id)}
 							<div class="space-y-3">

@@ -14,9 +14,7 @@ interface ServerEvent {
 }
 
 // 客户端事件请求格式
-type ClientEvent = 
-	| { subscribe: EventType }
-	| { unsubscribe: EventType };
+type ClientEvent = { subscribe: EventType } | { unsubscribe: EventType };
 
 // 回调函数类型定义
 type TasksCallback = (data: TaskStatus) => void;
@@ -60,7 +58,7 @@ export class WebSocketManager {
 			try {
 				const protocol = window.location.protocol === 'https:' ? 'wss://' : 'ws://';
 				this.socket = new WebSocket(`${protocol}${window.location.host}/api/ws`);
-				
+
 				this.socket.onopen = () => {
 					this.connected = true;
 					this.connecting = false;

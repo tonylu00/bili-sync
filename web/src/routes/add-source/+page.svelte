@@ -97,7 +97,7 @@
 	let showSubmissionSelection = false;
 	let selectedVideos: string[] = [];
 	let selectedUpName = '';
-	
+
 	// 投稿选择详细状态
 	let submissionVideos: SubmissionVideoInfo[] = [];
 	let selectedSubmissionVideos: Set<string> = new Set();
@@ -106,7 +106,7 @@
 	let submissionTotalCount = 0;
 	let submissionSearchQuery = '';
 	let filteredSubmissionVideos: SubmissionVideoInfo[] = [];
-	
+
 	const SUBMISSION_PAGE_SIZE = 20;
 
 	onMount(() => {
@@ -845,7 +845,7 @@
 				toast.success('已填充UP主信息');
 				break;
 		}
-		
+
 		// 清空关注UP主列表状态，关闭面板
 		userFollowings = [];
 	}
@@ -892,12 +892,12 @@
 		selectedVideos = selectedBvids;
 		showSubmissionSelection = false;
 		if (selectedBvids.length > 0) {
-			toast.success('已选择投稿', { 
-				description: `选择了 ${selectedBvids.length} 个历史投稿，新投稿将自动下载` 
+			toast.success('已选择投稿', {
+				description: `选择了 ${selectedBvids.length} 个历史投稿，新投稿将自动下载`
 			});
 		} else {
-			toast.info('未选择投稿', { 
-				description: '将下载所有历史投稿和新投稿' 
+			toast.info('未选择投稿', {
+				description: '将下载所有历史投稿和新投稿'
 			});
 		}
 	}
@@ -909,7 +909,7 @@
 	}
 
 	// 投稿选择相关函数
-	
+
 	// 重置投稿选择状态
 	function resetSubmissionState() {
 		submissionVideos = [];
@@ -924,7 +924,7 @@
 	// 搜索过滤投稿
 	$: {
 		if (submissionSearchQuery.trim()) {
-			filteredSubmissionVideos = submissionVideos.filter(video => 
+			filteredSubmissionVideos = submissionVideos.filter((video) =>
 				video.title.toLowerCase().includes(submissionSearchQuery.toLowerCase().trim())
 			);
 		} else {
@@ -935,11 +935,11 @@
 	// 加载UP主投稿列表（一次性获取全部）
 	async function loadSubmissionVideos() {
 		if (!sourceId) return;
-		
+
 		submissionLoading = true;
 		submissionError = null;
 		submissionVideos = [];
-		
+
 		try {
 			// 先获取第一页以知道总数
 			const firstResponse = await api.getSubmissionVideos({
@@ -947,23 +947,23 @@
 				page: 1,
 				page_size: SUBMISSION_PAGE_SIZE
 			});
-			
+
 			if (!firstResponse.data || !firstResponse.data.videos) {
 				submissionError = '获取投稿列表失败';
 				return;
 			}
-			
+
 			submissionTotalCount = firstResponse.data.total;
 			let allVideos = [...firstResponse.data.videos];
-			
+
 			// 如果总数超过一页，获取剩余所有页面
 			if (submissionTotalCount > SUBMISSION_PAGE_SIZE) {
 				const totalPages = Math.ceil(submissionTotalCount / SUBMISSION_PAGE_SIZE);
 				const remainingPages = Array.from({ length: totalPages - 1 }, (_, i) => i + 2);
-				
+
 				// 并行获取剩余页面
 				const remainingResponses = await Promise.allSettled(
-					remainingPages.map(page => 
+					remainingPages.map((page) =>
 						api.getSubmissionVideos({
 							up_id: sourceId,
 							page: page,
@@ -971,7 +971,7 @@
 						})
 					)
 				);
-				
+
 				// 合并所有成功的响应
 				remainingResponses.forEach((result, index) => {
 					if (result.status === 'fulfilled' && result.value.data?.videos) {
@@ -979,7 +979,7 @@
 					}
 				});
 			}
-			
+
 			submissionVideos = allVideos;
 		} catch (err) {
 			submissionError = err instanceof Error ? err.message : '网络请求失败';
@@ -987,7 +987,6 @@
 			submissionLoading = false;
 		}
 	}
-
 
 	// 处理视频选择
 	function toggleSubmissionVideo(bvid: string) {
@@ -1001,19 +1000,19 @@
 
 	// 全选投稿
 	function selectAllSubmissions() {
-		filteredSubmissionVideos.forEach(video => selectedSubmissionVideos.add(video.bvid));
+		filteredSubmissionVideos.forEach((video) => selectedSubmissionVideos.add(video.bvid));
 		selectedSubmissionVideos = selectedSubmissionVideos;
 	}
 
 	// 全不选投稿
 	function selectNoneSubmissions() {
-		filteredSubmissionVideos.forEach(video => selectedSubmissionVideos.delete(video.bvid));
+		filteredSubmissionVideos.forEach((video) => selectedSubmissionVideos.delete(video.bvid));
 		selectedSubmissionVideos = selectedSubmissionVideos;
 	}
 
 	// 反选投稿
 	function invertSubmissionSelection() {
-		filteredSubmissionVideos.forEach(video => {
+		filteredSubmissionVideos.forEach((video) => {
 			if (selectedSubmissionVideos.has(video.bvid)) {
 				selectedSubmissionVideos.delete(video.bvid);
 			} else {
@@ -1028,12 +1027,12 @@
 		selectedVideos = Array.from(selectedSubmissionVideos);
 		showSubmissionSelection = false;
 		if (selectedVideos.length > 0) {
-			toast.success('已选择投稿', { 
-				description: `选择了 ${selectedVideos.length} 个历史投稿，新投稿将自动下载` 
+			toast.success('已选择投稿', {
+				description: `选择了 ${selectedVideos.length} 个历史投稿，新投稿将自动下载`
 			});
 		} else {
-			toast.info('未选择投稿', { 
-				description: '将下载所有历史投稿和新投稿' 
+			toast.info('未选择投稿', {
+				description: '将下载所有历史投稿和新投稿'
 			});
 		}
 	}
@@ -1068,10 +1067,9 @@
 	}
 
 	// 计算已选择的投稿数量
-	$: selectedSubmissionCount = Array.from(selectedSubmissionVideos).filter(bvid => 
-		filteredSubmissionVideos.some(video => video.bvid === bvid)
+	$: selectedSubmissionCount = Array.from(selectedSubmissionVideos).filter((bvid) =>
+		filteredSubmissionVideos.some((video) => video.bvid === bvid)
 	).length;
-
 </script>
 
 <svelte:head>
@@ -1087,7 +1085,7 @@
 
 			<div class="flex {isMobile ? 'flex-col' : 'gap-8'}">
 				<!-- 左侧：表单区域 -->
-				<div class={isMobile ? 'w-full' : 'flex-1 min-w-[350px] max-w-[500px]'}>
+				<div class={isMobile ? 'w-full' : 'max-w-[500px] min-w-[350px] flex-1'}>
 					<form
 						onsubmit={(e) => {
 							e.preventDefault();
@@ -1101,7 +1099,7 @@
 							<select
 								id="source-type"
 								bind:value={sourceType}
-								class="border-input bg-background ring-offset-background focus-visible:ring-ring flex h-10 w-full rounded-md border px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2"
+								class="border-input bg-background ring-offset-background focus-visible:ring-ring flex h-10 w-full rounded-md border px-3 py-2 text-sm focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:outline-none"
 							>
 								{#each sourceTypeOptions as option}
 									<option value={option.value}>{option.label}</option>
@@ -1112,7 +1110,9 @@
 
 						<!-- 搜索功能 -->
 						{#if sourceType !== 'favorite' && sourceType !== 'watch_later'}
-							<div class="rounded-lg border border-blue-200 bg-blue-50 dark:border-blue-800 dark:bg-blue-950 p-4">
+							<div
+								class="rounded-lg border border-blue-200 bg-blue-50 p-4 dark:border-blue-800 dark:bg-blue-950"
+							>
 								<div class="space-y-2">
 									<div>
 										<Label for="search">
@@ -1173,7 +1173,7 @@
 												{/if}
 											</div>
 										</div>
-										<p class="mt-1 text-xs text-muted-foreground">
+										<p class="text-muted-foreground mt-1 text-xs">
 											{#if sourceType === 'collection'}
 												搜索UP主后会自动填充UP主ID，并显示该UP主的所有合集供选择
 											{:else if sourceType === 'submission'}
@@ -1193,11 +1193,15 @@
 						{#if sourceType === 'favorite'}
 							<div class="space-y-4">
 								<!-- 我的收藏夹 -->
-								<div class="rounded-lg border border-yellow-200 bg-yellow-50 dark:border-yellow-800 dark:bg-yellow-950 p-4">
+								<div
+									class="rounded-lg border border-yellow-200 bg-yellow-50 p-4 dark:border-yellow-800 dark:bg-yellow-950"
+								>
 									<div
 										class="flex {isMobile ? 'flex-col gap-2' : 'items-center justify-between'} mb-2"
 									>
-										<span class="text-sm font-medium text-yellow-800 dark:text-yellow-200">我的收藏夹</span>
+										<span class="text-sm font-medium text-yellow-800 dark:text-yellow-200"
+											>我的收藏夹</span
+										>
 										<Button
 											size="sm"
 											variant="outline"
@@ -1214,20 +1218,26 @@
 											已获取 {userFavorites.length} 个收藏夹，请在{isMobile ? '下方' : '右侧'}选择
 										</p>
 									{:else}
-										<p class="text-xs text-yellow-600 dark:text-yellow-400">点击右侧按钮获取您的收藏夹列表</p>
+										<p class="text-xs text-yellow-600 dark:text-yellow-400">
+											点击右侧按钮获取您的收藏夹列表
+										</p>
 									{/if}
 								</div>
 
 								<!-- 他人的公开收藏夹 -->
-								<div class="rounded-lg border border-blue-200 bg-blue-50 dark:border-blue-800 dark:bg-blue-950 p-4">
+								<div
+									class="rounded-lg border border-blue-200 bg-blue-50 p-4 dark:border-blue-800 dark:bg-blue-950"
+								>
 									<div class="mb-3">
-										<span class="text-sm font-medium text-blue-800 dark:text-blue-200">他人的公开收藏夹</span>
+										<span class="text-sm font-medium text-blue-800 dark:text-blue-200"
+											>他人的公开收藏夹</span
+										>
 									</div>
 
 									<!-- 搜索UP主的收藏夹 -->
-									<div class="mb-4 rounded border border-gray-200 bg-card p-3">
+									<div class="bg-card mb-4 rounded border border-gray-200 p-3">
 										<div class="mb-2">
-											<Label class="text-sm font-medium text-foreground">搜索UP主的收藏夹</Label>
+											<Label class="text-foreground text-sm font-medium">搜索UP主的收藏夹</Label>
 										</div>
 										<div class="flex {isMobile ? 'flex-col gap-2' : 'gap-2'}">
 											<Input
@@ -1245,7 +1255,7 @@
 											</Button>
 										</div>
 
-										<p class="mt-2 text-xs text-muted-foreground">
+										<p class="text-muted-foreground mt-2 text-xs">
 											{#if showSearchResults && searchResults.length > 0}
 												找到 {searchResults.length} 个UP主，请在{isMobile
 													? '下方'
@@ -1274,7 +1284,7 @@
 								<select
 									id="collection-type"
 									bind:value={collectionType}
-									class="border-input bg-background ring-offset-background focus-visible:ring-ring flex h-10 w-full rounded-md border px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2"
+									class="border-input bg-background ring-offset-background focus-visible:ring-ring flex h-10 w-full rounded-md border px-3 py-2 text-sm focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:outline-none"
 								>
 									{#each collectionTypeOptions as option}
 										<option value={option.value}>{option.label}</option>
@@ -1359,34 +1369,38 @@
 										/>
 										<Label
 											for="download-all-seasons"
-											class="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
+											class="text-sm leading-none font-medium peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
 										>
 											下载所有季度
 										</Label>
 									</div>
 									{#if downloadAllSeasons}
-										<p class="ml-6 mt-1 text-xs text-purple-600">
+										<p class="mt-1 ml-6 text-xs text-purple-600">
 											勾选后将下载该番剧的所有季度，无需单独选择
 										</p>
 									{:else if bangumiSeasons.length > 1}
-										<p class="ml-6 mt-1 text-xs text-purple-600">
+										<p class="mt-1 ml-6 text-xs text-purple-600">
 											检测到 {bangumiSeasons.length} 个相关季度，请在{isMobile
 												? '下方'
 												: '右侧'}选择要下载的季度
 										</p>
 									{:else if bangumiSeasons.length === 1}
-										<p class="ml-6 mt-1 text-xs text-purple-600">该番剧只有当前一个季度</p>
+										<p class="mt-1 ml-6 text-xs text-purple-600">该番剧只有当前一个季度</p>
 									{/if}
 								{:else if sourceType === 'bangumi' && sourceId && loadingSeasons}
 									<p class="mt-3 text-xs text-purple-600">正在获取季度信息...</p>
 								{/if}
-								
+
 								<!-- UP主投稿选择状态显示和控制（仅投稿类型时显示） -->
 								{#if sourceType === 'submission' && sourceId}
-									<div class="mt-3 rounded-lg border border-blue-200 bg-blue-50 dark:border-blue-800 dark:bg-blue-950 p-3">
+									<div
+										class="mt-3 rounded-lg border border-blue-200 bg-blue-50 p-3 dark:border-blue-800 dark:bg-blue-950"
+									>
 										<div class="flex items-center justify-between">
 											<div>
-												<span class="text-sm font-medium text-blue-800 dark:text-blue-200">历史投稿选择</span>
+												<span class="text-sm font-medium text-blue-800 dark:text-blue-200"
+													>历史投稿选择</span
+												>
 												<span class="ml-2 text-xs text-blue-600 dark:text-blue-400">
 													{#if selectedVideos.length > 0}
 														已选择 {selectedVideos.length} 个历史投稿
@@ -1401,13 +1415,14 @@
 												onclick={() => {
 													showSubmissionSelection = true;
 												}}
-												class="text-blue-700 border-blue-300 hover:bg-blue-100"
+												class="border-blue-300 text-blue-700 hover:bg-blue-100"
 											>
 												{selectedVideos.length > 0 ? '重新选择' : '选择投稿'}
 											</Button>
 										</div>
 										<p class="mt-2 text-xs text-blue-600 dark:text-blue-400">
-											💡 您可以选择特定的历史投稿进行下载，未选择的视频将不会下载但会在数据库中记录。新发布的投稿会自动下载。
+											💡
+											您可以选择特定的历史投稿进行下载，未选择的视频将不会下载但会在数据库中记录。新发布的投稿会自动下载。
 										</p>
 									</div>
 								{/if}
@@ -1447,20 +1462,20 @@
 				<!-- 右侧：搜索结果区域 -->
 				{#if showSearchResults && searchResults.length > 0}
 					<div
-						class={isMobile ? 'mt-6 w-full' : 'flex-1 min-w-[550px]'}
+						class={isMobile ? 'mt-6 w-full' : 'min-w-[550px] flex-1'}
 						transition:fly={{ x: 300, duration: 300 }}
 					>
 						<div
-							class="rounded-lg border bg-card {isMobile
+							class="bg-card rounded-lg border {isMobile
 								? ''
 								: 'h-full'} flex flex-col overflow-hidden {isMobile
 								? ''
 								: 'sticky top-6'} max-h-[calc(100vh-200px)]"
 						>
-							<div class="flex items-center justify-between border-b bg-muted p-4">
+							<div class="bg-muted flex items-center justify-between border-b p-4">
 								<div>
-									<span class="text-base font-medium text-foreground">搜索结果</span>
-									<span class="text-sm text-muted-foreground {isMobile ? 'block' : 'ml-2'}">
+									<span class="text-foreground text-base font-medium">搜索结果</span>
+									<span class="text-muted-foreground text-sm {isMobile ? 'block' : 'ml-2'}">
 										共找到 {searchTotalResults} 个结果
 									</span>
 								</div>
@@ -1470,7 +1485,7 @@
 										searchResults = [];
 										searchTotalResults = 0;
 									}}
-									class="p-1 text-xl text-muted-foreground hover:text-foreground"
+									class="text-muted-foreground hover:text-foreground p-1 text-xl"
 								>
 									<X class="h-5 w-5" />
 								</button>
@@ -1478,14 +1493,19 @@
 
 							<div class="flex-1 overflow-hidden p-3">
 								<div class="seasons-grid-container h-full">
-									<div class="grid gap-4 {isMobile ? 'grid-cols-1' : ''}" style={isMobile ? '' : 'grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));'}>
+									<div
+										class="grid gap-4 {isMobile ? 'grid-cols-1' : ''}"
+										style={isMobile
+											? ''
+											: 'grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));'}
+									>
 										{#each searchResults as result, i (result.bvid || result.season_id || result.mid || i)}
 											<button
 												onclick={() => selectSearchResult(result)}
 												onmouseenter={(e) => handleMouseEnter(result, e)}
 												onmouseleave={handleMouseLeave}
 												onmousemove={handleMouseMove}
-												class="hover:scale-102 relative flex transform items-start gap-3 rounded-lg border p-4 text-left transition-all duration-300 hover:bg-muted hover:shadow-md"
+												class="hover:bg-muted relative flex transform items-start gap-3 rounded-lg border p-4 text-left transition-all duration-300 hover:scale-102 hover:shadow-md"
 												transition:fly={{ y: 50, duration: 300, delay: i * 50 }}
 												animate:flip={{ duration: 300 }}
 											>
@@ -1505,28 +1525,28 @@
 													<div
 														class="{sourceType === 'bangumi'
 															? 'h-20 w-14'
-															: 'h-14 w-20'} flex flex-shrink-0 items-center justify-center rounded bg-muted text-xs text-muted-foreground"
+															: 'h-14 w-20'} bg-muted text-muted-foreground flex flex-shrink-0 items-center justify-center rounded text-xs"
 													>
 														无图片
 													</div>
 												{/if}
 												<div class="min-w-0 flex-1">
 													<div class="mb-1 flex items-center gap-2">
-														<h4 class="flex-1 truncate text-sm font-medium text-foreground">
+														<h4 class="text-foreground flex-1 truncate text-sm font-medium">
 															{@html result.title}
 														</h4>
 														{#if result.result_type}
 															<span
 																class="flex-shrink-0 rounded px-1.5 py-0.5 text-xs {result.result_type ===
 																'media_bangumi'
-																	? 'bg-purple-100 dark:bg-purple-900 text-purple-700 dark:text-purple-300'
+																	? 'bg-purple-100 text-purple-700 dark:bg-purple-900 dark:text-purple-300'
 																	: result.result_type === 'media_ft'
-																		? 'bg-red-100 dark:bg-red-900 text-red-700 dark:text-red-300'
+																		? 'bg-red-100 text-red-700 dark:bg-red-900 dark:text-red-300'
 																		: result.result_type === 'bili_user'
-																			? 'bg-blue-100 dark:bg-blue-900 text-blue-700 dark:text-blue-300'
+																			? 'bg-blue-100 text-blue-700 dark:bg-blue-900 dark:text-blue-300'
 																			: result.result_type === 'video'
-																				? 'bg-green-100 dark:bg-green-900 text-green-700 dark:text-green-300'
-																				: 'bg-gray-100 dark:bg-gray-800 text-foreground'}"
+																				? 'bg-green-100 text-green-700 dark:bg-green-900 dark:text-green-300'
+																				: 'text-foreground bg-gray-100 dark:bg-gray-800'}"
 															>
 																{result.result_type === 'media_bangumi'
 																	? '番剧'
@@ -1540,9 +1560,9 @@
 															</span>
 														{/if}
 													</div>
-													<p class="truncate text-xs text-muted-foreground">{result.author}</p>
+													<p class="text-muted-foreground truncate text-xs">{result.author}</p>
 													{#if result.description}
-														<p class="mt-1 line-clamp-2 text-xs text-muted-foreground/70">
+														<p class="text-muted-foreground/70 mt-1 line-clamp-2 text-xs">
 															{result.description}
 														</p>
 													{/if}
@@ -1555,7 +1575,7 @@
 
 							{#if searchResults.length > 0}
 								<div class="border-t p-3 text-center">
-									<span class="text-xs text-muted-foreground">
+									<span class="text-muted-foreground text-xs">
 										共显示 {searchResults.length} 个结果
 										{#if searchTotalResults > searchResults.length}
 											（总共 {searchTotalResults} 个）
@@ -1571,27 +1591,38 @@
 				{#if (sourceType === 'collection' || sourceType === 'submission') && userFollowings.length > 0}
 					<div class={isMobile ? 'mt-6 w-full' : 'flex-1'}>
 						<div
-							class="rounded-lg border bg-card {isMobile
+							class="bg-card rounded-lg border {isMobile
 								? ''
 								: 'h-full'} flex flex-col overflow-hidden {isMobile
 								? ''
 								: 'sticky top-6'} max-h-126"
 						>
-							<div class="flex items-center justify-between border-b bg-blue-50 dark:bg-blue-950 p-4">
+							<div
+								class="flex items-center justify-between border-b bg-blue-50 p-4 dark:bg-blue-950"
+							>
 								<div>
-									<span class="text-base font-medium text-blue-800 dark:text-blue-200">关注的UP主</span>
-									<span class="text-sm text-blue-600 dark:text-blue-400 {isMobile ? 'block' : 'ml-2'}">
+									<span class="text-base font-medium text-blue-800 dark:text-blue-200"
+										>关注的UP主</span
+									>
+									<span
+										class="text-sm text-blue-600 dark:text-blue-400 {isMobile ? 'block' : 'ml-2'}"
+									>
 										共 {userFollowings.length} 个UP主
 									</span>
 								</div>
 							</div>
 
 							<div class="flex-1 overflow-y-auto p-3">
-								<div class="grid gap-3 {isMobile ? 'grid-cols-1' : ''}" style={isMobile ? '' : 'grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));'}>
+								<div
+									class="grid gap-3 {isMobile ? 'grid-cols-1' : ''}"
+									style={isMobile
+										? ''
+										: 'grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));'}
+								>
 									{#each userFollowings as following}
 										<button
 											onclick={() => selectFollowing(following)}
-											class="rounded-lg border p-3 text-left transition-colors hover:bg-muted"
+											class="hover:bg-muted rounded-lg border p-3 text-left transition-colors"
 										>
 											<div class="flex items-start gap-2">
 												{#if following.face}
@@ -1606,7 +1637,7 @@
 													/>
 												{:else}
 													<div
-														class="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-full bg-muted text-xs text-muted-foreground"
+														class="bg-muted text-muted-foreground flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-full text-xs"
 													>
 														头像
 													</div>
@@ -1616,15 +1647,19 @@
 														<h4 class="truncate text-xs font-medium">{following.name}</h4>
 														{#if following.official_verify && following.official_verify.type >= 0}
 															<span
-																class="flex-shrink-0 rounded bg-yellow-100 dark:bg-yellow-900 px-1 py-0.5 text-xs text-yellow-700 dark:text-yellow-300"
+																class="flex-shrink-0 rounded bg-yellow-100 px-1 py-0.5 text-xs text-yellow-700 dark:bg-yellow-900 dark:text-yellow-300"
 															>
 																V
 															</span>
 														{/if}
 													</div>
-													<p class="mb-1 truncate text-xs text-muted-foreground">UID: {following.mid}</p>
+													<p class="text-muted-foreground mb-1 truncate text-xs">
+														UID: {following.mid}
+													</p>
 													{#if following.sign}
-														<p class="line-clamp-1 text-xs text-muted-foreground">{following.sign}</p>
+														<p class="text-muted-foreground line-clamp-1 text-xs">
+															{following.sign}
+														</p>
 													{/if}
 												</div>
 											</div>
@@ -1640,27 +1675,38 @@
 				{#if sourceType === 'collection' && userCollections.length > 0}
 					<div class={isMobile ? 'mt-6 w-full' : 'flex-1'}>
 						<div
-							class="rounded-lg border bg-card {isMobile
+							class="bg-card rounded-lg border {isMobile
 								? ''
 								: 'h-full'} flex flex-col overflow-hidden {isMobile
 								? ''
 								: 'sticky top-6'} max-h-[calc(100vh-200px)]"
 						>
-							<div class="flex items-center justify-between border-b bg-green-50 dark:bg-green-950 p-4">
+							<div
+								class="flex items-center justify-between border-b bg-green-50 p-4 dark:bg-green-950"
+							>
 								<div>
-									<span class="text-base font-medium text-green-800 dark:text-green-200">UP主合集列表</span>
-									<span class="text-sm text-green-600 dark:text-green-400 {isMobile ? 'block' : 'ml-2'}">
+									<span class="text-base font-medium text-green-800 dark:text-green-200"
+										>UP主合集列表</span
+									>
+									<span
+										class="text-sm text-green-600 dark:text-green-400 {isMobile ? 'block' : 'ml-2'}"
+									>
 										共 {userCollections.length} 个合集
 									</span>
 								</div>
 							</div>
 
 							<div class="flex-1 overflow-y-auto p-3">
-								<div class="grid gap-4 {isMobile ? 'grid-cols-1' : ''}" style={isMobile ? '' : 'grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));'}>
+								<div
+									class="grid gap-4 {isMobile ? 'grid-cols-1' : ''}"
+									style={isMobile
+										? ''
+										: 'grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));'}
+								>
 									{#each userCollections as collection}
 										<button
 											onclick={() => selectCollection(collection)}
-											class="rounded-lg border p-4 text-left transition-colors hover:bg-muted"
+											class="hover:bg-muted rounded-lg border p-4 text-left transition-colors"
 										>
 											<div class="flex items-start gap-3">
 												{#if collection.cover}
@@ -1675,7 +1721,7 @@
 													/>
 												{:else}
 													<div
-														class="flex h-16 w-24 flex-shrink-0 items-center justify-center rounded bg-muted text-xs text-muted-foreground"
+														class="bg-muted text-muted-foreground flex h-16 w-24 flex-shrink-0 items-center justify-center rounded text-xs"
 													>
 														无封面
 													</div>
@@ -1686,16 +1732,16 @@
 														<span
 															class="flex-shrink-0 rounded px-2 py-0.5 text-xs {collection.collection_type ===
 															'season'
-																? 'bg-green-100 dark:bg-green-900 text-green-700 dark:text-green-300'
+																? 'bg-green-100 text-green-700 dark:bg-green-900 dark:text-green-300'
 																: 'bg-blue-100 text-blue-700'}"
 														>
 															{collection.collection_type === 'season' ? '合集' : '系列'}
 														</span>
 													</div>
-													<p class="mb-1 text-xs text-muted-foreground">ID: {collection.sid}</p>
-													<p class="text-xs text-muted-foreground">共 {collection.total} 个视频</p>
+													<p class="text-muted-foreground mb-1 text-xs">ID: {collection.sid}</p>
+													<p class="text-muted-foreground text-xs">共 {collection.total} 个视频</p>
 													{#if collection.description}
-														<p class="mt-1 line-clamp-2 text-xs text-muted-foreground">
+														<p class="text-muted-foreground mt-1 line-clamp-2 text-xs">
 															{collection.description}
 														</p>
 													{/if}
@@ -1713,27 +1759,40 @@
 				{#if sourceType === 'favorite' && userFavorites.length > 0}
 					<div class={isMobile ? 'mt-6 w-full' : 'flex-1'}>
 						<div
-							class="rounded-lg border bg-card {isMobile
+							class="bg-card rounded-lg border {isMobile
 								? ''
 								: 'h-full'} flex flex-col overflow-hidden {isMobile
 								? ''
 								: 'sticky top-6'} max-h-[calc(100vh-200px)]"
 						>
-							<div class="flex items-center justify-between border-b bg-yellow-50 dark:bg-yellow-950 p-4">
+							<div
+								class="flex items-center justify-between border-b bg-yellow-50 p-4 dark:bg-yellow-950"
+							>
 								<div>
-									<span class="text-base font-medium text-yellow-800 dark:text-yellow-200">我的收藏夹</span>
-									<span class="text-sm text-yellow-600 dark:text-yellow-400 {isMobile ? 'block' : 'ml-2'}">
+									<span class="text-base font-medium text-yellow-800 dark:text-yellow-200"
+										>我的收藏夹</span
+									>
+									<span
+										class="text-sm text-yellow-600 dark:text-yellow-400 {isMobile
+											? 'block'
+											: 'ml-2'}"
+									>
 										共 {userFavorites.length} 个收藏夹
 									</span>
 								</div>
 							</div>
 
 							<div class="flex-1 overflow-y-auto p-3">
-								<div class="grid gap-4 {isMobile ? 'grid-cols-1' : ''}" style={isMobile ? '' : 'grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));'}>
+								<div
+									class="grid gap-4 {isMobile ? 'grid-cols-1' : ''}"
+									style={isMobile
+										? ''
+										: 'grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));'}
+								>
 									{#each userFavorites as favorite}
 										<button
 											onclick={() => selectFavorite(favorite)}
-											class="rounded-lg border p-4 text-left transition-colors hover:bg-muted"
+											class="hover:bg-muted rounded-lg border p-4 text-left transition-colors"
 										>
 											<div class="flex items-start gap-3">
 												{#if favorite.cover}
@@ -1748,7 +1807,7 @@
 													/>
 												{:else}
 													<div
-														class="flex h-16 w-24 flex-shrink-0 items-center justify-center rounded bg-muted text-xs text-muted-foreground"
+														class="bg-muted text-muted-foreground flex h-16 w-24 flex-shrink-0 items-center justify-center rounded text-xs"
 													>
 														无封面
 													</div>
@@ -1757,10 +1816,12 @@
 													<h4 class="mb-1 truncate text-sm font-medium">
 														{favorite.name || favorite.title}
 													</h4>
-													<p class="mb-1 text-xs text-muted-foreground">收藏夹ID: {favorite.id}</p>
-													<p class="mb-1 text-xs text-muted-foreground">共 {favorite.media_count} 个视频</p>
+													<p class="text-muted-foreground mb-1 text-xs">收藏夹ID: {favorite.id}</p>
+													<p class="text-muted-foreground mb-1 text-xs">
+														共 {favorite.media_count} 个视频
+													</p>
 													{#if favorite.created}
-														<p class="text-xs text-muted-foreground">
+														<p class="text-muted-foreground text-xs">
 															创建于 {new Date(favorite.created * 1000).toLocaleDateString()}
 														</p>
 													{/if}
@@ -1778,18 +1839,22 @@
 				{#if sourceType === 'favorite' && selectedUserId && (searchedUserFavorites.length > 0 || loadingSearchedUserFavorites)}
 					<div class={isMobile ? 'mt-6 w-full' : 'flex-1'}>
 						<div
-							class="rounded-lg border bg-card {isMobile
+							class="bg-card rounded-lg border {isMobile
 								? ''
 								: 'h-full'} flex flex-col overflow-hidden {isMobile
 								? ''
 								: 'sticky top-6'} max-h-[calc(100vh-200px)]"
 						>
-							<div class="flex items-center justify-between border-b bg-green-50 dark:bg-green-950 p-4">
+							<div
+								class="flex items-center justify-between border-b bg-green-50 p-4 dark:bg-green-950"
+							>
 								<div>
 									<span class="text-base font-medium text-green-800 dark:text-green-200"
 										>{selectedUserName} 的收藏夹</span
 									>
-									<span class="text-sm text-green-600 dark:text-green-400 {isMobile ? 'block' : 'ml-2'}">
+									<span
+										class="text-sm text-green-600 dark:text-green-400 {isMobile ? 'block' : 'ml-2'}"
+									>
 										{#if loadingSearchedUserFavorites}
 											正在加载...
 										{:else if searchedUserFavorites.length > 0}
@@ -1815,25 +1880,36 @@
 							<div class="flex-1 overflow-y-auto p-3">
 								{#if loadingSearchedUserFavorites}
 									<div class="p-4 text-center">
-										<div class="text-sm text-green-700 dark:text-green-300">正在获取收藏夹列表...</div>
+										<div class="text-sm text-green-700 dark:text-green-300">
+											正在获取收藏夹列表...
+										</div>
 									</div>
 								{:else if searchedUserFavorites.length > 0}
-									<div class="grid gap-4 {isMobile ? 'grid-cols-1' : ''}" style={isMobile ? '' : 'grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));'}>
+									<div
+										class="grid gap-4 {isMobile ? 'grid-cols-1' : ''}"
+										style={isMobile
+											? ''
+											: 'grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));'}
+									>
 										{#each searchedUserFavorites as favorite}
 											<button
 												onclick={() => selectSearchedFavorite(favorite)}
-												class="rounded-lg border p-4 text-left transition-colors hover:bg-muted"
+												class="hover:bg-muted rounded-lg border p-4 text-left transition-colors"
 											>
 												<div class="flex items-start gap-3">
 													<div
-														class="flex h-16 w-24 flex-shrink-0 items-center justify-center rounded bg-muted text-xs text-muted-foreground"
+														class="bg-muted text-muted-foreground flex h-16 w-24 flex-shrink-0 items-center justify-center rounded text-xs"
 													>
 														收藏夹
 													</div>
 													<div class="min-w-0 flex-1">
 														<h4 class="mb-1 truncate text-sm font-medium">{favorite.title}</h4>
-														<p class="mb-1 text-xs text-muted-foreground">收藏夹ID: {favorite.fid}</p>
-														<p class="text-xs text-muted-foreground">共 {favorite.media_count} 个视频</p>
+														<p class="text-muted-foreground mb-1 text-xs">
+															收藏夹ID: {favorite.fid}
+														</p>
+														<p class="text-muted-foreground text-xs">
+															共 {favorite.media_count} 个视频
+														</p>
 													</div>
 												</div>
 											</button>
@@ -1841,7 +1917,7 @@
 									</div>
 								{:else}
 									<div class="p-4 text-center">
-										<div class="text-sm text-muted-foreground">该UP主没有公开的收藏夹</div>
+										<div class="text-muted-foreground text-sm">该UP主没有公开的收藏夹</div>
 									</div>
 								{/if}
 							</div>
@@ -1853,16 +1929,24 @@
 				{#if sourceType === 'bangumi' && sourceId && !downloadAllSeasons && bangumiSeasons.length > 1}
 					<div class={isMobile ? 'mt-6 w-full' : 'flex-1'}>
 						<div
-							class="rounded-lg border bg-card {isMobile
+							class="bg-card rounded-lg border {isMobile
 								? ''
 								: 'h-full'} flex flex-col overflow-hidden {isMobile
 								? ''
 								: 'sticky top-6'} max-h-[calc(100vh-200px)]"
 						>
-							<div class="flex items-center justify-between border-b bg-purple-50 dark:bg-purple-950 p-4">
+							<div
+								class="flex items-center justify-between border-b bg-purple-50 p-4 dark:bg-purple-950"
+							>
 								<div>
-									<span class="text-base font-medium text-purple-800 dark:text-purple-200">选择要下载的季度</span>
-									<span class="text-sm text-purple-600 dark:text-purple-400 {isMobile ? 'block' : 'ml-2'}">
+									<span class="text-base font-medium text-purple-800 dark:text-purple-200"
+										>选择要下载的季度</span
+									>
+									<span
+										class="text-sm text-purple-600 dark:text-purple-400 {isMobile
+											? 'block'
+											: 'ml-2'}"
+									>
 										{#if loadingSeasons}
 											正在加载...
 										{:else if bangumiSeasons.length > 0}
@@ -1873,7 +1957,9 @@
 									</span>
 								</div>
 								{#if selectedSeasons.length > 0}
-									<span class="rounded bg-purple-100 dark:bg-purple-900 px-2 py-1 text-xs text-purple-700 dark:text-purple-300">
+									<span
+										class="rounded bg-purple-100 px-2 py-1 text-xs text-purple-700 dark:bg-purple-900 dark:text-purple-300"
+									>
 										已选择 {selectedSeasons.length} 个
 										{#if selectedSeasons.length === bangumiSeasons.length}
 											（全部）
@@ -1885,18 +1971,25 @@
 							<div class="flex-1 overflow-hidden p-3">
 								{#if loadingSeasons}
 									<div class="p-4 text-center">
-										<div class="text-sm text-purple-700 dark:text-purple-300">正在加载季度信息...</div>
+										<div class="text-sm text-purple-700 dark:text-purple-300">
+											正在加载季度信息...
+										</div>
 									</div>
 								{:else if bangumiSeasons.length > 0}
 									<div class="seasons-grid-container">
-										<div class="grid gap-4 {isMobile ? 'grid-cols-1' : ''}" style={isMobile ? '' : 'grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));'}>
+										<div
+											class="grid gap-4 {isMobile ? 'grid-cols-1' : ''}"
+											style={isMobile
+												? ''
+												: 'grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));'}
+										>
 											{#each bangumiSeasons as season, i (season.season_id)}
 												<div
 													role="button"
 													tabindex="0"
 													class="relative rounded-lg border p-4 transition-all duration-300 hover:bg-purple-50 dark:hover:bg-purple-900 {isMobile
 														? 'h-auto'
-														: 'h-[120px]'} hover:scale-102 transform hover:shadow-md"
+														: 'h-[120px]'} transform hover:scale-102 hover:shadow-md"
 													onmouseenter={(e) => handleSeasonMouseEnter(season, e)}
 													onmouseleave={handleSeasonMouseLeave}
 													onmousemove={handleSeasonMouseMove}
@@ -1920,13 +2013,13 @@
 															/>
 														{:else}
 															<div
-																class="flex h-20 w-14 flex-shrink-0 items-center justify-center rounded bg-muted text-xs text-muted-foreground"
+																class="bg-muted text-muted-foreground flex h-20 w-14 flex-shrink-0 items-center justify-center rounded text-xs"
 															>
 																无封面
 															</div>
 														{/if}
 														<div class="min-w-0 flex-1">
-															<div class="absolute right-3 top-3">
+															<div class="absolute top-3 right-3">
 																<input
 																	type="checkbox"
 																	id="season-{season.season_id}"
@@ -1937,9 +2030,9 @@
 															</div>
 															<!-- 右下角集数标签 -->
 															{#if season.episode_count}
-																<div class="absolute bottom-3 right-3">
+																<div class="absolute right-3 bottom-3">
 																	<span
-																		class="rounded bg-purple-100 dark:bg-purple-900 px-1.5 py-0.5 text-xs text-purple-700 dark:text-purple-300"
+																		class="rounded bg-purple-100 px-1.5 py-0.5 text-xs text-purple-700 dark:bg-purple-900 dark:text-purple-300"
 																		>{season.episode_count}集</span
 																	>
 																</div>
@@ -1950,15 +2043,17 @@
 																</h4>
 																{#if season.season_id === sourceId}
 																	<span
-																		class="mt-1 inline-block rounded bg-purple-100 dark:bg-purple-900 px-1.5 py-0.5 text-xs text-purple-700 dark:text-purple-300"
+																		class="mt-1 inline-block rounded bg-purple-100 px-1.5 py-0.5 text-xs text-purple-700 dark:bg-purple-900 dark:text-purple-300"
 																		>当前</span
 																	>
 																{/if}
-																<p class="mt-1 text-xs text-muted-foreground">
+																<p class="text-muted-foreground mt-1 text-xs">
 																	Season ID: {season.season_id}
 																</p>
 																{#if season.media_id}
-																	<p class="text-xs text-muted-foreground">Media ID: {season.media_id}</p>
+																	<p class="text-muted-foreground text-xs">
+																		Media ID: {season.media_id}
+																	</p>
 																{/if}
 															</label>
 														</div>
@@ -1974,8 +2069,8 @@
 									{/if}
 								{:else if sourceId}
 									<div class="p-4 text-center">
-										<div class="text-sm text-muted-foreground">暂无季度信息</div>
-										<div class="mt-1 text-xs text-muted-foreground">请检查Season ID是否正确</div>
+										<div class="text-muted-foreground text-sm">暂无季度信息</div>
+										<div class="text-muted-foreground mt-1 text-xs">请检查Season ID是否正确</div>
 									</div>
 								{/if}
 							</div>
@@ -1987,25 +2082,38 @@
 				{#if sourceType === 'collection' && subscribedCollections.length > 0}
 					<div class={isMobile ? 'mt-6 w-full' : 'flex-1'}>
 						<div
-							class="rounded-lg border bg-card {isMobile
+							class="bg-card rounded-lg border {isMobile
 								? ''
 								: 'h-full'} flex flex-col overflow-hidden {isMobile ? '' : 'sticky top-6'} max-h-96"
 						>
-							<div class="flex items-center justify-between border-b bg-purple-50 dark:bg-purple-950 p-4">
+							<div
+								class="flex items-center justify-between border-b bg-purple-50 p-4 dark:bg-purple-950"
+							>
 								<div>
-									<span class="text-base font-medium text-purple-800 dark:text-purple-200">关注的合集</span>
-									<span class="text-sm text-purple-600 dark:text-purple-400 {isMobile ? 'block' : 'ml-2'}">
+									<span class="text-base font-medium text-purple-800 dark:text-purple-200"
+										>关注的合集</span
+									>
+									<span
+										class="text-sm text-purple-600 dark:text-purple-400 {isMobile
+											? 'block'
+											: 'ml-2'}"
+									>
 										共 {subscribedCollections.length} 个合集
 									</span>
 								</div>
 							</div>
 
 							<div class="flex-1 overflow-y-auto p-3">
-								<div class="grid gap-4 {isMobile ? 'grid-cols-1' : ''}" style={isMobile ? '' : 'grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));'}>
+								<div
+									class="grid gap-4 {isMobile ? 'grid-cols-1' : ''}"
+									style={isMobile
+										? ''
+										: 'grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));'}
+								>
 									{#each subscribedCollections as collection}
 										<button
 											onclick={() => selectSubscribedCollection(collection)}
-											class="rounded-lg border p-4 text-left transition-colors hover:bg-muted"
+											class="hover:bg-muted rounded-lg border p-4 text-left transition-colors"
 										>
 											<div class="flex items-start gap-3">
 												{#if collection.cover}
@@ -2020,7 +2128,7 @@
 													/>
 												{:else}
 													<div
-														class="flex h-16 w-24 flex-shrink-0 items-center justify-center rounded bg-muted text-xs text-muted-foreground"
+														class="bg-muted text-muted-foreground flex h-16 w-24 flex-shrink-0 items-center justify-center rounded text-xs"
 													>
 														无封面
 													</div>
@@ -2029,16 +2137,18 @@
 													<div class="mb-1 flex items-center gap-2">
 														<h4 class="truncate text-sm font-medium">{collection.name}</h4>
 														<span
-															class="flex-shrink-0 rounded bg-purple-100 dark:bg-purple-900 px-2 py-0.5 text-xs text-purple-700 dark:text-purple-300"
+															class="flex-shrink-0 rounded bg-purple-100 px-2 py-0.5 text-xs text-purple-700 dark:bg-purple-900 dark:text-purple-300"
 														>
 															{collection.collection_type === 'season' ? '合集' : '系列'}
 														</span>
 													</div>
-													<p class="mb-1 text-xs text-muted-foreground">ID: {collection.sid}</p>
-													<p class="mb-1 text-xs text-muted-foreground">UP主: {collection.up_name}</p>
-													<p class="text-xs text-muted-foreground">共 {collection.total} 个视频</p>
+													<p class="text-muted-foreground mb-1 text-xs">ID: {collection.sid}</p>
+													<p class="text-muted-foreground mb-1 text-xs">
+														UP主: {collection.up_name}
+													</p>
+													<p class="text-muted-foreground text-xs">共 {collection.total} 个视频</p>
 													{#if collection.description}
-														<p class="mt-1 line-clamp-2 text-xs text-muted-foreground">
+														<p class="text-muted-foreground mt-1 line-clamp-2 text-xs">
 															{collection.description}
 														</p>
 													{/if}
@@ -2054,21 +2164,34 @@
 
 				<!-- UP主投稿选择面板（仅投稿类型时显示） -->
 				{#if sourceType === 'submission' && showSubmissionSelection}
-					<div class={isMobile ? 'mt-6 w-full' : 'flex-1'} transition:fly={{ x: 300, duration: 300 }}>
+					<div
+						class={isMobile ? 'mt-6 w-full' : 'flex-1'}
+						transition:fly={{ x: 300, duration: 300 }}
+					>
 						<div
-							class="rounded-lg border bg-card {isMobile
+							class="bg-card rounded-lg border {isMobile
 								? ''
 								: 'h-full'} flex flex-col overflow-hidden {isMobile
 								? ''
 								: 'sticky top-6'} max-h-[750px]"
 						>
-							<div class="flex items-center justify-between border-b bg-blue-50 dark:bg-blue-950 p-4">
+							<div
+								class="flex items-center justify-between border-b bg-blue-50 p-4 dark:bg-blue-950"
+							>
 								<div>
 									<div class="flex items-center gap-2">
-										<span class="text-base font-medium text-blue-800 dark:text-blue-200">📹 选择历史投稿</span>
-										<span class="text-xs text-blue-600 dark:text-blue-400">选择您希望下载的历史投稿。未选择的视频不会下载和显示。新发布的投稿会自动下载。</span>
+										<span class="text-base font-medium text-blue-800 dark:text-blue-200"
+											>📹 选择历史投稿</span
+										>
+										<span class="text-xs text-blue-600 dark:text-blue-400"
+											>选择您希望下载的历史投稿。未选择的视频不会下载和显示。新发布的投稿会自动下载。</span
+										>
 									</div>
-									<span class="text-sm text-blue-600 dark:text-blue-400 {isMobile ? 'block' : 'ml-2'} mt-1">
+									<span
+										class="text-sm text-blue-600 dark:text-blue-400 {isMobile
+											? 'block'
+											: 'ml-2'} mt-1"
+									>
 										{#if submissionLoading && submissionVideos.length === 0}
 											正在加载...
 										{:else if submissionTotalCount > 0}
@@ -2086,11 +2209,16 @@
 								</button>
 							</div>
 
-							<div class="flex-1 overflow-hidden flex flex-col min-h-0">
+							<div class="flex min-h-0 flex-1 flex-col overflow-hidden">
 								{#if submissionError}
-									<div class="rounded-lg border border-red-200 bg-red-50 p-4 m-3">
+									<div class="m-3 rounded-lg border border-red-200 bg-red-50 p-4">
 										<div class="flex items-center gap-2">
-											<svg class="h-5 w-5 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+											<svg
+												class="h-5 w-5 text-red-600"
+												fill="none"
+												stroke="currentColor"
+												viewBox="0 0 24 24"
+											>
 												<path
 													stroke-linecap="round"
 													stroke-linejoin="round"
@@ -2098,21 +2226,22 @@
 													d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
 												/>
 											</svg>
-											<span class="text-sm font-medium text-red-800 dark:text-red-200">加载失败</span>
+											<span class="text-sm font-medium text-red-800 dark:text-red-200"
+												>加载失败</span
+											>
 										</div>
 										<p class="mt-1 text-sm text-red-700 dark:text-red-300">{submissionError}</p>
 										<button
 											type="button"
-											class="mt-2 text-sm text-red-600 dark:text-red-400 underline hover:text-red-800 dark:hover:text-red-200"
+											class="mt-2 text-sm text-red-600 underline hover:text-red-800 dark:text-red-400 dark:hover:text-red-200"
 											onclick={loadSubmissionVideos}
 										>
 											重试
 										</button>
 									</div>
 								{:else}
-
 									<!-- 搜索和操作栏 -->
-									<div class="space-y-3 p-3 flex-shrink-0">
+									<div class="flex-shrink-0 space-y-3 p-3">
 										<div class="flex gap-2">
 											<input
 												type="text"
@@ -2121,12 +2250,12 @@
 												class="flex-1 rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:ring-2 focus:ring-blue-500 focus:outline-none"
 											/>
 										</div>
-										
+
 										<div class="flex items-center justify-between">
 											<div class="flex gap-2">
 												<button
 													type="button"
-													class="rounded-md border border-gray-300 bg-card px-3 py-1 text-sm font-medium text-foreground hover:bg-muted"
+													class="bg-card text-foreground hover:bg-muted rounded-md border border-gray-300 px-3 py-1 text-sm font-medium"
 													onclick={selectAllSubmissions}
 													disabled={filteredSubmissionVideos.length === 0}
 												>
@@ -2134,7 +2263,7 @@
 												</button>
 												<button
 													type="button"
-													class="rounded-md border border-gray-300 bg-card px-3 py-1 text-sm font-medium text-foreground hover:bg-muted"
+													class="bg-card text-foreground hover:bg-muted rounded-md border border-gray-300 px-3 py-1 text-sm font-medium"
 													onclick={selectNoneSubmissions}
 													disabled={selectedSubmissionCount === 0}
 												>
@@ -2142,37 +2271,55 @@
 												</button>
 												<button
 													type="button"
-													class="rounded-md border border-gray-300 bg-card px-3 py-1 text-sm font-medium text-foreground hover:bg-muted"
+													class="bg-card text-foreground hover:bg-muted rounded-md border border-gray-300 px-3 py-1 text-sm font-medium"
 													onclick={invertSubmissionSelection}
 													disabled={filteredSubmissionVideos.length === 0}
 												>
 													反选
 												</button>
 											</div>
-											
-											<div class="text-sm text-muted-foreground">
+
+											<div class="text-muted-foreground text-sm">
 												已选择 {selectedSubmissionCount} / {filteredSubmissionVideos.length} 个视频
 											</div>
 										</div>
 									</div>
 
 									<!-- 视频列表 -->
-									<div class="flex-1 overflow-y-auto min-h-0 p-3 pt-0">
+									<div class="min-h-0 flex-1 overflow-y-auto p-3 pt-0">
 										{#if submissionLoading && submissionVideos.length === 0}
 											<div class="flex items-center justify-center py-8">
-												<svg class="h-8 w-8 animate-spin text-blue-600 dark:text-blue-400" fill="none" viewBox="0 0 24 24">
-													<circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+												<svg
+													class="h-8 w-8 animate-spin text-blue-600 dark:text-blue-400"
+													fill="none"
+													viewBox="0 0 24 24"
+												>
+													<circle
+														class="opacity-25"
+														cx="12"
+														cy="12"
+														r="10"
+														stroke="currentColor"
+														stroke-width="4"
+													></circle>
 													<path
 														class="opacity-75"
 														fill="currentColor"
 														d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
 													></path>
 												</svg>
-												<span class="ml-2 text-sm text-muted-foreground">加载中...</span>
+												<span class="text-muted-foreground ml-2 text-sm">加载中...</span>
 											</div>
 										{:else if filteredSubmissionVideos.length === 0}
-											<div class="flex flex-col items-center justify-center py-8 text-muted-foreground">
-												<svg class="h-12 w-12 mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+											<div
+												class="text-muted-foreground flex flex-col items-center justify-center py-8"
+											>
+												<svg
+													class="mb-2 h-12 w-12"
+													fill="none"
+													stroke="currentColor"
+													viewBox="0 0 24 24"
+												>
 													<path
 														stroke-linecap="round"
 														stroke-linejoin="round"
@@ -2183,38 +2330,51 @@
 												<p class="text-sm">没有找到视频</p>
 											</div>
 										{:else}
-											<div class="grid gap-4 {isMobile ? 'grid-cols-1' : ''}" style={isMobile ? '' : 'grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));'}>
+											<div
+												class="grid gap-4 {isMobile ? 'grid-cols-1' : ''}"
+												style={isMobile
+													? ''
+													: 'grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));'}
+											>
 												{#each filteredSubmissionVideos as video (video.bvid)}
 													<div
-														class="relative rounded-lg border p-4 transition-all duration-300 hover:bg-muted hover:shadow-md {selectedSubmissionVideos.has(video.bvid) ? 'border-blue-300 bg-blue-50' : 'border-gray-200'} {isMobile ? 'h-auto' : 'h-[100px]'}"
+														class="hover:bg-muted relative rounded-lg border p-4 transition-all duration-300 hover:shadow-md {selectedSubmissionVideos.has(
+															video.bvid
+														)
+															? 'border-blue-300 bg-blue-50'
+															: 'border-gray-200'} {isMobile ? 'h-auto' : 'h-[100px]'}"
 													>
-														<div class="flex gap-3 h-full">
+														<div class="flex h-full gap-3">
 															<div class="relative flex-shrink-0">
 																<img
 																	src={processBilibiliImageUrl(video.cover)}
 																	alt={video.title}
-																	class="w-28 h-[63px] rounded object-cover"
+																	class="h-[63px] w-28 rounded object-cover"
 																	loading="lazy"
 																	crossorigin="anonymous"
 																	referrerpolicy="no-referrer"
 																	onerror={handleImageError}
 																/>
 															</div>
-															<div class="min-w-0 flex-1 relative flex flex-col overflow-hidden">
+															<div class="relative flex min-w-0 flex-1 flex-col overflow-hidden">
 																<input
 																	type="checkbox"
 																	checked={selectedSubmissionVideos.has(video.bvid)}
 																	onchange={() => toggleSubmissionVideo(video.bvid)}
-																	class="absolute right-1 top-1 z-10 h-4 w-4 rounded border-gray-300 text-blue-600 dark:text-blue-400 focus:ring-blue-500"
+																	class="absolute top-1 right-1 z-10 h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500 dark:text-blue-400"
 																/>
-																<h4 class="text-sm font-medium text-gray-900 line-clamp-2 mb-1 pr-6 flex-shrink-0">
+																<h4
+																	class="mb-1 line-clamp-2 flex-shrink-0 pr-6 text-sm font-medium text-gray-900"
+																>
 																	{video.title}
 																</h4>
-																<p class="text-xs text-muted-foreground line-clamp-1 mb-2 flex-shrink-0">
+																<p
+																	class="text-muted-foreground mb-2 line-clamp-1 flex-shrink-0 text-xs"
+																>
 																	{video.description || '无简介'}
 																</p>
-																<div class="text-xs text-muted-foreground mt-auto">
-																	<div class="flex items-center gap-2 flex-wrap">
+																<div class="text-muted-foreground mt-auto text-xs">
+																	<div class="flex flex-wrap items-center gap-2">
 																		<span>🎬 {formatSubmissionPlayCount(video.view)}</span>
 																		<span>💬 {formatSubmissionPlayCount(video.danmaku)}</span>
 																		<span>📅 {formatSubmissionDate(video.pubtime)}</span>
@@ -2226,9 +2386,9 @@
 													</div>
 												{/each}
 											</div>
-											
+
 											{#if submissionVideos.length > 0 && submissionTotalCount > 0}
-												<div class="text-center py-4 text-sm text-muted-foreground">
+												<div class="text-muted-foreground py-4 text-center text-sm">
 													已加载全部 {submissionTotalCount} 个视频
 												</div>
 											{/if}
@@ -2236,10 +2396,10 @@
 									</div>
 
 									<!-- 确认按钮 -->
-									<div class="border-t p-4 flex justify-end gap-3 flex-shrink-0">
+									<div class="flex flex-shrink-0 justify-end gap-3 border-t p-4">
 										<button
 											type="button"
-											class="rounded-md border border-gray-300 bg-card px-4 py-2 text-sm font-medium text-foreground hover:bg-muted focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 focus:outline-none"
+											class="bg-card text-foreground hover:bg-muted rounded-md border border-gray-300 px-4 py-2 text-sm font-medium focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 focus:outline-none"
 											onclick={cancelSubmissionSelection}
 										>
 											取消
@@ -2265,7 +2425,7 @@
 <!-- 统一的悬停详情框 -->
 {#if hoveredItem}
 	<div
-		class="pointer-events-none fixed z-50 max-w-md rounded-lg border bg-card p-4 shadow-2xl transition-all duration-150 ease-out"
+		class="bg-card pointer-events-none fixed z-50 max-w-md rounded-lg border p-4 shadow-2xl transition-all duration-150 ease-out"
 		style="left: {mousePosition.x}px; top: {mousePosition.y}px;"
 		transition:fade={{ duration: 200 }}
 	>
@@ -2287,7 +2447,7 @@
 					<div
 						class="{sourceType === 'bangumi'
 							? 'h-32 w-24'
-							: 'h-20 w-32'} flex flex-shrink-0 items-center justify-center rounded bg-muted text-sm text-muted-foreground"
+							: 'h-20 w-32'} bg-muted text-muted-foreground flex flex-shrink-0 items-center justify-center rounded text-sm"
 					>
 						无图片
 					</div>
@@ -2299,14 +2459,14 @@
 							<span
 								class="flex-shrink-0 rounded px-1.5 py-0.5 text-xs {hoveredItem.data.result_type ===
 								'media_bangumi'
-									? 'bg-purple-100 dark:bg-purple-900 text-purple-700 dark:text-purple-300'
+									? 'bg-purple-100 text-purple-700 dark:bg-purple-900 dark:text-purple-300'
 									: hoveredItem.data.result_type === 'media_ft'
 										? 'bg-red-100 text-red-700'
 										: hoveredItem.data.result_type === 'bili_user'
 											? 'bg-blue-100 text-blue-700'
 											: hoveredItem.data.result_type === 'video'
-												? 'bg-green-100 dark:bg-green-900 text-green-700 dark:text-green-300'
-												: 'bg-gray-100 text-foreground'}"
+												? 'bg-green-100 text-green-700 dark:bg-green-900 dark:text-green-300'
+												: 'text-foreground bg-gray-100'}"
 							>
 								{hoveredItem.data.result_type === 'media_bangumi'
 									? '番剧'
@@ -2320,20 +2480,22 @@
 							</span>
 						{/if}
 					</div>
-					<p class="mb-2 text-xs text-muted-foreground">作者：{hoveredItem.data.author}</p>
+					<p class="text-muted-foreground mb-2 text-xs">作者：{hoveredItem.data.author}</p>
 					{#if hoveredItem.data.description}
-						<p class="mb-2 line-clamp-4 text-xs text-muted-foreground">{hoveredItem.data.description}</p>
+						<p class="text-muted-foreground mb-2 line-clamp-4 text-xs">
+							{hoveredItem.data.description}
+						</p>
 					{/if}
 					<div class="flex flex-wrap gap-2 text-xs">
 						{#if hoveredItem.data.play}
-							<span class="flex items-center gap-1 text-muted-foreground">
+							<span class="text-muted-foreground flex items-center gap-1">
 								<span>▶</span> 播放：{hoveredItem.data.play > 10000
 									? (hoveredItem.data.play / 10000).toFixed(1) + '万'
 									: hoveredItem.data.play}
 							</span>
 						{/if}
 						{#if hoveredItem.data.danmaku}
-							<span class="flex items-center gap-1 text-muted-foreground">
+							<span class="text-muted-foreground flex items-center gap-1">
 								<span>💬</span> 弹幕：{hoveredItem.data.danmaku > 10000
 									? (hoveredItem.data.danmaku / 10000).toFixed(1) + '万'
 									: hoveredItem.data.danmaku}
@@ -2362,7 +2524,7 @@
 					/>
 				{:else}
 					<div
-						class="flex h-32 w-24 flex-shrink-0 items-center justify-center rounded bg-muted text-sm text-muted-foreground"
+						class="bg-muted text-muted-foreground flex h-32 w-24 flex-shrink-0 items-center justify-center rounded text-sm"
 					>
 						无封面
 					</div>
@@ -2374,33 +2536,37 @@
 								hoveredItem.data.season_title ||
 								hoveredItem.data.title}
 						</h4>
-						<span class="flex-shrink-0 rounded bg-purple-100 dark:bg-purple-900 px-1.5 py-0.5 text-xs text-purple-700 dark:text-purple-300">
+						<span
+							class="flex-shrink-0 rounded bg-purple-100 px-1.5 py-0.5 text-xs text-purple-700 dark:bg-purple-900 dark:text-purple-300"
+						>
 							番剧
 						</span>
 					</div>
 
 					<div class="space-y-2 text-xs">
 						{#if hoveredItem.data.description}
-							<div class="mb-3 line-clamp-3 text-sm leading-relaxed text-foreground">
+							<div class="text-foreground mb-3 line-clamp-3 text-sm leading-relaxed">
 								{hoveredItem.data.description}
 							</div>
 						{/if}
 
 						<div class="flex flex-wrap gap-3">
 							<span class="text-muted-foreground"
-								>Season ID: <span class="font-mono text-gray-800 dark:text-gray-200">{hoveredItem.data.season_id}</span
+								>Season ID: <span class="font-mono text-gray-800 dark:text-gray-200"
+									>{hoveredItem.data.season_id}</span
 								></span
 							>
 							{#if hoveredItem.data.media_id}
 								<span class="text-muted-foreground"
-									>Media ID: <span class="font-mono text-gray-800 dark:text-gray-200">{hoveredItem.data.media_id}</span
+									>Media ID: <span class="font-mono text-gray-800 dark:text-gray-200"
+										>{hoveredItem.data.media_id}</span
 									></span
 								>
 							{/if}
 						</div>
 
 						{#if hoveredItem.data.episode_count}
-							<div class="flex items-center gap-1 text-muted-foreground">
+							<div class="text-muted-foreground flex items-center gap-1">
 								<span>📺</span> 总集数：{hoveredItem.data.episode_count} 集
 							</div>
 						{/if}
@@ -2483,4 +2649,3 @@
 		background: #a1a1a1;
 	}
 </style>
-

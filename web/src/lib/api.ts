@@ -505,7 +505,9 @@ class ApiClient {
 	 * 获取UP主投稿列表
 	 * @param params 查询参数
 	 */
-	async getSubmissionVideos(params: SubmissionVideosRequest): Promise<ApiResponse<SubmissionVideosResponse>> {
+	async getSubmissionVideos(
+		params: SubmissionVideosRequest
+	): Promise<ApiResponse<SubmissionVideosResponse>> {
 		return this.get<SubmissionVideosResponse>(`/submission/${params.up_id}/videos`, {
 			page: params.page,
 			page_size: params.page_size

@@ -1,5 +1,11 @@
 <script lang="ts">
-	import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription, SheetFooter } from '$lib/components/ui/sheet';
+	import {
+		Sheet,
+		SheetContent,
+		SheetHeader,
+		SheetTitle,
+		SheetDescription
+	} from '$lib/components/ui/sheet';
 
 	export let open: boolean = false;
 	export let onOpenChange: (open: boolean) => void;
@@ -7,7 +13,7 @@
 	export let description: string = '';
 	export let isMobile: boolean = false;
 	export let backgroundImage: string = '';
-	
+
 	let className: string = '';
 	export { className as class };
 </script>
@@ -41,15 +47,21 @@
 					? 'bg-background h-full w-full max-w-none rounded-t-lg'
 					: 'bg-card/95 w-full max-w-4xl rounded-lg border shadow-2xl backdrop-blur-sm'} relative overflow-hidden"
 			>
-				<SheetHeader class="{isMobile ? 'p-4 border-b bg-background/95 backdrop-blur-sm sticky top-0 z-20' : 'border-b p-6'} relative">
-					<SheetTitle class="{isMobile ? 'text-lg' : 'text-xl'}">{title}</SheetTitle>
+				<SheetHeader
+					class="{isMobile
+						? 'bg-background/95 sticky top-0 z-20 border-b p-4 backdrop-blur-sm'
+						: 'border-b p-6'} relative"
+				>
+					<SheetTitle class={isMobile ? 'text-lg' : 'text-xl'}>{title}</SheetTitle>
 					{#if description}
-						<SheetDescription class="{isMobile ? 'text-sm' : ''}">{description}</SheetDescription>
+						<SheetDescription class={isMobile ? 'text-sm' : ''}>{description}</SheetDescription>
 					{/if}
 					<!-- 自定义关闭按钮 -->
 					<button
 						onclick={() => onOpenChange(false)}
-						class="ring-offset-background focus:ring-ring absolute {isMobile ? 'top-3 right-3' : 'top-2 right-2'} rounded-sm p-1 opacity-70 transition-opacity hover:bg-gray-100 hover:opacity-100 focus:ring-2 focus:ring-offset-2 focus:outline-none disabled:pointer-events-none"
+						class="ring-offset-background focus:ring-ring absolute {isMobile
+							? 'top-3 right-3'
+							: 'top-2 right-2'} rounded-sm p-1 opacity-70 transition-opacity hover:bg-gray-100 hover:opacity-100 focus:ring-2 focus:ring-offset-2 focus:outline-none disabled:pointer-events-none"
 						type="button"
 					>
 						<svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
