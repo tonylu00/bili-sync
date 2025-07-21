@@ -99,10 +99,10 @@ pub trait VideoSource {
     fn get_created_at(&self) -> Option<chrono::DateTime<chrono::Utc>> {
         None // 默认实现：没有创建时间信息
     }
-    
+
     /// 获取视频源类型的显示名称
     fn source_type_display(&self) -> String;
-    
+
     /// 获取视频源的显示名称
     fn source_name_display(&self) -> String;
 }

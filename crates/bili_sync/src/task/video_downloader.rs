@@ -289,7 +289,9 @@ pub async fn video_downloader(connection: Arc<DatabaseConnection>) {
                 let cancellation_token = TASK_CONTROLLER.get_cancellation_token().await;
 
                 // 在处理视频源前记录到收集器
-                if let Ok((video_source, _)) = crate::adapter::video_source_from(args, path, &bili_client, &connection).await {
+                if let Ok((video_source, _)) =
+                    crate::adapter::video_source_from(args, path, &bili_client, &connection).await
+                {
                     scan_collector.start_source(&video_source);
                 }
 
@@ -308,7 +310,9 @@ pub async fn video_downloader(connection: Arc<DatabaseConnection>) {
                         if new_video_count > 0 {
                             sources_with_new_content += 1;
                             // 将新增视频信息添加到收集器
-                            if let Ok((video_source, _)) = crate::adapter::video_source_from(args, path, &bili_client, &connection).await {
+                            if let Ok((video_source, _)) =
+                                crate::adapter::video_source_from(args, path, &bili_client, &connection).await
+                            {
                                 scan_collector.add_new_videos(&video_source, new_videos);
                             }
                         }

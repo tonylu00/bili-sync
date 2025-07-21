@@ -99,8 +99,8 @@ impl WebSocketHandler {
                             if task_handle.as_ref().is_none_or(|h: &JoinHandle<()>| h.is_finished()) {
                                 let tx_clone = tx.clone();
                                 task_handle = Some(tokio::spawn(async move {
-                                    let mut stream = WatchStream::new(TASK_STATUS_NOTIFIER.subscribe())
-                                        .map(ServerEvent::Tasks);
+                                    let mut stream =
+                                        WatchStream::new(TASK_STATUS_NOTIFIER.subscribe()).map(ServerEvent::Tasks);
                                     while let Some(event) = stream.next().await {
                                         if let Err(e) = tx_clone.send(event).await {
                                             error!("Failed to send task status: {:?}", e);

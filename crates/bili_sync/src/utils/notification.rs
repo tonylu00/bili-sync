@@ -61,7 +61,7 @@ impl NotificationClient {
             .timeout(Duration::from_secs(config.notification_timeout))
             .build()
             .expect("Failed to create HTTP client");
-            
+
         Self { client, config }
     }
 
@@ -72,8 +72,10 @@ impl NotificationClient {
         }
 
         if summary.total_new_videos < self.config.notification_min_videos {
-            debug!("新增视频数量({})未达到推送阈值({})", 
-                   summary.total_new_videos, self.config.notification_min_videos);
+            debug!(
+                "新增视频数量({})未达到推送阈值({})",
+                summary.total_new_videos, self.config.notification_min_videos
+            );
             return Ok(());
         }
 
@@ -83,7 +85,7 @@ impl NotificationClient {
         };
 
         let (title, content) = self.format_scan_message(summary);
-        
+
         for attempt in 1..=self.config.notification_retry_count {
             match self.send_to_serverchan(key, &title, &content).await {
                 Ok(_) => {
@@ -91,9 +93,11 @@ impl NotificationClient {
                     return Ok(());
                 }
                 Err(e) => {
-                    warn!("推送发送失败 (尝试 {}/{}): {}", 
-                          attempt, self.config.notification_retry_count, e);
-                    
+                    warn!(
+                        "推送发送失败 (尝试 {}/{}): {}",
+                        attempt, self.config.notification_retry_count, e
+                    );
+
                     if attempt < self.config.notification_retry_count {
                         tokio::time::sleep(Duration::from_secs(2)).await;
                     }
@@ -112,11 +116,7 @@ impl NotificationClient {
             desp: content.to_string(),
         };
 
-        let response = self.client
-            .post(&url)
-            .json(&request)
-            .send()
-            .await?;
+        let response = self.client.post(&url).json(&request).send().await?;
 
         let response_text = response.text().await?;
         let server_response: ServerChanResponse = serde_json::from_str(&response_text)
@@ -131,7 +131,7 @@ impl NotificationClient {
 
     fn format_scan_message(&self, summary: &ScanSummary) -> (String, String) {
         let title = "Bili Sync 扫描完成".to_string();
-        
+
         let mut content = format!(
             "📊 **扫描摘要**\n\n- 扫描视频源: {}个\n- 新增视频: {}个\n- 扫描耗时: {:.1}分钟\n\n",
             summary.total_sources,
@@ -141,7 +141,7 @@ impl NotificationClient {
 
         if summary.total_new_videos > 0 {
             content.push_str("📹 **新增视频详情**\n\n");
-            
+
             for source_result in &summary.source_results {
                 if !source_result.new_videos.is_empty() {
                     let icon = match source_result.source_type.as_str() {
@@ -152,7 +152,7 @@ impl NotificationClient {
                         "番剧" => "📺",
                         _ => "📄",
                     };
-                    
+
                     content.push_str(&format!(
                         "{} **{}** - {} ({}个新视频):\n",
                         icon,
@@ -160,7 +160,7 @@ impl NotificationClient {
                         source_result.source_name,
                         source_result.new_videos.len()
                     ));
-                    
+
                     for video in &source_result.new_videos {
                         content.push_str(&format!(
                             "- [{}](https://www.bilibili.com/video/{}) ({})\n",
@@ -183,7 +183,7 @@ impl NotificationClient {
         let title = "Bili Sync 测试推送";
         let content = "这是一条测试推送消息，如果您收到此消息，说明推送配置正确。\n\n🎉 推送功能工作正常！";
 
-        self.send_to_serverchan(key, title, &content).await
+        self.send_to_serverchan(key, title, content).await
     }
 
     pub async fn send_custom_test(&self, message: &str) -> Result<()> {

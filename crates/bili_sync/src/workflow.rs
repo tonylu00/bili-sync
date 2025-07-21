@@ -34,8 +34,8 @@ use crate::utils::model::{
     get_failed_videos_in_current_cycle, update_pages_model, update_videos_model,
 };
 use crate::utils::nfo::NFO;
-use crate::utils::status::{PageStatus, VideoStatus, STATUS_OK};
 use crate::utils::notification::NewVideoInfo;
+use crate::utils::status::{PageStatus, VideoStatus, STATUS_OK};
 
 /// 检测并处理需要自动删除的错误（主要是87007充电专享视频错误）
 ///
@@ -214,19 +214,20 @@ pub async fn process_video_source(
     };
 
     // 从视频流中获取新视频的简要信息，写入数据库，并获取新增视频数量和信息
-    let (new_video_count, new_videos) = match refresh_video_source(&video_source, video_streams, connection, token.clone()).await {
-        Ok(result) => result,
-        Err(e) => {
-            let error_msg = format!("{:#}", e);
-            if retry_with_refresh(error_msg).await.is_ok() {
-                // 刷新成功，重新获取视频流并重试
-                let (_, video_streams) = video_source_from(args, path, bili_client, connection).await?;
-                refresh_video_source(&video_source, video_streams, connection, token.clone()).await?
-            } else {
-                return Err(e);
+    let (new_video_count, new_videos) =
+        match refresh_video_source(&video_source, video_streams, connection, token.clone()).await {
+            Ok(result) => result,
+            Err(e) => {
+                let error_msg = format!("{:#}", e);
+                if retry_with_refresh(error_msg).await.is_ok() {
+                    // 刷新成功，重新获取视频流并重试
+                    let (_, video_streams) = video_source_from(args, path, bili_client, connection).await?;
+                    refresh_video_source(&video_source, video_streams, connection, token.clone()).await?
+                } else {
+                    return Err(e);
+                }
             }
-        }
-    };
+        };
 
     // 单独请求视频详情接口，获取视频的详情信息与所有的分页，写入数据库
     if let Err(e) = fetch_video_details(bili_client, &video_source, connection, token.clone()).await {
@@ -311,7 +312,7 @@ pub async fn refresh_video_source<'a>(
         .chunks(10);
     let mut count = 0;
     let mut new_videos = Vec::new();
-    
+
     while let Some(videos_info) = video_streams.next().await {
         // 获取插入前的视频数量
         let before_count = get_video_count_for_source(video_source, connection).await?;
@@ -320,38 +321,32 @@ pub async fn refresh_video_source<'a>(
         let mut temp_video_infos = Vec::new();
         for video_info in &videos_info {
             let (title, bvid, upper_name) = match video_info {
-                VideoInfo::Detail { title, bvid, upper, .. } => {
-                    (title.clone(), bvid.clone(), upper.name.clone())
-                },
-                VideoInfo::Favorite { title, bvid, upper, .. } => {
-                    (title.clone(), bvid.clone(), upper.name.clone())
-                },
+                VideoInfo::Detail { title, bvid, upper, .. } => (title.clone(), bvid.clone(), upper.name.clone()),
+                VideoInfo::Favorite { title, bvid, upper, .. } => (title.clone(), bvid.clone(), upper.name.clone()),
                 VideoInfo::Collection { bvid, .. } => {
                     // Collection 没有 title 和 upper，使用默认值
                     ("未知".to_string(), bvid.clone(), "未知".to_string())
-                },
-                VideoInfo::WatchLater { title, bvid, upper, .. } => {
-                    (title.clone(), bvid.clone(), upper.name.clone())
-                },
+                }
+                VideoInfo::WatchLater { title, bvid, upper, .. } => (title.clone(), bvid.clone(), upper.name.clone()),
                 VideoInfo::Submission { title, bvid, .. } => {
                     // Submission 没有 upper 信息，使用默认值
                     (title.clone(), bvid.clone(), "未知".to_string())
-                },
+                }
                 VideoInfo::Bangumi { title, bvid, .. } => {
                     // Bangumi 没有 upper 信息，使用番剧名称
                     (title.clone(), bvid.clone(), "番剧".to_string())
-                },
+                }
             };
             temp_video_infos.push((title, bvid, upper_name));
         }
-        
+
         create_videos(videos_info, video_source, connection).await?;
 
         // 获取插入后的视频数量，计算实际新增数量
         let after_count = get_video_count_for_source(video_source, connection).await?;
         let new_count = after_count - before_count;
         count += new_count;
-        
+
         // 如果有新增视频，收集视频信息
         if new_count > 0 {
             for (title, bvid, upper_name) in temp_video_infos.iter().take(new_count) {

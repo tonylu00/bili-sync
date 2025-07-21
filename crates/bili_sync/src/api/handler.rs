@@ -9261,23 +9261,27 @@ pub async fn test_notification_handler(
     axum::Json(request): axum::Json<crate::api::request::TestNotificationRequest>,
 ) -> Result<ApiResponse<crate::api::response::TestNotificationResponse>, ApiError> {
     let config = crate::config::reload_config().notification;
-    
+
     if !config.enable_scan_notifications {
-        return Ok(ApiResponse::bad_request(crate::api::response::TestNotificationResponse {
-            success: false,
-            message: "推送通知功能未启用".to_string(),
-        }));
+        return Ok(ApiResponse::bad_request(
+            crate::api::response::TestNotificationResponse {
+                success: false,
+                message: "推送通知功能未启用".to_string(),
+            },
+        ));
     }
 
     if config.serverchan_key.is_none() {
-        return Ok(ApiResponse::bad_request(crate::api::response::TestNotificationResponse {
-            success: false,
-            message: "未配置Server酱密钥".to_string(),
-        }));
+        return Ok(ApiResponse::bad_request(
+            crate::api::response::TestNotificationResponse {
+                success: false,
+                message: "未配置Server酱密钥".to_string(),
+            },
+        ));
     }
 
     let client = crate::utils::notification::NotificationClient::new(config);
-    
+
     match if let Some(custom_msg) = request.custom_message {
         client.send_custom_test(&custom_msg).await
     } else {
@@ -9287,10 +9291,12 @@ pub async fn test_notification_handler(
             success: true,
             message: "测试推送发送成功".to_string(),
         })),
-        Err(e) => Ok(ApiResponse::bad_request(crate::api::response::TestNotificationResponse {
-            success: false,
-            message: format!("推送发送失败: {}", e),
-        })),
+        Err(e) => Ok(ApiResponse::bad_request(
+            crate::api::response::TestNotificationResponse {
+                success: false,
+                message: format!("推送发送失败: {}", e),
+            },
+        )),
     }
 }
 
@@ -9303,9 +9309,10 @@ pub async fn test_notification_handler(
         (status = 500, description = "服务器内部错误", body = String)
     )
 )]
-pub async fn get_notification_config() -> Result<ApiResponse<crate::api::response::NotificationConfigResponse>, ApiError> {
+pub async fn get_notification_config() -> Result<ApiResponse<crate::api::response::NotificationConfigResponse>, ApiError>
+{
     let config = crate::config::reload_config().notification;
-    
+
     Ok(ApiResponse::ok(crate::api::response::NotificationConfigResponse {
         serverchan_key: config.serverchan_key,
         enable_scan_notifications: config.enable_scan_notifications,
@@ -9331,9 +9338,9 @@ pub async fn update_notification_config(
     axum::Json(request): axum::Json<crate::api::request::UpdateNotificationConfigRequest>,
 ) -> Result<ApiResponse<String>, ApiError> {
     use crate::config::ConfigManager;
-    
+
     let config_manager = ConfigManager::new(db.as_ref().clone());
-    
+
     // 更新配置字段
     if let Some(key) = request.serverchan_key {
         let value = if key.trim().is_empty() {
@@ -9346,49 +9353,61 @@ pub async fn update_notification_config(
             .await
             .map_err(|e| ApiError::from(anyhow!("更新Server酱密钥失败: {}", e)))?;
     }
-    
+
     if let Some(enabled) = request.enable_scan_notifications {
         config_manager
-            .update_config_item("notification.enable_scan_notifications", serde_json::Value::Bool(enabled))
+            .update_config_item(
+                "notification.enable_scan_notifications",
+                serde_json::Value::Bool(enabled),
+            )
             .await
             .map_err(|e| ApiError::from(anyhow!("更新推送启用状态失败: {}", e)))?;
     }
-    
+
     if let Some(min_videos) = request.notification_min_videos {
-        if min_videos < 1 || min_videos > 100 {
+        if !(1..=100).contains(&min_videos) {
             return Err(ApiError::from(anyhow!("推送阈值必须在1-100之间")));
         }
         config_manager
-            .update_config_item("notification.notification_min_videos", serde_json::Value::Number(min_videos.into()))
+            .update_config_item(
+                "notification.notification_min_videos",
+                serde_json::Value::Number(min_videos.into()),
+            )
             .await
             .map_err(|e| ApiError::from(anyhow!("更新推送阈值失败: {}", e)))?;
     }
-    
+
     if let Some(timeout) = request.notification_timeout {
-        if timeout < 5 || timeout > 60 {
+        if !(5..=60).contains(&timeout) {
             return Err(ApiError::from(anyhow!("超时时间必须在5-60秒之间")));
         }
         config_manager
-            .update_config_item("notification.notification_timeout", serde_json::Value::Number(timeout.into()))
+            .update_config_item(
+                "notification.notification_timeout",
+                serde_json::Value::Number(timeout.into()),
+            )
             .await
             .map_err(|e| ApiError::from(anyhow!("更新超时时间失败: {}", e)))?;
     }
-    
+
     if let Some(retry_count) = request.notification_retry_count {
-        if retry_count < 1 || retry_count > 5 {
+        if !(1..=5).contains(&retry_count) {
             return Err(ApiError::from(anyhow!("重试次数必须在1-5次之间")));
         }
         config_manager
-            .update_config_item("notification.notification_retry_count", serde_json::Value::Number(retry_count.into()))
+            .update_config_item(
+                "notification.notification_retry_count",
+                serde_json::Value::Number(retry_count.into()),
+            )
             .await
             .map_err(|e| ApiError::from(anyhow!("更新重试次数失败: {}", e)))?;
     }
-    
+
     // 重新加载配置
     crate::config::reload_config_bundle()
         .await
         .map_err(|e| ApiError::from(anyhow!("重新加载配置失败: {}", e)))?;
-    
+
     Ok(ApiResponse::ok("推送配置更新成功".to_string()))
 }
 
@@ -9401,17 +9420,18 @@ pub async fn update_notification_config(
         (status = 500, description = "服务器内部错误", body = String)
     )
 )]
-pub async fn get_notification_status() -> Result<ApiResponse<crate::api::response::NotificationStatusResponse>, ApiError> {
+pub async fn get_notification_status() -> Result<ApiResponse<crate::api::response::NotificationStatusResponse>, ApiError>
+{
     let config = crate::config::reload_config().notification;
-    
+
     // 这里可以从数据库或缓存中获取推送统计信息
     let status = crate::api::response::NotificationStatusResponse {
         configured: config.serverchan_key.is_some(),
         enabled: config.enable_scan_notifications,
         last_notification_time: None, // TODO: 从存储中获取
-        total_notifications_sent: 0,   // TODO: 从存储中获取
-        last_error: None,              // TODO: 从存储中获取
+        total_notifications_sent: 0,  // TODO: 从存储中获取
+        last_error: None,             // TODO: 从存储中获取
     };
-    
+
     Ok(ApiResponse::ok(status))
 }

@@ -259,19 +259,19 @@ impl NotificationConfig {
         if self.enable_scan_notifications && self.serverchan_key.is_none() {
             return Err("启用推送通知时必须配置Server酱密钥".to_string());
         }
-        
+
         if self.notification_min_videos == 0 {
             return Err("推送阈值必须大于0".to_string());
         }
-        
+
         if self.notification_timeout < 5 || self.notification_timeout > 60 {
             return Err("推送超时时间必须在5-60秒之间".to_string());
         }
-        
+
         if self.notification_retry_count < 1 || self.notification_retry_count > 5 {
             return Err("推送重试次数必须在1-5次之间".to_string());
         }
-        
+
         Ok(())
     }
 }

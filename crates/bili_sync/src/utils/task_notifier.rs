@@ -17,7 +17,6 @@ pub struct TaskStatusNotifier {
     rx: tokio::sync::watch::Receiver<Arc<TaskStatus>>,
 }
 
-
 impl TaskStatusNotifier {
     pub fn new() -> Self {
         let (tx, rx) = tokio::sync::watch::channel(Arc::new(TaskStatus::default()));

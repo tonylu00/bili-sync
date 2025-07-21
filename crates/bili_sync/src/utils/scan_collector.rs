@@ -24,14 +24,14 @@ impl ScanCollector {
     /// 记录一个视频源的扫描开始
     pub fn start_source(&mut self, video_source: &VideoSourceEnum) {
         self.total_sources += 1;
-        
+
         let key = self.get_source_key(video_source);
         let result = SourceScanResult {
             source_type: video_source.source_type_display(),
             source_name: video_source.source_name_display(),
             new_videos: Vec::new(),
         };
-        
+
         self.source_results.insert(key, result);
     }
 
@@ -55,14 +55,9 @@ impl ScanCollector {
     /// 生成扫描摘要
     pub fn generate_summary(self) -> ScanSummary {
         let scan_duration = self.start_time.elapsed();
-        let total_new_videos = self.source_results
-            .values()
-            .map(|result| result.new_videos.len())
-            .sum();
+        let total_new_videos = self.source_results.values().map(|result| result.new_videos.len()).sum();
 
-        let source_results = self.source_results
-            .into_values()
-            .collect();
+        let source_results = self.source_results.into_values().collect();
 
         ScanSummary {
             total_sources: self.total_sources,
@@ -75,15 +70,16 @@ impl ScanCollector {
     /// 获取当前总的新增视频数量
     #[allow(dead_code)]
     pub fn total_new_videos(&self) -> usize {
-        self.source_results
-            .values()
-            .map(|result| result.new_videos.len())
-            .sum()
+        self.source_results.values().map(|result| result.new_videos.len()).sum()
     }
 
     /// 生成视频源的唯一键
     fn get_source_key(&self, video_source: &VideoSourceEnum) -> String {
-        format!("{}:{}", video_source.source_type_display(), video_source.source_name_display())
+        format!(
+            "{}:{}",
+            video_source.source_type_display(),
+            video_source.source_name_display()
+        )
     }
 }
 

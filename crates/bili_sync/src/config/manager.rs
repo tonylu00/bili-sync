@@ -103,11 +103,11 @@ impl ConfigManager {
     fn build_config_from_map(&self, config_map: HashMap<String, Value>) -> Result<Config> {
         // 将扁平化的配置映射转换为嵌套结构
         let mut nested_map = serde_json::Map::new();
-        
+
         for (key, value) in config_map {
             // 处理嵌套键，如 "notification.enable_scan_notifications"
             let parts: Vec<&str> = key.split('.').collect();
-            
+
             if parts.len() == 1 {
                 // 顶级键，直接插入
                 nested_map.insert(key, value);
@@ -116,33 +116,33 @@ impl ConfigManager {
                 Self::insert_nested(&mut nested_map, &parts, value);
             }
         }
-        
+
         // 将嵌套映射转换为配置对象
         let config_json = Value::Object(nested_map);
         let config: Config = serde_json::from_value(config_json).context("从数据库数据构建配置对象失败")?;
 
         Ok(config)
     }
-    
+
     /// 递归插入嵌套值
     fn insert_nested(map: &mut serde_json::Map<String, Value>, parts: &[&str], value: Value) {
         if parts.is_empty() {
             return;
         }
-        
+
         if parts.len() == 1 {
             map.insert(parts[0].to_string(), value);
             return;
         }
-        
+
         let key = parts[0];
         let remaining = &parts[1..];
-        
+
         // 确保当前键存在且是对象
         if !map.contains_key(key) {
             map.insert(key.to_string(), Value::Object(serde_json::Map::new()));
         }
-        
+
         // 递归处理剩余部分
         if let Some(Value::Object(nested)) = map.get_mut(key) {
             Self::insert_nested(nested, remaining, value);
