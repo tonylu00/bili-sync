@@ -166,7 +166,7 @@
 			<p class="text-gray-600">首次使用需要进行初始设置</p>
 			<div class="mt-4 flex justify-center">
 				<div class="flex items-center space-x-2">
-					{#each Array(totalSteps) as _, i}
+					{#each Array(totalSteps) as _step, i}
 						<div
 							class="h-2 w-8 rounded-full {currentStep > i
 								? 'bg-blue-500'

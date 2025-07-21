@@ -18,8 +18,8 @@
 	let videoData: VideoResponse | null = null;
 	let loading = false;
 	let error: string | null = null;
-	let resetDialogOpen = false;
-	let resetting = false;
+	let _resetDialogOpen = false;
+	let _resetting = false;
 	let statusEditorOpen = false;
 	let statusEditorLoading = false;
 	let showVideoPlayer = false;
@@ -27,16 +27,14 @@
 	let onlinePlayMode = false; // false: 本地播放, true: 在线播放
 	let onlinePlayInfo: any = null;
 	let loadingPlayInfo = false;
-	let isFullscreen = false; // 是否全屏模式
+	let _isFullscreen = false; // 是否全屏模式
 	let deleteDialogOpen = false;
 	let deleting = false;
 
 	// 响应式相关
 	let innerWidth: number;
 	let isMobile: boolean = false;
-	let isTablet: boolean = false;
 	$: isMobile = innerWidth < 768; // sm断点
-	$: isTablet = innerWidth >= 768 && innerWidth < 1024; // md断点
 
 	// 根据视频类型动态生成任务名称
 	$: videoTaskNames = (() => {
@@ -53,7 +51,7 @@
 	})();
 
 	// 检查视频是否可播放（分P下载任务已完成）
-	function isVideoPlayable(video: any): boolean {
+	function _isVideoPlayable(video: any): boolean {
 		if (video && video.download_status && Array.isArray(video.download_status)) {
 			// 检查第5个任务（分P下载，索引4）是否完成（状态为7）
 			return video.download_status[4] === 7;

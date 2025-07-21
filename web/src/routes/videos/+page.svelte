@@ -327,7 +327,7 @@
 			</div>
 
 			<div class="space-y-3">
-				{#each Object.entries(VIDEO_SOURCES) as [sourceKey, sourceConfig]}
+				{#each Object.entries(VIDEO_SOURCES) as [_sourceKey, sourceConfig]}
 					{@const sources = videoSources[sourceConfig.type]}
 					{#if sources && sources.length > 0}
 						<div class="space-y-2">
@@ -337,7 +337,7 @@
 								<Badge variant="outline" class="text-xs">{sources.length}</Badge>
 							</div>
 							<div class="flex flex-wrap gap-1">
-								{#each sources as source}
+								{#each sources as source (source.id)}
 									<Button
 										variant={selectedSourceType === sourceConfig.type &&
 										selectedSourceId === source.id.toString()
