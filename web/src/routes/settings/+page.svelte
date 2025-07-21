@@ -32,7 +32,8 @@
 		SettingsIcon,
 		ShieldIcon,
 		VideoIcon,
-		PaletteIcon
+		PaletteIcon,
+		BellIcon
 	} from 'lucide-svelte';
 	import { onMount } from 'svelte';
 	import { toast } from 'svelte-sonner';
@@ -106,6 +107,12 @@
 			title: '界面设置',
 			description: '主题模式、显示选项等界面配置',
 			icon: PaletteIcon
+		},
+		{
+			id: 'notification',
+			title: '推送通知',
+			description: '扫描完成推送、Server酱配置',
+			icon: BellIcon
 		},
 		{
 			id: 'system',
@@ -202,6 +209,19 @@
 
 	// 番剧目录结构配置
 	let bangumiUseSeasonStructure = false;
+
+	// 推送通知配置
+	let notificationEnabled = false;
+	let serverchanKey = '';
+	let notificationMinVideos = 1;
+	let notificationSaving = false;
+	let notificationStatus: {
+		configured: boolean;
+		enabled: boolean;
+		last_notification_time: string | null;
+		total_notifications_sent: number;
+		last_error: string | null;
+	} | null = null;
 
 	// 显示帮助信息的状态（在文件命名抽屉中使用）
 	let showHelp = false;
@@ -353,6 +373,10 @@
 		await loadRandomCovers();
 		// 检查当前用户信息
 		await checkCurrentUser();
+		// 加载推送通知状态
+		await loadNotificationStatus();
+		// 加载推送通知配置
+		await loadNotificationConfig();
 	});
 
 	async function loadRandomCovers() {
@@ -717,6 +741,89 @@
 		} catch (error) {
 			console.error('检查用户信息失败:', error);
 			currentUser = null;
+		}
+	}
+
+	// 加载推送通知状态
+	async function loadNotificationStatus() {
+		try {
+			const response = await api.getNotificationStatus();
+			console.log('推送通知状态响应:', response);
+			if (response.data) {
+				notificationStatus = response.data;
+				notificationEnabled = response.data.enabled;
+				// min_videos 需要从配置中获取，状态API不返回这个值
+				console.log('notificationStatus:', notificationStatus);
+			}
+		} catch (error) {
+			console.error('加载推送通知状态失败:', error);
+		}
+	}
+
+	// 保存推送通知配置
+	async function saveNotificationConfig() {
+		notificationSaving = true;
+		try {
+			const config: any = {
+				enable_scan_notifications: notificationEnabled,
+				notification_min_videos: notificationMinVideos
+			};
+
+			// 只有输入了新密钥时才更新
+			if (serverchanKey.trim()) {
+				config.serverchan_key = serverchanKey.trim();
+			}
+
+			const response = await api.updateNotificationConfig(config);
+			// 检查响应状态码，后端返回 {status_code: 200, data: "推送配置更新成功"}
+			if (response.status_code === 200) {
+				toast.success('推送通知配置保存成功');
+				// 重新加载状态
+				await loadNotificationStatus();
+				openSheet = null; // 关闭抽屉
+			} else {
+				toast.error('保存失败', { description: response.data || '未知错误' });
+			}
+		} catch (error: any) {
+			console.error('保存推送通知配置失败:', error);
+			toast.error('保存失败', { description: error.message });
+		} finally {
+			notificationSaving = false;
+		}
+	}
+
+	// 加载推送通知配置
+	async function loadNotificationConfig() {
+		try {
+			const response = await api.getNotificationConfig();
+			console.log('推送通知配置响应:', response);
+			if (response.data) {
+				// 不覆盖密钥，只加载其他配置
+				notificationEnabled = response.data.enable_scan_notifications;
+				notificationMinVideos = response.data.notification_min_videos;
+				console.log('加载的配置值:', {
+					enabled: notificationEnabled,
+					minVideos: notificationMinVideos
+				});
+			}
+		} catch (error) {
+			console.error('加载推送通知配置失败:', error);
+		}
+	}
+
+	// 测试推送通知
+	async function testNotification() {
+		try {
+			const response = await api.testNotification();
+			// 检查响应状态码
+			if (response.status_code === 200) {
+				toast.success('测试推送发送成功', { description: '请检查您的推送接收端' });
+			} else {
+				toast.error('测试推送失败', { description: response.data || '未知错误' });
+			}
+		} catch (error: any) {
+			console.error('测试推送失败:', error);
+			toast.error('测试推送失败', { description: error.message });
 		}
 	}
 </script>
@@ -2792,6 +2899,200 @@
 					<SheetFooter class={isMobile ? 'pb-safe border-t px-4 pt-3' : 'pb-safe border-t pt-4'}>
 						<Button type="submit" disabled={saving} class="w-full">
 							{saving ? '保存中...' : '保存设置'}
+						</Button>
+					</SheetFooter>
+				</form>
+			</div>
+		</div>
+	</SheetContent>
+</Sheet>
+
+<!-- 推送通知设置抽屉片段 -->
+<Sheet
+	open={openSheet === 'notification'}
+	onOpenChange={(open) => {
+		if (!open) openSheet = null;
+	}}
+>
+	<SheetContent
+		side={isMobile ? 'bottom' : 'right'}
+		class="{isMobile
+			? 'h-[90vh] max-h-[90vh] w-full max-w-none overflow-hidden'
+			: '!inset-y-0 !right-0 !h-screen !w-screen !max-w-none'} [&>button]:hidden"
+	>
+		{#if !isMobile && randomCovers.length > 0}
+			<!-- 电脑端背景图 -->
+			<div class="absolute inset-0 z-0 overflow-hidden">
+				<img
+					src={randomCovers[(currentBackgroundIndex + 8) % randomCovers.length]}
+					alt="背景"
+					class="h-full w-full object-cover"
+					style="opacity: 0.6; filter: contrast(1.1) brightness(0.9);"
+					loading="lazy"
+				/>
+				<div
+					class="absolute inset-0"
+					style="background: linear-gradient(to bottom right, rgba(255,255,255,0.85), rgba(255,255,255,0.5));"
+				></div>
+			</div>
+		{/if}
+		<div class="flex h-full items-center justify-center {isMobile ? '' : 'p-8'} relative z-10">
+			<div
+				class="{isMobile
+					? 'bg-background h-full w-full max-w-none'
+					: 'bg-card/95 w-full max-w-4xl rounded-lg border shadow-2xl backdrop-blur-sm'} relative overflow-hidden"
+			>
+				<SheetHeader class="{isMobile ? 'border-b p-4' : 'border-b p-6'} relative">
+					<SheetTitle>推送通知设置</SheetTitle>
+					<SheetDescription>配置扫描完成推送通知</SheetDescription>
+					<!-- 自定义关闭按钮 -->
+					<button
+						onclick={() => (openSheet = null)}
+						class="ring-offset-background focus:ring-ring absolute top-2 right-2 rounded-sm p-1 opacity-70 transition-opacity hover:bg-gray-100 hover:opacity-100 focus:ring-2 focus:ring-offset-2 focus:outline-none disabled:pointer-events-none"
+						type="button"
+					>
+						<svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+							<path
+								stroke-linecap="round"
+								stroke-linejoin="round"
+								stroke-width="2"
+								d="M6 18L18 6M6 6l12 12"
+							/>
+						</svg>
+						<span class="sr-only">关闭</span>
+					</button>
+				</SheetHeader>
+				<form
+					onsubmit={(e) => {
+						e.preventDefault();
+						saveNotificationConfig();
+					}}
+					class="flex flex-col {isMobile ? 'h-[calc(90vh-8rem)]' : 'h-[calc(100vh-12rem)]'}"
+				>
+					<div class="flex-1 space-y-6 overflow-y-auto {isMobile ? 'px-4 py-4' : 'px-6 py-6'}">
+						<!-- 推送状态卡片 -->
+						{#if notificationStatus}
+							<div class="rounded-lg border {notificationStatus.configured ? 'border-green-200 bg-green-50' : 'border-amber-200 bg-amber-50'} p-4">
+								<div class="flex items-center space-x-2">
+									{#if notificationStatus.configured}
+										<Badge variant="default" class="bg-green-500">已配置</Badge>
+										<span class="text-sm text-green-700">Server酱已配置，可以接收推送通知</span>
+									{:else}
+										<Badge variant="secondary">未配置</Badge>
+										<span class="text-sm text-amber-700">请配置Server酱密钥以启用推送功能</span>
+									{/if}
+								</div>
+							</div>
+						{/if}
+
+						<!-- 启用推送通知 -->
+						<div class="space-y-4">
+							<div class="flex items-center space-x-2">
+								<input
+									type="checkbox"
+									id="notification-enabled"
+									bind:checked={notificationEnabled}
+									class="text-primary focus:ring-primary h-4 w-4 rounded border-gray-300"
+								/>
+								<Label
+									for="notification-enabled"
+									class="text-sm leading-none font-medium peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
+								>
+									启用扫描完成推送通知
+								</Label>
+							</div>
+							<p class="text-muted-foreground text-sm">
+								当扫描完成且有新视频时，通过Server酱发送推送通知到您的微信
+							</p>
+						</div>
+
+						<!-- Server酱配置 -->
+						<div class="space-y-4">
+							<h3 class="text-base font-semibold">Server酱配置</h3>
+							
+							<div class="space-y-2">
+								<Label for="serverchan-key">Server酱 SendKey</Label>
+								<Input
+									id="serverchan-key"
+									type="password"
+									bind:value={serverchanKey}
+									placeholder={notificationStatus?.configured ? "已配置（留空保持不变）" : "请输入Server酱密钥"}
+								/>
+								<p class="text-muted-foreground text-sm">
+									从 <a href="https://sct.ftqq.com/" target="_blank" class="text-primary hover:underline">sct.ftqq.com</a> 获取您的SendKey
+								</p>
+							</div>
+
+							<div class="space-y-2">
+								<Label for="min-videos">最小视频数阈值</Label>
+								<Input
+									id="min-videos"
+									type="number"
+									bind:value={notificationMinVideos}
+									min="1"
+									max="100"
+									placeholder="1"
+								/>
+								<p class="text-muted-foreground text-sm">
+									只有新增视频数量达到此阈值时才会发送推送通知
+								</p>
+							</div>
+						</div>
+
+						<!-- 测试推送 -->
+						{#if notificationStatus?.configured}
+							<div class="rounded-lg border border-blue-200 bg-blue-50 p-4">
+								<h4 class="mb-3 font-medium text-blue-800">测试推送</h4>
+								<p class="mb-3 text-sm text-blue-700">
+									发送一条测试消息到您的推送接收端，验证配置是否正确
+								</p>
+								<Button
+									type="button"
+									variant="outline"
+									size="sm"
+									onclick={testNotification}
+								>
+									发送测试推送
+								</Button>
+							</div>
+						{/if}
+
+						<!-- 使用说明 -->
+						<div class="rounded-lg border border-gray-200 bg-gray-50 p-4">
+							<h4 class="mb-3 font-medium text-gray-800">使用说明</h4>
+							<ol class="space-y-2 text-sm text-gray-600 list-decimal list-inside">
+								<li>访问 <a href="https://sct.ftqq.com/" target="_blank" class="text-primary hover:underline">Server酱官网</a> 注册账号</li>
+								<li>登录后在"SendKey"页面获取您的密钥</li>
+								<li>将密钥填入上方输入框并保存</li>
+								<li>使用测试按钮验证推送是否正常</li>
+								<li>扫描完成后，如果有新视频将自动推送到您的微信</li>
+							</ol>
+						</div>
+
+						<!-- 推送内容示例 -->
+						<div class="rounded-lg border border-purple-200 bg-purple-50 p-4">
+							<h4 class="mb-3 font-medium text-purple-800">推送内容示例</h4>
+							<div class="space-y-2 text-sm text-purple-700 font-mono">
+								<p><strong>标题：</strong>Bili Sync 扫描完成</p>
+								<p><strong>内容：</strong></p>
+								<div class="ml-4 space-y-1">
+									<p>📊 扫描摘要</p>
+									<p>- 扫描视频源: 5个</p>
+									<p>- 新增视频: 12个</p>
+									<p>- 扫描耗时: 3.5分钟</p>
+									<p></p>
+									<p>📹 新增视频详情</p>
+									<p>🎬 收藏夹 - 我的收藏 (3个新视频)</p>
+									<p>- 视频标题1 (BV1xx...)</p>
+									<p>- 视频标题2 (BV1yy...)</p>
+									<p>...</p>
+								</div>
+							</div>
+						</div>
+					</div>
+					<SheetFooter class={isMobile ? 'pb-safe border-t px-4 pt-3' : 'pb-safe border-t pt-4'}>
+						<Button type="submit" disabled={notificationSaving} class="w-full">
+							{notificationSaving ? '保存中...' : '保存设置'}
 						</Button>
 					</SheetFooter>
 				</form>

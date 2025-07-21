@@ -520,6 +520,74 @@ class ApiClient {
 	async getDashboard(): Promise<ApiResponse<DashBoardResponse>> {
 		return this.get<DashBoardResponse>('/dashboard');
 	}
+
+	/**
+	 * 获取推送通知状态
+	 */
+	async getNotificationStatus(): Promise<ApiResponse<{
+		configured: boolean;
+		enabled: boolean;
+		last_notification_time: string | null;
+		total_notifications_sent: number;
+		last_error: string | null;
+	}>> {
+		return this.get<{
+			configured: boolean;
+			enabled: boolean;
+			last_notification_time: string | null;
+			total_notifications_sent: number;
+			last_error: string | null;
+		}>('/notification/status');
+	}
+
+	/**
+	 * 获取推送通知配置
+	 */
+	async getNotificationConfig(): Promise<ApiResponse<{
+		enable_scan_notifications: boolean;
+		serverchan_key?: string;
+		notification_min_videos: number;
+		notification_timeout: number;
+		notification_retry_count: number;
+	}>> {
+		return this.get<{
+			enable_scan_notifications: boolean;
+			serverchan_key?: string;
+			notification_min_videos: number;
+			notification_timeout: number;
+			notification_retry_count: number;
+		}>('/config/notification');
+	}
+
+	/**
+	 * 更新推送通知配置
+	 */
+	async updateNotificationConfig(config: {
+		enable_scan_notifications?: boolean;
+		serverchan_key?: string;
+		notification_min_videos?: number;
+	}): Promise<ApiResponse<{
+		success: boolean;
+		message: string;
+	}>> {
+		return this.post<{
+			success: boolean;
+			message: string;
+		}>('/config/notification', config);
+	}
+
+	/**
+	 * 测试推送通知
+	 */
+	async testNotification(message?: string): Promise<ApiResponse<{
+		success: boolean;
+		message: string;
+	}>> {
+		return this.post<{
+			success: boolean;
+			message: string;
+		}>('/notification/test', { message });
+	}
 }
 
 // 创建默认的 API 客户端实例
@@ -727,6 +795,30 @@ export const api = {
 	 * 获取仪表盘数据
 	 */
 	getDashboard: () => apiClient.getDashboard(),
+
+	/**
+	 * 获取推送通知状态
+	 */
+	getNotificationStatus: () => apiClient.getNotificationStatus(),
+
+	/**
+	 * 获取推送通知配置
+	 */
+	getNotificationConfig: () => apiClient.getNotificationConfig(),
+
+	/**
+	 * 更新推送通知配置
+	 */
+	updateNotificationConfig: (config: {
+		enable_scan_notifications?: boolean;
+		serverchan_key?: string;
+		notification_min_videos?: number;
+	}) => apiClient.updateNotificationConfig(config),
+
+	/**
+	 * 测试推送通知
+	 */
+	testNotification: (message?: string) => apiClient.testNotification(message),
 
 	/**
 	 * 订阅系统信息WebSocket事件
