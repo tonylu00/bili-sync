@@ -37,7 +37,7 @@
 	} from 'lucide-svelte';
 	import { onMount } from 'svelte';
 	import { toast } from 'svelte-sonner';
-	import { theme, setTheme, type Theme } from '$lib/stores/theme';
+	import { theme, setTheme, isDark, type Theme } from '$lib/stores/theme';
 	import ThemeToggle from '$lib/components/theme-toggle.svelte';
 
 	let config: ConfigResponse | null = null;
@@ -907,7 +907,7 @@
 				/>
 				<div
 					class="absolute inset-0"
-					style="background: linear-gradient(to bottom right, rgba(255,255,255,0.85), rgba(255,255,255,0.5));"
+					style="background: linear-gradient(to bottom right, {$isDark ? 'rgba(0,0,0,0.85), rgba(0,0,0,0.5)' : 'rgba(255,255,255,0.85), rgba(255,255,255,0.5)'});"
 				></div>
 			</div>
 		{/if}
@@ -923,7 +923,7 @@
 					<!-- 自定义关闭按钮 -->
 					<button
 						onclick={() => (openSheet = null)}
-						class="ring-offset-background focus:ring-ring absolute top-2 right-2 rounded-sm p-1 opacity-70 transition-opacity hover:bg-gray-100 hover:opacity-100 focus:ring-2 focus:ring-offset-2 focus:outline-none disabled:pointer-events-none"
+						class="ring-offset-background focus:ring-ring absolute top-2 right-2 rounded-sm p-1 opacity-70 transition-opacity hover:bg-gray-100 dark:hover:bg-gray-800 hover:opacity-100 focus:ring-2 focus:ring-offset-2 focus:outline-none disabled:pointer-events-none"
 						type="button"
 					>
 						<svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -952,65 +952,65 @@
 							<button
 								type="button"
 								onclick={() => (showHelp = !showHelp)}
-								class="text-sm text-blue-600 hover:text-blue-800"
+								class="text-sm text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300"
 							>
 								{showHelp ? '隐藏' : '显示'}变量说明
 							</button>
 						</div>
 
 						{#if showHelp}
-							<div class="rounded-lg border border-blue-200 bg-blue-50 p-4">
+							<div class="rounded-lg border border-blue-200 dark:border-blue-800 bg-blue-50 dark:bg-blue-950/20 p-4">
 								<div
 									class="grid grid-cols-1 gap-4 text-sm {isMobile
 										? 'sm:grid-cols-1'
 										: 'md:grid-cols-2'}"
 								>
 									<div>
-										<h4 class="mb-2 font-medium text-blue-900">视频变量</h4>
+										<h4 class="mb-2 font-medium text-blue-900 dark:text-blue-200">视频变量</h4>
 										<div class="space-y-1">
 											{#each variableHelp.video as item}
 												<div class="flex">
-													<code class="mr-2 rounded bg-blue-100 px-1 text-blue-800"
+													<code class="mr-2 rounded bg-blue-100 dark:bg-blue-900 px-1 text-blue-800 dark:text-blue-300"
 														>{item.name}</code
 													>
-													<span class="text-gray-600">{item.desc}</span>
+													<span class="text-gray-600 dark:text-gray-400">{item.desc}</span>
 												</div>
 											{/each}
 										</div>
 									</div>
 									<div>
-										<h4 class="mb-2 font-medium text-blue-900">分页变量</h4>
+										<h4 class="mb-2 font-medium text-blue-900 dark:text-blue-200">分页变量</h4>
 										<div class="space-y-1">
 											{#each variableHelp.page as item}
 												<div class="flex">
-													<code class="mr-2 rounded bg-blue-100 px-1 text-blue-800"
+													<code class="mr-2 rounded bg-blue-100 dark:bg-blue-900 px-1 text-blue-800 dark:text-blue-300"
 														>{item.name}</code
 													>
-													<span class="text-gray-600">{item.desc}</span>
+													<span class="text-gray-600 dark:text-gray-400">{item.desc}</span>
 												</div>
 											{/each}
 										</div>
-										<h4 class="mt-4 mb-2 font-medium text-blue-900">通用函数</h4>
+										<h4 class="mt-4 mb-2 font-medium text-blue-900 dark:text-blue-200">通用函数</h4>
 										<div class="space-y-1">
 											{#each variableHelp.common as item}
 												<div class="flex">
-													<code class="mr-2 rounded bg-blue-100 px-1 text-blue-800"
+													<code class="mr-2 rounded bg-blue-100 dark:bg-blue-900 px-1 text-blue-800 dark:text-blue-300"
 														>{item.name}</code
 													>
-													<span class="text-gray-600">{item.desc}</span>
+													<span class="text-gray-600 dark:text-gray-400">{item.desc}</span>
 												</div>
 											{/each}
 										</div>
 									</div>
 									<div class="md:col-span-2">
-										<h4 class="mb-2 font-medium text-blue-900">时间格式变量</h4>
+										<h4 class="mb-2 font-medium text-blue-900 dark:text-blue-200">时间格式变量</h4>
 										<div class="grid grid-cols-3 gap-2">
 											{#each variableHelp.time as item}
 												<div class="flex">
-													<code class="mr-2 rounded bg-blue-100 px-1 text-blue-800"
+													<code class="mr-2 rounded bg-blue-100 dark:bg-blue-900 px-1 text-blue-800 dark:text-blue-300"
 														>{item.name}</code
 													>
-													<span class="text-gray-600">{item.desc}</span>
+													<span class="text-gray-600 dark:text-gray-400">{item.desc}</span>
 												</div>
 											{/each}
 										</div>
@@ -1025,9 +1025,9 @@
 
 						<!-- 互斥提示面板 -->
 						{#if videoNameHasPath && multiPageNameHasPath}
-							<div class="mb-4 rounded-lg border border-red-200 bg-red-50 p-4">
-								<h5 class="mb-2 font-medium text-red-800">🚨 路径冲突检测</h5>
-								<p class="text-sm text-red-700">
+							<div class="mb-4 rounded-lg border border-red-200 dark:border-red-800 bg-red-50 dark:bg-red-950/20 p-4">
+								<h5 class="mb-2 font-medium text-red-800 dark:text-red-200">🚨 路径冲突检测</h5>
+								<p class="text-sm text-red-700 dark:text-red-300">
 									检测到视频文件名模板和多P视频文件名模板都设置了路径分隔符，这会导致文件夹嵌套混乱。<br
 									/>
 									<strong>建议：</strong>只在其中一个模板中设置路径，另一个模板只控制文件名。
@@ -1036,9 +1036,9 @@
 						{/if}
 
 						<!-- 互斥规则说明 -->
-						<div class="mb-4 rounded-lg border border-yellow-200 bg-yellow-50 p-4">
-							<h5 class="mb-2 font-medium text-yellow-800">💡 智能路径管理</h5>
-							<p class="text-sm text-yellow-700">
+						<div class="mb-4 rounded-lg border border-yellow-200 dark:border-yellow-800 bg-yellow-50 dark:bg-yellow-950/20 p-4">
+							<h5 class="mb-2 font-medium text-yellow-800 dark:text-yellow-200">💡 智能路径管理</h5>
+							<p class="text-sm text-yellow-700 dark:text-yellow-300">
 								为避免文件夹嵌套混乱，系统会自动处理路径冲突：<br />
 								• 当您在一个模板中设置路径时，另一个模板会自动移除路径设置<br />
 								• 推荐在"视频文件名模板"中设置UP主分类，在"多P模板"中只设置文件名
@@ -1057,7 +1057,7 @@
 										handleVideoNameChange((e.target as HTMLInputElement)?.value || '')}
 								/>
 								{#if multiPageNameHasPath && videoNameHasPath}
-									<p class="text-xs text-orange-600">
+									<p class="text-xs text-orange-600 dark:text-orange-400">
 										⚠️ 多P模板已设置路径，此模板将自动移除路径设置避免冲突
 									</p>
 								{/if}
@@ -1075,7 +1075,7 @@
 									class={pageNameValid ? '' : 'border-red-500 focus:border-red-500'}
 								/>
 								{#if pageNameError}
-									<p class="text-xs text-red-500">{pageNameError}</p>
+									<p class="text-xs text-red-500 dark:text-red-400">{pageNameError}</p>
 								{/if}
 								<p class="text-muted-foreground text-xs">
 									控制单P视频的具体文件名，<strong>不允许使用路径分隔符 / 或 \</strong>
@@ -1097,10 +1097,10 @@
 										handleMultiPageNameChange((e.target as HTMLInputElement)?.value || '')}
 								/>
 								{#if multiPageNameError}
-									<p class="text-xs text-red-500">{multiPageNameError}</p>
+									<p class="text-xs text-red-500 dark:text-red-400">{multiPageNameError}</p>
 								{/if}
 								{#if !multiPageNameError && videoNameHasPath && multiPageNameHasPath}
-									<p class="text-xs text-orange-600">
+									<p class="text-xs text-orange-600 dark:text-orange-400">
 										⚠️ 检测到路径冲突：视频文件名模板和多P模板都包含路径，系统将自动调整避免冲突
 									</p>
 								{/if}
@@ -1240,28 +1240,28 @@
 						</div>
 
 						<!-- Season结构说明 -->
-						<div class="mt-6 rounded-lg border border-green-200 bg-green-50 p-3">
-							<h5 class="mb-2 font-medium text-green-800">多P视频Season结构说明</h5>
-							<div class="space-y-1 text-sm text-green-700">
+						<div class="mt-6 rounded-lg border border-green-200 dark:border-green-800 bg-green-50 dark:bg-green-950/20 p-3">
+							<h5 class="mb-2 font-medium text-green-800 dark:text-green-200">多P视频Season结构说明</h5>
+							<div class="space-y-1 text-sm text-green-700 dark:text-green-300">
 								<p><strong>启用后：</strong>多P视频将采用与番剧相同的目录结构</p>
 								<p><strong>目录层级：</strong>视频名称/Season 01/分P文件</p>
 								<p><strong>媒体库兼容：</strong>Emby/Jellyfin能正确识别为TV Show剧集</p>
 								<p><strong>文件命名：</strong>保持现有的multi_page_name模板不变</p>
-								<p class="text-green-600">
+								<p class="text-green-600 dark:text-green-400">
 									<strong>注意：</strong>默认关闭保持向后兼容，启用后新下载的多P视频将使用新结构
 								</p>
 							</div>
 						</div>
 
-						<div class="mt-6 rounded-lg border border-blue-200 bg-blue-50 p-3">
-							<h5 class="mb-2 font-medium text-blue-800">番剧Season结构说明</h5>
-							<div class="space-y-1 text-sm text-blue-700">
+						<div class="mt-6 rounded-lg border border-blue-200 dark:border-blue-800 bg-blue-50 dark:bg-blue-950/20 p-3">
+							<h5 class="mb-2 font-medium text-blue-800 dark:text-blue-200">番剧Season结构说明</h5>
+							<div class="space-y-1 text-sm text-blue-700 dark:text-blue-300">
 								<p><strong>启用后：</strong>多季番剧将创建统一的系列根目录</p>
 								<p><strong>智能识别：</strong>自动从"灵笼 第二季"中提取"灵笼"作为系列名</p>
 								<p><strong>目录层级：</strong>系列名/Season 01、Season 02/剧集文件</p>
 								<p><strong>媒体库优势：</strong>Emby/Jellyfin能正确识别同一系列的不同季度</p>
 								<p><strong>文件命名：</strong>保持现有的bangumi_name模板不变</p>
-								<p class="text-blue-600">
+								<p class="text-blue-600 dark:text-blue-400">
 									<strong>注意：</strong>默认关闭保持向后兼容，仅影响新下载的番剧
 								</p>
 							</div>
@@ -1272,7 +1272,7 @@
 							{saving ? '保存中...' : '保存设置'}
 						</Button>
 						{#if !pageNameValid}
-							<p class="text-center text-xs text-red-500">请修复配置错误后再保存</p>
+							<p class="text-center text-xs text-red-500 dark:text-red-400">请修复配置错误后再保存</p>
 						{/if}
 					</SheetFooter>
 				</form>
@@ -1306,7 +1306,7 @@
 				/>
 				<div
 					class="absolute inset-0"
-					style="background: linear-gradient(to bottom right, rgba(255,255,255,0.85), rgba(255,255,255,0.5));"
+					style="background: linear-gradient(to bottom right, {$isDark ? 'rgba(0,0,0,0.85), rgba(0,0,0,0.5)' : 'rgba(255,255,255,0.85), rgba(255,255,255,0.5)'});"
 				></div>
 			</div>
 		{/if}
@@ -1322,7 +1322,7 @@
 					<!-- 自定义关闭按钮 -->
 					<button
 						onclick={() => (openSheet = null)}
-						class="ring-offset-background focus:ring-ring absolute top-2 right-2 rounded-sm p-1 opacity-70 transition-opacity hover:bg-gray-100 hover:opacity-100 focus:ring-2 focus:ring-offset-2 focus:outline-none disabled:pointer-events-none"
+						class="ring-offset-background focus:ring-ring absolute top-2 right-2 rounded-sm p-1 opacity-70 transition-opacity hover:bg-gray-100 dark:hover:bg-gray-800 hover:opacity-100 focus:ring-2 focus:ring-offset-2 focus:outline-none disabled:pointer-events-none"
 						type="button"
 					>
 						<svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -1403,8 +1403,8 @@
 							<p class="text-muted-foreground mb-3 text-sm">
 								拖拽以调整优先级，越靠前优先级越高。根据设备硬件解码支持情况选择：
 							</p>
-							<div class="mb-3 rounded-lg border border-blue-200 bg-blue-50 p-3">
-								<div class="space-y-2 text-xs text-blue-700">
+							<div class="mb-3 rounded-lg border border-blue-200 dark:border-blue-800 bg-blue-50 dark:bg-blue-950/20 p-3">
+								<div class="space-y-2 text-xs text-blue-700 dark:text-blue-300">
 									<div>
 										<strong>🎯 AVC (H.264)：</strong
 										>兼容性最好，几乎所有设备都支持硬件解码，播放流畅，但文件体积较大
@@ -1425,7 +1425,7 @@
 							<div class="space-y-2">
 								{#each codecs as codec, index}
 									<div
-										class="flex cursor-move items-center gap-3 rounded-lg border bg-gray-50 p-3"
+										class="flex cursor-move items-center gap-3 rounded-lg border bg-gray-50 dark:bg-gray-900 p-3"
 										draggable="true"
 										ondragstart={(e) => handleDragStart(e, index)}
 										ondragover={handleDragOver}
@@ -1433,7 +1433,7 @@
 										role="button"
 										tabindex="0"
 									>
-										<div class="flex items-center gap-2 text-gray-400">
+										<div class="flex items-center gap-2 text-gray-400 dark:text-gray-600">
 											<svg class="h-4 w-4" fill="currentColor" viewBox="0 0 20 20">
 												<path
 													d="M7 2a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2V4a2 2 0 0 0-2-2H7zM8 6h4v2H8V6zm0 4h4v2H8v-2z"
@@ -1452,7 +1452,7 @@
 										</div>
 										<button
 											type="button"
-											class="p-1 text-red-500 hover:text-red-700"
+											class="p-1 text-red-500 dark:text-red-400 hover:text-red-700 dark:hover:text-red-300"
 											onclick={() => removeCodec(index)}
 											title="移除此编解码器"
 											aria-label="移除此编解码器"
@@ -1566,7 +1566,7 @@
 				/>
 				<div
 					class="absolute inset-0"
-					style="background: linear-gradient(to bottom right, rgba(255,255,255,0.85), rgba(255,255,255,0.5));"
+					style="background: linear-gradient(to bottom right, {$isDark ? 'rgba(0,0,0,0.85), rgba(0,0,0,0.5)' : 'rgba(255,255,255,0.85), rgba(255,255,255,0.5)'});"
 				></div>
 			</div>
 		{/if}
@@ -1582,7 +1582,7 @@
 					<!-- 自定义关闭按钮 -->
 					<button
 						onclick={() => (openSheet = null)}
-						class="ring-offset-background focus:ring-ring absolute top-2 right-2 rounded-sm p-1 opacity-70 transition-opacity hover:bg-gray-100 hover:opacity-100 focus:ring-2 focus:ring-offset-2 focus:outline-none disabled:pointer-events-none"
+						class="ring-offset-background focus:ring-ring absolute top-2 right-2 rounded-sm p-1 opacity-70 transition-opacity hover:bg-gray-100 dark:hover:bg-gray-800 hover:opacity-100 focus:ring-2 focus:ring-offset-2 focus:outline-none disabled:pointer-events-none"
 						type="button"
 					>
 						<svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -1693,9 +1693,9 @@
 							</div>
 						</div>
 
-						<div class="mt-6 rounded-lg border border-purple-200 bg-purple-50 p-3">
-							<h5 class="mb-2 font-medium text-purple-800">并发控制说明</h5>
-							<div class="space-y-1 text-sm text-purple-700">
+						<div class="mt-6 rounded-lg border border-purple-200 dark:border-purple-800 bg-purple-50 dark:bg-purple-950/20 p-3">
+							<h5 class="mb-2 font-medium text-purple-800 dark:text-purple-200">并发控制说明</h5>
+							<div class="space-y-1 text-sm text-purple-700 dark:text-purple-300">
 								<p><strong>视频并发数：</strong>同时处理的视频数量（建议1-5）</p>
 								<p><strong>分页并发数：</strong>每个视频内的并发分页数（建议1-3）</p>
 								<p>
@@ -1741,7 +1741,7 @@
 				/>
 				<div
 					class="absolute inset-0"
-					style="background: linear-gradient(to bottom right, rgba(255,255,255,0.85), rgba(255,255,255,0.5));"
+					style="background: linear-gradient(to bottom right, {$isDark ? 'rgba(0,0,0,0.85), rgba(0,0,0,0.5)' : 'rgba(255,255,255,0.85), rgba(255,255,255,0.5)'});"
 				></div>
 			</div>
 		{/if}
@@ -1757,7 +1757,7 @@
 					<!-- 自定义关闭按钮 -->
 					<button
 						onclick={() => (openSheet = null)}
-						class="ring-offset-background focus:ring-ring absolute top-2 right-2 rounded-sm p-1 opacity-70 transition-opacity hover:bg-gray-100 hover:opacity-100 focus:ring-2 focus:ring-offset-2 focus:outline-none disabled:pointer-events-none"
+						class="ring-offset-background focus:ring-ring absolute top-2 right-2 rounded-sm p-1 opacity-70 transition-opacity hover:bg-gray-100 dark:hover:bg-gray-800 hover:opacity-100 focus:ring-2 focus:ring-offset-2 focus:outline-none disabled:pointer-events-none"
 						type="button"
 					>
 						<svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -1921,9 +1921,9 @@
 							</div>
 						</div>
 
-						<div class="rounded-lg border border-green-200 bg-green-50 p-3">
-							<h5 class="mb-2 font-medium text-green-800">弹幕设置说明</h5>
-							<div class="space-y-1 text-sm text-green-700">
+						<div class="rounded-lg border border-green-200 dark:border-green-800 bg-green-50 dark:bg-green-950/20 p-3">
+							<h5 class="mb-2 font-medium text-green-800 dark:text-green-200">弹幕设置说明</h5>
+							<div class="space-y-1 text-sm text-green-700 dark:text-green-300">
 								<p><strong>持续时间：</strong>弹幕在屏幕上显示的时间（秒）</p>
 								<p><strong>字体样式：</strong>字体、大小、加粗、描边等外观设置</p>
 								<p><strong>布局设置：</strong>轨道高度、间距、占比等位置控制</p>
@@ -1968,7 +1968,7 @@
 				/>
 				<div
 					class="absolute inset-0"
-					style="background: linear-gradient(to bottom right, rgba(255,255,255,0.85), rgba(255,255,255,0.5));"
+					style="background: linear-gradient(to bottom right, {$isDark ? 'rgba(0,0,0,0.85), rgba(0,0,0,0.5)' : 'rgba(255,255,255,0.85), rgba(255,255,255,0.5)'});"
 				></div>
 			</div>
 		{/if}
@@ -1983,7 +1983,7 @@
 						<SheetTitle>B站凭证设置</SheetTitle>
 						<SheetDescription>配置B站登录凭证信息</SheetDescription>
 						{#if currentUser}
-							<div class="mt-4 rounded-lg border border-green-200 bg-green-50 p-3">
+							<div class="mt-4 rounded-lg border border-green-200 dark:border-green-800 bg-green-50 dark:bg-green-950/20 p-3">
 								<div class="flex items-center space-x-3">
 									<div class="bg-muted relative h-10 w-10 overflow-hidden rounded-full">
 										{#if currentUser.avatar_url}
@@ -2002,10 +2002,10 @@
 										{/if}
 									</div>
 									<div class="flex-1">
-										<div class="text-sm font-semibold text-green-800">
+										<div class="text-sm font-semibold text-green-800 dark:text-green-200">
 											当前登录：{currentUser.username}
 										</div>
-										<div class="text-xs text-green-600">UID: {currentUser.user_id}</div>
+										<div class="text-xs text-green-600 dark:text-green-400">UID: {currentUser.user_id}</div>
 									</div>
 									<Badge variant="default" class="bg-green-500">已登录</Badge>
 								</div>
@@ -2015,7 +2015,7 @@
 					<!-- 自定义关闭按钮 -->
 					<button
 						onclick={() => (openSheet = null)}
-						class="ring-offset-background focus:ring-ring absolute top-2 right-2 rounded-sm p-1 opacity-70 transition-opacity hover:bg-gray-100 hover:opacity-100 focus:ring-2 focus:ring-offset-2 focus:outline-none disabled:pointer-events-none"
+						class="ring-offset-background focus:ring-ring absolute top-2 right-2 rounded-sm p-1 opacity-70 transition-opacity hover:bg-gray-100 dark:hover:bg-gray-800 hover:opacity-100 focus:ring-2 focus:ring-offset-2 focus:outline-none disabled:pointer-events-none"
 						type="button"
 					>
 						<svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -2050,8 +2050,8 @@
 								<div
 									class="flex-1 space-y-6 overflow-y-auto {isMobile ? 'px-4 py-4' : 'px-6 py-6'}"
 								>
-									<div class="rounded-lg border border-amber-200 bg-amber-50 p-4">
-										<div class="space-y-2 text-sm text-amber-800">
+									<div class="rounded-lg border border-amber-200 dark:border-amber-800 bg-amber-50 dark:bg-amber-950/20 p-4">
+										<div class="space-y-2 text-sm text-amber-800 dark:text-amber-200">
 											<div class="font-medium">🔐 如何获取B站登录凭证：</div>
 											<ol class="ml-4 list-decimal space-y-1">
 												<li>在浏览器中登录B站</li>
@@ -2060,7 +2060,7 @@
 												<li>刷新页面，找到任意一个请求</li>
 												<li>在请求头中找到Cookie字段，复制对应的值</li>
 											</ol>
-											<div class="mt-2 text-xs text-amber-600">
+											<div class="mt-2 text-xs text-amber-600 dark:text-amber-400">
 												💡 提示：SESSDATA、bili_jct、buvid3、DedeUserID是必填项，ac_time_value可选
 											</div>
 										</div>
@@ -2113,14 +2113,14 @@
 										</div>
 									</div>
 
-									<div class="rounded-lg border border-green-200 bg-green-50 p-3">
-										<div class="text-sm text-green-800">
+									<div class="rounded-lg border border-green-200 dark:border-green-800 bg-green-50 dark:bg-green-950/20 p-3">
+										<div class="text-sm text-green-800 dark:text-green-200">
 											<div class="mb-1 font-medium">✅ 凭证状态检查：</div>
 											<div class="text-xs">
 												{#if sessdata && biliJct && buvid3 && dedeUserId}
-													<span class="text-green-600">✓ 必填凭证已填写完整</span>
+													<span class="text-green-600 dark:text-green-400">✓ 必填凭证已填写完整</span>
 												{:else}
-													<span class="text-orange-600">⚠ 请填写所有必填凭证项</span>
+													<span class="text-orange-600 dark:text-orange-400">⚠ 请填写所有必填凭证项</span>
 												{/if}
 											</div>
 										</div>
@@ -2179,7 +2179,7 @@
 				/>
 				<div
 					class="absolute inset-0"
-					style="background: linear-gradient(to bottom right, rgba(255,255,255,0.85), rgba(255,255,255,0.5));"
+					style="background: linear-gradient(to bottom right, {$isDark ? 'rgba(0,0,0,0.85), rgba(0,0,0,0.5)' : 'rgba(255,255,255,0.85), rgba(255,255,255,0.5)'});"
 				></div>
 			</div>
 		{/if}
@@ -2195,7 +2195,7 @@
 					<!-- 自定义关闭按钮 -->
 					<button
 						onclick={() => (openSheet = null)}
-						class="ring-offset-background focus:ring-ring absolute top-2 right-2 rounded-sm p-1 opacity-70 transition-opacity hover:bg-gray-100 hover:opacity-100 focus:ring-2 focus:ring-offset-2 focus:outline-none disabled:pointer-events-none"
+						class="ring-offset-background focus:ring-ring absolute top-2 right-2 rounded-sm p-1 opacity-70 transition-opacity hover:bg-gray-100 dark:hover:bg-gray-800 hover:opacity-100 focus:ring-2 focus:ring-offset-2 focus:outline-none disabled:pointer-events-none"
 						type="button"
 					>
 						<svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -2218,8 +2218,8 @@
 				>
 					<div class="flex-1 space-y-6 overflow-y-auto {isMobile ? 'px-4 py-4' : 'px-6 py-6'}">
 						<!-- 基础优化配置 -->
-						<div class="rounded-lg border border-blue-200 bg-blue-50 p-4">
-							<h3 class="mb-3 text-sm font-medium text-blue-800">🎯 基础优化配置</h3>
+						<div class="rounded-lg border border-blue-200 dark:border-blue-800 bg-blue-50 dark:bg-blue-950/20 p-4">
+							<h3 class="mb-3 text-sm font-medium text-blue-800 dark:text-blue-200">🎯 基础优化配置</h3>
 							<div class="grid grid-cols-1 gap-4 {isMobile ? 'sm:grid-cols-1' : 'md:grid-cols-2'}">
 								<div class="space-y-2">
 									<Label for="large-submission-threshold">大量视频UP主阈值</Label>
@@ -2289,8 +2289,8 @@
 						</div>
 
 						<!-- 增量获取配置 -->
-						<div class="rounded-lg border border-green-200 bg-green-50 p-4">
-							<h3 class="mb-3 text-sm font-medium text-green-800">📈 增量获取配置</h3>
+						<div class="rounded-lg border border-green-200 dark:border-green-800 bg-green-50 dark:bg-green-950/20 p-4">
+							<h3 class="mb-3 text-sm font-medium text-green-800 dark:text-green-200">📈 增量获取配置</h3>
 							<div class="space-y-4">
 								<div class="flex items-center space-x-2">
 									<input
@@ -2321,8 +2321,8 @@
 						</div>
 
 						<!-- 分批处理配置 -->
-						<div class="rounded-lg border border-purple-200 bg-purple-50 p-4">
-							<h3 class="mb-3 text-sm font-medium text-purple-800">📦 分批处理配置</h3>
+						<div class="rounded-lg border border-purple-200 dark:border-purple-800 bg-purple-50 dark:bg-purple-950/20 p-4">
+							<h3 class="mb-3 text-sm font-medium text-purple-800 dark:text-purple-200">📦 分批处理配置</h3>
 							<div class="space-y-4">
 								<div class="flex items-center space-x-2">
 									<input
@@ -2372,8 +2372,8 @@
 						</div>
 
 						<!-- 自动退避配置 -->
-						<div class="rounded-lg border border-orange-200 bg-orange-50 p-4">
-							<h3 class="mb-3 text-sm font-medium text-orange-800">🔄 自动退避配置</h3>
+						<div class="rounded-lg border border-orange-200 dark:border-orange-800 bg-orange-50 dark:bg-orange-950/20 p-4">
+							<h3 class="mb-3 text-sm font-medium text-orange-800 dark:text-orange-200">🔄 自动退避配置</h3>
 							<div class="space-y-4">
 								<div class="flex items-center space-x-2">
 									<input
@@ -2421,9 +2421,9 @@
 						</div>
 
 						<!-- 使用建议 -->
-						<div class="rounded-lg border border-gray-200 bg-gray-50 p-4">
-							<h3 class="mb-3 text-sm font-medium text-gray-800">💡 使用建议</h3>
-							<div class="space-y-2 text-xs text-gray-600">
+						<div class="rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900/50 p-4">
+							<h3 class="mb-3 text-sm font-medium text-gray-800 dark:text-gray-200">💡 使用建议</h3>
+							<div class="space-y-2 text-xs text-gray-600 dark:text-gray-400">
 								<p><strong>小型UP主（&lt;100视频）：</strong> 使用默认设置即可</p>
 								<p><strong>中型UP主（100-500视频）：</strong> 启用渐进式延迟和增量获取</p>
 								<p><strong>大型UP主（500-1000视频）：</strong> 启用分批处理，设置较大的延迟倍数</p>
@@ -2470,7 +2470,7 @@
 				/>
 				<div
 					class="absolute inset-0"
-					style="background: linear-gradient(to bottom right, rgba(255,255,255,0.85), rgba(255,255,255,0.5));"
+					style="background: linear-gradient(to bottom right, {$isDark ? 'rgba(0,0,0,0.85), rgba(0,0,0,0.5)' : 'rgba(255,255,255,0.85), rgba(255,255,255,0.5)'});"
 				></div>
 			</div>
 		{/if}
@@ -2486,7 +2486,7 @@
 					<!-- 自定义关闭按钮 -->
 					<button
 						onclick={() => (openSheet = null)}
-						class="ring-offset-background focus:ring-ring absolute top-2 right-2 rounded-sm p-1 opacity-70 transition-opacity hover:bg-gray-100 hover:opacity-100 focus:ring-2 focus:ring-offset-2 focus:outline-none disabled:pointer-events-none"
+						class="ring-offset-background focus:ring-ring absolute top-2 right-2 rounded-sm p-1 opacity-70 transition-opacity hover:bg-gray-100 dark:hover:bg-gray-800 hover:opacity-100 focus:ring-2 focus:ring-offset-2 focus:outline-none disabled:pointer-events-none"
 						type="button"
 					>
 						<svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -2509,8 +2509,8 @@
 				>
 					<div class="flex-1 space-y-6 overflow-y-auto {isMobile ? 'px-4 py-4' : 'px-6 py-6'}">
 						<!-- Aria2监控配置 -->
-						<div class="rounded-lg border border-blue-200 bg-blue-50 p-4">
-							<h3 class="mb-3 text-sm font-medium text-blue-800">🔍 健康检查配置</h3>
+						<div class="rounded-lg border border-blue-200 dark:border-blue-800 bg-blue-50 dark:bg-blue-950/20 p-4">
+							<h3 class="mb-3 text-sm font-medium text-blue-800 dark:text-blue-200">🔍 健康检查配置</h3>
 							<div class="space-y-4">
 								<div class="flex items-center space-x-2">
 									<input
@@ -2545,8 +2545,8 @@
 						</div>
 
 						<!-- 自动重启配置 -->
-						<div class="rounded-lg border border-green-200 bg-green-50 p-4">
-							<h3 class="mb-3 text-sm font-medium text-green-800">🔄 自动重启配置</h3>
+						<div class="rounded-lg border border-green-200 dark:border-green-800 bg-green-50 dark:bg-green-950/20 p-4">
+							<h3 class="mb-3 text-sm font-medium text-green-800 dark:text-green-200">🔄 自动重启配置</h3>
 							<div class="space-y-4">
 								<div class="flex items-center space-x-2">
 									<input
@@ -2560,8 +2560,8 @@
 								</div>
 
 								{#if !enableAria2AutoRestart}
-									<div class="ml-6 rounded border border-orange-200 bg-orange-50 p-3">
-										<p class="text-sm text-orange-700">
+									<div class="ml-6 rounded border border-orange-200 dark:border-orange-800 bg-orange-50 dark:bg-orange-950/20 p-3">
+										<p class="text-sm text-orange-700 dark:text-orange-300">
 											<strong>注意：</strong
 											>禁用自动重启后，检测到下载器异常时只会记录日志，不会自动恢复。
 											如果下载器进程意外退出，需要手动重启应用程序。
@@ -2572,9 +2572,9 @@
 						</div>
 
 						<!-- 配置说明 -->
-						<div class="rounded-lg border border-amber-200 bg-amber-50 p-4">
-							<h3 class="mb-3 text-sm font-medium text-amber-800">⚠️ 重要说明</h3>
-							<div class="space-y-2 text-sm text-amber-700">
+						<div class="rounded-lg border border-amber-200 dark:border-amber-800 bg-amber-50 dark:bg-amber-950/20 p-4">
+							<h3 class="mb-3 text-sm font-medium text-amber-800 dark:text-amber-200">⚠️ 重要说明</h3>
+							<div class="space-y-2 text-sm text-amber-700 dark:text-amber-300">
 								<p>
 									<strong>为什么要禁用监控？</strong>
 									原有的Aria2监控机制可能会误判下载器状态，导致不必要的重启，反而中断正在进行的下载任务。
@@ -2596,9 +2596,9 @@
 						</div>
 
 						<!-- 故障排除指南 -->
-						<div class="rounded-lg border border-purple-200 bg-purple-50 p-4">
-							<h3 class="mb-3 text-sm font-medium text-purple-800">🔧 故障排除</h3>
-							<div class="space-y-2 text-sm text-purple-700">
+						<div class="rounded-lg border border-purple-200 dark:border-purple-800 bg-purple-50 dark:bg-purple-950/20 p-4">
+							<h3 class="mb-3 text-sm font-medium text-purple-800 dark:text-purple-200">🔧 故障排除</h3>
+							<div class="space-y-2 text-sm text-purple-700 dark:text-purple-300">
 								<p><strong>常见问题及解决方案：</strong></p>
 								<ul class="ml-4 list-disc space-y-1">
 									<li>
@@ -2653,7 +2653,7 @@
 				/>
 				<div
 					class="absolute inset-0"
-					style="background: linear-gradient(to bottom right, rgba(255,255,255,0.85), rgba(255,255,255,0.5));"
+					style="background: linear-gradient(to bottom right, {$isDark ? 'rgba(0,0,0,0.85), rgba(0,0,0,0.5)' : 'rgba(255,255,255,0.85), rgba(255,255,255,0.5)'});"
 				></div>
 			</div>
 		{/if}
@@ -2669,7 +2669,7 @@
 					<!-- 自定义关闭按钮 -->
 					<button
 						onclick={() => (openSheet = null)}
-						class="ring-offset-background focus:ring-ring absolute top-2 right-2 rounded-sm p-1 opacity-70 transition-opacity hover:bg-gray-100 hover:opacity-100 focus:ring-2 focus:ring-offset-2 focus:outline-none disabled:pointer-events-none"
+						class="ring-offset-background focus:ring-ring absolute top-2 right-2 rounded-sm p-1 opacity-70 transition-opacity hover:bg-gray-100 dark:hover:bg-gray-800 hover:opacity-100 focus:ring-2 focus:ring-offset-2 focus:outline-none disabled:pointer-events-none"
 						type="button"
 					>
 						<svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -2748,9 +2748,9 @@
 								</div>
 							</div>
 
-							<div class="rounded-lg border border-blue-200 bg-blue-50 p-3">
-								<h5 class="mb-2 font-medium text-blue-800">主题说明</h5>
-								<div class="space-y-1 text-sm text-blue-700">
+							<div class="rounded-lg border border-blue-200 dark:border-blue-800 bg-blue-50 dark:bg-blue-950/20 p-3">
+								<h5 class="mb-2 font-medium text-blue-800 dark:text-blue-200">主题说明</h5>
+								<div class="space-y-1 text-sm text-blue-700 dark:text-blue-300">
 									<p><strong>浅色模式：</strong>适合在明亮环境下使用，提供清晰的视觉体验</p>
 									<p><strong>深色模式：</strong>适合在昏暗环境下使用，减少眼部疲劳</p>
 									<p><strong>跟随系统：</strong>根据操作系统的主题设置自动切换</p>
@@ -2789,7 +2789,7 @@
 				/>
 				<div
 					class="absolute inset-0"
-					style="background: linear-gradient(to bottom right, rgba(255,255,255,0.85), rgba(255,255,255,0.5));"
+					style="background: linear-gradient(to bottom right, {$isDark ? 'rgba(0,0,0,0.85), rgba(0,0,0,0.5)' : 'rgba(255,255,255,0.85), rgba(255,255,255,0.5)'});"
 				></div>
 			</div>
 		{/if}
@@ -2805,7 +2805,7 @@
 					<!-- 自定义关闭按钮 -->
 					<button
 						onclick={() => (openSheet = null)}
-						class="ring-offset-background focus:ring-ring absolute top-2 right-2 rounded-sm p-1 opacity-70 transition-opacity hover:bg-gray-100 hover:opacity-100 focus:ring-2 focus:ring-offset-2 focus:outline-none disabled:pointer-events-none"
+						class="ring-offset-background focus:ring-ring absolute top-2 right-2 rounded-sm p-1 opacity-70 transition-opacity hover:bg-gray-100 dark:hover:bg-gray-800 hover:opacity-100 focus:ring-2 focus:ring-offset-2 focus:outline-none disabled:pointer-events-none"
 						type="button"
 					>
 						<svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -2882,9 +2882,9 @@
 								<p class="text-muted-foreground ml-2 text-sm">在视频列表中显示已删除的视频</p>
 							</div>
 
-							<div class="rounded-lg border border-orange-200 bg-orange-50 p-3">
-								<h5 class="mb-2 font-medium text-orange-800">其他设置说明</h5>
-								<div class="space-y-1 text-sm text-orange-700">
+							<div class="rounded-lg border border-orange-200 dark:border-orange-800 bg-orange-50 dark:bg-orange-950/20 p-3">
+								<h5 class="mb-2 font-medium text-orange-800 dark:text-orange-200">其他设置说明</h5>
+								<div class="space-y-1 text-sm text-orange-700 dark:text-orange-300">
 									<p><strong>扫描间隔：</strong>每次扫描下载的时间间隔（秒）</p>
 									<p><strong>时间格式：</strong>控制时间变量在文件名中的显示格式</p>
 									<p><strong>CDN排序：</strong>启用后优先使用质量更高的CDN，可能提升下载速度</p>
@@ -2932,7 +2932,7 @@
 				/>
 				<div
 					class="absolute inset-0"
-					style="background: linear-gradient(to bottom right, rgba(255,255,255,0.85), rgba(255,255,255,0.5));"
+					style="background: linear-gradient(to bottom right, {$isDark ? 'rgba(0,0,0,0.85), rgba(0,0,0,0.5)' : 'rgba(255,255,255,0.85), rgba(255,255,255,0.5)'});"
 				></div>
 			</div>
 		{/if}
@@ -2948,7 +2948,7 @@
 					<!-- 自定义关闭按钮 -->
 					<button
 						onclick={() => (openSheet = null)}
-						class="ring-offset-background focus:ring-ring absolute top-2 right-2 rounded-sm p-1 opacity-70 transition-opacity hover:bg-gray-100 hover:opacity-100 focus:ring-2 focus:ring-offset-2 focus:outline-none disabled:pointer-events-none"
+						class="ring-offset-background focus:ring-ring absolute top-2 right-2 rounded-sm p-1 opacity-70 transition-opacity hover:bg-gray-100 dark:hover:bg-gray-800 hover:opacity-100 focus:ring-2 focus:ring-offset-2 focus:outline-none disabled:pointer-events-none"
 						type="button"
 					>
 						<svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -2972,14 +2972,14 @@
 					<div class="flex-1 space-y-6 overflow-y-auto {isMobile ? 'px-4 py-4' : 'px-6 py-6'}">
 						<!-- 推送状态卡片 -->
 						{#if notificationStatus}
-							<div class="rounded-lg border {notificationStatus.configured ? 'border-green-200 bg-green-50' : 'border-amber-200 bg-amber-50'} p-4">
+							<div class="rounded-lg border {notificationStatus.configured ? 'border-green-200 dark:border-green-800 bg-green-50 dark:bg-green-950/20' : 'border-amber-200 dark:border-amber-800 bg-amber-50 dark:bg-amber-950/20'} p-4">
 								<div class="flex items-center space-x-2">
 									{#if notificationStatus.configured}
 										<Badge variant="default" class="bg-green-500">已配置</Badge>
-										<span class="text-sm text-green-700">Server酱已配置，可以接收推送通知</span>
+										<span class="text-sm text-green-700 dark:text-green-400">Server酱已配置，可以接收推送通知</span>
 									{:else}
 										<Badge variant="secondary">未配置</Badge>
-										<span class="text-sm text-amber-700">请配置Server酱密钥以启用推送功能</span>
+										<span class="text-sm text-amber-700 dark:text-amber-400">请配置Server酱密钥以启用推送功能</span>
 									{/if}
 								</div>
 							</div>
@@ -3041,9 +3041,9 @@
 
 						<!-- 测试推送 -->
 						{#if notificationStatus?.configured}
-							<div class="rounded-lg border border-blue-200 bg-blue-50 p-4">
-								<h4 class="mb-3 font-medium text-blue-800">测试推送</h4>
-								<p class="mb-3 text-sm text-blue-700">
+							<div class="rounded-lg border border-blue-200 dark:border-blue-800 bg-blue-50 dark:bg-blue-950/20 p-4">
+								<h4 class="mb-3 font-medium text-blue-800 dark:text-blue-400">测试推送</h4>
+								<p class="mb-3 text-sm text-blue-700 dark:text-blue-300">
 									发送一条测试消息到您的推送接收端，验证配置是否正确
 								</p>
 								<Button
@@ -3058,9 +3058,9 @@
 						{/if}
 
 						<!-- 使用说明 -->
-						<div class="rounded-lg border border-gray-200 bg-gray-50 p-4">
-							<h4 class="mb-3 font-medium text-gray-800">使用说明</h4>
-							<ol class="space-y-2 text-sm text-gray-600 list-decimal list-inside">
+						<div class="rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900/50 p-4">
+							<h4 class="mb-3 font-medium text-gray-800 dark:text-gray-200">使用说明</h4>
+							<ol class="space-y-2 text-sm text-gray-600 dark:text-gray-400 list-decimal list-inside">
 								<li>访问 <a href="https://sct.ftqq.com/" target="_blank" class="text-primary hover:underline">Server酱官网</a> 注册账号</li>
 								<li>登录后在"SendKey"页面获取您的密钥</li>
 								<li>将密钥填入上方输入框并保存</li>
@@ -3070,9 +3070,9 @@
 						</div>
 
 						<!-- 推送内容示例 -->
-						<div class="rounded-lg border border-purple-200 bg-purple-50 p-4">
-							<h4 class="mb-3 font-medium text-purple-800">推送内容示例</h4>
-							<div class="space-y-2 text-sm text-purple-700 font-mono">
+						<div class="rounded-lg border border-purple-200 dark:border-purple-800 bg-purple-50 dark:bg-purple-950/20 p-4">
+							<h4 class="mb-3 font-medium text-purple-800 dark:text-purple-400">推送内容示例</h4>
+							<div class="space-y-2 text-sm text-purple-700 dark:text-purple-300 font-mono">
 								<p><strong>标题：</strong>Bili Sync 扫描完成</p>
 								<p><strong>内容：</strong></p>
 								<div class="ml-4 space-y-1">
