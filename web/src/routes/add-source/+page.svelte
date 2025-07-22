@@ -58,7 +58,7 @@
 
 	// UP主合集相关
 	let userCollections: UserCollectionItem[] = [];
-	// let loadingCollections = false; // 未使用，已注释
+	let loadingCollections = false; // 合集加载状态
 	let upIdTimeout: ReturnType<typeof setTimeout> | null = null;
 
 	// 关注的UP主相关
@@ -110,7 +110,7 @@
 	// UP主投稿选择相关
 	let showSubmissionSelection = false;
 	let selectedVideos: string[] = [];
-	// let selectedUpName = ''; // 未使用，已注释
+	let selectedUpName = ''; // UP主名称，用于投稿选择
 
 	// 投稿选择详细状态
 	let submissionVideos: SubmissionVideoInfo[] = [];
