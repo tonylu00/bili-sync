@@ -494,7 +494,9 @@
 			bangumiUseSeasonStructure = config.bangumi_use_season_structure ?? false;
 		} catch (error: unknown) {
 			console.error('加载配置失败:', error);
-			toast.error('加载配置失败', { description: error instanceof Error ? error.message : '未知错误' });
+			toast.error('加载配置失败', {
+				description: error instanceof Error ? error.message : '未知错误'
+			});
 		} finally {
 			loading = false;
 		}
@@ -824,7 +826,9 @@
 			}
 		} catch (error: unknown) {
 			console.error('测试推送失败:', error);
-			toast.error('测试推送失败', { description: error instanceof Error ? error.message : '未知错误' });
+			toast.error('测试推送失败', {
+				description: error instanceof Error ? error.message : '未知错误'
+			});
 		}
 	}
 </script>

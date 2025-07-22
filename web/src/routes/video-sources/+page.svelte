@@ -27,9 +27,9 @@
 	// 响应式相关
 	let innerWidth: number;
 	let isMobile: boolean = false;
-	let isTablet: boolean = false;
+	// let isTablet: boolean = false; // 未使用，已注释
 	$: isMobile = innerWidth < 768; // sm断点
-	$: isTablet = innerWidth >= 768 && innerWidth < 1024; // md断点
+	// $: isTablet = innerWidth >= 768 && innerWidth < 1024; // md断点 - 未使用
 
 	// 折叠状态管理 - 默认所有分类都是折叠状态
 	let collapsedSections: Record<string, boolean> = {};
@@ -71,7 +71,7 @@
 		sourceType: string,
 		sourceId: number,
 		currentEnabled: boolean,
-		_sourceName: string
+		_sourceName: string // eslint-disable-line @typescript-eslint/no-unused-vars
 	) {
 		try {
 			const result = await api.updateVideoSourceEnabled(sourceType, sourceId, !currentEnabled);
