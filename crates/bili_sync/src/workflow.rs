@@ -137,6 +137,7 @@ pub struct SeasonInfo {
     pub total_views: Option<i64>,              // 总播放量
     pub total_favorites: Option<i64>,          // 总收藏数
     pub total_seasons: Option<i32>,            // 总季数（从API的seasons数组计算）
+    pub show_season_type: Option<i32>,         // 番剧季度类型
 }
 
 #[derive(Debug, Clone)]
@@ -215,14 +216,14 @@ pub async fn process_video_source(
 
     // 从视频流中获取新视频的简要信息，写入数据库，并获取新增视频数量和信息
     let (new_video_count, new_videos) =
-        match refresh_video_source(&video_source, video_streams, connection, token.clone()).await {
+        match refresh_video_source(&video_source, video_streams, connection, token.clone(), bili_client).await {
             Ok(result) => result,
             Err(e) => {
                 let error_msg = format!("{:#}", e);
                 if retry_with_refresh(error_msg).await.is_ok() {
                     // 刷新成功，重新获取视频流并重试
                     let (_, video_streams) = video_source_from(args, path, bili_client, connection).await?;
-                    refresh_video_source(&video_source, video_streams, connection, token.clone()).await?
+                    refresh_video_source(&video_source, video_streams, connection, token.clone(), bili_client).await?
                 } else {
                     return Err(e);
                 }
@@ -275,12 +276,151 @@ pub async fn process_video_source(
     Ok((new_video_count, new_videos))
 }
 
+/// 更新番剧缓存
+async fn update_bangumi_cache(
+    source_id: i32,
+    connection: &DatabaseConnection,
+    bili_client: &BiliClient,
+    season_info: Option<SeasonInfo>,
+) -> Result<()> {
+    use bili_sync_entity::video_source;
+    use crate::utils::bangumi_cache::{serialize_cache, BangumiCache};
+    use sea_orm::ActiveValue::Set;
+    
+    // 获取番剧源信息
+    let source = video_source::Entity::find_by_id(source_id)
+        .one(connection)
+        .await?
+        .ok_or_else(|| anyhow::anyhow!("番剧源不存在"))?;
+    
+    // 如果没有提供season_info，尝试从API获取
+    let season_info = if let Some(info) = season_info {
+        info
+    } else if let Some(season_id) = &source.season_id {
+        // 从API获取完整的season信息
+        match get_season_info_from_api(bili_client, season_id, CancellationToken::new()).await {
+            Ok(info) => info,
+            Err(e) => {
+                warn!("获取番剧季信息失败，跳过缓存更新: {}", e);
+                return Ok(());
+            }
+        }
+    } else {
+        debug!("番剧源 {} 没有season_id，跳过缓存更新", source_id);
+        return Ok(());
+    };
+    
+    // 构建episodes数组
+    let mut episodes = Vec::new();
+    
+    // 查询该番剧源的所有视频和分页信息
+    let videos_with_pages = bili_sync_entity::video::Entity::find()
+        .filter(bili_sync_entity::video::Column::SourceId.eq(source_id))
+        .filter(bili_sync_entity::video::Column::SourceType.eq(1))
+        .find_with_related(bili_sync_entity::page::Entity)
+        .all(connection)
+        .await?;
+    
+    // 从数据库记录构建episodes信息
+    for (video, pages) in &videos_with_pages {
+        if let Some(page) = pages.first() {
+            let mut episode = serde_json::json!({
+                "id": video.ep_id.as_ref().map(|s| s.parse::<i64>().ok()).flatten().unwrap_or(0),
+                "aid": video.bvid.clone(), // 暂时使用bvid，实际应该是aid
+                "bvid": video.bvid.clone(),
+                "cid": page.cid,
+                "title": video.episode_number.map(|n| n.to_string()).unwrap_or_else(|| video.name.clone()),
+                "long_title": video.name.clone(),
+                "cover": video.cover.clone(),
+                "duration": page.duration as i64 * 1000, // 秒转毫秒
+                "pub_time": video.pubtime.and_utc().timestamp(),
+                "section_type": 0, // 正片
+            });
+            
+            // 如果有share_copy，添加到episode中
+            if let Some(share_copy) = &video.share_copy {
+                episode["share_copy"] = serde_json::Value::String(share_copy.clone());
+            }
+            
+            episodes.push(episode);
+        }
+    }
+    
+    // 如果没有视频数据，使用API提供的episodes
+    if episodes.is_empty() && !season_info.episodes.is_empty() {
+        for ep_info in &season_info.episodes {
+            episodes.push(serde_json::json!({
+                "id": ep_info.ep_id.parse::<i64>().unwrap_or(0),
+                "cid": ep_info.cid,
+                "duration": ep_info.duration as i64 * 1000, // 秒转毫秒
+                "section_type": 0,
+            }));
+        }
+    }
+    
+    // 构建season_info JSON
+    let season_json = serde_json::json!({
+        "title": season_info.title,
+        "cover": season_info.cover,
+        "evaluate": season_info.evaluate,
+        "show_season_type": season_info.show_season_type,
+        "actors": season_info.actors,
+        "rating": season_info.rating,
+        "areas": season_info.areas,
+        "styles": season_info.styles,
+        "total": season_info.total_episodes,
+        "new_ep": {
+            "cover": season_info.new_ep_cover,
+        },
+        "horizontal_cover_1610": season_info.horizontal_cover_1610,
+        "horizontal_cover_169": season_info.horizontal_cover_169,
+        "bkg_cover": season_info.bkg_cover,
+    });
+    
+    // 获取最新的剧集时间
+    let last_episode_time = videos_with_pages
+        .iter()
+        .map(|(v, _)| v.pubtime.and_utc())
+        .max();
+    
+    // 创建缓存对象
+    let cache = BangumiCache {
+        season_info: season_json,
+        episodes: episodes.clone(),
+        last_episode_time,
+        total_episodes: season_info.total_episodes.unwrap_or(episodes.len() as i32) as usize,
+    };
+    
+    // 序列化缓存
+    let cache_json = serialize_cache(&cache)?;
+    
+    // 更新数据库
+    let active_model = video_source::ActiveModel {
+        id: Set(source_id),
+        cached_episodes: Set(Some(cache_json)),
+        cache_updated_at: Set(Some(chrono::Utc::now().naive_utc())),
+        ..Default::default()
+    };
+    
+    active_model.update(connection).await?;
+    
+    info!(
+        "番剧源 {} ({}) 缓存更新成功，共 {} 集",
+        source_id,
+        season_info.title,
+        episodes.len()
+    );
+    
+    Ok(())
+}
+
 /// 请求接口，获取视频列表中所有新添加的视频信息，将其写入数据库
 pub async fn refresh_video_source<'a>(
     video_source: &VideoSourceEnum,
     video_streams: Pin<Box<dyn Stream<Item = Result<VideoInfo>> + 'a + Send>>,
     connection: &DatabaseConnection,
     token: CancellationToken,
+    bili_client: &BiliClient,
 ) -> Result<(usize, Vec<NewVideoInfo>)> {
     video_source.log_refresh_video_start();
     let latest_row_at = video_source.get_latest_row_at().and_utc();
@@ -368,6 +508,15 @@ pub async fn refresh_video_source<'a>(
             .save(connection)
             .await?;
     }
+    
+    // 番剧源：更新缓存（如果有新数据）
+    if let VideoSourceEnum::BangumiSource(bangumi_source) = video_source {
+        if count > 0 || max_datetime != latest_row_at {
+            // 有新视频或时间更新，说明获取了新数据，应该更新缓存
+            update_bangumi_cache(bangumi_source.id, connection, bili_client, None).await?;
+        }
+    }
+    
     video_source.log_refresh_video_end(count);
     Ok((count, new_videos))
 }
@@ -3634,6 +3783,9 @@ async fn get_season_info_from_api(
 
     debug!("番剧 {} 总季数计算完成: {} 季", title, total_seasons.unwrap_or(1));
 
+    // 获取show_season_type
+    let show_season_type = result["type"].as_i64().map(|v| v as i32);
+
     Ok(SeasonInfo {
         title,
         episodes,
@@ -3657,6 +3809,7 @@ async fn get_season_info_from_api(
         total_views,
         total_favorites,
         total_seasons,
+        show_season_type,
     })
 }
 

@@ -9,6 +9,7 @@ use tokio_util::sync::CancellationToken;
 use tracing;
 
 use super::{BiliClient, Validate, VideoInfo};
+use crate::utils::bangumi_cache::BangumiCache;
 
 /// 检测是否为预告片
 /// 根据用户确认，section_type: 1 是最可靠的预告片标识
@@ -150,6 +151,28 @@ impl Bangumi {
         json.validate().map(|v| v["result"].clone())
     }
 
+    /// 轻量级检查番剧是否有更新
+    /// 返回 (是否有更新, 最新剧集时间)
+    pub async fn check_update(&self, last_check_time: Option<DateTime<Utc>>) -> Result<(bool, Option<DateTime<Utc>>)> {
+        // 获取最小信息来判断是否有更新
+        let season_info = self.get_season_info().await?;
+        
+        // 获取最新更新时间
+        let latest_episode_time = season_info["new_ep"]["pub_time"]
+            .as_i64()
+            .map(|ts| DateTime::<Utc>::from_timestamp(ts, 0))
+            .flatten();
+        
+        // 如果没有上次检查时间，视为有更新
+        let has_update = match (last_check_time, latest_episode_time) {
+            (Some(last), Some(latest)) => latest > last,
+            (None, Some(_)) => true,
+            _ => false,
+        };
+        
+        Ok((has_update, latest_episode_time))
+    }
+
     /// 获取番剧分集信息（已弃用，直接从season_info解析episodes更高效）
     #[allow(dead_code)]
     pub async fn get_episodes(&self) -> Result<Vec<BangumiEpisode>> {
@@ -225,6 +248,33 @@ impl Bangumi {
         }
 
         Ok(result)
+    }
+
+    /// 获取番剧信息并生成缓存
+    pub async fn get_season_info_with_cache(&self) -> Result<(serde_json::Value, BangumiCache)> {
+        let season_info = self.get_season_info().await?;
+        
+        // 提取剧集信息
+        let episodes = season_info["episodes"]
+            .as_array()
+            .cloned()
+            .unwrap_or_default();
+        
+        // 找出最新剧集时间
+        let last_episode_time = episodes.iter()
+            .filter_map(|ep| ep["pub_time"].as_i64())
+            .max()
+            .map(|ts| DateTime::<Utc>::from_timestamp(ts, 0))
+            .flatten();
+        
+        let cache = BangumiCache {
+            season_info: season_info.clone(),
+            episodes: episodes.clone(),
+            last_episode_time,
+            total_episodes: episodes.len(),
+        };
+        
+        Ok((season_info, cache))
     }
 
     /// 将单季番剧转换为视频流

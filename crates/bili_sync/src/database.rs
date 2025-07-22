@@ -63,5 +63,12 @@ async fn migrate_database() -> Result<()> {
 /// 进行数据库迁移并获取数据库连接，供外部使用
 pub async fn setup_database() -> DatabaseConnection {
     migrate_database().await.expect("数据库迁移失败");
-    database_connection().await.expect("获取数据库连接失败")
+    let connection = database_connection().await.expect("获取数据库连接失败");
+    
+    // 执行番剧缓存相关的数据库迁移
+    if let Err(e) = crate::utils::bangumi_cache::ensure_cache_columns(&connection).await {
+        tracing::warn!("番剧缓存数据库迁移失败: {}", e);
+    }
+    
+    connection
 }

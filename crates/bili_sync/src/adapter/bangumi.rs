@@ -148,12 +148,100 @@ impl BangumiSource {
         }
     }
 
+    /// 从缓存获取视频流
+    pub async fn video_stream_from_cache(
+        &self,
+        cached_data: &str,
+        latest_row_at: Option<DateTime<Utc>>,
+    ) -> Result<Pin<Box<dyn Stream<Item = Result<VideoInfo>> + Send>>> {
+        use crate::utils::bangumi_cache::parse_cache;
+        use async_stream::try_stream;
+        use crate::bilibili::VideoInfo;
+        
+        let cache = parse_cache(cached_data)?;
+        
+        // 从缓存创建视频流
+        let season_info = cache.season_info.clone();
+        let episodes = cache.episodes;
+        let season_id = self.season_id.clone();
+        let _path = self.path.clone();
+        
+        Ok(Box::pin(try_stream! {
+            // 从缓存的season_info中提取信息
+            let cover = season_info["cover"].as_str().unwrap_or_default().to_string();
+            let title = season_info["title"].as_str().unwrap_or_default().to_string();
+            let intro = season_info["evaluate"].as_str().unwrap_or_default().to_string();
+            let show_season_type = season_info["show_season_type"].as_i64().map(|v| v as i32);
+            let actors = season_info["actors"].as_str().map(|s| s.to_string());
+            
+            // 使用缓存的数据生成视频流
+            for episode in episodes {
+                let pub_time = episode["pub_time"].as_i64().unwrap_or(0);
+                let pub_datetime = DateTime::<Utc>::from_timestamp(pub_time, 0);
+                
+                // 如果设置了时间过滤，跳过旧剧集
+                if let (Some(latest), Some(pub_dt)) = (latest_row_at, pub_datetime) {
+                    if pub_dt <= latest {
+                        continue;
+                    }
+                }
+                
+                // 检查是否为预告片
+                if episode["section_type"].as_i64().unwrap_or(0) == 1 {
+                    continue; // 跳过预告片
+                }
+                
+                // 从缓存的剧集数据构建VideoInfo
+                let bvid = episode["bvid"].as_str().unwrap_or_default().to_string();
+                let ep_title = episode["title"].as_str().unwrap_or_default().to_string();
+                let long_title = episode["long_title"].as_str().unwrap_or_default().to_string();
+                let share_copy = episode["share_copy"].as_str().map(|s| s.to_string());
+                let aid = episode["aid"].as_i64().unwrap_or(0);
+                let cid = episode["cid"].as_i64().unwrap_or(0);
+                let _duration = episode["duration"].as_i64().unwrap_or(0) / 1000; // 毫秒转秒
+                let episode_cover = episode["cover"].as_str().unwrap_or(&cover).to_string();
+                
+                // 解析集数
+                let episode_number = ep_title.parse::<i32>().ok();
+                
+                let video_info = VideoInfo::Bangumi {
+                    title: if long_title.is_empty() { title.clone() } else { long_title },
+                    bvid: bvid.clone(),
+                    aid: aid.to_string(),
+                    cid: cid.to_string(),
+                    ep_id: episode["id"].as_i64().unwrap_or(0).to_string(),
+                    cover: episode_cover,
+                    season_id: season_id.clone().unwrap_or_default(),
+                    intro: intro.clone(),
+                    pubtime: pub_datetime.unwrap_or_default(),
+                    episode_number,
+                    share_copy,
+                    show_season_type,
+                    show_title: Some(ep_title.clone()),
+                    season_number: None, // 从缓存中无法获取季度编号
+                    actors: actors.clone(),
+                };
+                
+                yield video_info;
+            }
+        }))
+    }
+
     pub async fn video_stream_from(
         &self,
         bili_client: &BiliClient,
         _path: &Path,
         connection: &sea_orm::DatabaseConnection,
     ) -> Result<Pin<Box<dyn Stream<Item = Result<VideoInfo>> + Send>>> {
+        use crate::utils::bangumi_cache::is_cache_expired;
+        use bili_sync_entity::video_source;
+        
+        // 获取当前番剧源的缓存信息
+        let source_model = video_source::Entity::find_by_id(self.id)
+            .one(connection)
+            .await?
+            .ok_or_else(|| anyhow::anyhow!("番剧源不存在"))?;
+        
         // 检查是否是首次扫描：如果该源没有任何视频记录，应该进行全量获取
         let video_count = bili_sync_entity::video::Entity::find()
             .filter(bili_sync_entity::video::Column::SourceId.eq(self.id))
@@ -176,7 +264,53 @@ impl BangumiSource {
             self.season_id.clone(),
             self.ep_id.clone(),
         );
+        
+        // 检查缓存是否可用
+        let use_cache = if let (Some(_cached_episodes), Some(cache_updated_at)) = 
+            (&source_model.cached_episodes, source_model.cache_updated_at) {
+            // 检查缓存是否过期（默认24小时）
+            if !is_cache_expired(Some(cache_updated_at.and_utc()), 24) {
+                // 尝试轻量级更新检查
+                match bangumi.check_update(Some(cache_updated_at.and_utc())).await {
+                    Ok((has_update, _)) => {
+                        if !has_update {
+                            // 没有更新，可以使用缓存
+                            info!("番剧 {} 无更新，使用缓存数据", self.name);
+                            true
+                        } else {
+                            info!("番剧 {} 检测到更新，需要重新获取", self.name);
+                            false
+                        }
+                    }
+                    Err(e) => {
+                        warn!("检查番剧更新失败: {}，将重新获取完整数据", e);
+                        false
+                    }
+                }
+            } else {
+                debug!("番剧缓存已过期，需要重新获取");
+                false
+            }
+        } else {
+            debug!("番剧无缓存，需要获取完整数据");
+            false
+        };
+        
+        if use_cache && source_model.cached_episodes.is_some() {
+            // 使用缓存数据
+            let cached_data = source_model.cached_episodes.unwrap();
+            match self.video_stream_from_cache(&cached_data, latest_row_at).await {
+                Ok(stream) => {
+                    info!("成功从缓存加载番剧数据");
+                    return Ok(stream);
+                }
+                Err(e) => {
+                    warn!("从缓存加载番剧数据失败: {}，回退到API获取", e);
+                }
+            }
+        }
 
+        // 缓存不可用或加载失败，从API获取
         let mode_desc = if latest_row_at.is_some() { "增量" } else { "全量" };
 
         if self.download_all_seasons {
@@ -202,6 +336,7 @@ impl BangumiSource {
                 "正在{}获取当前季度的番剧内容（时间过滤: {:?}）",
                 mode_desc, latest_row_at
             );
+            // 单季度：获取并缓存season信息
             Ok(Box::pin(bangumi.to_video_stream_incremental(latest_row_at)))
         }
     }
