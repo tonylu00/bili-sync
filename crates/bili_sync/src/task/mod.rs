@@ -116,6 +116,8 @@ pub struct UpdateConfigTask {
     pub collection_use_season_structure: Option<bool>,
     // 番剧目录结构配置
     pub bangumi_use_season_structure: Option<bool>,
+    // UP主头像保存路径
+    pub upper_path: Option<String>,
     pub task_id: String, // 唯一任务ID，用于追踪
 }
 
@@ -1422,6 +1424,8 @@ impl ConfigTaskQueue {
                 collection_use_season_structure: task.collection_use_season_structure,
                 // 番剧目录结构配置
                 bangumi_use_season_structure: task.bangumi_use_season_structure,
+                // UP主头像保存路径
+                upper_path: task.upper_path.clone(),
             };
 
             match update_config_internal(db.clone(), request).await {

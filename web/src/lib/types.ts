@@ -257,6 +257,8 @@ export interface ConfigResponse {
 		dedeuserid: string;
 		ac_time_value: string;
 	};
+	// UP主头像保存路径
+	upper_path?: string;
 }
 
 // 更新配置请求类型
@@ -331,6 +333,8 @@ export interface UpdateConfigRequest {
 	collection_use_season_structure?: boolean;
 	// 番剧目录结构配置
 	bangumi_use_season_structure?: boolean;
+	// UP主头像保存路径
+	upper_path?: string;
 }
 
 // 更新配置响应类型

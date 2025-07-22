@@ -172,6 +172,7 @@
 	let cdnSorting = false;
 	let timezone = DEFAULT_TIMEZONE;
 	let scanDeletedVideos = false;
+	let upperPath = ''; // UP主头像保存路径
 
 	// B站凭证设置
 	let sessdata = '';
@@ -456,6 +457,7 @@
 			cdnSorting = config.cdn_sorting || false;
 			timezone = config.timezone || getCurrentTimezone();
 			scanDeletedVideos = config.scan_deleted_videos || false;
+			upperPath = config.upper_path || '';
 
 			// B站凭证设置
 			sessdata = config.credential?.sessdata || '';
@@ -636,6 +638,7 @@
 				cdn_sorting: cdnSorting,
 				timezone: timezone,
 				scan_deleted_videos: scanDeletedVideos,
+				upper_path: upperPath,
 				// UP主投稿风控配置
 				large_submission_threshold: largeSubmissionThreshold,
 				base_request_delay: baseRequestDelay,
@@ -2979,6 +2982,17 @@
 								<p class="text-muted-foreground ml-2 text-sm">在视频列表中显示已删除的视频</p>
 							</div>
 
+							<div class="space-y-2">
+								<Label for="upper-path">UP主头像保存路径</Label>
+								<Input
+									id="upper-path"
+									type="text"
+									bind:value={upperPath}
+									placeholder="config/upper_face"
+								/>
+								<p class="text-muted-foreground text-sm">UP主头像和person.nfo文件的保存目录路径</p>
+							</div>
+
 							<div
 								class="rounded-lg border border-orange-200 bg-orange-50 p-3 dark:border-orange-800 dark:bg-orange-950/20"
 							>
@@ -2991,6 +3005,7 @@
 										<strong>显示已删除视频：</strong
 										>控制前端列表是否显示已删除的视频（注：与视频源的"扫描已删除视频"功能不同）
 									</p>
+									<p><strong>UP主头像路径：</strong>UP主头像和person.nfo文件的保存目录，用于媒体库显示</p>
 								</div>
 							</div>
 						</div>

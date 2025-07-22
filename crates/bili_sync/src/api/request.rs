@@ -170,6 +170,8 @@ pub struct UpdateConfigRequest {
     pub collection_use_season_structure: Option<bool>,
     // 番剧目录结构配置
     pub bangumi_use_season_structure: Option<bool>,
+    // UP主头像保存路径
+    pub upper_path: Option<String>,
 }
 
 #[derive(Debug, Deserialize, ToSchema)]

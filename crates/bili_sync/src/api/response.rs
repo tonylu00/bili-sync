@@ -285,6 +285,8 @@ pub struct ConfigResponse {
     pub collection_use_season_structure: bool,
     // 番剧目录结构配置
     pub bangumi_use_season_structure: bool,
+    // UP主头像保存路径
+    pub upper_path: String,
     // B站凭证信息
     pub credential: Option<CredentialInfo>,
     // 推送通知配置

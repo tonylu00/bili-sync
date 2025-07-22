@@ -3917,6 +3917,8 @@ pub async fn get_config() -> Result<ApiResponse<crate::api::response::ConfigResp
         collection_use_season_structure: config.collection_use_season_structure,
         // 番剧目录结构配置
         bangumi_use_season_structure: config.bangumi_use_season_structure,
+        // UP主头像保存路径
+        upper_path: config.upper_path.to_string_lossy().to_string(),
         // B站凭证信息
         credential: {
             let credential = config.credential.load();
@@ -4023,6 +4025,8 @@ pub async fn update_config(
             collection_use_season_structure: params.collection_use_season_structure,
             // 番剧目录结构配置
             bangumi_use_season_structure: params.bangumi_use_season_structure,
+            // UP主头像保存路径
+            upper_path: params.upper_path.clone(),
             task_id: task_id.clone(),
         };
 
@@ -4575,6 +4579,17 @@ pub async fn update_config_internal(
         if use_season_structure != config.bangumi_use_season_structure {
             config.bangumi_use_season_structure = use_season_structure;
             updated_fields.push("bangumi_use_season_structure");
+        }
+    }
+
+    // UP主头像保存路径
+    if let Some(upper_path) = params.upper_path {
+        if !upper_path.trim().is_empty() {
+            let new_path = std::path::PathBuf::from(upper_path);
+            if new_path != config.upper_path {
+                config.upper_path = new_path;
+                updated_fields.push("upper_path");
+            }
         }
     }
 
