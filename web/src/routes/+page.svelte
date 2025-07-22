@@ -589,7 +589,8 @@
 							</div>
 						{/if}
 						{#if memoryHistory.length > 0}
-							<Chart.Container config={memoryChartConfig} class="h-[150px] w-full">
+							<div class="h-[150px] w-full overflow-hidden">
+								<Chart.Container config={memoryChartConfig} class="h-full w-full">
 								<AreaChart
 									data={memoryHistory}
 									x="time"
@@ -614,6 +615,11 @@
 										},
 										xAxis: {
 											format: () => ''
+										},
+										yAxis: {
+											domain: [0, sysInfo?.total_memory || 'dataMax'],
+											nice: false,
+											tickFormatter: (v: number) => formatBytes(v)
 										}
 									}}
 								>
@@ -632,7 +638,8 @@
 										/>
 									{/snippet}
 								</AreaChart>
-							</Chart.Container>
+								</Chart.Container>
+							</div>
 						{:else}
 							<div class="text-muted-foreground flex h-[150px] items-center justify-center text-sm">
 								等待数据...
@@ -656,7 +663,8 @@
 							</div>
 						{/if}
 						{#if cpuHistory.length > 0}
-							<Chart.Container config={cpuChartConfig} class="h-[150px] w-full">
+							<div class="h-[150px] w-full overflow-hidden">
+								<Chart.Container config={cpuChartConfig} class="h-full w-full">
 								<AreaChart
 									data={cpuHistory}
 									x="time"
@@ -681,6 +689,11 @@
 										},
 										xAxis: {
 											format: () => ''
+										},
+										yAxis: {
+											domain: [0, 100],
+											nice: false,
+											tickFormatter: (v: number) => `${v}%`
 										}
 									}}
 								>
@@ -699,7 +712,8 @@
 										/>
 									{/snippet}
 								</AreaChart>
-							</Chart.Container>
+								</Chart.Container>
+							</div>
 						{:else}
 							<div class="text-muted-foreground flex h-[150px] items-center justify-center text-sm">
 								等待数据...

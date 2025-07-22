@@ -70,7 +70,7 @@
 <AlertDialog.Root bind:open={isOpen}>
 	<AlertDialog.Content class="max-w-md">
 		<AlertDialog.Header>
-			<AlertDialog.Title class="text-destructive flex items-center gap-2">
+			<AlertDialog.Title class="text-destructive flex items-center gap-2 dark:text-red-400">
 				<svg class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
 					<path
 						stroke-linecap="round"
@@ -82,9 +82,9 @@
 				删除视频源
 			</AlertDialog.Title>
 			<AlertDialog.Description class="space-y-3">
-				<div class="rounded-lg border border-red-200 bg-red-50 p-3">
-					<p class="text-sm font-medium text-red-800">⚠️ 危险操作警告</p>
-					<p class="mt-1 text-xs text-red-700">
+				<div class="rounded-lg border border-red-200 bg-red-50 p-3 dark:border-red-800 dark:bg-red-950">
+					<p class="text-sm font-medium text-red-800 dark:text-red-200">⚠️ 危险操作警告</p>
+					<p class="mt-1 text-xs text-red-700 dark:text-red-300">
 						此操作将永久删除视频源及其所有相关数据，且不可撤销！
 					</p>
 				</div>
@@ -92,17 +92,17 @@
 				<div class="space-y-2">
 					<div class="flex items-center gap-2 text-sm">
 						<span class="font-medium">类型：</span>
-						<span class="rounded bg-blue-100 px-2 py-1 text-xs text-blue-800">
+						<span class="rounded bg-blue-100 px-2 py-1 text-xs text-blue-800 dark:bg-blue-900 dark:text-blue-200">
 							{getSourceTypeLabel(sourceType)}
 						</span>
 					</div>
 					<div class="flex items-center gap-2 text-sm">
 						<span class="font-medium">名称：</span>
-						<span class="font-mono text-gray-800">"{sourceName}"</span>
+						<span class="font-mono text-gray-800 dark:text-gray-200">"{sourceName}"</span>
 					</div>
 				</div>
 
-				<div class="rounded-lg border border-yellow-200 bg-yellow-50 p-3">
+				<div class="rounded-lg border border-yellow-200 bg-yellow-50 p-3 dark:border-yellow-800 dark:bg-yellow-950">
 					<div class="flex items-start gap-2">
 						<svg
 							class="mt-0.5 h-4 w-4 flex-shrink-0 text-yellow-600"
@@ -117,7 +117,7 @@
 								d="M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4m0 5c0 2.21-3.582 4-8 4s-8-1.79-8-4"
 							/>
 						</svg>
-						<div class="text-xs text-yellow-800">
+						<div class="text-xs text-yellow-800 dark:text-yellow-200">
 							<p class="font-medium">将删除以下数据：</p>
 							<ul class="mt-1 list-inside list-disc space-y-0.5 text-xs">
 								<li>数据库中的视频源记录</li>
@@ -130,7 +130,7 @@
 				</div>
 
 				<div class="space-y-3">
-					<div class="flex items-start gap-3 rounded-lg border p-3">
+					<div class="flex items-start gap-3 rounded-lg border p-3 dark:border-gray-600">
 						<input
 							type="checkbox"
 							id="delete-files"
@@ -152,17 +152,17 @@
 								</svg>
 								同时删除本地文件
 							</label>
-							<p class="text-xs text-gray-600">
+							<p class="text-xs text-gray-600 dark:text-gray-400">
 								勾选后将删除该视频源对应的所有本地下载文件和文件夹。
-								<span class="font-medium text-red-600">此操作不可恢复！</span>
+								<span class="font-medium text-red-600 dark:text-red-400">此操作不可恢复！</span>
 							</p>
 						</div>
 					</div>
 
 					{#if deleteLocalFiles}
-						<div class="rounded-lg border border-red-200 bg-red-50 p-3">
-							<p class="text-xs font-medium text-red-800">⚠️ 文件删除警告</p>
-							<p class="mt-1 text-xs text-red-700">
+						<div class="rounded-lg border border-red-200 bg-red-50 p-3 dark:border-red-800 dark:bg-red-950">
+							<p class="text-xs font-medium text-red-800 dark:text-red-200">⚠️ 文件删除警告</p>
+							<p class="mt-1 text-xs text-red-700 dark:text-red-300">
 								选择删除本地文件后，该视频源下载的所有视频文件都将被永久删除，
 								包括视频文件、字幕、封面图片等。请确保您有备份或不再需要这些文件。
 							</p>
@@ -171,15 +171,15 @@
 				</div>
 
 				<div class="space-y-2">
-					<label for="confirm-input" class="text-sm font-medium text-gray-700">
-						确认删除：请输入视频源名称 "<span class="font-mono text-red-600">{sourceName}</span>"
+					<label for="confirm-input" class="text-sm font-medium text-gray-700 dark:text-gray-300">
+						确认删除：请输入视频源名称 "<span class="font-mono text-red-600 dark:text-red-400">{sourceName}</span>"
 					</label>
 					<input
 						id="confirm-input"
 						type="text"
 						bind:value={confirmText}
 						placeholder="输入视频源名称以确认删除"
-						class="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-red-500 focus:ring-2 focus:ring-red-500 focus:outline-none"
+						class="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-red-500 focus:ring-2 focus:ring-red-500 focus:outline-none dark:border-gray-600 dark:bg-gray-700 dark:text-gray-200 dark:placeholder-gray-400 dark:focus:border-red-400 dark:focus:ring-red-400"
 						disabled={isDeleting}
 					/>
 				</div>
@@ -188,7 +188,7 @@
 		<AlertDialog.Footer class="flex justify-end gap-3 pt-4">
 			<button
 				type="button"
-				class="rounded-md border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 focus:outline-none disabled:cursor-not-allowed disabled:opacity-50"
+				class="rounded-md border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 focus:outline-none disabled:cursor-not-allowed disabled:opacity-50 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-200 dark:hover:bg-gray-600 dark:focus:ring-offset-gray-800"
 				disabled={isDeleting}
 				on:click={handleCancel}
 			>

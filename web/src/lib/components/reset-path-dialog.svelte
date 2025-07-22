@@ -78,7 +78,7 @@
 <AlertDialog.Root bind:open={isOpen}>
 	<AlertDialog.Content class="max-w-lg">
 		<AlertDialog.Header>
-			<AlertDialog.Title class="flex items-center gap-2 text-blue-600">
+			<AlertDialog.Title class="flex items-center gap-2 text-blue-600 dark:text-blue-400">
 				<svg class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
 					<path
 						stroke-linecap="round"
@@ -90,9 +90,9 @@
 				重设视频源路径
 			</AlertDialog.Title>
 			<AlertDialog.Description class="space-y-4">
-				<div class="rounded-lg border border-blue-200 bg-blue-50 p-3">
-					<p class="text-sm font-medium text-blue-800">📁 路径重设说明</p>
-					<p class="mt-1 text-xs text-blue-700">
+				<div class="rounded-lg border border-blue-200 bg-blue-50 p-3 dark:border-blue-800 dark:bg-blue-950">
+					<p class="text-sm font-medium text-blue-800 dark:text-blue-200">📁 路径重设说明</p>
+					<p class="mt-1 text-xs text-blue-700 dark:text-blue-300">
 						此操作将更改视频源的存储路径，并可选择移动现有文件到新位置。
 					</p>
 				</div>
@@ -100,23 +100,23 @@
 				<div class="space-y-2">
 					<div class="flex items-center gap-2 text-sm">
 						<span class="font-medium">类型：</span>
-						<span class="rounded bg-blue-100 px-2 py-1 text-xs text-blue-800">
+						<span class="rounded bg-blue-100 px-2 py-1 text-xs text-blue-800 dark:bg-blue-900 dark:text-blue-200">
 							{getSourceTypeLabel(sourceType)}
 						</span>
 					</div>
 					<div class="flex items-center gap-2 text-sm">
 						<span class="font-medium">名称：</span>
-						<span class="font-mono text-gray-800">"{sourceName}"</span>
+						<span class="font-mono text-gray-800 dark:text-gray-200">"{sourceName}"</span>
 					</div>
 					<div class="flex items-start gap-2 text-sm">
 						<span class="font-medium">当前路径：</span>
-						<span class="font-mono break-all text-gray-600">{currentPath}</span>
+						<span class="font-mono break-all text-gray-600 dark:text-gray-400">{currentPath}</span>
 					</div>
 				</div>
 
 				<div class="space-y-3">
 					<div class="space-y-2">
-						<label for="new-path" class="text-sm font-medium text-gray-700">
+						<label for="new-path" class="text-sm font-medium text-gray-700 dark:text-gray-300">
 							新路径 <span class="text-red-500">*</span>
 						</label>
 						<input
@@ -124,13 +124,13 @@
 							type="text"
 							bind:value={newPath}
 							placeholder="输入新的存储路径，例如：/downloads/videos"
-							class="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:ring-2 focus:ring-blue-500 focus:outline-none"
+							class="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:ring-2 focus:ring-blue-500 focus:outline-none dark:border-gray-600 dark:bg-gray-700 dark:text-gray-200 dark:placeholder-gray-400 dark:focus:border-blue-400 dark:focus:ring-blue-400"
 							disabled={isProcessing}
 						/>
 					</div>
 
 					<div class="space-y-3">
-						<div class="flex items-start gap-3 rounded-lg border p-3">
+						<div class="flex items-start gap-3 rounded-lg border p-3 dark:border-gray-600">
 							<input
 								type="checkbox"
 								id="apply-rename-rules"
@@ -153,7 +153,7 @@
 									</svg>
 									应用四步重命名原则移动文件
 								</label>
-								<p class="text-xs text-gray-600">
+								<p class="text-xs text-gray-600 dark:text-gray-400">
 									勾选后将使用安全的四步重命名原则移动现有文件到新路径。
 									这可以避免数据丢失和文件名冲突。
 								</p>
@@ -161,7 +161,7 @@
 						</div>
 
 						{#if applyRenameRules}
-							<div class="flex items-start gap-3 rounded-lg border p-3">
+							<div class="flex items-start gap-3 rounded-lg border p-3 dark:border-gray-600">
 								<input
 									type="checkbox"
 									id="clean-empty-folders"
@@ -184,14 +184,14 @@
 										</svg>
 										清理空的原始文件夹
 									</label>
-									<p class="text-xs text-gray-600">移动文件后，删除原始路径中的空文件夹。</p>
+									<p class="text-xs text-gray-600 dark:text-gray-400">移动文件后，删除原始路径中的空文件夹。</p>
 								</div>
 							</div>
 						{/if}
 					</div>
 
 					{#if applyRenameRules}
-						<div class="rounded-lg border border-green-200 bg-green-50 p-3">
+						<div class="rounded-lg border border-green-200 bg-green-50 p-3 dark:border-green-800 dark:bg-green-950">
 							<div class="flex items-start gap-2">
 								<svg
 									class="mt-0.5 h-4 w-4 flex-shrink-0 text-green-600"
@@ -206,7 +206,7 @@
 										d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"
 									/>
 								</svg>
-								<div class="text-xs text-green-800">
+								<div class="text-xs text-green-800 dark:text-green-200">
 									<p class="font-medium">四步重命名原则说明：</p>
 									<ol class="mt-1 list-inside list-decimal space-y-0.5 text-xs">
 										<li>重命名为临时名称（避免冲突）</li>
@@ -219,7 +219,7 @@
 							</div>
 						</div>
 					{:else}
-						<div class="rounded-lg border border-yellow-200 bg-yellow-50 p-3">
+						<div class="rounded-lg border border-yellow-200 bg-yellow-50 p-3 dark:border-yellow-800 dark:bg-yellow-950">
 							<div class="flex items-start gap-2">
 								<svg
 									class="mt-0.5 h-4 w-4 flex-shrink-0 text-yellow-600"
@@ -234,7 +234,7 @@
 										d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.732-.833-2.5 0L4.268 19.5c-.77.833.192 2.5 1.732 2.5z"
 									/>
 								</svg>
-								<div class="text-xs text-yellow-800">
+								<div class="text-xs text-yellow-800 dark:text-yellow-200">
 									<p class="font-medium">注意：</p>
 									<p class="mt-1">
 										未勾选文件移动选项时，只会更新数据库中的路径配置，
@@ -250,7 +250,7 @@
 		<AlertDialog.Footer class="flex justify-end gap-3 pt-4">
 			<button
 				type="button"
-				class="rounded-md border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 focus:outline-none disabled:cursor-not-allowed disabled:opacity-50"
+				class="rounded-md border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 focus:outline-none disabled:cursor-not-allowed disabled:opacity-50 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-200 dark:hover:bg-gray-600 dark:focus:ring-offset-gray-800"
 				disabled={isProcessing}
 				on:click={handleCancel}
 			>
