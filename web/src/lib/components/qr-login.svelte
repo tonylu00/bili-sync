@@ -11,7 +11,6 @@
 	} from '$lib/components/ui/card';
 	import { Skeleton } from '$lib/components/ui/skeleton';
 	import { Badge } from '$lib/components/ui/badge';
-	// @ts-expect-error QRCode库没有类型定义
 	import QRCode from 'qrcode';
 	import type { UserInfo } from '$lib/types';
 
@@ -163,7 +162,12 @@
 						statusMessage = '登录成功！';
 						stopPolling();
 						toast.success('登录成功！');
-						onLoginSuccess(data.user_info);
+						if (data.user_info) {
+							onLoginSuccess(data.user_info);
+						} else {
+							console.error('登录成功但缺少用户信息');
+							onLoginError('登录成功但缺少用户信息');
+						}
 						// 3秒后重置状态，如果设置了自动重新生成
 						if (autoRegenerate) {
 							setTimeout(() => {
