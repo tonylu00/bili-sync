@@ -251,6 +251,7 @@ impl Bangumi {
     }
 
     /// 获取番剧信息并生成缓存
+    #[allow(dead_code)]
     pub async fn get_season_info_with_cache(&self) -> Result<(serde_json::Value, BangumiCache)> {
         let season_info = self.get_season_info().await?;
         

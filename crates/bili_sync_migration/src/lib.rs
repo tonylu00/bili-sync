@@ -27,6 +27,7 @@ mod m20250705_000001_add_actors_field;
 mod m20250708_000001_add_collection_season_structure;
 mod m20250710_000001_add_bangumi_season_structure;
 mod m20250717_000001_add_staff_info;
+mod m20250722_000001_add_bangumi_cache_fields;
 
 pub struct Migrator;
 
@@ -61,6 +62,7 @@ impl MigratorTrait for Migrator {
             Box::new(m20250104_000001_add_selected_videos_field::Migration),
             Box::new(m20250104_000002_add_auto_download_field::Migration),
             Box::new(m20250717_000001_add_staff_info::Migration),
+            Box::new(m20250722_000001_add_bangumi_cache_fields::Migration),
         ]
     }
 }
