@@ -617,7 +617,6 @@
 											format: () => ''
 										},
 										yAxis: {
-											domain: [0, sysInfo?.total_memory || 'dataMax'],
 											nice: false,
 											tickFormatter: (v: number) => formatBytes(v)
 										}
@@ -625,15 +624,19 @@
 								>
 									{#snippet tooltip()}
 										<MyChartTooltip
-											labelFormatter={(v: Date) => {
-												return v.toLocaleString('en-US', {
+											labelFormatter={(v: string | number) => {
+												const date = typeof v === 'string' ? new Date(v) : new Date(v);
+												return date.toLocaleString('en-US', {
 													hour: '2-digit',
 													minute: '2-digit',
 													second: '2-digit',
 													hour12: true
 												});
 											}}
-											valueFormatter={(v: number) => formatBytes(v)}
+											valueFormatter={(v: string | number) => {
+												const num = typeof v === 'string' ? parseFloat(v) : v;
+												return formatBytes(num);
+											}}
 											indicator="line"
 										/>
 									{/snippet}
@@ -691,7 +694,6 @@
 											format: () => ''
 										},
 										yAxis: {
-											domain: [0, 100],
 											nice: false,
 											tickFormatter: (v: number) => `${v}%`
 										}
@@ -699,15 +701,19 @@
 								>
 									{#snippet tooltip()}
 										<MyChartTooltip
-											labelFormatter={(v: Date) => {
-												return v.toLocaleString('en-US', {
+											labelFormatter={(v: string | number) => {
+												const date = typeof v === 'string' ? new Date(v) : new Date(v);
+												return date.toLocaleString('en-US', {
 													hour: '2-digit',
 													minute: '2-digit',
 													second: '2-digit',
 													hour12: true
 												});
 											}}
-											valueFormatter={(v: number) => formatCpu(v)}
+											valueFormatter={(v: string | number) => {
+												const num = typeof v === 'string' ? parseFloat(v) : v;
+												return formatCpu(num);
+											}}
 											indicator="line"
 										/>
 									{/snippet}

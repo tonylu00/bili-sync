@@ -127,17 +127,17 @@
 
 	async function handleResetVideo(video: VideoInfo, forceReset: boolean) {
 		try {
-			const result = await api.resetVideo(video.id, { force: forceReset });
+			const result = await api.resetVideo(video.id, forceReset);
 			const data = result.data;
 			if (data.resetted) {
 				toast.success('重置成功', {
-					description: `视频「${data.video.name}」已重置`
+					description: `视频「${video.name}」已重置`
 				});
 				const { query, currentPage, videoSource } = $appStateStore;
 				await loadVideos(query, currentPage, videoSource);
 			} else {
 				toast.info('重置无效', {
-					description: `视频「${data.video.name}」没有失败的状态，无需重置`
+					description: `视频「${video.name}」没有失败的状态，无需重置`
 				});
 			}
 		} catch (error) {

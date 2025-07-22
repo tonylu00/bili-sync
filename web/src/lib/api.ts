@@ -38,7 +38,8 @@ import type {
 	DashBoardResponse,
 	SysInfo,
 	TaskStatus,
-	BangumiSeasonsResponse
+	BangumiSeasonsResponse,
+	VideoBvidResponse
 } from './types';
 import { ErrorType } from './types';
 import { wsManager } from './ws';
