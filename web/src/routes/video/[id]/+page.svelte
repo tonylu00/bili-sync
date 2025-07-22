@@ -600,30 +600,30 @@
 														if (audio) audio.pause();
 													}
 												}}
-												onseeked={() => {
+												onseeked={(e) => {
 													// 同步音频时间
 													if (isDashSeparatedStream()) {
-														const video = document.querySelector('video');
-														const audio = document.querySelector('#sync-audio');
+														const video = e.currentTarget as HTMLVideoElement;
+														const audio = document.querySelector('#sync-audio') as HTMLAudioElement;
 														if (video && audio) audio.currentTime = video.currentTime;
 													}
 												}}
-												onvolumechange={() => {
+												onvolumechange={(e) => {
 													// 同步音量控制 - 固定100%音量
 													if (isDashSeparatedStream()) {
-														const video = document.querySelector('video');
-														const audio = document.querySelector('#sync-audio');
+														const video = e.currentTarget as HTMLVideoElement;
+														const audio = document.querySelector('#sync-audio') as HTMLAudioElement;
 														if (video && audio) {
 															audio.volume = 1.0;
 															audio.muted = video.muted;
 														}
 													}
 												}}
-												onloadedmetadata={() => {
+												onloadedmetadata={(e) => {
 													// 初始化时同步音量设置 - 固定100%音量
 													if (isDashSeparatedStream()) {
-														const video = document.querySelector('video');
-														const audio = document.querySelector('#sync-audio');
+														const video = e.currentTarget as HTMLVideoElement;
+														const audio = document.querySelector('#sync-audio') as HTMLAudioElement;
 														if (video && audio) {
 															audio.volume = 1.0;
 															audio.muted = video.muted;

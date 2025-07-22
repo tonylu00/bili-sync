@@ -617,8 +617,7 @@
 											format: () => ''
 										},
 										yAxis: {
-											nice: false,
-											tickFormatter: (v: number) => formatBytes(v)
+											format: (v: number) => formatBytes(v)
 										}
 									}}
 								>
@@ -694,8 +693,7 @@
 											format: () => ''
 										},
 										yAxis: {
-											nice: false,
-											tickFormatter: (v: number) => `${v}%`
+											format: (v: number) => `${v}%`
 										}
 									}}
 								>
