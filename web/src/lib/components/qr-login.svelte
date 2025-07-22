@@ -28,7 +28,7 @@
 	let sessionId = '';
 	let pollInterval: number | null = null;
 	let isGenerating = false;
-	let autoRegenerate = true; // 控制是否自动重新生成二维码
+	let autoRegenerate = false; // 默认不自动重新生成二维码
 
 	interface QRResponse {
 		session_id: string;
@@ -168,7 +168,8 @@
 							console.error('登录成功但缺少用户信息');
 							onLoginError('登录成功但缺少用户信息');
 						}
-						// 3秒后重置状态，如果设置了自动重新生成
+						// 只在明确需要自动重新生成的场景下才重置
+						// 初始设置和普通登录场景都不需要自动重新生成
 						if (autoRegenerate) {
 							setTimeout(() => {
 								if (status === 'success') {
@@ -247,16 +248,15 @@
 	}
 
 	onMount(async () => {
-		// 在设置页面中，不自动重新生成二维码
-		// 让用户手动点击生成，避免干扰
-		if (typeof window !== 'undefined' && window.location.pathname === '/settings') {
-			autoRegenerate = false;
-			// 在设置页面，只有在idle状态且用户没有凭证时才自动生成
-			// 否则让用户手动生成
-			return;
-		}
-		// 其他页面（如初始设置）正常生成二维码
+		// 所有页面都默认不自动重新生成二维码
+		// 只在idle状态下自动生成初始二维码
 		if (status === 'idle') {
+			// 在设置页面，让用户手动点击生成
+			if (typeof window !== 'undefined' && window.location.pathname === '/settings') {
+				// 设置页面不自动生成，让用户手动触发
+				return;
+			}
+			// 其他页面（如初始设置）自动生成初始二维码
 			generateQRCode();
 		}
 	});
