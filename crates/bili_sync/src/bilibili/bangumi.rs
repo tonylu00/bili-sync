@@ -9,7 +9,6 @@ use tokio_util::sync::CancellationToken;
 use tracing;
 
 use super::{BiliClient, Validate, VideoInfo};
-use crate::utils::bangumi_cache::BangumiCache;
 
 /// 检测是否为预告片
 /// 根据用户确认，section_type: 1 是最可靠的预告片标识
@@ -248,34 +247,6 @@ impl Bangumi {
         }
 
         Ok(result)
-    }
-
-    /// 获取番剧信息并生成缓存
-    #[allow(dead_code)]
-    pub async fn get_season_info_with_cache(&self) -> Result<(serde_json::Value, BangumiCache)> {
-        let season_info = self.get_season_info().await?;
-        
-        // 提取剧集信息
-        let episodes = season_info["episodes"]
-            .as_array()
-            .cloned()
-            .unwrap_or_default();
-        
-        // 找出最新剧集时间
-        let last_episode_time = episodes.iter()
-            .filter_map(|ep| ep["pub_time"].as_i64())
-            .max()
-            .map(|ts| DateTime::<Utc>::from_timestamp(ts, 0))
-            .flatten();
-        
-        let cache = BangumiCache {
-            season_info: season_info.clone(),
-            episodes: episodes.clone(),
-            last_episode_time,
-            total_episodes: episodes.len(),
-        };
-        
-        Ok((season_info, cache))
     }
 
     /// 将单季番剧转换为视频流
