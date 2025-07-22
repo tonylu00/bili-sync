@@ -32,11 +32,11 @@
 			dispatch('login-success', { token: authToken });
 			window.dispatchEvent(new CustomEvent('login-success'));
 			toast.success('登录成功');
-		} catch (error: any) {
+		} catch (error: unknown) {
 			// 清除无效的 Token
 			api.setAuthToken('');
 
-			if (error.status === 401) {
+			if (error && typeof error === 'object' && 'status' in error && error.status === 401) {
 				authError = 'API Token错误，请检查后重试';
 			} else {
 				authError = '验证失败，请检查网络连接或Token是否正确';

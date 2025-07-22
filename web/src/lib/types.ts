@@ -377,6 +377,13 @@ export interface SearchResponse {
 	page_size: number;
 }
 
+// 用户信息类型
+export interface UserInfo {
+	user_id: string | number;
+	username: string;
+	avatar_url?: string;
+}
+
 // 用户收藏夹类型
 export interface UserFavoriteFolder {
 	id: number | string;

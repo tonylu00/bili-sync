@@ -138,7 +138,7 @@ export function getRelativeTime(
 // 转换UTC时间到指定时区
 export function convertUTCToTimezone(
 	utcTimestamp: string | number | Date,
-	_timezone: string = getCurrentTimezone()
+	_timezone: string = getCurrentTimezone() // eslint-disable-line @typescript-eslint/no-unused-vars
 ): Date {
 	let date: Date;
 
@@ -171,7 +171,7 @@ export function getTimezoneOffset(timezone: string): string {
 		const minutes = Math.floor((Math.abs(offset) - hours) * 60);
 
 		return `UTC${sign}${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}`;
-	} catch (_error) {
+	} catch {
 		return 'UTC+00:00';
 	}
 }

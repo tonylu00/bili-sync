@@ -9,13 +9,12 @@
 	import { getTooltipContext, Tooltip } from 'layerchart';
 	import type { Snippet } from 'svelte';
 
-	// eslint-disable-next-line @typescript-eslint/no-explicit-any
-	function defaultFormatter(value: any, _payload: TooltipPayload[]) {
+	function defaultFormatter(value: string | number) {
 		return `${value}`;
 	}
 
-	// eslint-disable-next-line @typescript-eslint/no-explicit-any
-	function defaultValueFormatter(value: any) {
+	function defaultValueFormatter(value: string | number): string {
+		if (typeof value === 'string') return value;
 		return value.toLocaleString();
 	}
 
@@ -42,8 +41,10 @@
 		labelKey?: string;
 		hideIndicator?: boolean;
 		labelClassName?: string;
-		labelFormatter?: ((value: any, payload: TooltipPayload[]) => string | number | Snippet) | null;
-		valueFormatter?: ((value: any) => string | number | Snippet) | null;
+		labelFormatter?:
+			| ((value: string | number, payload: TooltipPayload[]) => string | number | Snippet)
+			| null;
+		valueFormatter?: ((value: string | number) => string | number | Snippet) | null;
 		formatter?: Snippet<
 			[
 				{

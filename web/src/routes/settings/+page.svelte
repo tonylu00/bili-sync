@@ -16,7 +16,7 @@
 	import * as Tabs from '$lib/components/ui/tabs';
 	import QrLogin from '$lib/components/qr-login.svelte';
 	import { setBreadcrumb } from '$lib/stores/breadcrumb';
-	import type { ConfigResponse, VideoInfo } from '$lib/types';
+	import type { ConfigResponse, VideoInfo, UserInfo } from '$lib/types';
 	import {
 		DEFAULT_TIMEZONE,
 		getCurrentTimezone,
@@ -37,7 +37,8 @@
 	} from 'lucide-svelte';
 	import { onMount } from 'svelte';
 	import { toast } from 'svelte-sonner';
-	import { theme, setTheme, isDark, type Theme } from '$lib/stores/theme';
+	import { theme, setTheme, isDark } from '$lib/stores/theme';
+	// import type { Theme } from '$lib/stores/theme'; // 未使用，已注释
 	import ThemeToggle from '$lib/components/theme-toggle.svelte';
 
 	let config: ConfigResponse | null = null;
@@ -491,9 +492,9 @@
 
 			// 番剧目录结构配置
 			bangumiUseSeasonStructure = config.bangumi_use_season_structure ?? false;
-		} catch (error: any) {
+		} catch (error: unknown) {
 			console.error('加载配置失败:', error);
-			toast.error('加载配置失败', { description: error.message });
+			toast.error('加载配置失败', { description: error instanceof Error ? error.message : '未知错误' });
 		} finally {
 			loading = false;
 		}
@@ -667,9 +668,9 @@
 			} else {
 				toast.error('保存失败', { description: response.data.message });
 			}
-		} catch (error: any) {
+		} catch (error: unknown) {
 			console.error('保存配置失败:', error);
-			toast.error('保存失败', { description: error.message });
+			toast.error('保存失败', { description: error instanceof Error ? error.message : '未知错误' });
 		} finally {
 			saving = false;
 		}
@@ -696,16 +697,16 @@
 			} else {
 				toast.error('保存失败', { description: response.data.message });
 			}
-		} catch (error: any) {
+		} catch (error: unknown) {
 			console.error('保存B站凭证失败:', error);
-			toast.error('保存失败', { description: error.message });
+			toast.error('保存失败', { description: error instanceof Error ? error.message : '未知错误' });
 		} finally {
 			credentialSaving = false;
 		}
 	}
 
 	// 处理扫码登录成功
-	async function handleQrLoginSuccess(userInfo: any) {
+	async function handleQrLoginSuccess(userInfo: UserInfo) {
 		// 扫码登录成功后，凭证已经在后端保存
 		toast.success(`欢迎，${userInfo.username}！登录成功`);
 		// 更新当前用户信息
@@ -764,7 +765,7 @@
 	async function saveNotificationConfig() {
 		notificationSaving = true;
 		try {
-			const config: any = {
+			const config: Record<string, unknown> = {
 				enable_scan_notifications: notificationEnabled,
 				notification_min_videos: notificationMinVideos
 			};
@@ -784,9 +785,9 @@
 			} else {
 				toast.error('保存失败', { description: response.data || '未知错误' });
 			}
-		} catch (error: any) {
+		} catch (error: unknown) {
 			console.error('保存推送通知配置失败:', error);
-			toast.error('保存失败', { description: error.message });
+			toast.error('保存失败', { description: error instanceof Error ? error.message : '未知错误' });
 		} finally {
 			notificationSaving = false;
 		}
@@ -821,9 +822,9 @@
 			} else {
 				toast.error('测试推送失败', { description: response.data || '未知错误' });
 			}
-		} catch (error: any) {
+		} catch (error: unknown) {
 			console.error('测试推送失败:', error);
-			toast.error('测试推送失败', { description: error.message });
+			toast.error('测试推送失败', { description: error instanceof Error ? error.message : '未知错误' });
 		}
 	}
 </script>
@@ -1205,7 +1206,7 @@
 
 						<div class="space-y-2">
 							<Label for="folder-structure">文件夹结构模板</Label>
-							<Input id="folder-structure" bind:value={folderStructure} placeholder={`Season 1`} />
+							<Input id="folder-structure" bind:value={folderStructure} placeholder="Season 1" />
 							<p class="text-muted-foreground text-sm">定义视频文件的文件夹层级结构</p>
 						</div>
 

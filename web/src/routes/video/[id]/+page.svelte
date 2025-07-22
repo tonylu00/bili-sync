@@ -18,16 +18,17 @@
 	let videoData: VideoResponse | null = null;
 	let loading = false;
 	let error: string | null = null;
-	let _resetDialogOpen = false;
-	let _resetting = false;
+	// let _resetDialogOpen = false; // 未使用，已注释
+	// let _resetting = false; // 未使用，已注释
 	let statusEditorOpen = false;
 	let statusEditorLoading = false;
 	let showVideoPlayer = false;
 	let currentPlayingPageIndex = 0;
 	let onlinePlayMode = false; // false: 本地播放, true: 在线播放
+	// eslint-disable-next-line @typescript-eslint/no-explicit-any
 	let onlinePlayInfo: any = null;
 	let loadingPlayInfo = false;
-	let _isFullscreen = false; // 是否全屏模式
+	// let _isFullscreen = false; // 未使用，已注释 // 是否全屏模式
 	let deleteDialogOpen = false;
 	let deleting = false;
 
@@ -51,6 +52,7 @@
 	})();
 
 	// 检查视频是否可播放（分P下载任务已完成）
+	// eslint-disable-next-line @typescript-eslint/no-unused-vars, @typescript-eslint/no-explicit-any
 	function _isVideoPlayable(video: any): boolean {
 		if (video && video.download_status && Array.isArray(video.download_status)) {
 			// 检查第5个任务（分P下载，索引4）是否完成（状态为7）
@@ -255,7 +257,9 @@
 	function handleFullscreenChange() {
 		isFullscreen = !!(
 			document.fullscreenElement ||
+			// eslint-disable-next-line @typescript-eslint/no-explicit-any
 			(document as any).webkitFullscreenElement ||
+			// eslint-disable-next-line @typescript-eslint/no-explicit-any
 			(document as any).mozFullScreenElement
 		);
 	}
@@ -632,7 +636,7 @@
 												<!-- 默认空字幕轨道用于无障碍功能 -->
 												<track kind="captions" srclang="zh" label="无字幕" default />
 												{#if onlinePlayMode && onlinePlayInfo && onlinePlayInfo.subtitle_streams}
-													{#each onlinePlayInfo.subtitle_streams as subtitle}
+													{#each onlinePlayInfo.subtitle_streams as subtitle (subtitle.language)}
 														<track
 															kind="subtitles"
 															srclang={subtitle.language}
@@ -663,7 +667,7 @@
 								<div class="mt-4 space-y-2">
 									<div class="text-sm font-medium text-gray-700">选择分页:</div>
 									<div class="grid max-h-60 grid-cols-2 gap-2 overflow-y-auto">
-										{#each videoData.pages as page, index}
+										{#each videoData.pages as page, index (page.id)}
 											{#if page.download_status[1] === 7}
 												<Button
 													size="sm"

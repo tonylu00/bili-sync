@@ -2,7 +2,7 @@
 	import { onMount, onDestroy } from 'svelte';
 	import { toast } from 'svelte-sonner';
 	import { Button } from '$lib/components/ui/button';
-	import * as Tabs from '$lib/components/ui/tabs';
+	// import * as Tabs from '$lib/components/ui/tabs'; // 未使用，已注释
 	import * as Card from '$lib/components/ui/card';
 	import { Badge } from '$lib/components/ui/badge';
 	import { setBreadcrumb } from '$lib/stores/breadcrumb';
@@ -21,10 +21,10 @@
 	}
 
 	// 日志响应类型
-	interface LogsResponse {
-		logs: LogEntry[];
-		total: number;
-	}
+	// interface LogsResponse { // 未使用，已注释
+	// 	logs: LogEntry[];
+	// 	total: number;
+	// }
 
 	// 响应式变量
 	let innerWidth = 0;
@@ -39,7 +39,7 @@
 	let currentTab = 'all';
 	let isAuthenticated = false;
 	let authError = '';
-	let logLimit = 500; // 可自定义的日志数量限制
+	// let logLimit = 500; // 可自定义的日志数量限制 - 未使用，已注释
 	let totalLogCount = 0; // 总日志数量
 
 	// 分页相关变量
@@ -56,6 +56,7 @@
 	};
 
 	// 日志级别图标映射
+	// eslint-disable-next-line @typescript-eslint/no-explicit-any
 	const levelIcons: Record<LogLevel, any> = {
 		info: Info,
 		warn: AlertTriangle,
@@ -75,7 +76,7 @@
 			// 尝试调用一个需要认证的API来验证Token
 			await api.getVideoSources();
 			return true;
-		} catch (error: any) {
+		} catch (error: unknown) {
 			console.error('认证验证失败:', error);
 			authError = '认证失败，请重新登录';
 			return false;
@@ -153,6 +154,7 @@
 
 			// 修复数据解析逻辑 - 处理所有可能的响应格式
 			let logsArray: LogEntry[] = [];
+			// eslint-disable-next-line @typescript-eslint/no-explicit-any
 			let responseData: any = {};
 
 			if (result.status_code === 200 && result.data) {
@@ -204,11 +206,12 @@
 			}
 
 			filterLogs();
-		} catch (error: any) {
+		} catch (error: unknown) {
 			console.error('加载日志失败:', error);
-			authError = error.message || '加载日志失败';
+			const errorMessage = error instanceof Error ? error.message : '加载日志失败';
+			authError = errorMessage;
 			toast.error('加载日志失败', {
-				description: error.message
+				description: errorMessage
 			});
 		} finally {
 			isLoading = false;
@@ -335,10 +338,10 @@
 			link.click();
 
 			toast.success(`成功导出 ${allLogs.length} 条${levelText}日志`);
-		} catch (error: any) {
+		} catch (error: unknown) {
 			console.error('导出日志失败:', error);
 			toast.error('导出日志失败', {
-				description: error.message
+				description: error instanceof Error ? error.message : '未知错误'
 			});
 		} finally {
 			isLoading = false;
@@ -613,7 +616,7 @@
 								{#each Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
 									const startPage = Math.max(1, Math.min(currentPage - 2, totalPages - 4));
 									return startPage + i;
-								}) as pageNum}
+								}) as pageNum (pageNum)}
 									<Button
 										variant={pageNum === currentPage ? 'default' : 'outline'}
 										size="sm"

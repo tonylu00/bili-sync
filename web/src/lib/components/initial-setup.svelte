@@ -8,6 +8,7 @@
 	import * as AlertDialog from './ui/alert-dialog';
 	import * as Tabs from './ui/tabs';
 	import QrLogin from './qr-login.svelte';
+	import type { UserInfo } from '$lib/types';
 
 	const dispatch = createEventDispatcher();
 
@@ -67,14 +68,15 @@
 			} else {
 				authError = response.data.message || 'API Token设置失败';
 			}
-		} catch (error: any) {
+		} catch (error: unknown) {
 			// 清除无效的 Token
 			api.setAuthToken('');
 
-			if (error.status === 401) {
+			if (error && typeof error === 'object' && 'status' in error && error.status === 401) {
 				authError = 'API Token错误，请检查后重试';
 			} else {
-				authError = error.message || '设置失败，请检查网络连接或Token是否正确';
+				authError =
+					error instanceof Error ? error.message : '设置失败，请检查网络连接或Token是否正确';
 			}
 			console.error('Token设置失败:', error);
 		} finally {
@@ -110,9 +112,9 @@
 			} else {
 				credentialError = response.data.message || 'B站凭证保存失败';
 			}
-		} catch (error: any) {
+		} catch (error: unknown) {
 			console.error('保存凭证失败:', error);
-			credentialError = error.message || '保存凭证时发生错误';
+			credentialError = error instanceof Error ? error.message : '保存凭证时发生错误';
 		} finally {
 			isSavingCredential = false;
 		}
@@ -139,7 +141,7 @@
 	}
 
 	// 处理扫码登录成功
-	async function handleQrLoginSuccess(userInfo: any) {
+	async function handleQrLoginSuccess(userInfo: UserInfo) {
 		// 扫码登录成功后，凭证已经在后端保存
 		// 直接触发完成事件
 		toast.success(`欢迎，${userInfo.username}！登录成功`);
@@ -166,7 +168,7 @@
 			<p class="text-gray-600">首次使用需要进行初始设置</p>
 			<div class="mt-4 flex justify-center">
 				<div class="flex items-center space-x-2">
-					{#each Array(totalSteps) as _step, i}
+					{#each [...Array(totalSteps).keys()] as i (i)}
 						<div
 							class="h-2 w-8 rounded-full {currentStep > i
 								? 'bg-blue-500'

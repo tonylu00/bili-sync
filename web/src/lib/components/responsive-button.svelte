@@ -1,11 +1,11 @@
 <script lang="ts">
 	import { Button } from '$lib/components/ui/button';
 
-	export let icon: any;
+	export let icon: any; // eslint-disable-line @typescript-eslint/no-explicit-any -- Lucide图标组件类型
 	export let text: string;
 	export let hideTextOnMobile: boolean = true;
-	export let size: any = 'default';
-	export let variant: any = 'default';
+	export let size: any = 'default'; // eslint-disable-line @typescript-eslint/no-explicit-any -- Button组件size属性
+	export let variant: any = 'default'; // eslint-disable-line @typescript-eslint/no-explicit-any -- Button组件variant属性
 	export let onclick: (() => void) | undefined = undefined;
 	export let title: string = '';
 

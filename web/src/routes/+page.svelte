@@ -110,7 +110,7 @@
 				await api.getVideoSources();
 				isAuthenticated = true;
 				loadInitialData();
-			} catch (_error) {
+			} catch {
 				localStorage.removeItem('auth_token');
 				api.setAuthToken('');
 
@@ -122,7 +122,7 @@
 						needsInitialSetup = false;
 						isAuthenticated = false;
 					}
-				} catch (_apiError) {
+				} catch {
 					needsInitialSetup = false;
 					isAuthenticated = false;
 				}

@@ -21,7 +21,7 @@
 	} from '@lucide/svelte';
 	import api from '$lib/api';
 	import { toast } from 'svelte-sonner';
-	import type { QueueStatusResponse, QueueTaskInfo } from '$lib/types';
+	import type { QueueStatusResponse } from '$lib/types';
 	import { setBreadcrumb } from '$lib/stores/breadcrumb';
 
 	let queueStatus: QueueStatusResponse | null = null;
@@ -43,9 +43,10 @@
 			error = null;
 		} catch (err: unknown) {
 			console.error('获取队列状态失败:', err);
-			error = err.message || '获取队列状态失败';
+			const errorMessage = err instanceof Error ? err.message : '获取队列状态失败';
+			error = errorMessage;
 			toast.error('获取队列状态失败', {
-				description: err.message
+				description: errorMessage
 			});
 		} finally {
 			loading = false;
@@ -85,6 +86,7 @@
 
 	// 获取任务类型的图标
 	function getTaskTypeIcon(taskType: string) {
+		// eslint-disable-next-line @typescript-eslint/no-explicit-any
 		const iconMap: Record<string, any> = {
 			delete_video_source: Trash2,
 			add_video_source: Plus,

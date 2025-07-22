@@ -11,14 +11,16 @@
 	} from '$lib/components/ui/card';
 	import { Skeleton } from '$lib/components/ui/skeleton';
 	import { Badge } from '$lib/components/ui/badge';
-	// @ts-expect-error
+	// @ts-expect-error QRCode库没有类型定义
 	import QRCode from 'qrcode';
+	import type { UserInfo } from '$lib/types';
 
-	export let onLoginSuccess: (userInfo: any) => void = () => {};
+	export let onLoginSuccess: (userInfo: UserInfo) => void = () => {};
 	export let onLoginError: (error: string) => void = () => {};
 	export let onLogout: () => void = () => {};
 
 	// 目前未使用onLogout，但保留以便将来扩展
+	// eslint-disable-next-line @typescript-eslint/no-unused-expressions
 	$: onLogout;
 
 	let qrCodeDataUrl = '';
@@ -114,12 +116,13 @@
 
 			// 开始轮询状态
 			startPolling();
-		} catch (error: any) {
+		} catch (error: unknown) {
 			console.error('生成二维码异常:', error);
 			status = 'error';
-			statusMessage = `生成二维码失败: ${error.message}`;
-			toast.error(error.message);
-			onLoginError(error.message);
+			const errorMessage = error instanceof Error ? error.message : '生成二维码失败';
+			statusMessage = `生成二维码失败: ${errorMessage}`;
+			toast.error(errorMessage);
+			onLoginError(errorMessage);
 		} finally {
 			isGenerating = false;
 		}
@@ -183,7 +186,7 @@
 						stopPolling();
 						onLoginError(data.message);
 				}
-			} catch (error: any) {
+			} catch (error: unknown) {
 				console.error('轮询失败:', error);
 				// 轮询失败不停止，继续尝试
 			}

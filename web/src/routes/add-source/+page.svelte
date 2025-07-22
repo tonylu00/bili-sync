@@ -5,7 +5,18 @@
 	import { Input } from '$lib/components/ui/input';
 	import { Label } from '$lib/components/ui/label';
 	import { setBreadcrumb } from '$lib/stores/breadcrumb';
-	import type { SearchResultItem, VideoCategory, SubmissionVideoInfo } from '$lib/types';
+	import type {
+		SearchResultItem,
+		VideoCategory,
+		SubmissionVideoInfo,
+		UserFavoriteFolder,
+		UserCollectionItem,
+		UserFollowing,
+		BangumiSeasonInfo,
+		ValidateFavoriteResponse,
+		UserCollectionInfo,
+		AddVideoSourceRequest
+	} from '$lib/types';
 	import { Search, X } from '@lucide/svelte';
 	import { onDestroy, onMount } from 'svelte';
 	import { toast } from 'svelte-sonner';
@@ -33,36 +44,39 @@
 	let searchTotalResults = 0;
 
 	// 收藏夹相关
-	let userFavorites: any[] = [];
+	let userFavorites: UserFavoriteFolder[] = [];
 	let loadingFavorites = false;
 	let validatingFavorite = false;
-	let favoriteValidationResult: any = null;
-	let favoriteValidationTimeout: any;
+	let favoriteValidationResult: ValidateFavoriteResponse | null = null;
+	let favoriteValidationTimeout: ReturnType<typeof setTimeout> | null = null;
 
 	// UP主收藏夹搜索相关
-	let searchedUserFavorites: any[] = [];
+	let searchedUserFavorites: UserFavoriteFolder[] = [];
 	let loadingSearchedUserFavorites = false;
 	let selectedUserId: string = '';
 	let selectedUserName: string = '';
 
 	// UP主合集相关
-	let userCollections: any[] = [];
-	let loadingCollections = false;
-	let upIdTimeout: any;
+	let userCollections: UserCollectionItem[] = [];
+	// let loadingCollections = false; // 未使用，已注释
+	let upIdTimeout: ReturnType<typeof setTimeout> | null = null;
 
 	// 关注的UP主相关
-	let userFollowings: any[] = [];
+	let userFollowings: UserFollowing[] = [];
 	let loadingFollowings = false;
 
 	// 番剧季度相关
-	let bangumiSeasons: any[] = [];
+	let bangumiSeasons: BangumiSeasonInfo[] = [];
 	let loadingSeasons = false;
 	let selectedSeasons: string[] = [];
-	let seasonIdTimeout: any;
+	let seasonIdTimeout: ReturnType<typeof setTimeout> | null = null;
 
 	// 悬停详情相关
-	let hoveredItem: { type: 'search' | 'season'; data: any } | null = null;
-	let hoverTimeout: any;
+	let hoveredItem: {
+		type: 'search' | 'season';
+		data: SearchResultItem | BangumiSeasonInfo;
+	} | null = null;
+	let hoverTimeout: ReturnType<typeof setTimeout> | null = null;
 	let mousePosition = { x: 0, y: 0 };
 
 	// 响应式相关
@@ -90,13 +104,13 @@
 	];
 
 	// 订阅的合集相关
-	let subscribedCollections: any[] = [];
+	let subscribedCollections: UserCollectionInfo[] = [];
 	let loadingSubscribedCollections = false;
 
 	// UP主投稿选择相关
 	let showSubmissionSelection = false;
 	let selectedVideos: string[] = [];
-	let selectedUpName = '';
+	// let selectedUpName = ''; // 未使用，已注释
 
 	// 投稿选择详细状态
 	let submissionVideos: SubmissionVideoInfo[] = [];
@@ -197,7 +211,7 @@
 
 						// 添加小延迟避免请求过于频繁
 						await new Promise((resolve) => setTimeout(resolve, 100));
-					} catch (error) {
+					} catch {
 						// 静默处理失败，继续获取下一页
 					}
 				}
@@ -226,9 +240,10 @@
 			} else {
 				toast.success(`搜索完成，共获取到 ${uniqueResults.length} 个结果`);
 			}
-		} catch (error: any) {
+		} catch (error: unknown) {
 			console.error('搜索失败:', error);
-			toast.error('搜索失败', { description: error.message });
+			const errorMessage = error instanceof Error ? error.message : '搜索失败';
+			toast.error('搜索失败', { description: errorMessage });
 		} finally {
 			searchLoading = false;
 		}
@@ -361,7 +376,7 @@
 		loading = true;
 
 		try {
-			const params: any = {
+			const params: AddVideoSourceRequest = {
 				source_type: sourceType,
 				source_id: sourceId,
 				name,
@@ -409,11 +424,11 @@
 			} else {
 				toast.error('添加失败', { description: result.data.message });
 			}
-		} catch (error: any) {
+		} catch (error: unknown) {
 			console.error('添加视频源失败:', error);
 
 			// 解析错误信息，提供更友好的提示
-			let errorMessage = error.message;
+			let errorMessage = error instanceof Error ? error.message : '添加视频源失败';
 			let errorDescription = '';
 
 			if (errorMessage.includes('已存在')) {
@@ -461,16 +476,17 @@
 			} else {
 				toast.error('获取收藏夹失败');
 			}
-		} catch (error: any) {
+		} catch (error: unknown) {
 			console.error('获取收藏夹失败:', error);
-			toast.error('获取收藏夹失败', { description: error.message });
+			const errorMessage = error instanceof Error ? error.message : '获取收藏夹失败';
+			toast.error('获取收藏夹失败', { description: errorMessage });
 		} finally {
 			loadingFavorites = false;
 		}
 	}
 
 	// 选择收藏夹
-	function selectFavorite(favorite: any) {
+	function selectFavorite(favorite: UserFavoriteFolder) {
 		sourceId = favorite.id.toString();
 		name = favorite.name || favorite.title;
 		favoriteValidationResult = {
@@ -483,7 +499,7 @@
 	}
 
 	// 选择搜索到的收藏夹
-	function selectSearchedFavorite(favorite: any) {
+	function selectSearchedFavorite(favorite: UserFavoriteFolder) {
 		sourceId = favorite.fid.toString();
 		name = favorite.title;
 		favoriteValidationResult = {
@@ -496,7 +512,7 @@
 	}
 
 	// 选择UP主并获取其收藏夹
-	async function selectUserAndFetchFavorites(user: any) {
+	async function selectUserAndFetchFavorites(user: SearchResultItem) {
 		selectedUserId = user.mid.toString();
 		selectedUserName = user.title; // 使用搜索结果中的title
 
@@ -519,8 +535,8 @@
 			} else {
 				toast.info('该UP主没有公开收藏夹');
 			}
-		} catch (error) {
-			console.error('获取UP主收藏夹失败:', error);
+		} catch {
+			console.error('获取UP主收藏夹失败');
 			toast.error('获取收藏夹失败', {
 				description: 'UP主可能没有公开收藏夹或网络错误'
 			});
@@ -558,7 +574,7 @@
 				// 如果验证成功且用户还没有填写名称，自动填入收藏夹标题
 				name = result.data.title;
 			}
-		} catch (error) {
+		} catch {
 			favoriteValidationResult = {
 				valid: false,
 				fid: parseInt(fid) || 0,
@@ -614,18 +630,20 @@
 				toast.error('获取合集列表失败');
 				userCollections = [];
 			}
-		} catch (error: any) {
+		} catch (error: unknown) {
 			console.error('获取合集列表失败:', error);
 
 			// 根据错误类型提供更友好的提示
 			let errorMessage = '获取合集列表失败';
 			let errorDescription = '';
 
-			if (error.message === 'Failed to fetch' || error.message.includes('ERR_EMPTY_RESPONSE')) {
+			const errorMsg = error instanceof Error ? error.message : '';
+
+			if (errorMsg === 'Failed to fetch' || errorMsg.includes('ERR_EMPTY_RESPONSE')) {
 				errorDescription = '该UP主的合集可能需要登录访问，或暂时无法获取';
-			} else if (error.message.includes('403') || error.message.includes('Forbidden')) {
+			} else if (errorMsg.includes('403') || errorMsg.includes('Forbidden')) {
 				errorDescription = '该UP主的合集为私有，无法访问';
-			} else if (error.message.includes('404') || error.message.includes('Not Found')) {
+			} else if (errorMsg.includes('404') || errorMsg.includes('Not Found')) {
 				errorDescription = 'UP主不存在或合集已被删除';
 			} else {
 				errorDescription = '网络错误或服务暂时不可用，请稍后重试';
@@ -639,7 +657,7 @@
 	}
 
 	// 选择合集
-	function selectCollection(collection: any) {
+	function selectCollection(collection: UserCollectionItem) {
 		sourceId = collection.sid;
 		name = collection.name;
 		collectionType = collection.collection_type;
@@ -650,6 +668,7 @@
 	}
 
 	// 处理Season ID变化
+	// eslint-disable-next-line @typescript-eslint/no-unused-vars
 	function handleSeasonIdChange() {
 		clearTimeout(seasonIdTimeout);
 		if (sourceId.trim() && sourceType === 'bangumi') {
@@ -685,9 +704,10 @@
 			} else {
 				bangumiSeasons = [];
 			}
-		} catch (error: any) {
+		} catch (error: unknown) {
 			console.error('获取季度信息失败:', error);
-			toast.error('获取季度信息失败', { description: error.message });
+			const errorMessage = error instanceof Error ? error.message : '获取季度信息失败';
+			toast.error('获取季度信息失败', { description: errorMessage });
 			bangumiSeasons = [];
 			selectedSeasons = [];
 		} finally {
@@ -739,7 +759,11 @@
 	}
 
 	// 统一的悬浮处理函数
-	function handleItemMouseEnter(type: 'search' | 'season', data: any, event: MouseEvent) {
+	function handleItemMouseEnter(
+		type: 'search' | 'season',
+		data: SearchResultItem | BangumiSeasonInfo,
+		event: MouseEvent
+	) {
 		hoveredItem = { type, data };
 		updateTooltipPosition(event);
 	}
@@ -794,7 +818,7 @@
 		handleItemMouseLeave();
 	}
 
-	function handleSeasonMouseEnter(season: any, event: MouseEvent) {
+	function handleSeasonMouseEnter(season: BangumiSeasonInfo, event: MouseEvent) {
 		handleItemMouseEnter('season', season, event);
 	}
 
@@ -819,16 +843,17 @@
 			} else {
 				toast.error('获取关注UP主失败');
 			}
-		} catch (error: any) {
+		} catch (error: unknown) {
 			console.error('获取关注UP主失败:', error);
-			toast.error('获取关注UP主失败', { description: error.message });
+			const errorMessage = error instanceof Error ? error.message : '获取关注UP主失败';
+			toast.error('获取关注UP主失败', { description: errorMessage });
 		} finally {
 			loadingFollowings = false;
 		}
 	}
 
 	// 选择关注的UP主
-	function selectFollowing(following: any) {
+	function selectFollowing(following: UserFollowing) {
 		switch (sourceType) {
 			case 'collection':
 				upId = following.mid.toString();
@@ -870,16 +895,17 @@
 			} else {
 				toast.error('获取合集失败');
 			}
-		} catch (error: any) {
+		} catch (error: unknown) {
 			console.error('获取合集失败:', error);
-			toast.error('获取合集失败', { description: error.message });
+			const errorMessage = error instanceof Error ? error.message : '获取合集失败';
+			toast.error('获取合集失败', { description: errorMessage });
 		} finally {
 			loadingSubscribedCollections = false;
 		}
 	}
 
 	// 选择订阅的合集
-	function selectSubscribedCollection(collection: any) {
+	function selectSubscribedCollection(collection: UserCollectionInfo) {
 		sourceId = collection.sid;
 		name = collection.name;
 		upId = collection.up_mid.toString();
@@ -888,6 +914,7 @@
 	}
 
 	// 处理投稿选择确认
+	// eslint-disable-next-line @typescript-eslint/no-unused-vars
 	function handleSubmissionSelectionConfirm(selectedBvids: string[]) {
 		selectedVideos = selectedBvids;
 		showSubmissionSelection = false;
@@ -903,6 +930,7 @@
 	}
 
 	// 处理投稿选择取消
+	// eslint-disable-next-line @typescript-eslint/no-unused-vars
 	function handleSubmissionSelectionCancel() {
 		showSubmissionSelection = false;
 		// 保留已有的选择，不做清空
@@ -973,7 +1001,7 @@
 				);
 
 				// 合并所有成功的响应
-				remainingResponses.forEach((result, index) => {
+				remainingResponses.forEach((result) => {
 					if (result.status === 'fulfilled' && result.value.data?.videos) {
 						allVideos.push(...result.value.data.videos);
 					}
@@ -1047,7 +1075,7 @@
 	function formatSubmissionDate(pubtime: string): string {
 		try {
 			return new Date(pubtime).toLocaleDateString('zh-CN');
-		} catch (e) {
+		} catch {
 			return pubtime;
 		}
 	}
@@ -1533,6 +1561,7 @@
 												<div class="min-w-0 flex-1">
 													<div class="mb-1 flex items-center gap-2">
 														<h4 class="text-foreground flex-1 truncate text-sm font-medium">
+															<!-- eslint-disable-next-line svelte/no-at-html-tags -->
 															{@html result.title}
 														</h4>
 														{#if result.result_type}
@@ -2454,7 +2483,10 @@
 				{/if}
 				<div class="min-w-0 flex-1">
 					<div class="mb-1 flex items-center gap-2">
-						<h4 class="flex-1 text-sm font-semibold">{@html hoveredItem.data.title}</h4>
+						<h4 class="flex-1 text-sm font-semibold">
+							<!-- eslint-disable-next-line svelte/no-at-html-tags -->
+							{@html hoveredItem.data.title}
+						</h4>
 						{#if hoveredItem.data.result_type}
 							<span
 								class="flex-shrink-0 rounded px-1.5 py-0.5 text-xs {hoveredItem.data.result_type ===

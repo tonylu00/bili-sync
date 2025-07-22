@@ -37,7 +37,8 @@ import type {
 	SubmissionVideosResponse,
 	DashBoardResponse,
 	SysInfo,
-	TaskStatus
+	TaskStatus,
+	BangumiSeasonsResponse
 } from './types';
 import { ErrorType } from './types';
 import { wsManager } from './ws';
@@ -99,7 +100,15 @@ class ApiClient {
 				message: error instanceof Error ? error.message : 'Unknown error occurred',
 				should_retry: false,
 				should_ignore: false,
-				status: error instanceof TypeError ? undefined : (error as { status?: number }).status,
+				status:
+					error instanceof TypeError
+						? undefined
+						: error &&
+							  typeof error === 'object' &&
+							  'status' in error &&
+							  typeof error.status === 'number'
+							? error.status
+							: undefined,
 				timestamp: new Date().toISOString()
 			};
 			throw apiError;
@@ -393,8 +402,8 @@ class ApiClient {
 	/**
 	 * 获取番剧季度信息
 	 */
-	async getBangumiSeasons(seasonId: string): Promise<ApiResponse<any>> {
-		return this.get<any>(`/bangumi/seasons/${seasonId}`);
+	async getBangumiSeasons(seasonId: string): Promise<ApiResponse<BangumiSeasonsResponse>> {
+		return this.get<BangumiSeasonsResponse>(`/bangumi/seasons/${seasonId}`);
 	}
 
 	/**

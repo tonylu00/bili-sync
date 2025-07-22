@@ -236,15 +236,17 @@ export class ErrorHandler {
  * @param context 错误上下文描述
  */
 export function withErrorHandler(context?: string) {
+	// eslint-disable-next-line @typescript-eslint/no-explicit-any
 	return function <T extends (...args: any[]) => Promise<any>>(
-		target: any,
+		target: unknown,
 		propertyKey: string,
 		descriptor: TypedPropertyDescriptor<T>
 	) {
 		const originalMethod = descriptor.value;
 		if (!originalMethod) return;
 
-		descriptor.value = async function (this: any, ...args: any[]) {
+		// eslint-disable-next-line @typescript-eslint/no-explicit-any
+		descriptor.value = async function (this: any, ...args: Parameters<T>) {
 			try {
 				return await originalMethod.apply(this, args);
 			} catch (error) {
