@@ -2,6 +2,7 @@ export default {
   title: 'Bili-Sync',
   description: 'B站视频同步下载工具',
   base: '/',
+  ignoreDeadLinks: true,
   
   themeConfig: {
     logo: '/icon.svg',
