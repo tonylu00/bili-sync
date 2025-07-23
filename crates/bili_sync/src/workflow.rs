@@ -509,10 +509,27 @@ pub async fn refresh_video_source<'a>(
             .await?;
     }
     
-    // 番剧源：更新缓存（如果有新数据）
+    // 番剧源：更新缓存
     if let VideoSourceEnum::BangumiSource(bangumi_source) = video_source {
-        if count > 0 || max_datetime != latest_row_at {
-            // 有新视频或时间更新，说明获取了新数据，应该更新缓存
+        // 检查是否需要更新缓存
+        let should_update_cache = if count > 0 || max_datetime != latest_row_at {
+            // 有新视频或时间更新，说明获取了新数据
+            true
+        } else {
+            // 检查缓存是否存在
+            let source_model = bili_sync_entity::video_source::Entity::find_by_id(bangumi_source.id)
+                .one(connection)
+                .await?;
+            
+            if let Some(source) = source_model {
+                // 如果缓存不存在，需要创建
+                source.cached_episodes.is_none()
+            } else {
+                false
+            }
+        };
+        
+        if should_update_cache {
             update_bangumi_cache(bangumi_source.id, connection, bili_client, None).await?;
         }
     }
