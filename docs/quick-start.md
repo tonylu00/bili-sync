@@ -62,8 +62,6 @@ cargo build --release
 
 ## 常用配置
 
-详细配置请查看 [配置指南](./configuration.md)
-
 ### 基础设置
 - **扫描间隔**：默认 10 分钟
 - **下载线程数**：默认 16
@@ -77,5 +75,5 @@ cargo build --release
 ## 下一步
 
 - 查看 [功能一览](./features.md) 了解全部功能
-- 阅读 [配置指南](./configuration.md) 进行高级配置
+- 阅读 [使用教程](./usage.md) 进行详细配置
 - 遇到问题？查看 [常见问题](./faq.md)

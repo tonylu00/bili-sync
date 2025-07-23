@@ -27,7 +27,7 @@ docker run -d -p 12345:12345 -v /path/to/data:/app/data qq1582185982/bili-sync
 - [项目介绍](./introduction.md)
 - [快速上手](./quick-start.md)
 - [功能一览](./features.md)
-- [配置指南](./configuration.md)
+- [使用教程](./usage.md)
 - [更新记录](./changelog.md)
 
 ## 📝 许可证
