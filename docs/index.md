@@ -6,9 +6,8 @@ title: bili-sync
 titleTemplate: 由 Rust & Tokio 驱动的哔哩哔哩同步工具
 
 hero:
-  name: "bili-sync"
+  name: "bili-sync-01"
   text: "由 Rust & Tokio 驱动的哔哩哔哩同步工具"
-  tagline: "v2.7.4 - 智能错误处理与系统稳定性重大升级，实现零干预下载体验"
   actions:
     - theme: brand
       text: 什么是 bili-sync？

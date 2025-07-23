@@ -23,82 +23,43 @@ export default defineConfig({
 		nav: [
 			{ text: "主页", link: "/" },
 			{
-				        text: "v2.7.4 Latest",
+				text: "v2.7.5 Latest",
 				items: [
 					{
 						text: "程序更新",
 						link: "https://github.com/qq1582185982/bili-sync-01/releases",
 					},
 					{
-						text: "文档更新",
-						link: "https://github.com/qq1582185982/bili-sync-01/commits/main",
+						text: "更新日志",
+						link: "/changelog",
 					},
 				],
 			},
 		],
 		sidebar: [
 			{
-				text: "入门",
+				text: "快速开始",
 				items: [
 					{ text: "介绍", link: "/introduction" },
-					{ text: "快速开始", link: "/quick-start" },
+					{ text: "快速上手", link: "/quick-start" },
 					{ text: "功能一览", link: "/features" },
 				],
 			},
 			{
 				text: "使用指南",
-				collapsed: false,
 				items: [
-					{ text: "程序配置", link: "/configuration" },
-					{
-						text: "视频源管理",
-						collapsed: true,
-						items: [
-							{ text: "管理指南", link: "/video-source-management" },
-							{ text: "UP主投稿", link: "/submission" },
-							{ text: "收藏夹", link: "/favorite" },
-							{ text: "合集与系列", link: "/collection" },
-							{ text: "番剧", link: "/bangumi" },
-							{ text: "稍后观看", link: "/watch_later" },
-						]
-					},
-					{ text: "命令行参数", link: "/args" },
+					{ text: "配置说明", link: "/configuration" },
+					{ text: "视频源管理", link: "/video-source-management" },
+					{ text: "任务队列", link: "/QUEUE_FEATURE_SUMMARY" },
+					{ text: "常见问题", link: "/faq" },
 				],
 			},
 			{
-				text: "高级",
+				text: "开发者",
 				items: [
-					{ text: "v2.7.4 完整功能", link: "/all-features" },
-					{ text: "任务队列管理", link: "/QUEUE_FEATURE_SUMMARY" },
-					{ text: "智能错误处理", link: "/comprehensive-comparison-summary" },
-					{ text: "前端功能指南", link: "/frontend" },
-					{ text: "智能风控处理", link: "/risk-control-guide" },
-					{ text: "双重重置系统", link: "/reset-functionality-guide" },
-					{ text: "视觉功能增强", link: "/visual-enhancements-guide" },
-					{ text: "技术架构文档", link: "/technical-architecture" },
-					{ text: "部署指南", link: "/deploy-guide" },
-					{ text: "工作原理", link: "/design" },
-				]
-			},
-			{
-				text: "其它",
-				items: [
-					{ text: "常见问题", link: "/question" },
-					{ text: "管理页(旧)", link: "/frontend" },
-				],
-			},
-			{
-				text: "更新日志",
-				collapsed: true,
-				items: [
-					{ text: "v2.7.4 (2025-06-29) ⭐", link: "/update-log-v2.7.4" },
-					{ text: "v2.7.3.1 (2025-06-23)", link: "/update-log-v2.7.3.1" },
-					{ text: "v2.7.3 (2025-06-23)", link: "/update-log-v2.7.3" },
-					{ text: "v2.7.2 Final (2025-06-14)", link: "/update-log-2025-06-14-comprehensive" },
-					{ text: "v2.7.2+ (2025-06-14)", link: "/update-log-2025-06-14" },
-					{ text: "v2.7.1 (2025-06-08)", link: "/update-log-v2.7.1" },
-					{ text: "v2.7.0 (2025-06-03)", link: "/comprehensive-update-2025-06-03" },
-					{ text: "v2.6.2 (2025年6月)", link: "/update-log-2025-06" },
+					{ text: "技术架构", link: "/technical-architecture" },
+					{ text: "API 参考", link: "/api-endpoints" },
+					{ text: "更新日志", link: "/changelog" },
 				],
 			},
 		],
