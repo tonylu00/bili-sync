@@ -11,7 +11,7 @@
 	import api from '$lib/api';
 	import { toast } from 'svelte-sonner';
 	import type { ApiError } from '$lib/types';
-	import { LogOut } from '@lucide/svelte';
+	import { LogOut, BookOpen } from '@lucide/svelte';
 	import ResponsiveButton from '$lib/components/responsive-button.svelte';
 	import { initTheme } from '$lib/stores/theme';
 	import ThemeToggle from '$lib/components/theme-toggle.svelte';
@@ -93,6 +93,14 @@
 						</div>
 						<div class="flex items-center gap-1 sm:gap-2">
 							<ThemeToggle />
+							<ResponsiveButton
+								size="sm"
+								variant="outline"
+								onclick={() => window.open('https://qq1582185982.github.io/bili-sync-01/', '_blank')}
+								icon={BookOpen}
+								text="文档"
+								title="查看文档"
+							/>
 							<ResponsiveButton
 								size="sm"
 								variant="outline"
