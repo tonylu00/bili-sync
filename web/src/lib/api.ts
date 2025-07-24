@@ -209,6 +209,7 @@ class ApiClient {
 	/**
 	 * 批量重置所有视频下载状态
 	 * @param params 可选的查询参数，用于筛选特定视频源的视频
+	 * @param force 是否强制重置（包括已完成的视频）
 	 */
 	async resetAllVideos(params?: {
 		collection?: number;
@@ -216,7 +217,7 @@ class ApiClient {
 		submission?: number;
 		bangumi?: number;
 		watch_later?: number;
-	}): Promise<ApiResponse<ResetAllVideosResponse>> {
+	}, force: boolean = false): Promise<ApiResponse<ResetAllVideosResponse>> {
 		const searchParams = new URLSearchParams();
 		if (params) {
 			Object.entries(params).forEach(([key, value]) => {
@@ -224,6 +225,9 @@ class ApiClient {
 					searchParams.append(key, value.toString());
 				}
 			});
+		}
+		if (force) {
+			searchParams.append('force', 'true');
 		}
 		const query = searchParams.toString();
 		const endpoint = query ? `/videos/reset-all?${query}` : '/videos/reset-all';
@@ -242,6 +246,7 @@ class ApiClient {
 	 * 选择性重置特定任务
 	 * @param taskIndexes 要重置的任务索引列表
 	 * @param params 可选的查询参数，用于筛选特定视频源的视频
+	 * @param force 是否强制重置（包括已完成的任务）
 	 */
 	async resetSpecificTasks(
 		taskIndexes: number[],
@@ -251,10 +256,12 @@ class ApiClient {
 			submission?: number;
 			bangumi?: number;
 			watch_later?: number;
-		}
+		},
+		force: boolean = false
 	): Promise<ApiResponse<ResetAllVideosResponse>> {
 		const requestBody = {
 			task_indexes: taskIndexes,
+			force,
 			...params
 		};
 		return this.post<ResetAllVideosResponse>('/videos/reset-specific-tasks', requestBody);
@@ -644,7 +651,7 @@ export const api = {
 		submission?: number;
 		bangumi?: number;
 		watch_later?: number;
-	}) => apiClient.resetAllVideos(params),
+	}, force?: boolean) => apiClient.resetAllVideos(params, force),
 
 	/**
 	 * 删除视频（软删除）
@@ -662,8 +669,9 @@ export const api = {
 			submission?: number;
 			bangumi?: number;
 			watch_later?: number;
-		}
-	) => apiClient.resetSpecificTasks(taskIndexes, params),
+		},
+		force?: boolean
+	) => apiClient.resetSpecificTasks(taskIndexes, params, force),
 
 	/**
 	 * 设置认证 token

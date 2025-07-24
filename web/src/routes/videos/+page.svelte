@@ -163,13 +163,13 @@
 			const { videoSource } = $appStateStore;
 
 			if (resetAllTasks) {
-				// 重置所有失败任务，根据当前过滤器传递参数
+				// 重置所有任务，根据当前过滤器传递参数
 				const filterParams = videoSource
 					? {
 							[videoSource.type]: parseInt(videoSource.id)
 						}
 					: undefined;
-				result = await api.resetAllVideos(filterParams);
+				result = await api.resetAllVideos(filterParams, forceReset);
 			} else {
 				// 选择性重置特定任务
 				const taskIndexes = [];
@@ -208,7 +208,7 @@
 							[videoSource.type]: parseInt(videoSource.id)
 						}
 					: undefined;
-				result = await api.resetSpecificTasks(uniqueTaskIndexes, filterParams);
+				result = await api.resetSpecificTasks(uniqueTaskIndexes, filterParams, forceReset);
 			}
 
 			const data = result.data;
@@ -499,17 +499,26 @@
 			</AlertDialog.Description>
 		</AlertDialog.Header>
 		<div class="space-y-4 py-4">
-			<!-- 强制重置选项 -->
-			<label class="flex items-center gap-2">
-				<input type="checkbox" bind:checked={forceReset} />
-				<span class="text-sm">强制重置（包括已完成的视频）</span>
-			</label>
+			<!-- 重置模式选择 -->
+			<div class="space-y-2">
+				<div class="text-sm font-medium">重置模式：</div>
+				<div class="space-y-2 rounded-lg border p-3">
+					<label class="flex items-center gap-2">
+						<input type="radio" bind:group={forceReset} value={false} />
+						<span class="text-sm">只重置失败的任务（推荐）</span>
+					</label>
+					<label class="flex items-center gap-2">
+						<input type="radio" bind:group={forceReset} value={true} />
+						<span class="text-sm">强制重置所有任务（包括已完成的）</span>
+					</label>
+				</div>
+			</div>
 
 			<!-- 任务类型选择 -->
 			<div class="space-y-3">
-				<div class="text-sm font-medium">选择强制重置的任务类型（不管当前状态）：</div>
+				<div class="text-sm font-medium">选择要重置的任务类型：</div>
 
-				<!-- 强制重置所有任务 -->
+				<!-- 重置所有任务 -->
 				<label class="flex items-center gap-2">
 					<input
 						type="checkbox"
@@ -517,7 +526,7 @@
 						onchange={handleResetAllTasksChange}
 						class="rounded border-gray-300"
 					/>
-					<span class="text-sm font-medium">强制重置所有任务</span>
+					<span class="text-sm font-medium">重置所有任务类型</span>
 				</label>
 
 				<!-- 或选择特定任务 -->
@@ -532,7 +541,7 @@
 							disabled={resetAllTasks}
 							class="rounded border-gray-300"
 						/>
-						<span class="text-sm">强制重置视频封面</span>
+						<span class="text-sm">重置视频封面</span>
 					</label>
 
 					<label class="flex items-center gap-2">
@@ -543,7 +552,7 @@
 							disabled={resetAllTasks}
 							class="rounded border-gray-300"
 						/>
-						<span class="text-sm">强制重置视频内容</span>
+						<span class="text-sm">重置视频内容</span>
 					</label>
 
 					<label class="flex items-center gap-2">
@@ -554,7 +563,7 @@
 							disabled={resetAllTasks}
 							class="rounded border-gray-300"
 						/>
-						<span class="text-sm">强制重置视频信息</span>
+						<span class="text-sm">重置视频信息</span>
 					</label>
 
 					<label class="flex items-center gap-2">
@@ -565,7 +574,7 @@
 							disabled={resetAllTasks}
 							class="rounded border-gray-300"
 						/>
-						<span class="text-sm">强制重置视频弹幕</span>
+						<span class="text-sm">重置视频弹幕</span>
 					</label>
 
 					<label class="flex items-center gap-2">
@@ -576,14 +585,19 @@
 							disabled={resetAllTasks}
 							class="rounded border-gray-300"
 						/>
-						<span class="text-sm">强制重置视频字幕</span>
+						<span class="text-sm">重置视频字幕</span>
 					</label>
 				</div>
 
 				<!-- 注意事项 -->
 				<div class="mt-4 rounded-lg border border-yellow-200 bg-yellow-50 p-3">
 					<div class="text-sm text-yellow-800">
-						<strong>注意：</strong> 强制重置会将选中的任务状态重置为"未开始"，不管当前是否已完成。选择特定任务重置时，会同时重置对应的分P下载状态。
+						<strong>说明：</strong>
+						<ul class="list-disc list-inside mt-1">
+							<li>"只重置失败的任务"模式只会重置状态为失败的任务</li>
+							<li>"强制重置"模式会将所有选中的任务重置为"未开始"状态</li>
+							<li>选择特定任务类型时，会同时重置对应的分P下载状态</li>
+						</ul>
 					</div>
 				</div>
 			</div>
