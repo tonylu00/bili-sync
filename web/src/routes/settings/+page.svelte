@@ -470,14 +470,14 @@
 			largeSubmissionThreshold = config.large_submission_threshold || 100;
 			baseRequestDelay = config.base_request_delay || 200;
 			largeSubmissionDelayMultiplier = config.large_submission_delay_multiplier || 2;
-			enableProgressiveDelay = config.enable_progressive_delay || true;
+			enableProgressiveDelay = config.enable_progressive_delay ?? true;
 			maxDelayMultiplier = config.max_delay_multiplier || 4;
-			enableIncrementalFetch = config.enable_incremental_fetch || true;
-			incrementalFallbackToFull = config.incremental_fallback_to_full || true;
+			enableIncrementalFetch = config.enable_incremental_fetch ?? true;
+			incrementalFallbackToFull = config.incremental_fallback_to_full ?? true;
 			enableBatchProcessing = config.enable_batch_processing || false;
 			batchSize = config.batch_size || 5;
 			batchDelaySeconds = config.batch_delay_seconds || 2;
-			enableAutoBackoff = config.enable_auto_backoff || true;
+			enableAutoBackoff = config.enable_auto_backoff ?? true;
 			autoBackoffBaseSeconds = config.auto_backoff_base_seconds || 10;
 			autoBackoffMaxMultiplier = config.auto_backoff_max_multiplier || 5;
 
