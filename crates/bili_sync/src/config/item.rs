@@ -236,6 +236,12 @@ pub struct SubmissionRiskControlConfig {
     /// 自动退避的最大倍数
     #[serde(default = "default_auto_backoff_max_multiplier")]
     pub auto_backoff_max_multiplier: u64,
+    /// 视频源之间的延迟（秒）
+    #[serde(default = "default_source_delay_seconds")]
+    pub source_delay_seconds: u64,
+    /// UP主投稿源之间的特殊延迟（秒）
+    #[serde(default = "default_submission_source_delay_seconds")]
+    pub submission_source_delay_seconds: u64,
 }
 
 fn default_large_submission_threshold() -> usize {
@@ -290,6 +296,14 @@ fn default_auto_backoff_max_multiplier() -> u64 {
     5 // 最大退避到50秒
 }
 
+fn default_source_delay_seconds() -> u64 {
+    2 // 视频源之间默认延迟2秒
+}
+
+fn default_submission_source_delay_seconds() -> u64 {
+    5 // UP主投稿源之间默认延迟5秒
+}
+
 impl Default for SubmissionRiskControlConfig {
     fn default() -> Self {
         Self {
@@ -306,6 +320,8 @@ impl Default for SubmissionRiskControlConfig {
             enable_auto_backoff: default_enable_auto_backoff(),
             auto_backoff_base_seconds: default_auto_backoff_base_seconds(),
             auto_backoff_max_multiplier: default_auto_backoff_max_multiplier(),
+            source_delay_seconds: default_source_delay_seconds(),
+            submission_source_delay_seconds: default_submission_source_delay_seconds(),
         }
     }
 }

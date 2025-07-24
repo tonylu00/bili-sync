@@ -110,6 +110,8 @@ pub struct UpdateConfigTask {
     pub enable_auto_backoff: Option<bool>,
     pub auto_backoff_base_seconds: Option<u64>,
     pub auto_backoff_max_multiplier: Option<u64>,
+    pub source_delay_seconds: Option<u64>,
+    pub submission_source_delay_seconds: Option<u64>,
     // 多P视频目录结构配置
     pub multi_page_use_season_structure: Option<bool>,
     // 合集目录结构配置
@@ -1412,6 +1414,8 @@ impl ConfigTaskQueue {
                 enable_auto_backoff: task.enable_auto_backoff,
                 auto_backoff_base_seconds: task.auto_backoff_base_seconds,
                 auto_backoff_max_multiplier: task.auto_backoff_max_multiplier,
+                source_delay_seconds: task.source_delay_seconds,
+                submission_source_delay_seconds: task.submission_source_delay_seconds,
                 // 系统配置相关字段，任务队列中不使用
                 scan_deleted_videos: None,
                 // aria2监控配置，任务队列中不使用

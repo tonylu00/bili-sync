@@ -197,6 +197,8 @@
 	let enableAutoBackoff = true;
 	let autoBackoffBaseSeconds = 10;
 	let autoBackoffMaxMultiplier = 5;
+	let sourceDelaySeconds = 2;
+	let submissionSourceDelaySeconds = 5;
 
 	// aria2监控配置
 	let enableAria2HealthCheck = false;
@@ -480,6 +482,8 @@
 			enableAutoBackoff = config.enable_auto_backoff ?? true;
 			autoBackoffBaseSeconds = config.auto_backoff_base_seconds || 10;
 			autoBackoffMaxMultiplier = config.auto_backoff_max_multiplier || 5;
+			sourceDelaySeconds = config.source_delay_seconds || 2;
+			submissionSourceDelaySeconds = config.submission_source_delay_seconds || 5;
 
 			// aria2监控配置
 			enableAria2HealthCheck = config.enable_aria2_health_check ?? false;
@@ -653,6 +657,8 @@
 				enable_auto_backoff: enableAutoBackoff,
 				auto_backoff_base_seconds: autoBackoffBaseSeconds,
 				auto_backoff_max_multiplier: autoBackoffMaxMultiplier,
+				source_delay_seconds: sourceDelaySeconds,
+				submission_source_delay_seconds: submissionSourceDelaySeconds,
 				// aria2监控配置
 				enable_aria2_health_check: enableAria2HealthCheck,
 				enable_aria2_auto_restart: enableAria2AutoRestart,
@@ -2489,6 +2495,55 @@
 										</div>
 									</div>
 								{/if}
+							</div>
+						</div>
+
+						<!-- 视频源间延迟配置 -->
+						<div
+							class="rounded-lg border border-indigo-200 bg-indigo-50 p-4 dark:border-indigo-800 dark:bg-indigo-950/20"
+						>
+							<h3 class="mb-3 text-sm font-medium text-indigo-800 dark:text-indigo-200">
+								⏱️ 视频源间延迟配置
+							</h3>
+							<div class="space-y-4">
+								<div class="grid grid-cols-1 gap-4 {isMobile ? 'sm:grid-cols-1' : 'md:grid-cols-2'}">
+									<div class="space-y-2">
+										<Label for="source-delay-seconds">通用视频源间延迟（秒）</Label>
+										<Input
+											id="source-delay-seconds"
+											type="number"
+											bind:value={sourceDelaySeconds}
+											min="0"
+											max="60"
+											placeholder="2"
+										/>
+										<p class="text-muted-foreground text-xs">
+											每个视频源之间的基础延迟时间（收藏夹、合集等）
+										</p>
+									</div>
+
+									<div class="space-y-2">
+										<Label for="submission-source-delay-seconds">UP主投稿源间延迟（秒）</Label>
+										<Input
+											id="submission-source-delay-seconds"
+											type="number"
+											bind:value={submissionSourceDelaySeconds}
+											min="0"
+											max="60"
+											placeholder="5"
+										/>
+										<p class="text-muted-foreground text-xs">
+											UP主投稿之间的特殊延迟时间（建议设置更长）
+										</p>
+									</div>
+								</div>
+								
+								<div class="rounded-lg bg-indigo-100 p-3 dark:bg-indigo-900/20">
+									<p class="text-sm text-indigo-700 dark:text-indigo-300">
+										<strong>说明：</strong>在扫描多个视频源时，系统会在每个源之间自动添加延迟，避免连续请求触发风控。
+										UP主投稿通常需要更长的延迟，因为其视频数量可能较多。设置为0可禁用延迟。
+									</p>
+								</div>
 							</div>
 						</div>
 

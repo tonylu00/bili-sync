@@ -275,6 +275,8 @@ pub async fn video_downloader(connection: Arc<DatabaseConnection>) {
 
             let mut processed_sources = 0;
             let mut sources_with_new_content = 0;
+            let mut is_first_source = true;
+            
             for (args, path) in &video_sources {
                 // 在处理每个视频源前检查是否暂停
                 if TASK_CONTROLLER.is_paused() {
@@ -284,6 +286,37 @@ pub async fn video_downloader(connection: Arc<DatabaseConnection>) {
                     crate::utils::task_notifier::TASK_STATUS_NOTIFIER.set_finished();
                     break;
                 }
+                
+                // 视频源间延迟处理（第一个源不延迟）
+                if !is_first_source {
+                    let delay_seconds = match args {
+                        crate::adapter::Args::Submission { .. } => {
+                            // UP主投稿使用特殊延迟
+                            config.submission_risk_control.submission_source_delay_seconds
+                        }
+                        _ => {
+                            // 其他源使用通用延迟
+                            config.submission_risk_control.source_delay_seconds
+                        }
+                    };
+                    
+                    if delay_seconds > 0 {
+                        let source_type = match args {
+                            crate::adapter::Args::Submission { .. } => "UP主投稿",
+                            crate::adapter::Args::Favorite { .. } => "收藏夹",
+                            crate::adapter::Args::Collection { .. } => "合集",
+                            crate::adapter::Args::WatchLater => "稍后再看",
+                            crate::adapter::Args::Bangumi { .. } => "番剧",
+                        };
+                        
+                        info!(
+                            "处理下一个{}前延迟 {} 秒，避免触发风控...",
+                            source_type, delay_seconds
+                        );
+                        tokio::time::sleep(tokio::time::Duration::from_secs(delay_seconds)).await;
+                    }
+                }
+                is_first_source = false;
 
                 // 获取全局取消令牌，用于下载任务控制
                 let cancellation_token = TASK_CONTROLLER.get_cancellation_token().await;

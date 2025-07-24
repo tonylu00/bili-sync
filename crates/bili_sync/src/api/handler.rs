@@ -4019,6 +4019,8 @@ pub async fn update_config(
             enable_auto_backoff: params.enable_auto_backoff,
             auto_backoff_base_seconds: params.auto_backoff_base_seconds,
             auto_backoff_max_multiplier: params.auto_backoff_max_multiplier,
+            source_delay_seconds: params.source_delay_seconds,
+            submission_source_delay_seconds: params.submission_source_delay_seconds,
             // 多P视频目录结构配置
             multi_page_use_season_structure: params.multi_page_use_season_structure,
             // 合集目录结构配置
@@ -4555,6 +4557,21 @@ pub async fn update_config_internal(
         if multiplier != config.submission_risk_control.auto_backoff_max_multiplier {
             config.submission_risk_control.auto_backoff_max_multiplier = multiplier;
             updated_fields.push("auto_backoff_max_multiplier");
+        }
+    }
+
+    // 处理视频源间延迟配置
+    if let Some(delay) = params.source_delay_seconds {
+        if delay != config.submission_risk_control.source_delay_seconds {
+            config.submission_risk_control.source_delay_seconds = delay;
+            updated_fields.push("source_delay_seconds");
+        }
+    }
+
+    if let Some(delay) = params.submission_source_delay_seconds {
+        if delay != config.submission_risk_control.submission_source_delay_seconds {
+            config.submission_risk_control.submission_source_delay_seconds = delay;
+            updated_fields.push("submission_source_delay_seconds");
         }
     }
 
