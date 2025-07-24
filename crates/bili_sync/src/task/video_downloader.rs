@@ -341,10 +341,24 @@ pub async fn video_downloader(connection: Arc<DatabaseConnection>) {
             let mut processed_sources = 0;
             let mut sources_with_new_content = 0;
             let mut is_first_source = true;
+            let mut last_successful_source: Option<&VideoSourceWithId> = None; // 记录上一个成功处理的源
             
             for source in &ordered_sources {
                 let args = &source.args;
                 let path = &source.path;
+                
+                // 在开始扫描当前源之前，保存上一个成功处理的源ID
+                if let Some(prev_source) = last_successful_source {
+                    max_id_recorder.record(prev_source.source_type, prev_source.id);
+                    max_id_recorder.merge_into(&mut last_scanned_ids);
+                    
+                    if let Err(e) = update_last_scanned_ids(&connection, &last_scanned_ids).await {
+                        warn!("保存扫描进度失败 (源ID: {}): {}", prev_source.id, e);
+                    } else {
+                        debug!("已保存扫描进度 (源ID: {}, 类型: {:?})", prev_source.id, prev_source.source_type);
+                    }
+                }
+                
                 // 在处理每个视频源前检查是否暂停
                 if TASK_CONTROLLER.is_paused() {
                     debug!("在处理视频源时检测到暂停信号，停止当前轮次扫描");
@@ -410,6 +424,10 @@ pub async fn video_downloader(connection: Arc<DatabaseConnection>) {
                 {
                     Ok((new_video_count, new_videos)) => {
                         processed_sources += 1;
+                        
+                        // 成功处理后，记录为上一个成功的源（不立即保存，等下次循环再保存）
+                        last_successful_source = Some(source);
+                        
                         if new_video_count > 0 {
                             sources_with_new_content += 1;
                             // 将新增视频信息添加到收集器
@@ -424,6 +442,8 @@ pub async fn video_downloader(connection: Arc<DatabaseConnection>) {
                         // 检查是否为风控错误，如果是则停止所有后续扫描
                         if e.downcast_ref::<crate::error::DownloadAbortError>().is_some() {
                             error!("检测到风控，停止所有后续视频源的扫描");
+                            info!("触发风控的源(ID: {})未完成处理，下次扫描将重新处理该源", source.id);
+                            
                             break; // 跳出循环，停止处理剩余的视频源
                         }
                         error!("处理过程遇到错误：{:#}", e);
@@ -434,13 +454,19 @@ pub async fn video_downloader(connection: Arc<DatabaseConnection>) {
             // 标记扫描结束
             TASK_CONTROLLER.set_scanning(false);
 
-            // 更新最后扫描的ID记录
-            max_id_recorder.merge_into(&mut last_scanned_ids);
-            if let Err(e) = update_last_scanned_ids(&connection, &last_scanned_ids).await {
-                warn!("更新最后扫描ID记录失败: {}", e);
-            } else {
-                debug!("已更新最后扫描ID记录");
+            // 保存最后一个成功处理的源ID
+            if let Some(final_source) = last_successful_source {
+                max_id_recorder.record(final_source.source_type, final_source.id);
+                max_id_recorder.merge_into(&mut last_scanned_ids);
+                
+                if let Err(e) = update_last_scanned_ids(&connection, &last_scanned_ids).await {
+                    warn!("保存最后源的扫描进度失败 (源ID: {}): {}", final_source.id, e);
+                } else {
+                    debug!("已保存最后源的扫描进度 (源ID: {}, 类型: {:?})", final_source.id, final_source.source_type);
+                }
             }
+            
+            debug!("扫描完成，所有进度已保存");
 
             // 生成扫描摘要并发送推送通知
             let scan_summary = scan_collector.generate_summary();
