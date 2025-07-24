@@ -22,6 +22,7 @@
 		setAll,
 		setCurrentPage,
 		setQuery,
+		setShowFailedOnly,
 		ToQuery
 	} from '$lib/stores/filter';
 
@@ -49,6 +50,7 @@
 	let showFilters = false;
 	let selectedSourceType = '';
 	let selectedSourceId = '';
+	let showFailedOnly = false;
 
 	function getApiParams(searchParams: URLSearchParams) {
 		let videoSource = null;
@@ -61,18 +63,20 @@
 		return {
 			query: searchParams.get('query') || '',
 			videoSource,
-			pageNum: parseInt(searchParams.get('page') || '0')
+			pageNum: parseInt(searchParams.get('page') || '0'),
+			showFailedOnly: searchParams.get('show_failed_only') === 'true'
 		};
 	}
 
 	async function loadVideos(
 		query: string,
 		pageNum: number = 0,
-		filter?: { type: string; id: string } | null
+		filter?: { type: string; id: string } | null,
+		showFailedOnly: boolean = false
 	) {
 		loading = true;
 		try {
-			const params: Record<string, string | number> = {
+			const params: Record<string, string | number | boolean> = {
 				page: pageNum,
 				page_size: pageSize
 			};
@@ -81,6 +85,9 @@
 			}
 			if (filter) {
 				params[filter.type] = parseInt(filter.id);
+			}
+			if (showFailedOnly) {
+				params.show_failed_only = true;
 			}
 
 			const result = await api.getVideos(params);
@@ -110,8 +117,8 @@
 	}
 
 	async function handleSearchParamsChange(searchParams: URLSearchParams) {
-		const { query, videoSource, pageNum } = getApiParams(searchParams);
-		setAll(query, pageNum, videoSource);
+		const { query, videoSource, pageNum, showFailedOnly: showFailedOnlyParam } = getApiParams(searchParams);
+		setAll(query, pageNum, videoSource, showFailedOnlyParam);
 
 		// 同步筛选状态
 		if (videoSource) {
@@ -121,8 +128,9 @@
 			selectedSourceType = '';
 			selectedSourceId = '';
 		}
+		showFailedOnly = showFailedOnlyParam;
 
-		loadVideos(query, pageNum, videoSource);
+		loadVideos(query, pageNum, videoSource, showFailedOnlyParam);
 	}
 
 	async function handleResetVideo(video: VideoInfo, forceReset: boolean) {
@@ -133,8 +141,8 @@
 				toast.success('重置成功', {
 					description: `视频「${video.name}」已重置`
 				});
-				const { query, currentPage, videoSource } = $appStateStore;
-				await loadVideos(query, currentPage, videoSource);
+				const { query, currentPage, videoSource, showFailedOnly } = $appStateStore;
+				await loadVideos(query, currentPage, videoSource, showFailedOnly);
 			} else {
 				toast.info('重置无效', {
 					description: `视频「${video.name}」没有失败的状态，无需重置`
@@ -208,8 +216,8 @@
 				toast.success('重置成功', {
 					description: `已重置 ${data.resetted_videos_count} 个视频和 ${data.resetted_pages_count} 个分页`
 				});
-				const { query, currentPage, videoSource: currentVideoSource } = $appStateStore;
-				await loadVideos(query, currentPage, currentVideoSource);
+				const { query, currentPage, videoSource: currentVideoSource, showFailedOnly } = $appStateStore;
+				await loadVideos(query, currentPage, currentVideoSource, showFailedOnly);
 			} else {
 				toast.info('没有需要重置的视频');
 			}
@@ -227,14 +235,15 @@
 	function handleSourceFilter(sourceType: string, sourceId: string) {
 		selectedSourceType = sourceType;
 		selectedSourceId = sourceId;
-		setAll('', 0, { type: sourceType, id: sourceId });
+		setAll('', 0, { type: sourceType, id: sourceId }, showFailedOnly);
 		goto(`/videos?${ToQuery($appStateStore)}`);
 	}
 
 	function clearFilters() {
 		selectedSourceType = '';
 		selectedSourceId = '';
-		setAll('', 0, null);
+		showFailedOnly = false;
+		setAll('', 0, null, false);
 		goto('/videos');
 	}
 
@@ -304,6 +313,20 @@
 				筛选
 			</Button>
 
+			<!-- 显示错误视频按钮 -->
+			<Button
+				variant={showFailedOnly ? 'destructive' : 'outline'}
+				size="sm"
+				onclick={() => {
+					showFailedOnly = !showFailedOnly;
+					setShowFailedOnly(showFailedOnly);
+					resetCurrentPage();
+					goto(`/videos?${ToQuery($appStateStore)}`);
+				}}
+			>
+				只显示错误视频
+			</Button>
+
 			<!-- 批量重置按钮 -->
 			<Button
 				variant="outline"
@@ -363,25 +386,50 @@
 	{/if}
 
 	<!-- 当前筛选状态 -->
-	{#if selectedSourceType && selectedSourceId && videoSources}
-		{@const sourceConfig = Object.values(VIDEO_SOURCES).find(
-			(config) => config.type === selectedSourceType
-		)}
-		{@const sources = videoSources[selectedSourceType]}
-		{@const currentSource = sources?.find((s) => s.id.toString() === selectedSourceId)}
-		{#if sourceConfig && currentSource}
-			<div class="flex items-center gap-2">
-				<span class="text-muted-foreground text-sm">当前筛选:</span>
-				<Badge variant="secondary" class="flex items-center gap-1">
-					<sourceConfig.icon class="h-3 w-3" />
-					{currentSource.name}
-					<button onclick={clearFilters} class="hover:bg-muted-foreground/20 ml-1 rounded">
-						<span class="sr-only">清除筛选</span>
+	{#if (selectedSourceType && selectedSourceId && videoSources) || showFailedOnly}
+		<div class="flex items-center gap-2 flex-wrap">
+			<span class="text-muted-foreground text-sm">当前筛选:</span>
+			
+			{#if selectedSourceType && selectedSourceId && videoSources}
+				{@const sourceConfig = Object.values(VIDEO_SOURCES).find(
+					(config) => config.type === selectedSourceType
+				)}
+				{@const sources = videoSources[selectedSourceType]}
+				{@const currentSource = sources?.find((s) => s.id.toString() === selectedSourceId)}
+				{#if sourceConfig && currentSource}
+					<Badge variant="secondary" class="flex items-center gap-1">
+						<sourceConfig.icon class="h-3 w-3" />
+						{currentSource.name}
+						<button onclick={clearFilters} class="hover:bg-muted-foreground/20 ml-1 rounded">
+							<span class="sr-only">清除筛选</span>
+							×
+						</button>
+					</Badge>
+				{/if}
+			{/if}
+			
+			{#if showFailedOnly}
+				<Badge variant="destructive" class="flex items-center gap-1">
+					只显示错误视频
+					<button 
+						onclick={() => {
+							showFailedOnly = false;
+							setShowFailedOnly(false);
+							resetCurrentPage();
+							goto(`/videos?${ToQuery($appStateStore)}`);
+						}} 
+						class="hover:bg-muted-foreground/20 ml-1 rounded"
+					>
+						<span class="sr-only">清除错误视频筛选</span>
 						×
 					</button>
 				</Badge>
-			</div>
-		{/if}
+			{/if}
+			
+			{#if (selectedSourceType && selectedSourceId) || showFailedOnly}
+				<Button variant="ghost" size="sm" onclick={clearFilters}>清除所有筛选</Button>
+			{/if}
+		</div>
 	{/if}
 
 	<!-- 视频列表统计 -->

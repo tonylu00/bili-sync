@@ -7,16 +7,18 @@ export interface AppState {
 		type: string;
 		id: string;
 	} | null;
+	showFailedOnly: boolean;
 }
 
 export const appStateStore = writable<AppState>({
 	query: '',
 	currentPage: 0,
-	videoSource: null
+	videoSource: null,
+	showFailedOnly: false
 });
 
 export const ToQuery = (state: AppState): string => {
-	const { query, videoSource } = state;
+	const { query, videoSource, showFailedOnly } = state;
 	const params = new URLSearchParams();
 	if (state.currentPage > 0) {
 		params.set('page', String(state.currentPage));
@@ -26,6 +28,9 @@ export const ToQuery = (state: AppState): string => {
 	}
 	if (videoSource && videoSource.type && videoSource.id) {
 		params.set(videoSource.type, videoSource.id);
+	}
+	if (showFailedOnly) {
+		params.set('show_failed_only', 'true');
 	}
 	const queryString = params.toString();
 	return queryString ? `${queryString}` : '';
@@ -66,15 +71,24 @@ export const resetCurrentPage = () => {
 	}));
 };
 
+export const setShowFailedOnly = (showFailedOnly: boolean) => {
+	appStateStore.update((state) => ({
+		...state,
+		showFailedOnly
+	}));
+};
+
 export const setAll = (
 	query: string,
 	currentPage: number,
-	videoSource: { type: string; id: string } | null
+	videoSource: { type: string; id: string } | null,
+	showFailedOnly: boolean = false
 ) => {
 	appStateStore.set({
 		query,
 		currentPage,
-		videoSource
+		videoSource,
+		showFailedOnly
 	});
 };
 
@@ -82,7 +96,8 @@ export const clearAll = () => {
 	appStateStore.set({
 		query: '',
 		currentPage: 0,
-		videoSource: null
+		videoSource: null,
+		showFailedOnly: false
 	});
 };
 
