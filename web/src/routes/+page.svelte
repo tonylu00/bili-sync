@@ -309,10 +309,10 @@
 </svelte:head>
 
 {#if checkingSetup}
-	<div class="flex min-h-screen items-center justify-center bg-gray-50">
+	<div class="flex min-h-screen items-center justify-center bg-background">
 		<div class="text-center">
-			<div class="mb-4 text-lg">正在检查系统状态...</div>
-			<div class="text-sm text-gray-600">请稍候</div>
+			<div class="mb-4 text-lg text-foreground">正在检查系统状态...</div>
+			<div class="text-sm text-muted-foreground">请稍候</div>
 		</div>
 	</div>
 {:else if needsInitialSetup}
