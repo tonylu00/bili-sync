@@ -12,13 +12,17 @@ use crate::initialization;
 use crate::task::TASK_CONTROLLER;
 use crate::unified_downloader::UnifiedDownloader;
 use crate::utils::scan_collector::ScanCollector;
+use crate::utils::scan_id_tracker::{
+    get_last_scanned_ids, group_sources_by_new_old, update_last_scanned_ids,
+    LastScannedIds, MaxIdRecorder, SourceType, VideoSourceWithId,
+};
 use crate::workflow::process_video_source;
 use bili_sync_entity::entities;
 
 /// 从数据库加载所有视频源的函数
 async fn load_video_sources_from_db(
     connection: &DatabaseConnection,
-) -> Result<Vec<(Args, PathBuf)>, Box<dyn std::error::Error + Send + Sync>> {
+) -> Result<Vec<VideoSourceWithId>, Box<dyn std::error::Error + Send + Sync>> {
     let mut video_sources = Vec::new();
 
     // 加载合集源（只加载启用的）
@@ -41,7 +45,12 @@ async fn load_video_sources_from_db(
             collection_type,
         };
 
-        video_sources.push((Args::Collection { collection_item }, PathBuf::from(collection.path)));
+        video_sources.push(VideoSourceWithId {
+            id: collection.id,
+            args: Args::Collection { collection_item },
+            path: PathBuf::from(collection.path),
+            source_type: SourceType::Collection,
+        });
     }
 
     // 加载收藏夹源（只加载启用的）
@@ -52,7 +61,12 @@ async fn load_video_sources_from_db(
 
     for favorite in favorites {
         let fid = favorite.f_id.to_string();
-        video_sources.push((Args::Favorite { fid }, PathBuf::from(favorite.path)));
+        video_sources.push(VideoSourceWithId {
+            id: favorite.id,
+            args: Args::Favorite { fid },
+            path: PathBuf::from(favorite.path),
+            source_type: SourceType::Favorite,
+        });
     }
 
     // 加载UP主投稿源（只加载启用的）
@@ -63,7 +77,12 @@ async fn load_video_sources_from_db(
 
     for submission in submissions {
         let upper_id = submission.upper_id.to_string();
-        video_sources.push((Args::Submission { upper_id }, PathBuf::from(submission.path)));
+        video_sources.push(VideoSourceWithId {
+            id: submission.id,
+            args: Args::Submission { upper_id },
+            path: PathBuf::from(submission.path),
+            source_type: SourceType::Submission,
+        });
     }
 
     // 加载稍后观看源（只加载启用的）
@@ -73,7 +92,12 @@ async fn load_video_sources_from_db(
         .await?;
 
     for watch_later in watch_later_sources {
-        video_sources.push((Args::WatchLater, PathBuf::from(watch_later.path)));
+        video_sources.push(VideoSourceWithId {
+            id: watch_later.id,
+            args: Args::WatchLater,
+            path: PathBuf::from(watch_later.path),
+            source_type: SourceType::WatchLater,
+        });
     }
 
     // 加载番剧源（只加载启用的）
@@ -84,14 +108,16 @@ async fn load_video_sources_from_db(
         .await?;
 
     for bangumi in bangumi_sources {
-        video_sources.push((
-            Args::Bangumi {
+        video_sources.push(VideoSourceWithId {
+            id: bangumi.id,
+            args: Args::Bangumi {
                 season_id: bangumi.season_id,
                 media_id: bangumi.media_id,
                 ep_id: bangumi.ep_id,
             },
-            PathBuf::from(bangumi.path),
-        ));
+            path: PathBuf::from(bangumi.path),
+            source_type: SourceType::Bangumi,
+        });
     }
 
     Ok(video_sources)
@@ -273,11 +299,52 @@ pub async fn video_downloader(connection: Arc<DatabaseConnection>) {
             // 初始化扫描收集器来统计本轮扫描结果
             let mut scan_collector = ScanCollector::new();
 
+            // 获取最后扫描的ID记录
+            let mut last_scanned_ids = match get_last_scanned_ids(&connection).await {
+                Ok(ids) => ids,
+                Err(e) => {
+                    warn!("获取最后扫描ID记录失败，将所有源视为旧源: {}", e);
+                    LastScannedIds::default()
+                }
+            };
+
+            // 将视频源按新旧分组
+            let (new_sources, old_sources) = group_sources_by_new_old(video_sources, &last_scanned_ids);
+            
+            if !new_sources.is_empty() {
+                info!(
+                    "检测到 {} 个新添加的视频源，将优先扫描这些新源",
+                    new_sources.len()
+                );
+                
+                // 显示新源的详细信息
+                for source in &new_sources {
+                    let source_name = match &source.args {
+                        crate::adapter::Args::Collection { .. } => "合集",
+                        crate::adapter::Args::Favorite { .. } => "收藏夹",
+                        crate::adapter::Args::Submission { .. } => "UP主投稿",
+                        crate::adapter::Args::WatchLater => "稍后观看",
+                        crate::adapter::Args::Bangumi { .. } => "番剧",
+                    };
+                    debug!("  - {} (ID: {})", source_name, source.id);
+                }
+            } else {
+                info!("未检测到新添加的视频源，将按顺序扫描所有 {} 个源", old_sources.len());
+            }
+
+            // 合并新旧源，新源在前
+            let ordered_sources = [new_sources, old_sources].concat();
+
+            // 初始化ID记录器
+            let mut max_id_recorder = MaxIdRecorder::new();
+
             let mut processed_sources = 0;
             let mut sources_with_new_content = 0;
             let mut is_first_source = true;
             
-            for (args, path) in &video_sources {
+            for source in &ordered_sources {
+                let args = &source.args;
+                let path = &source.path;
                 // 在处理每个视频源前检查是否暂停
                 if TASK_CONTROLLER.is_paused() {
                     debug!("在处理视频源时检测到暂停信号，停止当前轮次扫描");
@@ -317,6 +384,9 @@ pub async fn video_downloader(connection: Arc<DatabaseConnection>) {
                     }
                 }
                 is_first_source = false;
+
+                // 记录源ID
+                max_id_recorder.record(source.source_type, source.id);
 
                 // 获取全局取消令牌，用于下载任务控制
                 let cancellation_token = TASK_CONTROLLER.get_cancellation_token().await;
@@ -364,6 +434,14 @@ pub async fn video_downloader(connection: Arc<DatabaseConnection>) {
             // 标记扫描结束
             TASK_CONTROLLER.set_scanning(false);
 
+            // 更新最后扫描的ID记录
+            max_id_recorder.merge_into(&mut last_scanned_ids);
+            if let Err(e) = update_last_scanned_ids(&connection, &last_scanned_ids).await {
+                warn!("更新最后扫描ID记录失败: {}", e);
+            } else {
+                debug!("已更新最后扫描ID记录");
+            }
+
             // 生成扫描摘要并发送推送通知
             let scan_summary = scan_collector.generate_summary();
             if let Err(e) = crate::utils::notification::send_scan_notification(scan_summary).await {
@@ -373,7 +451,7 @@ pub async fn video_downloader(connection: Arc<DatabaseConnection>) {
             // 标记任务状态为结束
             crate::utils::task_notifier::TASK_STATUS_NOTIFIER.set_finished();
 
-            if processed_sources == video_sources.len() {
+            if processed_sources == ordered_sources.len() {
                 if sources_with_new_content > 0 {
                     info!(
                         "本轮任务执行完毕，成功扫描 {} 个视频源，其中 {} 个源有新内容",
@@ -391,17 +469,17 @@ pub async fn video_downloader(connection: Arc<DatabaseConnection>) {
                         "本轮任务执行完毕，成功扫描 {} 个视频源（其中 {} 个有新内容），{} 个源处理失败",
                         processed_sources,
                         sources_with_new_content,
-                        video_sources.len() - processed_sources
+                        ordered_sources.len() - processed_sources
                     );
                 } else {
                     info!(
                         "本轮任务执行完毕，成功扫描 {} 个视频源（均无新内容），{} 个源处理失败",
                         processed_sources,
-                        video_sources.len() - processed_sources
+                        ordered_sources.len() - processed_sources
                     );
                 }
             } else {
-                warn!("本轮任务执行完毕，所有 {} 个视频源均处理失败", video_sources.len());
+                warn!("本轮任务执行完毕，所有 {} 个视频源均处理失败", ordered_sources.len());
             }
         }
 
