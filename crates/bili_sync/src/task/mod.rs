@@ -16,6 +16,7 @@ use std::sync::Arc;
 use tokio::sync::Mutex;
 use tokio_util::sync::CancellationToken;
 use tracing::{debug, error, info};
+use crate::utils::time_format::now_naive;
 
 /// 删除视频源任务结构体
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -154,8 +155,8 @@ impl DeleteTaskQueue {
             task_data: Set(task_data),
             status: Set(TaskStatus::Pending),
             retry_count: Set(0),
-            created_at: Set(chrono::Utc::now().naive_utc()),
-            updated_at: Set(chrono::Utc::now().naive_utc()),
+            created_at: Set(now_naive()),
+            updated_at: Set(now_naive()),
             ..Default::default()
         };
 
@@ -373,8 +374,8 @@ impl VideoDeleteTaskQueue {
             task_data: Set(task_data),
             status: Set(TaskStatus::Pending),
             retry_count: Set(0),
-            created_at: Set(chrono::Utc::now().naive_utc()),
-            updated_at: Set(chrono::Utc::now().naive_utc()),
+            created_at: Set(now_naive()),
+            updated_at: Set(now_naive()),
             ..Default::default()
         };
 
@@ -850,8 +851,8 @@ impl AddTaskQueue {
             task_data: Set(task_data),
             status: Set(TaskStatus::Pending),
             retry_count: Set(0),
-            created_at: Set(chrono::Utc::now().naive_utc()),
-            updated_at: Set(chrono::Utc::now().naive_utc()),
+            created_at: Set(now_naive()),
+            updated_at: Set(now_naive()),
             ..Default::default()
         };
 
@@ -1037,8 +1038,8 @@ impl ConfigTaskQueue {
             task_data: Set(task_data),
             status: Set(TaskStatus::Pending),
             retry_count: Set(0),
-            created_at: Set(chrono::Utc::now().naive_utc()),
-            updated_at: Set(chrono::Utc::now().naive_utc()),
+            created_at: Set(now_naive()),
+            updated_at: Set(now_naive()),
             ..Default::default()
         };
 
@@ -1065,8 +1066,8 @@ impl ConfigTaskQueue {
             task_data: Set(task_data),
             status: Set(TaskStatus::Pending),
             retry_count: Set(0),
-            created_at: Set(chrono::Utc::now().naive_utc()),
-            updated_at: Set(chrono::Utc::now().naive_utc()),
+            created_at: Set(now_naive()),
+            updated_at: Set(now_naive()),
             ..Default::default()
         };
 

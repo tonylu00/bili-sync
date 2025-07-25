@@ -6,7 +6,7 @@ use axum::extract::{Extension, Path, Query};
 
 use bili_sync_entity::{collection, favorite, page, submission, video, video_source, watch_later};
 use bili_sync_migration::Expr;
-use chrono::Utc;
+use crate::utils::time_format::{now_standard_string, to_standard_string};
 use reqwest;
 use sea_orm::{
     ColumnTrait, Condition, ConnectionTrait, DatabaseConnection, EntityTrait, FromQueryResult, PaginatorTrait,
@@ -1425,7 +1425,7 @@ pub async fn add_video_source_internal(
                 name: sea_orm::Set(params.name),
                 r#type: sea_orm::Set(collection_type),
                 path: sea_orm::Set(params.path.clone()),
-                created_at: sea_orm::Set(chrono::Local::now().to_string()),
+                created_at: sea_orm::Set(now_standard_string()),
                 latest_row_at: sea_orm::Set(chrono::NaiveDateTime::default()),
                 enabled: sea_orm::Set(true),
                 scan_deleted_videos: sea_orm::Set(false),
@@ -1464,7 +1464,7 @@ pub async fn add_video_source_internal(
                 f_id: sea_orm::Set(f_id),
                 name: sea_orm::Set(params.name),
                 path: sea_orm::Set(params.path.clone()),
-                created_at: sea_orm::Set(chrono::Local::now().to_string()),
+                created_at: sea_orm::Set(now_standard_string()),
                 latest_row_at: sea_orm::Set(chrono::NaiveDateTime::default()),
                 enabled: sea_orm::Set(true),
                 scan_deleted_videos: sea_orm::Set(false),
@@ -1503,7 +1503,7 @@ pub async fn add_video_source_internal(
                 upper_id: sea_orm::Set(upper_id),
                 upper_name: sea_orm::Set(params.name),
                 path: sea_orm::Set(params.path.clone()),
-                created_at: sea_orm::Set(chrono::Local::now().to_string()),
+                created_at: sea_orm::Set(now_standard_string()),
                 latest_row_at: sea_orm::Set(chrono::NaiveDateTime::default()),
                 enabled: sea_orm::Set(true),
                 scan_deleted_videos: sea_orm::Set(false),
@@ -3194,7 +3194,7 @@ async fn validate_path_reset_safety(
                 path: None,
                 image: None,
                 download_status: 0,
-                created_at: chrono::Utc::now().to_rfc3339(),
+                created_at: now_standard_string(),
             };
 
             let api_title = if let Some(current_path) = std::path::Path::new(&video.path).parent() {
@@ -5931,7 +5931,7 @@ lazy_static::lazy_static! {
 /// 添加日志到缓冲区
 pub fn add_log_entry(level: LogLevel, message: String, target: Option<String>) {
     let entry = LogEntry {
-        timestamp: Utc::now().to_rfc3339(),
+        timestamp: now_standard_string(),
         level: level.clone(), // 克隆level避免所有权问题
         message,
         target,
@@ -6162,7 +6162,7 @@ pub async fn get_queue_status() -> Result<ApiResponse<QueueStatusResponse>, ApiE
             task_id: format!("delete_{}", i + 1),
             task_type: "delete_video_source".to_string(),
             description: "删除视频源任务".to_string(),
-            created_at: chrono::Utc::now().to_rfc3339(),
+            created_at: now_standard_string(),
         })
         .collect();
 
@@ -6175,7 +6175,7 @@ pub async fn get_queue_status() -> Result<ApiResponse<QueueStatusResponse>, ApiE
             task_id: format!("video_delete_{}", i + 1),
             task_type: "delete_video".to_string(),
             description: "删除视频任务".to_string(),
-            created_at: chrono::Utc::now().to_rfc3339(),
+            created_at: now_standard_string(),
         })
         .collect();
 
@@ -6188,7 +6188,7 @@ pub async fn get_queue_status() -> Result<ApiResponse<QueueStatusResponse>, ApiE
             task_id: format!("add_{}", i + 1),
             task_type: "add_video_source".to_string(),
             description: "添加视频源任务".to_string(),
-            created_at: chrono::Utc::now().to_rfc3339(),
+            created_at: now_standard_string(),
         })
         .collect();
 
@@ -6202,7 +6202,7 @@ pub async fn get_queue_status() -> Result<ApiResponse<QueueStatusResponse>, ApiE
             task_id: format!("config_update_{}", i + 1),
             task_type: "update_config".to_string(),
             description: "更新配置任务".to_string(),
-            created_at: chrono::Utc::now().to_rfc3339(),
+            created_at: now_standard_string(),
         })
         .collect();
 
@@ -6211,7 +6211,7 @@ pub async fn get_queue_status() -> Result<ApiResponse<QueueStatusResponse>, ApiE
             task_id: format!("config_reload_{}", i + 1),
             task_type: "reload_config".to_string(),
             description: "重载配置任务".to_string(),
-            created_at: chrono::Utc::now().to_rfc3339(),
+            created_at: now_standard_string(),
         })
         .collect();
 
@@ -6567,7 +6567,7 @@ pub async fn get_config_item(
             let response = ConfigItemResponse {
                 key: item.key_name,
                 value,
-                updated_at: item.updated_at.format("%Y-%m-%d %H:%M:%S UTC").to_string(),
+                updated_at: item.updated_at.format("%Y-%m-%d %H:%M:%S").to_string(),
             };
 
             Ok(ApiResponse::ok(response))
@@ -6609,7 +6609,7 @@ pub async fn update_config_item_internal(
     let response = ConfigItemResponse {
         key: key.clone(),
         value: request.value,
-        updated_at: chrono::Utc::now().format("%Y-%m-%d %H:%M:%S UTC").to_string(),
+        updated_at: now_standard_string(),
     };
 
     Ok(response)
@@ -6642,7 +6642,7 @@ pub async fn batch_update_config_internal(
     let response = ConfigReloadResponse {
         success: true,
         message: "配置批量更新成功".to_string(),
-        reloaded_at: chrono::Utc::now().format("%Y-%m-%d %H:%M:%S UTC").to_string(),
+        reloaded_at: now_standard_string(),
     };
 
     Ok(response)
@@ -6660,7 +6660,7 @@ pub async fn reload_config_new_internal(_db: Arc<DatabaseConnection>) -> Result<
     let response = ConfigReloadResponse {
         success: true,
         message: "配置重载成功".to_string(),
-        reloaded_at: chrono::Utc::now().format("%Y-%m-%d %H:%M:%S UTC").to_string(),
+        reloaded_at: now_standard_string(),
     };
 
     Ok(response)
@@ -6697,7 +6697,7 @@ pub async fn get_config_history(
             key_name: change.key_name,
             old_value: change.old_value,
             new_value: change.new_value,
-            changed_at: change.changed_at.format("%Y-%m-%d %H:%M:%S UTC").to_string(),
+            changed_at: change.changed_at.format("%Y-%m-%d %H:%M:%S").to_string(),
         })
         .collect();
 
@@ -6754,7 +6754,7 @@ pub async fn get_hot_reload_status(
     // TODO: 实现真正的热重载状态检查
     let response = HotReloadStatusResponse {
         enabled: true,
-        last_reload: Some(Utc::now().format("%Y-%m-%d %H:%M:%S UTC").to_string()),
+        last_reload: Some(now_standard_string()),
         pending_changes: 0,
     };
 
@@ -8501,7 +8501,7 @@ async fn update_bangumi_video_path_in_database(
             path: None,
             image: None,
             download_status: 0,
-            created_at: chrono::Utc::now().to_rfc3339(),
+            created_at: now_standard_string(),
         };
 
         // 🚨 修复路径提取逻辑：处理混合路径分隔符问题
@@ -8634,7 +8634,7 @@ async fn move_bangumi_files_to_new_path(
             path: None,
             image: None,
             download_status: 0,
-            created_at: chrono::Utc::now().to_rfc3339(),
+            created_at: now_standard_string(),
         };
 
         // 修复路径提取逻辑：处理混合路径分隔符问题
@@ -9257,8 +9257,8 @@ ORDER BY
         total_sources: total_all_sources,
         active_sources,
         inactive_sources,
-        last_scan_time: task_status.last_run.map(|t| t.to_rfc3339()),
-        next_scan_time: task_status.next_run.map(|t| t.to_rfc3339()),
+        last_scan_time: task_status.last_run.map(|t| to_standard_string(t)),
+        next_scan_time: task_status.next_run.map(|t| to_standard_string(t)),
         is_scanning,
     };
 

@@ -5,6 +5,7 @@ use quick_xml::events::{BytesCData, BytesText};
 use quick_xml::writer::Writer;
 use quick_xml::Error;
 use tokio::io::{AsyncWriteExt, BufWriter};
+use crate::utils::time_format::parse_time_string;
 
 use crate::config::{EmptyUpperStrategy, NFOConfig, NFOTimeType};
 
@@ -1689,18 +1690,14 @@ impl<'a> TVShow<'a> {
 
         // 优先使用API的发布时间，如果没有则使用配置的时间类型
         let aired_time = if let Some(ref publish_time) = season_info.publish_time {
-            // 尝试解析API提供的发布时间
-            if let Ok(parsed_time) = chrono::NaiveDateTime::parse_from_str(publish_time, "%Y-%m-%d %H:%M:%S") {
-                parsed_time
-            } else if let Ok(parsed_time) = chrono::NaiveDate::parse_from_str(publish_time, "%Y-%m-%d") {
-                parsed_time.and_hms_opt(0, 0, 0).unwrap_or(video.pubtime)
-            } else {
+            // 使用统一的时间解析函数
+            parse_time_string(publish_time).unwrap_or_else(|| {
                 // 解析失败，使用配置的时间类型
                 match config.nfo_config.time_type {
                     crate::config::NFOTimeType::FavTime => video.favtime,
                     crate::config::NFOTimeType::PubTime => video.pubtime,
                 }
-            }
+            })
         } else {
             // 没有API时间，使用配置的时间类型
             match config.nfo_config.time_type {
@@ -1952,18 +1949,14 @@ impl<'a> Season<'a> {
 
         // 优先使用API的发布时间，如果没有则使用配置的时间类型
         let aired_time = if let Some(ref publish_time) = season_info.publish_time {
-            // 尝试解析API提供的发布时间
-            if let Ok(parsed_time) = chrono::NaiveDateTime::parse_from_str(publish_time, "%Y-%m-%d %H:%M:%S") {
-                parsed_time
-            } else if let Ok(parsed_time) = chrono::NaiveDate::parse_from_str(publish_time, "%Y-%m-%d") {
-                parsed_time.and_hms_opt(0, 0, 0).unwrap_or(video.pubtime)
-            } else {
+            // 使用统一的时间解析函数
+            parse_time_string(publish_time).unwrap_or_else(|| {
                 // 解析失败，使用配置的时间类型
                 match config.nfo_config.time_type {
                     crate::config::NFOTimeType::FavTime => video.favtime,
                     crate::config::NFOTimeType::PubTime => video.pubtime,
                 }
-            }
+            })
         } else {
             // 没有API时间，使用配置的时间类型
             match config.nfo_config.time_type {

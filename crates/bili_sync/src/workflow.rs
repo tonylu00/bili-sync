@@ -15,6 +15,8 @@ use tokio::sync::Semaphore;
 use tokio_util::sync::CancellationToken;
 use tracing::{debug, error, info, warn};
 
+use crate::utils::time_format::now_standard_string;
+
 // 全局番剧季度标题缓存
 lazy_static::lazy_static! {
     pub static ref SEASON_TITLE_CACHE: Arc<Mutex<HashMap<String, String>>> = Arc::new(Mutex::new(HashMap::new()));
@@ -1315,7 +1317,7 @@ pub async fn download_video_pages(
             path: None,
             image: None,
             download_status: 0,
-            created_at: chrono::Utc::now().to_rfc3339(),
+            created_at: now_standard_string(),
         };
 
         // 获取真实的番剧标题（从缓存或API）
@@ -4355,7 +4357,7 @@ mod tests {
                 valid: true,
                 tags: None,
                 single_page: Some(true),
-                created_at: chrono::Utc::now().to_rfc3339(),
+                created_at: now_standard_string(),
                 season_id: None,
                 ep_id: None,
                 season_number: None,

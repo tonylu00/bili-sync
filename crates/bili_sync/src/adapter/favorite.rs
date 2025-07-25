@@ -10,6 +10,7 @@ use sea_orm::entity::prelude::*;
 use sea_orm::sea_query::{OnConflict, SimpleExpr};
 use sea_orm::ActiveValue::Set;
 use sea_orm::{DatabaseConnection, Unchanged};
+use crate::utils::time_format::now_standard_string;
 
 use crate::adapter::{VideoSource, VideoSourceEnum, _ActiveModel};
 use crate::bilibili::{BiliClient, FavoriteList, VideoInfo};
@@ -114,7 +115,7 @@ pub async fn init_favorite_sources(
                         f_id: Set(favorite_info.id),
                         name: Set(favorite_info.title.clone()),
                         path: Set(path.to_string_lossy().to_string()),
-                        created_at: Set(chrono::Local::now().to_string()),
+                        created_at: Set(now_standard_string()),
                         latest_row_at: Set(chrono::NaiveDateTime::default()),
                         enabled: Set(true),
                         scan_deleted_videos: Set(false),
@@ -138,7 +139,7 @@ pub async fn init_favorite_sources(
                         f_id: Set(fid_i64),
                         name: Set(format!("收藏夹 {}", fid)),
                         path: Set(path.to_string_lossy().to_string()),
-                        created_at: Set(chrono::Local::now().to_string()),
+                        created_at: Set(now_standard_string()),
                         latest_row_at: Set(chrono::NaiveDateTime::default()),
                         enabled: Set(true),
                         scan_deleted_videos: Set(false),

@@ -11,6 +11,7 @@ pub mod scan_id_tracker;
 pub mod signal;
 pub mod status;
 pub mod task_notifier;
+pub mod time_format;
 
 use std::fmt;
 use tracing::{Event, Subscriber};

@@ -4,6 +4,7 @@ use std::pin::Pin;
 use anyhow::{Context, Result};
 use bili_sync_entity::*;
 use chrono::Utc;
+use crate::utils::time_format::{now_standard_string, parse_time_string};
 use futures::Stream;
 use sea_orm::entity::prelude::*;
 use sea_orm::sea_query::{OnConflict, SimpleExpr};
@@ -133,14 +134,13 @@ impl VideoSource for submission::Model {
     }
 
     fn get_created_at(&self) -> Option<chrono::DateTime<chrono::Utc>> {
-        // 解析 created_at 字符串为 DateTime
-        chrono::DateTime::parse_from_str(&self.created_at, "%Y-%m-%d %H:%M:%S%.f %z")
-            .or_else(|_| chrono::DateTime::parse_from_str(&self.created_at, "%Y-%m-%d %H:%M:%S"))
-            .map(|dt| dt.with_timezone(&chrono::Utc))
-            .inspect_err(|e| {
-                warn!("解析 created_at 时间失败: {}, 原始值: {}", e, self.created_at);
+        // 使用统一的时间解析函数
+        parse_time_string(&self.created_at)
+            .map(|dt| dt.and_utc())
+            .or_else(|| {
+                warn!("解析 created_at 时间失败，原始值: {}", self.created_at);
+                None
             })
-            .ok()
     }
 
     fn source_type_display(&self) -> String {
@@ -190,7 +190,7 @@ pub async fn init_submission_sources(
                         upper_id: Set(upper.mid.parse()?),
                         upper_name: Set(upper.name),
                         path: Set(path.to_string_lossy().to_string()),
-                        created_at: Set(chrono::Local::now().to_string()),
+                        created_at: Set(now_standard_string()),
                         latest_row_at: Set(chrono::NaiveDateTime::default()),
                         enabled: Set(true),
                         scan_deleted_videos: Set(false),
@@ -213,7 +213,7 @@ pub async fn init_submission_sources(
                         upper_id: Set(upper_id_i64),
                         upper_name: Set(format!("UP主 {}", upper_id)),
                         path: Set(path.to_string_lossy().to_string()),
-                        created_at: Set(chrono::Local::now().to_string()),
+                        created_at: Set(now_standard_string()),
                         latest_row_at: Set(chrono::NaiveDateTime::default()),
                         enabled: Set(true),
                         scan_deleted_videos: Set(false),
