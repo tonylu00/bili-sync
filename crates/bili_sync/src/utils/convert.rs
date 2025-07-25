@@ -9,7 +9,7 @@ impl VideoInfo {
     pub fn into_simple_model(self) -> bili_sync_entity::video::ActiveModel {
         let default = bili_sync_entity::video::ActiveModel {
             id: NotSet,
-            created_at: NotSet,
+            created_at: Set(crate::utils::time_format::now_standard_string()),
             // 此处不使用 ActiveModel::default() 是为了让其它字段有默认值
             ..bili_sync_entity::video::Model::default().into_active_model()
         };
@@ -253,6 +253,7 @@ impl PageInfo {
             duration: Set(self.duration),
             image: Set(self.first_frame),
             download_status: Set(0),
+            created_at: Set(crate::utils::time_format::now_standard_string()),
             ..Default::default()
         }
     }

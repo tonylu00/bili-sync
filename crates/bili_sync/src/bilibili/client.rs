@@ -893,7 +893,6 @@ impl BiliClient {
         page_size: i32,
     ) -> Result<(Vec<crate::api::response::SubmissionVideoInfo>, i64), anyhow::Error> {
         use crate::bilibili::Validate;
-        use chrono::{TimeZone, Utc};
 
         let url = "https://api.bilibili.com/x/space/wbi/arc/search";
 
@@ -932,12 +931,7 @@ impl BiliClient {
         for video_item in video_list {
             // 解析发布时间
             let pubtime_timestamp = video_item["created"].as_i64().unwrap_or(0);
-            let pubtime = Utc
-                .timestamp_opt(pubtime_timestamp, 0)
-                .single()
-                .unwrap_or_else(Utc::now)
-                .format("%Y-%m-%d %H:%M:%S")
-                .to_string();
+            let pubtime = crate::utils::time_format::timestamp_to_standard_string(pubtime_timestamp);
 
             let video_info = crate::api::response::SubmissionVideoInfo {
                 bvid: video_item["bvid"].as_str().unwrap_or("").to_string(),
