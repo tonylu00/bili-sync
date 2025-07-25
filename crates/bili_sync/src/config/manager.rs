@@ -6,6 +6,7 @@ use serde_json::Value;
 use tracing::{debug, error, info, warn};
 
 use crate::config::{Config, ConfigBundle};
+use crate::utils::time_format::now_standard_string;
 use bili_sync_entity::entities::{config_item, prelude::ConfigItem};
 
 /// 配置管理器，负责配置的数据库存储和热重载
@@ -284,7 +285,7 @@ impl ConfigManager {
                 key.into(),
                 old_value.into(),
                 new_value.into(),
-                chrono::Utc::now().into(),
+                now_standard_string().into(),
             ],
         );
         self.db.execute(stmt).await?;
