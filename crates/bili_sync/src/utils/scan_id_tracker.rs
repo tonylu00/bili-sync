@@ -2,10 +2,12 @@ use std::collections::HashMap;
 use anyhow::Result;
 use sea_orm::DatabaseConnection;
 use serde::{Deserialize, Serialize};
+use tracing::debug;
 
 /// 扫描源ID跟踪器，用于记录每个源类型的最后扫描ID
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct LastScannedIds {
+    // 记录每种类型源的最大ID（用于识别新源）
     #[serde(default)]
     pub collection: Option<i32>,
     #[serde(default)]
@@ -16,6 +18,18 @@ pub struct LastScannedIds {
     pub watch_later: Option<i32>,
     #[serde(default)]
     pub bangumi: Option<i32>,
+    
+    // 记录每种类型源上次处理的ID（用于断点续传）
+    #[serde(default)]
+    pub last_processed_collection: Option<i32>,
+    #[serde(default)]
+    pub last_processed_favorite: Option<i32>,
+    #[serde(default)]
+    pub last_processed_submission: Option<i32>,
+    #[serde(default)]
+    pub last_processed_watch_later: Option<i32>,
+    #[serde(default)]
+    pub last_processed_bangumi: Option<i32>,
 }
 
 const CONFIG_KEY: &str = "last_scanned_ids";
@@ -96,7 +110,7 @@ pub enum SourceType {
 }
 
 
-/// 将视频源按新旧分组
+/// 将视频源按新旧分组，并支持断点续传
 pub fn group_sources_by_new_old(
     sources: Vec<VideoSourceWithId>,
     last_scanned_ids: &LastScannedIds,
@@ -105,39 +119,51 @@ pub fn group_sources_by_new_old(
     let mut old_sources = Vec::new();
     
     for source in sources {
-        let last_id = match source.source_type {
-            SourceType::Collection => last_scanned_ids.collection,
-            SourceType::Favorite => last_scanned_ids.favorite,
-            SourceType::Submission => last_scanned_ids.submission,
-            SourceType::WatchLater => last_scanned_ids.watch_later,
-            SourceType::Bangumi => last_scanned_ids.bangumi,
+        let (max_id, last_processed_id) = match source.source_type {
+            SourceType::Collection => (last_scanned_ids.collection, last_scanned_ids.last_processed_collection),
+            SourceType::Favorite => (last_scanned_ids.favorite, last_scanned_ids.last_processed_favorite),
+            SourceType::Submission => (last_scanned_ids.submission, last_scanned_ids.last_processed_submission),
+            SourceType::WatchLater => (last_scanned_ids.watch_later, last_scanned_ids.last_processed_watch_later),
+            SourceType::Bangumi => (last_scanned_ids.bangumi, last_scanned_ids.last_processed_bangumi),
         };
         
-        // 如果没有记录（首次运行）或ID大于最后扫描的ID，则为新源
-        if last_id.is_none() || source.id > last_id.unwrap() {
+        // 如果没有记录（首次运行）或ID大于最大ID，则为新源
+        if max_id.is_none() || source.id > max_id.unwrap() {
             new_sources.push(source);
         } else {
-            old_sources.push(source);
+            // 旧源：只添加还未处理的（ID大于last_processed_id的）
+            if last_processed_id.is_none() || source.id > last_processed_id.unwrap() {
+                old_sources.push(source);
+            } else {
+                // 已处理过的源，跳过
+                debug!("跳过已处理的源 (ID: {}, 类型: {:?})", source.id, source.source_type);
+            }
         }
     }
+    
+    // 对旧源按ID排序，确保从小到大处理
+    old_sources.sort_by_key(|s| s.id);
     
     (new_sources, old_sources)
 }
 
-/// 记录本轮扫描的最大ID
+/// 记录本轮扫描的最大ID和当前处理的ID
 pub struct MaxIdRecorder {
     max_ids: HashMap<SourceType, i32>,
+    current_processed_ids: HashMap<SourceType, i32>,
 }
 
 impl MaxIdRecorder {
     pub fn new() -> Self {
         Self {
             max_ids: HashMap::new(),
+            current_processed_ids: HashMap::new(),
         }
     }
     
-    /// 记录一个源的ID
+    /// 记录一个源的ID（已成功处理）
     pub fn record(&mut self, source_type: SourceType, id: i32) {
+        // 更新最大ID
         self.max_ids
             .entry(source_type)
             .and_modify(|max_id| {
@@ -146,10 +172,14 @@ impl MaxIdRecorder {
                 }
             })
             .or_insert(id);
+            
+        // 更新当前处理的ID（用于断点续传）
+        self.current_processed_ids.insert(source_type, id);
     }
     
-    /// 获取记录的最大ID，更新到LastScannedIds中
+    /// 获取记录的最大ID和处理ID，更新到LastScannedIds中
     pub fn merge_into(&self, last_scanned_ids: &mut LastScannedIds) {
+        // 更新最大ID
         for (source_type, &max_id) in &self.max_ids {
             match source_type {
                 SourceType::Collection => {
@@ -169,5 +199,37 @@ impl MaxIdRecorder {
                 }
             }
         }
+        
+        // 更新当前处理的ID（用于断点续传）
+        for (source_type, &processed_id) in &self.current_processed_ids {
+            match source_type {
+                SourceType::Collection => {
+                    last_scanned_ids.last_processed_collection = Some(processed_id);
+                }
+                SourceType::Favorite => {
+                    last_scanned_ids.last_processed_favorite = Some(processed_id);
+                }
+                SourceType::Submission => {
+                    last_scanned_ids.last_processed_submission = Some(processed_id);
+                }
+                SourceType::WatchLater => {
+                    last_scanned_ids.last_processed_watch_later = Some(processed_id);
+                }
+                SourceType::Bangumi => {
+                    last_scanned_ids.last_processed_bangumi = Some(processed_id);
+                }
+            }
+        }
+    }
+}
+
+impl LastScannedIds {
+    /// 重置所有last_processed_id，使下次扫描从头开始
+    pub fn reset_all_processed_ids(&mut self) {
+        self.last_processed_collection = None;
+        self.last_processed_favorite = None;
+        self.last_processed_submission = None;
+        self.last_processed_watch_later = None;
+        self.last_processed_bangumi = None;
     }
 }

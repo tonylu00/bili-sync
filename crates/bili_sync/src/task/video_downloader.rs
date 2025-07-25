@@ -342,6 +342,7 @@ pub async fn video_downloader(connection: Arc<DatabaseConnection>) {
             let mut sources_with_new_content = 0;
             let mut is_first_source = true;
             let mut last_successful_source: Option<&VideoSourceWithId> = None; // 记录上一个成功处理的源
+            let mut is_interrupted = false; // 标记是否因风控等原因中断
             
             for source in &ordered_sources {
                 let args = &source.args;
@@ -365,6 +366,7 @@ pub async fn video_downloader(connection: Arc<DatabaseConnection>) {
                     // 重要：暂停时必须重置扫描状态
                     TASK_CONTROLLER.set_scanning(false);
                     crate::utils::task_notifier::TASK_STATUS_NOTIFIER.set_finished();
+                    is_interrupted = true;
                     break;
                 }
                 
@@ -440,12 +442,40 @@ pub async fn video_downloader(connection: Arc<DatabaseConnection>) {
                     }
                     Err(e) => {
                         // 检查是否为风控错误，如果是则停止所有后续扫描
+                        let mut is_risk_control = false;
+                        
+                        // 检查DownloadAbortError
                         if e.downcast_ref::<crate::error::DownloadAbortError>().is_some() {
+                            is_risk_control = true;
+                        }
+                        
+                        // 检查错误链中的BiliError
+                        for cause in e.chain() {
+                            if let Some(bili_err) = cause.downcast_ref::<crate::bilibili::BiliError>() {
+                                match bili_err {
+                                    crate::bilibili::BiliError::RiskControlOccurred => {
+                                        is_risk_control = true;
+                                        break;
+                                    }
+                                    crate::bilibili::BiliError::RequestFailed(code, _) => {
+                                        // -352和-412都是风控错误码
+                                        if *code == -352 || *code == -412 {
+                                            is_risk_control = true;
+                                            break;
+                                        }
+                                    }
+                                    _ => {}
+                                }
+                            }
+                        }
+                        
+                        if is_risk_control {
                             error!("检测到风控，停止所有后续视频源的扫描");
                             info!("触发风控的源(ID: {})未完成处理，下次扫描将重新处理该源", source.id);
-                            
+                            is_interrupted = true;
                             break; // 跳出循环，停止处理剩余的视频源
                         }
+                        
                         error!("处理过程遇到错误：{:#}", e);
                     }
                 }
@@ -458,6 +488,12 @@ pub async fn video_downloader(connection: Arc<DatabaseConnection>) {
             if let Some(final_source) = last_successful_source {
                 max_id_recorder.record(final_source.source_type, final_source.id);
                 max_id_recorder.merge_into(&mut last_scanned_ids);
+                
+                // 如果没有被中断，说明扫描完了所有源，需要重置last_processed_id以实现循环
+                if !is_interrupted {
+                    debug!("本轮扫描完成所有源，重置处理ID以便下次从头开始循环");
+                    last_scanned_ids.reset_all_processed_ids();
+                }
                 
                 if let Err(e) = update_last_scanned_ids(&connection, &last_scanned_ids).await {
                     warn!("保存最后源的扫描进度失败 (源ID: {}): {}", final_source.id, e);
