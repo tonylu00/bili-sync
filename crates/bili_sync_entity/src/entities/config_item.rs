@@ -7,7 +7,7 @@ pub struct Model {
     #[sea_orm(primary_key, auto_increment = false)]
     pub key_name: String,
     pub value_json: String,
-    pub updated_at: DateTimeUtc,
+    pub updated_at: String,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
@@ -22,7 +22,7 @@ pub struct ConfigChangeModel {
     pub key_name: String,
     pub old_value: Option<String>,
     pub new_value: String,
-    pub changed_at: DateTimeUtc,
+    pub changed_at: String,
 }
 
 // 配置值的类型化包装器

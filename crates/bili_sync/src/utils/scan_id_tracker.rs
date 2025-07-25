@@ -75,14 +75,14 @@ pub async fn update_last_scanned_ids(db: &DatabaseConnection, ids: &LastScannedI
         // 更新现有记录
         let mut active_model: config_item::ActiveModel = existing_item.into();
         active_model.value_json = Set(value_json);
-        active_model.updated_at = Set(chrono::Utc::now());
+        active_model.updated_at = Set(crate::utils::time_format::now_standard_string());
         active_model.update(db).await?;
     } else {
         // 创建新记录
         let new_item = config_item::ActiveModel {
             key_name: Set(CONFIG_KEY.to_string()),
             value_json: Set(value_json),
-            updated_at: Set(chrono::Utc::now()),
+            updated_at: Set(crate::utils::time_format::now_standard_string()),
             ..Default::default()
         };
         new_item.insert(db).await?;

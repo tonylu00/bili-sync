@@ -6567,7 +6567,7 @@ pub async fn get_config_item(
             let response = ConfigItemResponse {
                 key: item.key_name,
                 value,
-                updated_at: item.updated_at.format("%Y-%m-%d %H:%M:%S").to_string(),
+                updated_at: item.updated_at,
             };
 
             Ok(ApiResponse::ok(response))
@@ -6697,7 +6697,7 @@ pub async fn get_config_history(
             key_name: change.key_name,
             old_value: change.old_value,
             new_value: change.new_value,
-            changed_at: change.changed_at.format("%Y-%m-%d %H:%M:%S").to_string(),
+            changed_at: change.changed_at,
         })
         .collect();
 

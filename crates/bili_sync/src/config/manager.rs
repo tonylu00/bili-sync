@@ -185,7 +185,7 @@ impl ConfigManager {
                 // 更新现有配置项
                 let mut active_model: config_item::ActiveModel = existing_model.into();
                 active_model.value_json = Set(value_json);
-                active_model.updated_at = Set(chrono::Utc::now());
+                active_model.updated_at = Set(now_standard_string());
                 active_model.update(&self.db).await?;
             } else {
                 // 记录变更历史（新增）
@@ -197,7 +197,7 @@ impl ConfigManager {
                 let new_model = config_item::ActiveModel {
                     key_name: Set(key),
                     value_json: Set(value_json),
-                    updated_at: Set(chrono::Utc::now()),
+                    updated_at: Set(now_standard_string()),
                 };
                 new_model.insert(&self.db).await?;
             }
@@ -229,7 +229,7 @@ impl ConfigManager {
             // 更新现有配置项
             let mut active_model: config_item::ActiveModel = existing_model.into();
             active_model.value_json = Set(value_json);
-            active_model.updated_at = Set(chrono::Utc::now());
+            active_model.updated_at = Set(now_standard_string());
             active_model.update(&self.db).await?;
         } else {
             // 记录变更历史
@@ -241,7 +241,7 @@ impl ConfigManager {
             let new_model = config_item::ActiveModel {
                 key_name: Set(key.to_string()),
                 value_json: Set(value_json),
-                updated_at: Set(chrono::Utc::now()),
+                updated_at: Set(now_standard_string()),
             };
             new_model.insert(&self.db).await?;
         }
@@ -325,7 +325,7 @@ impl ConfigManager {
                 key_name: row.try_get::<String>("", "key_name")?,
                 old_value: row.try_get::<Option<String>>("", "old_value")?,
                 new_value: row.try_get::<String>("", "new_value")?,
-                changed_at: row.try_get::<chrono::DateTime<chrono::Utc>>("", "changed_at")?,
+                changed_at: row.try_get::<String>("", "changed_at")?,
             };
             changes.push(change);
         }
