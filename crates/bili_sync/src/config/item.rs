@@ -245,11 +245,11 @@ pub struct SubmissionRiskControlConfig {
 }
 
 fn default_large_submission_threshold() -> usize {
-    300
+    80
 }
 
 fn default_base_request_delay() -> u64 {
-    200
+    1000
 }
 
 fn default_large_submission_delay_multiplier() -> u64 {
@@ -273,11 +273,11 @@ fn default_incremental_fallback_to_full() -> bool {
 }
 
 fn default_enable_batch_processing() -> bool {
-    false // 默认不启用，需要手动开启
+    true // 默认启用分批处理
 }
 
 fn default_batch_size() -> usize {
-    5 // 每批5页，约150个视频
+    3 // 每批3页，约90个视频
 }
 
 fn default_batch_delay_seconds() -> u64 {
@@ -285,7 +285,7 @@ fn default_batch_delay_seconds() -> u64 {
 }
 
 fn default_enable_auto_backoff() -> bool {
-    true // 默认启用自动退避
+    false // 默认不启用自动退避
 }
 
 fn default_auto_backoff_base_seconds() -> u64 {

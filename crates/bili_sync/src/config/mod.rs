@@ -112,7 +112,7 @@ fn default_multi_page_name() -> Cow<'static, str> {
 }
 
 fn default_bangumi_name() -> Cow<'static, str> {
-    Cow::Borrowed("S{{season_pad}}E{{pid_pad}}{{#if version}}-{{version}}{{/if}} - {{ptitle}}")
+    Cow::Borrowed("S{{season_pad}}E{{pid_pad}}")
 }
 
 fn default_folder_structure() -> Cow<'static, str> {
@@ -203,15 +203,15 @@ fn default_aria2_health_check_interval() -> u64 {
 }
 
 fn default_multi_page_use_season_structure() -> bool {
-    false // 默认不使用Season结构，保持向后兼容
+    true // 默认使用Season结构
 }
 
 fn default_collection_use_season_structure() -> bool {
-    false // 默认不使用Season结构，保持向后兼容
+    true // 默认使用Season结构
 }
 
 fn default_bangumi_use_season_structure() -> bool {
-    false // 默认不使用Season结构，保持向后兼容
+    true // 默认使用Season结构
 }
 
 // 推送通知配置结构体
@@ -345,10 +345,10 @@ impl Default for Config {
             credential: ArcSwapOption::from(Some(Arc::new(Credential::default()))),
             filter_option: FilterOption::default(),
             danmaku_option: DanmakuOption::default(),
-            video_name: Cow::Borrowed("{{upper_name}}"),
+            video_name: Cow::Borrowed("{{upper_name}}/{{title}}"),
             page_name: Cow::Borrowed("{{pubtime}}-{{bvid}}-{{truncate title 20}}"),
             multi_page_name: Cow::Borrowed("P{{pid_pad}}.{{ptitle}}"),
-            bangumi_name: Cow::Borrowed("{{title}} S{{season_pad}}E{{pid_pad}} - {{ptitle}}"),
+            bangumi_name: Cow::Borrowed("S{{season_pad}}E{{pid_pad}}"),
             folder_structure: Cow::Borrowed("Season {{season_pad}}"),
             bangumi_folder_name: Cow::Borrowed("{{series_title}}"),
             collection_folder_mode: Cow::Borrowed("unified"),
