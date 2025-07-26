@@ -1426,7 +1426,7 @@ pub async fn add_video_source_internal(
                 r#type: sea_orm::Set(collection_type),
                 path: sea_orm::Set(params.path.clone()),
                 created_at: sea_orm::Set(now_standard_string()),
-                latest_row_at: sea_orm::Set(chrono::NaiveDateTime::default()),
+                latest_row_at: sea_orm::Set("1970-01-01 00:00:00".to_string()),
                 enabled: sea_orm::Set(true),
                 scan_deleted_videos: sea_orm::Set(false),
             };
@@ -1465,7 +1465,7 @@ pub async fn add_video_source_internal(
                 name: sea_orm::Set(params.name),
                 path: sea_orm::Set(params.path.clone()),
                 created_at: sea_orm::Set(now_standard_string()),
-                latest_row_at: sea_orm::Set(chrono::NaiveDateTime::default()),
+                latest_row_at: sea_orm::Set("1970-01-01 00:00:00".to_string()),
                 enabled: sea_orm::Set(true),
                 scan_deleted_videos: sea_orm::Set(false),
             };
@@ -1504,7 +1504,7 @@ pub async fn add_video_source_internal(
                 upper_name: sea_orm::Set(params.name),
                 path: sea_orm::Set(params.path.clone()),
                 created_at: sea_orm::Set(now_standard_string()),
-                latest_row_at: sea_orm::Set(chrono::NaiveDateTime::default()),
+                latest_row_at: sea_orm::Set("1970-01-01 00:00:00".to_string()),
                 enabled: sea_orm::Set(true),
                 scan_deleted_videos: sea_orm::Set(false),
                 selected_videos: sea_orm::Set(
@@ -1650,7 +1650,7 @@ pub async fn add_video_source_internal(
                     // 更新数据库记录 - 修复：正确使用ActiveModel更新
                     let mut existing_update = video_source::ActiveModel {
                         id: sea_orm::ActiveValue::Unchanged(existing.id),
-                        latest_row_at: sea_orm::Set(crate::utils::time_format::now_naive()),
+                        latest_row_at: sea_orm::Set(crate::utils::time_format::now_standard_string()),
                         ..Default::default()
                     };
 
@@ -1782,7 +1782,7 @@ pub async fn add_video_source_internal(
                     name: sea_orm::Set(params.name),
                     path: sea_orm::Set(params.path.clone()),
                     r#type: sea_orm::Set(1), // 1表示番剧类型
-                    latest_row_at: sea_orm::Set(crate::utils::time_format::now_naive()),
+                    latest_row_at: sea_orm::Set(crate::utils::time_format::now_standard_string()),
                     created_at: sea_orm::Set(crate::utils::time_format::now_standard_string()),
                     season_id: sea_orm::Set(Some(params.source_id.clone())),
                     media_id: sea_orm::Set(params.media_id),
@@ -1838,7 +1838,7 @@ pub async fn add_video_source_internal(
                 id: sea_orm::ActiveValue::NotSet,
                 path: sea_orm::Set(params.path.clone()),
                 created_at: sea_orm::Set(crate::utils::time_format::now_standard_string()),
-                latest_row_at: sea_orm::Set(crate::utils::time_format::now_naive()),
+                latest_row_at: sea_orm::Set(crate::utils::time_format::now_standard_string()),
                 enabled: sea_orm::Set(true),
                 ..Default::default()
             };

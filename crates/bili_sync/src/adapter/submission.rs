@@ -30,11 +30,11 @@ impl VideoSource for submission::Model {
         Path::new(self.path.as_str())
     }
 
-    fn get_latest_row_at(&self) -> DateTime {
-        self.latest_row_at
+    fn get_latest_row_at(&self) -> String {
+        self.latest_row_at.clone()
     }
 
-    fn update_latest_row_at(&self, datetime: DateTime) -> _ActiveModel {
+    fn update_latest_row_at(&self, datetime: String) -> _ActiveModel {
         _ActiveModel::Submission(submission::ActiveModel {
             id: Unchanged(self.id),
             latest_row_at: Set(datetime),
@@ -191,7 +191,7 @@ pub async fn init_submission_sources(
                         upper_name: Set(upper.name),
                         path: Set(path.to_string_lossy().to_string()),
                         created_at: Set(now_standard_string()),
-                        latest_row_at: Set(chrono::NaiveDateTime::default()),
+                        latest_row_at: Set("1970-01-01 00:00:00".to_string()),
                         enabled: Set(true),
                         scan_deleted_videos: Set(false),
                         selected_videos: Set(None),
@@ -214,7 +214,7 @@ pub async fn init_submission_sources(
                         upper_name: Set(format!("UP主 {}", upper_id)),
                         path: Set(path.to_string_lossy().to_string()),
                         created_at: Set(now_standard_string()),
-                        latest_row_at: Set(chrono::NaiveDateTime::default()),
+                        latest_row_at: Set("1970-01-01 00:00:00".to_string()),
                         enabled: Set(true),
                         scan_deleted_videos: Set(false),
                         selected_videos: Set(None),
@@ -266,7 +266,10 @@ pub(super) async fn submission_from<'a>(
         upper_id: Set(upper.mid.parse()?),
         upper_name: Set(upper.name),
         path: Set(path.to_string_lossy().to_string()),
+        created_at: Set(crate::utils::time_format::now_standard_string()),
+        latest_row_at: Set("1970-01-01 00:00:00".to_string()),
         enabled: Set(true),
+        scan_deleted_videos: Set(false),
         ..Default::default()
     })
     .on_conflict(

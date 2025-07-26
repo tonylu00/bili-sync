@@ -53,12 +53,12 @@ pub trait VideoSource {
     fn set_relation_id(&self, video_model: &mut bili_sync_entity::video::ActiveModel);
 
     /// 获取视频 model 中记录的最新时间
-    fn get_latest_row_at(&self) -> DateTime;
+    fn get_latest_row_at(&self) -> String;
 
     /// 更新视频 model 中记录的最新时间，此处返回需要更新的 ActiveModel，接着调用 save 方法执行保存
     /// 不同 VideoSource 返回的类型不同，为了 VideoSource 的 object safety 不能使用 impl Trait
     /// Box<dyn ActiveModelTrait> 又提示 ActiveModelTrait 没有 object safety，因此手写一个 Enum 静态分发
-    fn update_latest_row_at(&self, datetime: DateTime) -> _ActiveModel;
+    fn update_latest_row_at(&self, datetime: String) -> _ActiveModel;
 
     // 获取视频列表的保存路径
     fn path(&self) -> &Path;
@@ -245,7 +245,7 @@ pub async fn bangumi_from<'a>(
         BangumiSource {
             id: 0, // 临时的 ID
             name: format!("番剧 {}", id_desc),
-            latest_row_at: DateTime::default(),
+            latest_row_at: "1970-01-01 00:00:00".to_string(),
             season_id: season_id.clone(),
             media_id: media_id.clone(),
             ep_id: ep_id.clone(),

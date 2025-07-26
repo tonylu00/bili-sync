@@ -26,11 +26,11 @@ impl VideoSource for collection::Model {
         Path::new(self.path.as_str())
     }
 
-    fn get_latest_row_at(&self) -> DateTime {
-        self.latest_row_at
+    fn get_latest_row_at(&self) -> String {
+        self.latest_row_at.clone()
     }
 
-    fn update_latest_row_at(&self, datetime: DateTime) -> _ActiveModel {
+    fn update_latest_row_at(&self, datetime: String) -> _ActiveModel {
         _ActiveModel::Collection(collection::ActiveModel {
             id: Unchanged(self.id),
             latest_row_at: Set(datetime),
@@ -129,7 +129,7 @@ pub async fn init_collection_sources(
                         r#type: Set(collection_info.collection_type.into()),
                         name: Set(collection_info.name.clone()),
                         path: Set(path.to_string_lossy().to_string()),
-                        latest_row_at: Set(crate::utils::time_format::now_naive()),
+                        latest_row_at: Set("1970-01-01 00:00:00".to_string()),
                         enabled: Set(true),
                         ..Default::default()
                     };
@@ -170,7 +170,7 @@ pub async fn init_collection_sources(
                         r#type: Set(collection_item.collection_type.clone().into()),
                         name: Set(format!("合集 {}/{}", collection_item.sid, collection_item.mid)),
                         path: Set(path.to_string_lossy().to_string()),
-                        latest_row_at: Set(crate::utils::time_format::now_naive()),
+                        latest_row_at: Set("1970-01-01 00:00:00".to_string()),
                         enabled: Set(true),
                         ..Default::default()
                     };
@@ -226,7 +226,10 @@ pub(super) async fn collection_from<'a>(
         r#type: Set(collection_info.collection_type.into()),
         name: Set(collection_info.name.clone()),
         path: Set(path.to_string_lossy().to_string()),
+        created_at: Set(crate::utils::time_format::now_standard_string()),
+        latest_row_at: Set("1970-01-01 00:00:00".to_string()),
         enabled: Set(true),
+        scan_deleted_videos: Set(false),
         ..Default::default()
     })
     .on_conflict(

@@ -9,7 +9,7 @@ pub struct Model {
     pub id: i32,
     pub path: String,
     pub created_at: String,
-    pub latest_row_at: DateTime,
+    pub latest_row_at: String,
     pub enabled: bool,
     pub scan_deleted_videos: bool,
 }

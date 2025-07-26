@@ -400,7 +400,7 @@ async fn update_bangumi_cache(
     let active_model = video_source::ActiveModel {
         id: Set(source_id),
         cached_episodes: Set(Some(cache_json)),
-        cache_updated_at: Set(Some(crate::utils::time_format::now_naive())),
+        cache_updated_at: Set(Some(crate::utils::time_format::now_standard_string())),
         ..Default::default()
     };
     
@@ -425,7 +425,10 @@ pub async fn refresh_video_source<'a>(
     bili_client: &BiliClient,
 ) -> Result<(usize, Vec<NewVideoInfo>)> {
     video_source.log_refresh_video_start();
-    let latest_row_at = video_source.get_latest_row_at().and_utc();
+    let latest_row_at_string = video_source.get_latest_row_at();
+    let latest_row_at = crate::utils::time_format::parse_time_string(&latest_row_at_string)
+        .unwrap_or_else(|| chrono::DateTime::from_timestamp(0, 0).unwrap().naive_utc())
+        .and_utc();
     let mut max_datetime = latest_row_at;
     let mut error = Ok(());
     let mut video_streams = video_streams
@@ -505,10 +508,11 @@ pub async fn refresh_video_source<'a>(
     // 如果获取视频分页过程中发生了错误，直接在此处返回，不更新 latest_row_at
     error?;
     if max_datetime != latest_row_at {
-        // 转换为北京时间的 NaiveDateTime
-        let beijing_datetime = max_datetime.with_timezone(&crate::utils::time_format::beijing_timezone()).naive_local();
+        // 转换为北京时间的标准字符串格式
+        let beijing_datetime = max_datetime.with_timezone(&crate::utils::time_format::beijing_timezone());
+        let beijing_datetime_string = beijing_datetime.format("%Y-%m-%d %H:%M:%S").to_string();
         video_source
-            .update_latest_row_at(beijing_datetime)
+            .update_latest_row_at(beijing_datetime_string)
             .save(connection)
             .await?;
     }

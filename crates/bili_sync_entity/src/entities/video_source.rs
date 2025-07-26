@@ -20,7 +20,7 @@ pub struct Model {
     pub name: String,
     pub path: String,
     pub r#type: i32,
-    pub latest_row_at: DateTime,
+    pub latest_row_at: String,
     pub created_at: String,
     pub season_id: Option<String>,
     pub media_id: Option<String>,
@@ -32,7 +32,7 @@ pub struct Model {
     pub enabled: bool,
     pub scan_deleted_videos: bool,
     pub cached_episodes: Option<String>,
-    pub cache_updated_at: Option<DateTime>,
+    pub cache_updated_at: Option<String>,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]

@@ -16,7 +16,7 @@ use std::sync::Arc;
 use tokio::sync::Mutex;
 use tokio_util::sync::CancellationToken;
 use tracing::{debug, error, info};
-use crate::utils::time_format::now_naive;
+use crate::utils::time_format::now_standard_string;
 
 /// 删除视频源任务结构体
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -155,8 +155,8 @@ impl DeleteTaskQueue {
             task_data: Set(task_data),
             status: Set(TaskStatus::Pending),
             retry_count: Set(0),
-            created_at: Set(now_naive()),
-            updated_at: Set(now_naive()),
+            created_at: Set(now_standard_string()),
+            updated_at: Set(now_standard_string()),
             ..Default::default()
         };
 
@@ -200,7 +200,7 @@ impl DeleteTaskQueue {
         {
             let mut active_model: task_queue::ActiveModel = db_task.into();
             active_model.status = Set(TaskStatus::Completed);
-            active_model.updated_at = Set(now_naive());
+            active_model.updated_at = Set(now_standard_string());
             active_model.update(connection).await?;
         }
 
@@ -223,7 +223,7 @@ impl DeleteTaskQueue {
             let mut active_model: task_queue::ActiveModel = db_task.into();
             active_model.status = Set(TaskStatus::Failed);
             active_model.retry_count = Set(retry_count + 1);
-            active_model.updated_at = Set(now_naive());
+            active_model.updated_at = Set(now_standard_string());
             active_model.update(connection).await?;
         }
 
@@ -374,8 +374,8 @@ impl VideoDeleteTaskQueue {
             task_data: Set(task_data),
             status: Set(TaskStatus::Pending),
             retry_count: Set(0),
-            created_at: Set(now_naive()),
-            updated_at: Set(now_naive()),
+            created_at: Set(now_standard_string()),
+            updated_at: Set(now_standard_string()),
             ..Default::default()
         };
 
@@ -414,7 +414,7 @@ impl VideoDeleteTaskQueue {
         {
             let mut active_model: task_queue::ActiveModel = db_task.into();
             active_model.status = Set(TaskStatus::Completed);
-            active_model.updated_at = Set(now_naive());
+            active_model.updated_at = Set(now_standard_string());
             active_model.update(connection).await?;
         }
 
@@ -437,7 +437,7 @@ impl VideoDeleteTaskQueue {
             let mut active_model: task_queue::ActiveModel = db_task.into();
             active_model.status = Set(TaskStatus::Failed);
             active_model.retry_count = Set(retry_count + 1);
-            active_model.updated_at = Set(now_naive());
+            active_model.updated_at = Set(now_standard_string());
             active_model.update(connection).await?;
         }
 
@@ -851,8 +851,8 @@ impl AddTaskQueue {
             task_data: Set(task_data),
             status: Set(TaskStatus::Pending),
             retry_count: Set(0),
-            created_at: Set(now_naive()),
-            updated_at: Set(now_naive()),
+            created_at: Set(now_standard_string()),
+            updated_at: Set(now_standard_string()),
             ..Default::default()
         };
 
@@ -892,7 +892,7 @@ impl AddTaskQueue {
         {
             let mut active_model: task_queue::ActiveModel = db_task.into();
             active_model.status = Set(TaskStatus::Completed);
-            active_model.updated_at = Set(now_naive());
+            active_model.updated_at = Set(now_standard_string());
             active_model.update(connection).await?;
         }
 
@@ -915,7 +915,7 @@ impl AddTaskQueue {
             let mut active_model: task_queue::ActiveModel = db_task.into();
             active_model.status = Set(TaskStatus::Failed);
             active_model.retry_count = Set(retry_count + 1);
-            active_model.updated_at = Set(now_naive());
+            active_model.updated_at = Set(now_standard_string());
             active_model.update(connection).await?;
         }
 
@@ -1038,8 +1038,8 @@ impl ConfigTaskQueue {
             task_data: Set(task_data),
             status: Set(TaskStatus::Pending),
             retry_count: Set(0),
-            created_at: Set(now_naive()),
-            updated_at: Set(now_naive()),
+            created_at: Set(now_standard_string()),
+            updated_at: Set(now_standard_string()),
             ..Default::default()
         };
 
@@ -1066,8 +1066,8 @@ impl ConfigTaskQueue {
             task_data: Set(task_data),
             status: Set(TaskStatus::Pending),
             retry_count: Set(0),
-            created_at: Set(now_naive()),
-            updated_at: Set(now_naive()),
+            created_at: Set(now_standard_string()),
+            updated_at: Set(now_standard_string()),
             ..Default::default()
         };
 
@@ -1115,7 +1115,7 @@ impl ConfigTaskQueue {
         {
             let mut active_model: task_queue::ActiveModel = db_task.into();
             active_model.status = Set(TaskStatus::Completed);
-            active_model.updated_at = Set(now_naive());
+            active_model.updated_at = Set(now_standard_string());
             active_model.update(connection).await?;
         }
 
@@ -1142,7 +1142,7 @@ impl ConfigTaskQueue {
             let mut active_model: task_queue::ActiveModel = db_task.into();
             active_model.status = Set(TaskStatus::Failed);
             active_model.retry_count = Set(retry_count + 1);
-            active_model.updated_at = Set(now_naive());
+            active_model.updated_at = Set(now_standard_string());
             active_model.update(connection).await?;
         }
 
@@ -1167,7 +1167,7 @@ impl ConfigTaskQueue {
         {
             let mut active_model: task_queue::ActiveModel = db_task.into();
             active_model.status = Set(TaskStatus::Completed);
-            active_model.updated_at = Set(now_naive());
+            active_model.updated_at = Set(now_standard_string());
             active_model.update(connection).await?;
         }
 
@@ -1194,7 +1194,7 @@ impl ConfigTaskQueue {
             let mut active_model: task_queue::ActiveModel = db_task.into();
             active_model.status = Set(TaskStatus::Failed);
             active_model.retry_count = Set(retry_count + 1);
-            active_model.updated_at = Set(now_naive());
+            active_model.updated_at = Set(now_standard_string());
             active_model.update(connection).await?;
         }
 

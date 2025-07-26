@@ -49,9 +49,9 @@ pub struct Model {
     /// 重试次数
     pub retry_count: i32,
     /// 创建时间
-    pub created_at: DateTime,
+    pub created_at: String,
     /// 更新时间
-    pub updated_at: DateTime,
+    pub updated_at: String,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]

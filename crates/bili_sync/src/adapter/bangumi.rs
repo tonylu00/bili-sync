@@ -3,7 +3,7 @@ use std::path::PathBuf;
 use std::pin::Pin;
 
 use anyhow::Result;
-use chrono::{DateTime, NaiveDateTime, Utc};
+use chrono::{DateTime, Utc};
 use futures::Stream;
 use sea_orm::prelude::*;
 use sea_orm::ActiveValue::Set;
@@ -21,7 +21,7 @@ use crate::bilibili::{BiliClient, VideoInfo};
 pub struct BangumiSource {
     pub id: i32,
     pub name: String,
-    pub latest_row_at: NaiveDateTime,
+    pub latest_row_at: String,
     pub season_id: Option<String>,
     pub media_id: Option<String>,
     pub ep_id: Option<String>,
@@ -255,7 +255,9 @@ impl BangumiSource {
             None
         } else {
             // 已有记录，使用增量模式
-            Some(self.latest_row_at.and_utc())
+            Some(crate::utils::time_format::parse_time_string(&self.latest_row_at)
+                .unwrap_or_else(|| chrono::DateTime::from_timestamp(0, 0).unwrap().naive_utc())
+                .and_utc())
         };
 
         let bangumi = Bangumi::new(
@@ -269,9 +271,12 @@ impl BangumiSource {
         let use_cache = if let (Some(_cached_episodes), Some(cache_updated_at)) = 
             (&source_model.cached_episodes, source_model.cache_updated_at) {
             // 检查缓存是否过期（默认24小时）
-            if !is_cache_expired(Some(cache_updated_at.and_utc()), 24) {
+            let cache_updated_at_utc = crate::utils::time_format::parse_time_string(&cache_updated_at)
+                .unwrap_or_else(|| chrono::DateTime::from_timestamp(0, 0).unwrap().naive_utc())
+                .and_utc();
+            if !is_cache_expired(Some(cache_updated_at_utc), 24) {
                 // 尝试轻量级更新检查
-                match bangumi.check_update(Some(cache_updated_at.and_utc())).await {
+                match bangumi.check_update(Some(cache_updated_at_utc)).await {
                     Ok((has_update, _)) => {
                         if !has_update {
                             // 没有更新，可以使用缓存
@@ -345,8 +350,8 @@ impl BangumiSource {
 }
 
 impl VideoSourceTrait for BangumiSource {
-    fn get_latest_row_at(&self) -> NaiveDateTime {
-        self.latest_row_at
+    fn get_latest_row_at(&self) -> String {
+        self.latest_row_at.clone()
     }
 
     fn log_refresh_video_start(&self) {
@@ -391,7 +396,7 @@ impl VideoSourceTrait for BangumiSource {
         true
     }
 
-    fn update_latest_row_at(&self, latest_row_at: NaiveDateTime) -> bili_sync_entity::video_source::ActiveModel {
+    fn update_latest_row_at(&self, latest_row_at: String) -> bili_sync_entity::video_source::ActiveModel {
         let mut model = <bili_sync_entity::video_source::ActiveModel as sea_orm::ActiveModelTrait>::default();
         model.id = Set(self.id);
         model.latest_row_at = Set(latest_row_at);
@@ -416,11 +421,11 @@ impl VideoSource for BangumiSource {
         model.source_type = Set(Some(1));
     }
 
-    fn get_latest_row_at(&self) -> NaiveDateTime {
-        self.latest_row_at
+    fn get_latest_row_at(&self) -> String {
+        self.latest_row_at.clone()
     }
 
-    fn update_latest_row_at(&self, datetime: NaiveDateTime) -> crate::adapter::_ActiveModel {
+    fn update_latest_row_at(&self, datetime: String) -> crate::adapter::_ActiveModel {
         let mut model = <bili_sync_entity::video_source::ActiveModel as sea_orm::ActiveModelTrait>::default();
         model.id = Set(self.id);
         model.latest_row_at = Set(datetime);

@@ -27,6 +27,7 @@ pub fn now_standard_string() -> String {
 }
 
 /// 获取当前时间的 NaiveDateTime (北京时间，无时区信息)
+#[allow(dead_code)]
 pub fn now_naive() -> NaiveDateTime {
     // 获取北京时间，去除微秒部分
     let now = beijing_now();

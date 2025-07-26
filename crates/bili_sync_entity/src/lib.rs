@@ -2,7 +2,7 @@ pub mod entities;
 
 pub use entities::*;
 
-use chrono::{DateTime, NaiveDateTime, Utc};
+use chrono::{DateTime, Utc};
 use sea_orm::sea_query::SimpleExpr;
 
 pub trait VideoSourceTrait {
@@ -13,10 +13,10 @@ pub trait VideoSourceTrait {
     fn set_relation_id(&self, video_model: &mut video::ActiveModel);
 
     /// 获取视频 model 中记录的最新时间
-    fn get_latest_row_at(&self) -> NaiveDateTime;
+    fn get_latest_row_at(&self) -> String;
 
     /// 更新视频 model 中记录的最新时间
-    fn update_latest_row_at(&self, latest_row_at: NaiveDateTime) -> video_source::ActiveModel;
+    fn update_latest_row_at(&self, latest_row_at: String) -> video_source::ActiveModel;
 
     // 判断是否应该继续拉取视频
     fn should_take(&self, release_datetime: &DateTime<Utc>, latest_row_at: &DateTime<Utc>) -> bool;

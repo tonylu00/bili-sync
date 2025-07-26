@@ -11,7 +11,7 @@ pub struct Model {
     pub upper_name: String,
     pub path: String,
     pub created_at: String,
-    pub latest_row_at: DateTime,
+    pub latest_row_at: String,
     pub enabled: bool,
     pub scan_deleted_videos: bool,
     pub selected_videos: Option<String>,

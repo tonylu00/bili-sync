@@ -28,11 +28,11 @@ impl VideoSource for favorite::Model {
         Path::new(self.path.as_str())
     }
 
-    fn get_latest_row_at(&self) -> DateTime {
-        self.latest_row_at
+    fn get_latest_row_at(&self) -> String {
+        self.latest_row_at.clone()
     }
 
-    fn update_latest_row_at(&self, datetime: DateTime) -> _ActiveModel {
+    fn update_latest_row_at(&self, datetime: String) -> _ActiveModel {
         _ActiveModel::Favorite(favorite::ActiveModel {
             id: Unchanged(self.id),
             latest_row_at: Set(datetime),
@@ -116,7 +116,7 @@ pub async fn init_favorite_sources(
                         name: Set(favorite_info.title.clone()),
                         path: Set(path.to_string_lossy().to_string()),
                         created_at: Set(now_standard_string()),
-                        latest_row_at: Set(chrono::NaiveDateTime::default()),
+                        latest_row_at: Set("1970-01-01 00:00:00".to_string()),
                         enabled: Set(true),
                         scan_deleted_videos: Set(false),
                     };
@@ -140,7 +140,7 @@ pub async fn init_favorite_sources(
                         name: Set(format!("收藏夹 {}", fid)),
                         path: Set(path.to_string_lossy().to_string()),
                         created_at: Set(now_standard_string()),
-                        latest_row_at: Set(chrono::NaiveDateTime::default()),
+                        latest_row_at: Set("1970-01-01 00:00:00".to_string()),
                         enabled: Set(true),
                         scan_deleted_videos: Set(false),
                     };
@@ -189,7 +189,10 @@ pub(super) async fn favorite_from<'a>(
         f_id: Set(favorite_info.id),
         name: Set(favorite_info.title.clone()),
         path: Set(path.to_string_lossy().to_string()),
+        created_at: Set(now_standard_string()),
+        latest_row_at: Set("1970-01-01 00:00:00".to_string()),
         enabled: Set(true),
+        scan_deleted_videos: Set(false),
         ..Default::default()
     })
     .on_conflict(
