@@ -48,12 +48,14 @@
 					api.setAuthToken('');
 					localStorage.removeItem('auth_token');
 				} else {
+					// 只有在非401错误时才显示错误提示，避免新用户看到不必要的错误
 					toast.error('加载视频来源失败', {
 						description: (error as ApiError).message
 					});
 				}
 			}
 		} else {
+			// 新用户没有token，这是正常情况，不需要显示错误
 			isAuthenticated = false;
 		}
 		dataLoaded = true;
