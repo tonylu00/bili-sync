@@ -1650,7 +1650,7 @@ pub async fn add_video_source_internal(
                     // 更新数据库记录 - 修复：正确使用ActiveModel更新
                     let mut existing_update = video_source::ActiveModel {
                         id: sea_orm::ActiveValue::Unchanged(existing.id),
-                        latest_row_at: sea_orm::Set(chrono::Utc::now().naive_utc()),
+                        latest_row_at: sea_orm::Set(crate::utils::time_format::now_naive()),
                         ..Default::default()
                     };
 
@@ -1782,7 +1782,8 @@ pub async fn add_video_source_internal(
                     name: sea_orm::Set(params.name),
                     path: sea_orm::Set(params.path.clone()),
                     r#type: sea_orm::Set(1), // 1表示番剧类型
-                    latest_row_at: sea_orm::Set(chrono::Utc::now().naive_utc()),
+                    latest_row_at: sea_orm::Set(crate::utils::time_format::now_naive()),
+                    created_at: sea_orm::Set(crate::utils::time_format::now_standard_string()),
                     season_id: sea_orm::Set(Some(params.source_id.clone())),
                     media_id: sea_orm::Set(params.media_id),
                     ep_id: sea_orm::Set(params.ep_id),
@@ -1836,7 +1837,8 @@ pub async fn add_video_source_internal(
             let watch_later = watch_later::ActiveModel {
                 id: sea_orm::ActiveValue::NotSet,
                 path: sea_orm::Set(params.path.clone()),
-                latest_row_at: sea_orm::Set(chrono::Utc::now().naive_utc()),
+                created_at: sea_orm::Set(crate::utils::time_format::now_standard_string()),
+                latest_row_at: sea_orm::Set(crate::utils::time_format::now_naive()),
                 enabled: sea_orm::Set(true),
                 ..Default::default()
             };
@@ -3566,7 +3568,7 @@ async fn move_files_with_four_step_rename(old_path: &str, target_path: &str) -> 
 
     // 四步重命名原则：
     // 1. 重命名到临时名称（在源目录下）
-    let temp_name = format!(".temp_{}", chrono::Utc::now().timestamp_millis());
+    let temp_name = format!(".temp_{}", crate::utils::time_format::beijing_now().timestamp_millis());
     let temp_path = old_path
         .parent()
         .ok_or_else(|| std::io::Error::other("无法获取父目录"))?
@@ -8375,7 +8377,7 @@ async fn safe_rename_directory(old_path: &std::path::Path, new_path: &std::path:
     }
 
     // 步骤2：使用时间戳重命名现有目录到临时名称，完全避免路径冲突
-    let now = chrono::Utc::now();
+    let now = crate::utils::time_format::beijing_now();
     let timestamp = now.format("%Y%m%d_%H%M%S_%3f").to_string(); // 包含毫秒的时间戳
 
     let temp_name = format!("temp_rename_{}", timestamp);

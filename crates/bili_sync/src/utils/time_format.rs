@@ -3,19 +3,35 @@
 //! 本模块提供统一的时间格式化和解析功能
 //! 标准格式：YYYY-MM-DD HH:MM:SS (不含毫秒和时区)
 
-use chrono::{DateTime, Local, NaiveDateTime, Utc, TimeZone};
+use chrono::{DateTime, FixedOffset, NaiveDateTime, Utc, TimeZone, Timelike};
 
 /// 标准时间格式
 pub const STANDARD_TIME_FORMAT: &str = "%Y-%m-%d %H:%M:%S";
 
-/// 获取当前时间的标准格式字符串
-pub fn now_standard_string() -> String {
-    Local::now().format(STANDARD_TIME_FORMAT).to_string()
+/// 北京时区 (UTC+8)
+pub const BEIJING_OFFSET: i32 = 8 * 3600;
+
+/// 获取北京时区
+pub fn beijing_timezone() -> FixedOffset {
+    FixedOffset::east_opt(BEIJING_OFFSET).unwrap()
 }
 
-/// 获取当前时间的 NaiveDateTime (本地时间，无时区信息)
+/// 获取当前北京时间
+pub fn beijing_now() -> DateTime<FixedOffset> {
+    Utc::now().with_timezone(&beijing_timezone())
+}
+
+/// 获取当前时间的标准格式字符串（北京时间）
+pub fn now_standard_string() -> String {
+    beijing_now().format(STANDARD_TIME_FORMAT).to_string()
+}
+
+/// 获取当前时间的 NaiveDateTime (北京时间，无时区信息)
 pub fn now_naive() -> NaiveDateTime {
-    Local::now().naive_local()
+    // 获取北京时间，去除微秒部分
+    let now = beijing_now();
+    let truncated = now.with_nanosecond(0).unwrap_or(now);
+    truncated.naive_local()
 }
 
 /// 将任意时间转换为标准格式字符串
@@ -63,11 +79,11 @@ pub fn parse_time_string(time_str: &str) -> Option<NaiveDateTime> {
     None
 }
 
-/// 将 Unix 时间戳转换为标准格式字符串
+/// 将 Unix 时间戳转换为标准格式字符串（北京时间）
 #[allow(dead_code)]
 pub fn timestamp_to_standard_string(timestamp: i64) -> String {
     match DateTime::from_timestamp(timestamp, 0) {
-        Some(dt) => dt.with_timezone(&Local).format(STANDARD_TIME_FORMAT).to_string(),
+        Some(dt) => dt.with_timezone(&beijing_timezone()).format(STANDARD_TIME_FORMAT).to_string(),
         None => now_standard_string(), // 如果时间戳无效，返回当前时间
     }
 }

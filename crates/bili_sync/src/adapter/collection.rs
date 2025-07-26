@@ -129,7 +129,7 @@ pub async fn init_collection_sources(
                         r#type: Set(collection_info.collection_type.into()),
                         name: Set(collection_info.name.clone()),
                         path: Set(path.to_string_lossy().to_string()),
-                        latest_row_at: Set(chrono::Utc::now().naive_utc()),
+                        latest_row_at: Set(crate::utils::time_format::now_naive()),
                         enabled: Set(true),
                         ..Default::default()
                     };
@@ -170,7 +170,7 @@ pub async fn init_collection_sources(
                         r#type: Set(collection_item.collection_type.clone().into()),
                         name: Set(format!("合集 {}/{}", collection_item.sid, collection_item.mid)),
                         path: Set(path.to_string_lossy().to_string()),
-                        latest_row_at: Set(chrono::Utc::now().naive_utc()),
+                        latest_row_at: Set(crate::utils::time_format::now_naive()),
                         enabled: Set(true),
                         ..Default::default()
                     };

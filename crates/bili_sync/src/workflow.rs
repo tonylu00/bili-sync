@@ -400,7 +400,7 @@ async fn update_bangumi_cache(
     let active_model = video_source::ActiveModel {
         id: Set(source_id),
         cached_episodes: Set(Some(cache_json)),
-        cache_updated_at: Set(Some(chrono::Utc::now().naive_utc())),
+        cache_updated_at: Set(Some(crate::utils::time_format::now_naive())),
         ..Default::default()
     };
     
@@ -505,8 +505,10 @@ pub async fn refresh_video_source<'a>(
     // 如果获取视频分页过程中发生了错误，直接在此处返回，不更新 latest_row_at
     error?;
     if max_datetime != latest_row_at {
+        // 转换为北京时间的 NaiveDateTime
+        let beijing_datetime = max_datetime.with_timezone(&crate::utils::time_format::beijing_timezone()).naive_local();
         video_source
-            .update_latest_row_at(max_datetime.naive_utc())
+            .update_latest_row_at(beijing_datetime)
             .save(connection)
             .await?;
     }
@@ -4350,9 +4352,9 @@ mod tests {
                 bvid: "BV1234567890".to_string(),
                 intro: "测试视频介绍".to_string(),
                 cover: "http://example.com/cover.jpg".to_string(),
-                ctime: chrono::Utc::now().naive_utc(),
-                pubtime: chrono::Utc::now().naive_utc(),
-                favtime: chrono::Utc::now().naive_utc(),
+                ctime: crate::utils::time_format::now_naive(),
+                pubtime: crate::utils::time_format::now_naive(),
+                favtime: crate::utils::time_format::now_naive(),
                 download_status: 0,
                 valid: true,
                 tags: None,

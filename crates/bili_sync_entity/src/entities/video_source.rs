@@ -21,6 +21,7 @@ pub struct Model {
     pub path: String,
     pub r#type: i32,
     pub latest_row_at: DateTime,
+    pub created_at: String,
     pub season_id: Option<String>,
     pub media_id: Option<String>,
     pub ep_id: Option<String>,
