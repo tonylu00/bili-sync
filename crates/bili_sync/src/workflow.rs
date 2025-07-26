@@ -462,28 +462,40 @@ pub async fn refresh_video_source<'a>(
         // 获取插入前的视频数量
         let before_count = get_video_count_for_source(video_source, connection).await?;
 
-        // 先收集需要的视频信息
+        // 先收集需要的视频信息（包括集数信息）
         let mut temp_video_infos = Vec::new();
         for video_info in &videos_info {
-            let (title, bvid, upper_name) = match video_info {
-                VideoInfo::Detail { title, bvid, upper, .. } => (title.clone(), bvid.clone(), upper.name.clone()),
-                VideoInfo::Favorite { title, bvid, upper, .. } => (title.clone(), bvid.clone(), upper.name.clone()),
+            let (title, bvid, upper_name, episode_num) = match video_info {
+                VideoInfo::Detail { title, bvid, upper, .. } => (title.clone(), bvid.clone(), upper.name.clone(), None),
+                VideoInfo::Favorite { title, bvid, upper, .. } => (title.clone(), bvid.clone(), upper.name.clone(), None),
                 VideoInfo::Collection { bvid, .. } => {
                     // Collection 没有 title 和 upper，使用默认值
-                    ("未知".to_string(), bvid.clone(), "未知".to_string())
+                    ("未知".to_string(), bvid.clone(), "未知".to_string(), None)
                 }
-                VideoInfo::WatchLater { title, bvid, upper, .. } => (title.clone(), bvid.clone(), upper.name.clone()),
+                VideoInfo::WatchLater { title, bvid, upper, .. } => (title.clone(), bvid.clone(), upper.name.clone(), None),
                 VideoInfo::Submission { title, bvid, .. } => {
                     // Submission 没有 upper 信息，使用默认值
-                    (title.clone(), bvid.clone(), "未知".to_string())
+                    (title.clone(), bvid.clone(), "未知".to_string(), None)
                 }
-                VideoInfo::Bangumi { title, bvid, .. } => {
+                VideoInfo::Bangumi { title, bvid, episode_number, .. } => {
                     // Bangumi 没有 upper 信息，使用番剧名称
-                    (title.clone(), bvid.clone(), "番剧".to_string())
+                    (title.clone(), bvid.clone(), "番剧".to_string(), *episode_number)
                 }
             };
-            temp_video_infos.push((title, bvid, upper_name));
+            temp_video_infos.push((title, bvid, upper_name, episode_num));
         }
+
+        // 获取所有视频的BVID，用于后续判断哪些是新增的
+        let video_bvids: Vec<String> = videos_info.iter().map(|v| {
+            match v {
+                VideoInfo::Detail { bvid, .. } => bvid.clone(),
+                VideoInfo::Favorite { bvid, .. } => bvid.clone(),
+                VideoInfo::Collection { bvid, .. } => bvid.clone(),
+                VideoInfo::WatchLater { bvid, .. } => bvid.clone(),
+                VideoInfo::Submission { bvid, .. } => bvid.clone(),
+                VideoInfo::Bangumi { bvid, .. } => bvid.clone(),
+            }
+        }).collect();
 
         create_videos(videos_info, video_source, connection).await?;
 
@@ -492,17 +504,55 @@ pub async fn refresh_video_source<'a>(
         let new_count = after_count - before_count;
         count += new_count;
 
-        // 如果有新增视频，收集视频信息
+        // 如果有新增视频，通过查询数据库来确定哪些是新增的
         if new_count > 0 {
-            for (title, bvid, upper_name) in temp_video_infos.iter().take(new_count) {
-                new_videos.push(NewVideoInfo {
-                    title: title.clone(),
-                    bvid: bvid.clone(),
-                    upper_name: upper_name.clone(),
-                    source_type: video_source.source_type_display(),
-                    source_name: video_source.source_name_display(),
-                });
+            // 查询这批视频中哪些是新插入的（根据创建时间）
+            let now = chrono::Utc::now();
+            let recent_threshold = now - chrono::Duration::seconds(10); // 10秒内创建的视频
+            
+            let newly_inserted = video::Entity::find()
+                .filter(video_source.filter_expr())
+                .filter(video::Column::Bvid.is_in(video_bvids.clone()))
+                .filter(video::Column::CreatedAt.gte(recent_threshold.format("%Y-%m-%d %H:%M:%S").to_string()))
+                .all(connection)
+                .await?;
+            
+            debug!("查询到 {} 个新插入的视频记录", newly_inserted.len());
+
+            // 为每个新插入的视频创建通知信息
+            for new_video in newly_inserted {
+                // 查找对应的视频信息
+                if let Some(idx) = temp_video_infos.iter().position(|(_, bvid, _, _)| bvid == &new_video.bvid) {
+                    let (title, _, upper_name, bangumi_episode) = &temp_video_infos[idx];
+                    
+                    // 使用数据库中的发布时间（已经是北京时间）
+                    let pubtime = new_video.pubtime
+                        .format("%Y-%m-%d %H:%M:%S")
+                        .to_string();
+                    
+                    // 获取集数信息
+                    let episode_number = if let Some(ep) = bangumi_episode {
+                        // 番剧：使用从VideoInfo中获取的集数
+                        Some(*ep)
+                    } else {
+                        // 其他类型：使用数据库中的episode_number字段
+                        new_video.episode_number
+                    };
+                    
+                    new_videos.push(NewVideoInfo {
+                        title: title.clone(),
+                        bvid: new_video.bvid.clone(),
+                        upper_name: upper_name.clone(),
+                        source_type: video_source.source_type_display(),
+                        source_name: video_source.source_name_display(),
+                        pubtime: Some(pubtime),
+                        episode_number,
+                        season_number: None,
+                    });
+                }
             }
+            
+            debug!("实际收集到 {} 个新视频信息用于推送", new_videos.len());
         }
     }
     // 如果获取视频分页过程中发生了错误，直接在此处返回，不更新 latest_row_at

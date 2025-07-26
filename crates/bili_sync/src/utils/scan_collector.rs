@@ -103,5 +103,8 @@ pub fn create_new_video_info(
         upper_name: upper_name.to_string(),
         source_type: video_source.source_type_display(),
         source_name: video_source.source_name_display(),
+        pubtime: None,
+        episode_number: None,
+        season_number: None,
     }
 }
