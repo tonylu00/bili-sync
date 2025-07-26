@@ -1,6 +1,7 @@
 pub mod bangumi_cache;
 pub mod bangumi_name_extractor;
 pub mod convert;
+pub mod file_logger;
 pub mod filenamify;
 pub mod format_arg;
 pub mod model;
@@ -28,6 +29,7 @@ where
 {
     fn on_event(&self, event: &Event<'_>, _ctx: tracing_subscriber::layer::Context<'_, S>) {
         use crate::api::handler::{add_log_entry, LogLevel};
+        use crate::utils::time_format::now_standard_string;
 
         let level = match *event.metadata().level() {
             tracing::Level::ERROR => LogLevel::Error,
@@ -37,12 +39,28 @@ where
             tracing::Level::TRACE => LogLevel::Debug, // 将TRACE映射到DEBUG
         };
 
+        let level_str = match *event.metadata().level() {
+            tracing::Level::ERROR => "error",
+            tracing::Level::WARN => "warn",
+            tracing::Level::INFO => "info",
+            tracing::Level::DEBUG => "debug",
+            tracing::Level::TRACE => "debug",
+        };
+
         // 提取日志消息
         let mut visitor = MessageVisitor::new();
         event.record(&mut visitor);
 
         if let Some(message) = visitor.message {
-            add_log_entry(level, message, Some(event.metadata().target().to_string()));
+            let target = event.metadata().target().to_string();
+            
+            // 写入文件日志
+            if let Some(ref writer) = *file_logger::FILE_LOG_WRITER {
+                writer.write_log(&now_standard_string(), level_str, &message, Some(&target));
+            }
+            
+            // 添加到内存缓冲区
+            add_log_entry(level, message, Some(target));
         }
     }
 }

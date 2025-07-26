@@ -246,25 +246,33 @@ impl<'a> Video<'a> {
                     return Ok(analyzer);
                 }
                 Err(e) => {
-                    // 检查是否为充电专享视频错误，如果是则不输出详细的质量级别失败日志
-                    let is_charging_video_error = {
+                    // 检查是否为充电专享视频错误（包括试看视频），如果是则不输出详细的质量级别失败日志
+                    let (is_charging_video_error, is_trial_video) = {
                         if let Some(bili_err) = e.downcast_ref::<crate::bilibili::BiliError>() {
-                            matches!(bili_err, crate::bilibili::BiliError::RequestFailed(87007 | 87008, _))
+                            match bili_err {
+                                crate::bilibili::BiliError::RequestFailed(87007 | 87008, msg) => {
+                                    (true, msg.contains("试看视频"))
+                                },
+                                _ => (false, false)
+                            }
                         } else {
-                            false
+                            (false, false)
                         }
                     };
 
                     if !is_charging_video_error {
                         tracing::warn!("× 质量 qn={} 获取失败: {}", qn, e);
-                    } else {
-                        tracing::debug!("× 质量 qn={} 获取失败: 充电专享视频", qn);
+                    } else if attempt == 0 && is_trial_video {
+                        // 只在第一次尝试时记录试看视频信息
+                        tracing::info!("检测到试看视频，需要充电才能观看完整版");
                     }
 
                     if attempt == quality_levels.len() - 1 {
                         // 最后一次尝试也失败了
                         if is_charging_video_error {
-                            tracing::debug!("所有质量级别都获取失败: 充电专享视频");
+                            if !is_trial_video {
+                                tracing::info!("视频需要充电才能观看");
+                            }
                         } else {
                             tracing::error!("所有质量级别都获取失败");
                         }
@@ -344,8 +352,19 @@ impl<'a> Video<'a> {
             }
         }
 
-        // 检查是否有可用的视频流
-        if res["data"]["dash"]["video"].as_array().is_none_or(|v| v.is_empty()) {
+        // 检查是否有可用的视频流 (只接受dash格式，durl是试看片段)
+        let has_dash_video = res["data"]["dash"]["video"].as_array().is_some_and(|v| !v.is_empty());
+        let has_durl_only = res["data"]["durl"].as_array().is_some_and(|v| !v.is_empty()) && !has_dash_video;
+        
+        if has_durl_only {
+            // 只在debug级别记录试看视频详情，避免日志过多
+            tracing::debug!("试看视频data字段: {}", 
+                serde_json::to_string_pretty(&res["data"]).unwrap_or_else(|_| "无法序列化".to_string()));
+            // 返回充电视频错误，触发自动删除
+            return Err(crate::bilibili::BiliError::RequestFailed(87008, "试看视频，需要充电才能观看完整版".to_string()).into());
+        }
+        
+        if !has_dash_video {
             tracing::error!("视频流为空，完整的data字段: {}", 
                 serde_json::to_string_pretty(&res["data"]).unwrap_or_else(|_| "无法序列化".to_string()));
             return Err(crate::bilibili::BiliError::VideoStreamEmpty("API返回的视频流为空".to_string()).into());

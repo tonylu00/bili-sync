@@ -9469,3 +9469,91 @@ pub async fn get_notification_status() -> Result<ApiResponse<crate::api::respons
 
     Ok(ApiResponse::ok(status))
 }
+
+/// 获取当前会话的日志文件列表
+#[utoipa::path(
+    get,
+    path = "/api/logs/files",
+    responses(
+        (status = 200, description = "日志文件列表", body = ApiResponse<Vec<LogFileInfo>>),
+        (status = 500, description = "服务器内部错误", body = String)
+    )
+)]
+pub async fn get_log_files() -> Result<ApiResponse<Vec<LogFileInfo>>, ApiError> {
+    use crate::utils::file_logger;
+    
+    let log_files = file_logger::get_current_session_logs();
+    let startup_time = &*file_logger::STARTUP_TIME;
+    
+    let file_infos: Vec<LogFileInfo> = log_files
+        .into_iter()
+        .filter_map(|path| {
+            let file_name = path.file_name()?.to_string_lossy().to_string();
+            let metadata = std::fs::metadata(&path).ok()?;
+            let size = metadata.len();
+            
+            Some(LogFileInfo {
+                name: file_name,
+                path: path.to_string_lossy().to_string(),
+                size,
+                startup_time: startup_time.clone(),
+            })
+        })
+        .collect();
+    
+    Ok(ApiResponse::ok(file_infos))
+}
+
+/// 下载日志文件
+#[utoipa::path(
+    get,
+    path = "/api/logs/download/{filename}",
+    params(
+        ("filename" = String, Path, description = "日志文件名")
+    ),
+    responses(
+        (status = 200, description = "日志文件内容", content_type = "text/csv"),
+        (status = 404, description = "文件不存在", body = String),
+        (status = 500, description = "服务器内部错误", body = String)
+    )
+)]
+pub async fn download_log_file(
+    Path(filename): Path<String>,
+) -> Result<impl axum::response::IntoResponse, ApiError> {
+    use axum::response::IntoResponse;
+    use crate::config::CONFIG_DIR;
+    
+    // 安全检查：确保文件名不包含路径遍历
+    if filename.contains("..") || filename.contains('/') || filename.contains('\\') {
+        return Err(ApiError::from(anyhow!("非法的文件名")));
+    }
+    
+    let log_dir = CONFIG_DIR.join("logs");
+    let file_path = log_dir.join(&filename);
+    
+    // 确保文件存在且在日志目录内
+    if !file_path.exists() || !file_path.starts_with(&log_dir) {
+        return Err(ApiError::from(anyhow!("日志文件不存在")));
+    }
+    
+    // 读取文件内容
+    let content = tokio::fs::read(&file_path)
+        .await
+        .map_err(|e| ApiError::from(anyhow!("读取日志文件失败: {}", e)))?;
+    
+    // 设置响应头
+    let headers = [
+        ("Content-Type", "text/csv; charset=utf-8"),
+        ("Content-Disposition", &format!("attachment; filename=\"{}\"", filename)),
+    ];
+    
+    Ok((headers, content).into_response())
+}
+
+#[derive(Serialize, Deserialize, utoipa::ToSchema)]
+pub struct LogFileInfo {
+    pub name: String,
+    pub path: String,
+    pub size: u64,
+    pub startup_time: String,
+}

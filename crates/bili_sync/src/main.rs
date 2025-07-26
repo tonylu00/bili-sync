@@ -27,7 +27,7 @@ use tokio_util::task::TaskTracker;
 
 use crate::config::{init_config_with_database, ARGS};
 use crate::database::setup_database;
-use crate::utils::init_logger;
+use crate::utils::{file_logger, init_logger};
 use crate::utils::signal::terminate;
 use anyhow::Result;
 
@@ -133,6 +133,10 @@ fn spawn_task(
 
 /// 初始化日志系统，打印欢迎信息
 fn init() {
+    // 强制初始化文件日志系统（这会设置启动时间）
+    let _ = &*file_logger::STARTUP_TIME;
+    let _ = &*file_logger::FILE_LOG_WRITER;
+    
     init_logger(&ARGS.log_level);
     info!("欢迎使用 Bili-Sync，当前程序版本：{}", config::version());
     info!("现项目地址：https://github.com/qq1582185982/bili-sync-01");

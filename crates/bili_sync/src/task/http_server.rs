@@ -20,6 +20,7 @@ use crate::api::handler::{
     clear_credential,
     delete_video,
     delete_video_source,
+    download_log_file,
     generate_qr_code,
     get_bangumi_seasons,
     get_config,
@@ -29,6 +30,7 @@ use crate::api::handler::{
     get_current_user,
     get_dashboard_data,
     get_hot_reload_status,
+    get_log_files,
     get_logs,
     get_notification_config,
     get_notification_status,
@@ -157,6 +159,8 @@ pub async fn http_server(database_connection: Arc<DatabaseConnection>) -> Result
         .route("/api/user/subscribed-collections", get(get_subscribed_collections))
         .route("/api/submission/{up_id}/videos", get(get_submission_videos))
         .route("/api/logs", get(get_logs))
+        .route("/api/logs/files", get(get_log_files))
+        .route("/api/logs/download/{filename}", get(download_log_file))
         .route("/api/queue-status", get(get_queue_status))
         .route("/api/proxy/image", get(proxy_image))
         .route("/api/task-control/status", get(get_task_control_status))
