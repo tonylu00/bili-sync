@@ -17,12 +17,7 @@
 	import QrLogin from '$lib/components/qr-login.svelte';
 	import { setBreadcrumb } from '$lib/stores/breadcrumb';
 	import type { ConfigResponse, VideoInfo, UserInfo } from '$lib/types';
-	import {
-		DEFAULT_TIMEZONE,
-		getCurrentTimezone,
-		setTimezone,
-		TIMEZONE_OPTIONS
-	} from '$lib/utils/timezone';
+
 	import {
 		DownloadIcon,
 		FileTextIcon,
@@ -118,7 +113,7 @@
 		{
 			id: 'system',
 			title: '系统设置',
-			description: '时区、扫描间隔等其他设置',
+			description: '扫描间隔等其他设置',
 			icon: SettingsIcon
 		}
 	];
@@ -170,7 +165,6 @@
 
 	// 其他设置
 	let cdnSorting = false;
-	let timezone = DEFAULT_TIMEZONE;
 	let scanDeletedVideos = false;
 	let upperPath = ''; // UP主头像保存路径
 
@@ -197,8 +191,7 @@
 	let enableAutoBackoff = true;
 	let autoBackoffBaseSeconds = 10;
 	let autoBackoffMaxMultiplier = 5;
-	let sourceDelaySeconds = 2;
-	let submissionSourceDelaySeconds = 5;
+
 
 	// aria2监控配置
 	let enableAria2HealthCheck = false;
@@ -457,7 +450,6 @@
 
 			// 其他设置
 			cdnSorting = config.cdn_sorting || false;
-			timezone = config.timezone || getCurrentTimezone();
 			scanDeletedVideos = config.scan_deleted_videos || false;
 			upperPath = config.upper_path || '';
 
@@ -482,8 +474,7 @@
 			enableAutoBackoff = config.enable_auto_backoff ?? true;
 			autoBackoffBaseSeconds = config.auto_backoff_base_seconds || 10;
 			autoBackoffMaxMultiplier = config.auto_backoff_max_multiplier || 5;
-			sourceDelaySeconds = config.source_delay_seconds || 2;
-			submissionSourceDelaySeconds = config.submission_source_delay_seconds || 5;
+
 
 			// aria2监控配置
 			enableAria2HealthCheck = config.enable_aria2_health_check ?? false;
@@ -640,7 +631,6 @@
 				rate_duration: rateDuration,
 				// 其他设置
 				cdn_sorting: cdnSorting,
-				timezone: timezone,
 				scan_deleted_videos: scanDeletedVideos,
 				upper_path: upperPath,
 				// UP主投稿风控配置
@@ -657,8 +647,7 @@
 				enable_auto_backoff: enableAutoBackoff,
 				auto_backoff_base_seconds: autoBackoffBaseSeconds,
 				auto_backoff_max_multiplier: autoBackoffMaxMultiplier,
-				source_delay_seconds: sourceDelaySeconds,
-				submission_source_delay_seconds: submissionSourceDelaySeconds,
+
 				// aria2监控配置
 				enable_aria2_health_check: enableAria2HealthCheck,
 				enable_aria2_auto_restart: enableAria2AutoRestart,
@@ -2507,35 +2496,7 @@
 							</h3>
 							<div class="space-y-4">
 								<div class="grid grid-cols-1 gap-4 {isMobile ? 'sm:grid-cols-1' : 'md:grid-cols-2'}">
-									<div class="space-y-2">
-										<Label for="source-delay-seconds">通用视频源间延迟（秒）</Label>
-										<Input
-											id="source-delay-seconds"
-											type="number"
-											bind:value={sourceDelaySeconds}
-											min="0"
-											max="60"
-											placeholder="2"
-										/>
-										<p class="text-muted-foreground text-xs">
-											每个视频源之间的基础延迟时间（收藏夹、合集等）
-										</p>
-									</div>
 
-									<div class="space-y-2">
-										<Label for="submission-source-delay-seconds">UP主投稿源间延迟（秒）</Label>
-										<Input
-											id="submission-source-delay-seconds"
-											type="number"
-											bind:value={submissionSourceDelaySeconds}
-											min="0"
-											max="60"
-											placeholder="5"
-										/>
-										<p class="text-muted-foreground text-xs">
-											UP主投稿之间的特殊延迟时间（建议设置更长）
-										</p>
-									</div>
 								</div>
 								
 								<div class="rounded-lg bg-indigo-100 p-3 dark:bg-indigo-900/20">
@@ -2956,7 +2917,7 @@
 			>
 				<SheetHeader class="{isMobile ? 'border-b p-4' : 'border-b p-6'} relative">
 					<SheetTitle>系统设置</SheetTitle>
-					<SheetDescription>时区、扫描间隔等其他设置</SheetDescription>
+					<SheetDescription>扫描间隔等其他设置</SheetDescription>
 					<!-- 自定义关闭按钮 -->
 					<button
 						onclick={() => (openSheet = null)}
@@ -2998,22 +2959,7 @@
 								<p class="text-muted-foreground text-sm">每次扫描下载的时间间隔</p>
 							</div>
 
-							<div class="space-y-2">
-								<Label for="timezone">时区设置</Label>
-								<select
-									id="timezone"
-									bind:value={timezone}
-									onchange={() => setTimezone(timezone)}
-									class="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500 focus:outline-none"
-								>
-									{#each TIMEZONE_OPTIONS as option (option.value)}
-										<option value={option.value}>{option.label}</option>
-									{/each}
-								</select>
-								<p class="text-muted-foreground text-sm">
-									选择时区后，所有时间戳将转换为对应时区显示
-								</p>
-							</div>
+
 
 							<div class="flex items-center space-x-2">
 								<input
