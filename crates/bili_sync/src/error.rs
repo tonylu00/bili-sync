@@ -216,6 +216,11 @@ impl ErrorClassifier {
                 ClassifiedError::new(ErrorType::NotFound, format!("视频流访问被拒绝: {}", code))
                     .with_retry_policy(false, true) // 不重试，可忽略
             }
+            crate::bilibili::BiliError::VideoStreamEmpty(msg) => {
+                ClassifiedError::new(ErrorType::NotFound, format!("视频流为空: {}", msg))
+                    .with_retry_policy(false, true) // 不重试，可忽略
+                    .with_auto_delete(false) // 不自动删除，这可能是地区限制等其他原因
+            }
             crate::bilibili::BiliError::RequestFailed(code, msg) => {
                 let error_type = match *code {
                     87007 | 87008 => ErrorType::Permission, // 充电专享视频，归类为权限错误

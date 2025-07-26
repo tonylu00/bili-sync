@@ -12,6 +12,8 @@ pub enum BiliError {
     #[allow(dead_code)]
     #[error("video stream access denied, code: {0}")]
     VideoStreamDenied(i64),
+    #[error("video stream empty: {0}")]
+    VideoStreamEmpty(String),
 }
 
 impl BiliError {
@@ -35,6 +37,7 @@ impl BiliError {
             Self::NetworkTimeout => true,
             Self::RiskControlOccurred => false, // 风控不建议立即重试
             Self::VideoStreamDenied(_) => false,
+            Self::VideoStreamEmpty(_) => false, // 视频流为空通常不建议重试
             Self::RequestFailed(code, _) => {
                 // 网络相关错误码可重试，但充电专享视频不重试
                 matches!(*code, -500..=-400 | -1) && !matches!(*code, 87007 | 87008)
@@ -53,6 +56,7 @@ impl BiliError {
                 _ => None,
             },
             Self::VideoStreamDenied(_) => None,
+            Self::VideoStreamEmpty(_) => None,
         }
     }
 }

@@ -313,6 +313,29 @@ impl<'a> Video<'a> {
             .json::<serde_json::Value>()
             .await?;
 
+        // 添加详细的API响应日志
+        tracing::debug!("API完整响应: {}", serde_json::to_string_pretty(&res).unwrap_or_else(|_| "无法序列化".to_string()));
+        
+        // 记录关键字段
+        if let Some(code) = res["code"].as_i64() {
+            tracing::debug!("API返回code: {}", code);
+        }
+        if let Some(message) = res["message"].as_str() {
+            tracing::debug!("API返回message: {}", message);
+        }
+        
+        // 检查data字段是否存在
+        if res["data"].is_null() {
+            tracing::debug!("API返回的data字段为null");
+        } else if let Some(dash) = res["data"]["dash"].as_object() {
+            tracing::debug!("dash对象存在，视频流数量: {}", 
+                dash.get("video").and_then(|v| v.as_array()).map(|v| v.len()).unwrap_or(0));
+            tracing::debug!("dash对象存在，音频流数量: {}", 
+                dash.get("audio").and_then(|v| v.as_array()).map(|v| v.len()).unwrap_or(0));
+        } else {
+            tracing::debug!("API返回的data.dash字段不存在或不是对象");
+        }
+
         // 检查API响应中的错误信息
         if let Some(code) = res["code"].as_i64() {
             if code != 0 {
@@ -323,7 +346,9 @@ impl<'a> Video<'a> {
 
         // 检查是否有可用的视频流
         if res["data"]["dash"]["video"].as_array().is_none_or(|v| v.is_empty()) {
-            return Err(crate::bilibili::BiliError::RequestFailed(87008, "API返回的视频流为空".to_string()).into());
+            tracing::error!("视频流为空，完整的data字段: {}", 
+                serde_json::to_string_pretty(&res["data"]).unwrap_or_else(|_| "无法序列化".to_string()));
+            return Err(crate::bilibili::BiliError::VideoStreamEmpty("API返回的视频流为空".to_string()).into());
         }
 
         // 记录成功获取的质量信息
@@ -498,6 +523,29 @@ impl<'a> Video<'a> {
             .json::<serde_json::Value>()
             .await?;
 
+        // 添加详细的番剧API响应日志
+        tracing::debug!("番剧API完整响应: {}", serde_json::to_string_pretty(&res).unwrap_or_else(|_| "无法序列化".to_string()));
+        
+        // 记录关键字段
+        if let Some(code) = res["code"].as_i64() {
+            tracing::debug!("番剧API返回code: {}", code);
+        }
+        if let Some(message) = res["message"].as_str() {
+            tracing::debug!("番剧API返回message: {}", message);
+        }
+        
+        // 检查result字段是否存在
+        if res["result"].is_null() {
+            tracing::debug!("番剧API返回的result字段为null");
+        } else if let Some(dash) = res["result"]["dash"].as_object() {
+            tracing::debug!("番剧dash对象存在，视频流数量: {}", 
+                dash.get("video").and_then(|v| v.as_array()).map(|v| v.len()).unwrap_or(0));
+            tracing::debug!("番剧dash对象存在，音频流数量: {}", 
+                dash.get("audio").and_then(|v| v.as_array()).map(|v| v.len()).unwrap_or(0));
+        } else {
+            tracing::debug!("番剧API返回的result.dash字段不存在或不是对象");
+        }
+
         // 检查番剧API响应中的错误信息
         if let Some(code) = res["code"].as_i64() {
             if code != 0 {
@@ -508,7 +556,9 @@ impl<'a> Video<'a> {
 
         // 检查是否有可用的番剧视频流
         if res["result"]["dash"]["video"].as_array().is_none_or(|v| v.is_empty()) {
-            return Err(crate::bilibili::BiliError::RequestFailed(87008, "番剧API返回的视频流为空".to_string()).into());
+            tracing::error!("番剧视频流为空，完整的result字段: {}", 
+                serde_json::to_string_pretty(&res["result"]).unwrap_or_else(|_| "无法序列化".to_string()));
+            return Err(crate::bilibili::BiliError::VideoStreamEmpty("番剧API返回的视频流为空".to_string()).into());
         }
 
         // 记录成功获取的番剧质量信息
