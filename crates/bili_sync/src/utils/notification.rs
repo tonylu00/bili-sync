@@ -31,17 +31,15 @@ where
 {
     use serde::de::Error;
     let value = serde_json::Value::deserialize(deserializer)?;
-    
+
     match value {
-        serde_json::Value::Number(n) => {
-            n.as_i64()
-                .and_then(|v| i32::try_from(v).ok())
-                .ok_or_else(|| D::Error::custom("code is not a valid i32"))
-        }
-        serde_json::Value::String(s) => {
-            s.parse::<i32>()
-                .map_err(|_| D::Error::custom(format!("code string '{}' is not a valid i32", s)))
-        }
+        serde_json::Value::Number(n) => n
+            .as_i64()
+            .and_then(|v| i32::try_from(v).ok())
+            .ok_or_else(|| D::Error::custom("code is not a valid i32")),
+        serde_json::Value::String(s) => s
+            .parse::<i32>()
+            .map_err(|_| D::Error::custom(format!("code string '{}' is not a valid i32", s))),
         _ => Err(D::Error::custom("code must be a number or string")),
     }
 }
@@ -175,10 +173,10 @@ impl NotificationClient {
 
     fn format_scan_message(&self, summary: &ScanSummary) -> (String, String) {
         let title = "Bili Sync 扫描完成".to_string();
-        
+
         // 限制最大内容长度为30KB（留一些余量）
         const MAX_CONTENT_LENGTH: usize = 30000;
-        
+
         let mut content = format!(
             "📊 **扫描摘要**\n\n- 扫描视频源: {}个\n- 新增视频: {}个\n- 扫描耗时: {:.1}分钟\n\n",
             summary.total_sources,
@@ -188,7 +186,7 @@ impl NotificationClient {
 
         if summary.total_new_videos > 0 {
             content.push_str("📹 **新增视频详情**\n\n");
-            
+
             let mut videos_shown = 0;
             let mut sources_shown = 0;
 
@@ -197,18 +195,21 @@ impl NotificationClient {
                     // 如果内容已经很长，停止添加更多内容
                     if content.len() > MAX_CONTENT_LENGTH - 500 {
                         let remaining_videos = summary.total_new_videos - videos_shown;
-                        let remaining_sources = summary.source_results.iter()
+                        let remaining_sources = summary
+                            .source_results
+                            .iter()
                             .filter(|s| !s.new_videos.is_empty())
-                            .count() - sources_shown;
+                            .count()
+                            - sources_shown;
                         content.push_str(&format!(
                             "\n...还有 {} 个视频源的 {} 个新视频（内容过长已省略）\n",
                             remaining_sources, remaining_videos
                         ));
                         break;
                     }
-                    
+
                     sources_shown += 1;
-                    
+
                     let icon = match source_result.source_type.as_str() {
                         "收藏夹" => "🎬",
                         "合集" => "📁",
@@ -220,7 +221,7 @@ impl NotificationClient {
 
                     // 清理源名称中的特殊字符
                     let clean_source_name = Self::sanitize_for_serverchan(&source_result.source_name);
-                    
+
                     content.push_str(&format!(
                         "{} **{}** - {} ({}个新视频):\n",
                         icon,
@@ -247,16 +248,19 @@ impl NotificationClient {
                     // 限制每个源显示的视频数量
                     let max_videos_per_source = 20;
                     let videos_to_show = sorted_videos.len().min(max_videos_per_source);
-                    
+
                     for (idx, video) in sorted_videos.iter().take(videos_to_show).enumerate() {
                         // 如果内容过长，提前结束
                         if content.len() > MAX_CONTENT_LENGTH - 1000 {
-                            content.push_str(&format!("...还有 {} 个视频（内容过长已省略）\n", sorted_videos.len() - idx));
+                            content.push_str(&format!(
+                                "...还有 {} 个视频（内容过长已省略）\n",
+                                sorted_videos.len() - idx
+                            ));
                             break;
                         }
-                        
+
                         videos_shown += 1;
-                        
+
                         // 清理视频标题中的特殊字符
                         let clean_title = Self::sanitize_for_serverchan(&video.title);
                         let mut video_line =
@@ -283,12 +287,12 @@ impl NotificationClient {
                         content.push_str(&video_line);
                         content.push('\n');
                     }
-                    
+
                     // 如果有未显示的视频，添加提示
                     if sorted_videos.len() > videos_to_show {
                         content.push_str(&format!("...还有 {} 个视频\n", sorted_videos.len() - videos_to_show));
                     }
-                    
+
                     content.push('\n');
                 }
             }
@@ -296,7 +300,7 @@ impl NotificationClient {
 
         // 最终清理整个内容，确保没有问题字符
         let clean_content = Self::sanitize_for_serverchan(&content);
-        
+
         // 确保内容不超过限制
         let final_content = if clean_content.len() > MAX_CONTENT_LENGTH {
             let mut truncated = clean_content.chars().take(MAX_CONTENT_LENGTH - 100).collect::<String>();
