@@ -8,6 +8,7 @@ use tracing::{debug, error, info, warn};
 
 use crate::bilibili::Client;
 use crate::config::CONFIG_DIR;
+use crate::http::headers::create_aria2_headers;
 
 /// 嵌入的aria2二进制文件 (编译时自动下载对应平台版本)
 #[cfg(target_os = "windows")]
@@ -986,13 +987,7 @@ impl Aria2Downloader {
             "lowest-speed-limit": "1K",
             "stream-piece-selector": "geom",
             "piece-length": "1M",
-            "header": [
-                "User-Agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36",
-                "Referer: https://www.bilibili.com",
-                "Accept: */*",
-                "Accept-Language: zh-CN,zh;q=0.9,en;q=0.8",
-                "Cache-Control: no-cache"
-            ]
+            "header": create_aria2_headers()
         });
 
         // 添加SSL/TLS相关配置

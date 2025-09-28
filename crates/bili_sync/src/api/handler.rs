@@ -7535,7 +7535,13 @@ pub async fn proxy_image(
     let response = client
         .get(url)
         .header("Referer", "https://www.bilibili.com/")
-        .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36")
+        .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0.0.0 Safari/537.36")
+        .header("sec-ch-ua", "\"Chromium\";v=\"140\", \"Not=A?Brand\";v=\"24\", \"Google Chrome\";v=\"140\"")
+        .header("sec-ch-ua-mobile", "?0")
+        .header("sec-ch-ua-platform", "\"Windows\"")
+        .header("sec-fetch-dest", "image")
+        .header("sec-fetch-mode", "no-cors")
+        .header("sec-fetch-site", "cross-site")
         .send()
         .await
         .map_err(|e| anyhow!("请求图片失败: {}", e))?;
@@ -8209,7 +8215,13 @@ pub async fn get_current_user() -> Result<ApiResponse<crate::api::response::QRUs
         .get("https://api.bilibili.com/x/web-interface/nav")
         .header("Cookie", cookie_str)
         .header("Referer", "https://www.bilibili.com")
-        .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
+        .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0.0.0 Safari/537.36")
+        .header("sec-ch-ua", "\"Chromium\";v=\"140\", \"Not=A?Brand\";v=\"24\", \"Google Chrome\";v=\"140\"")
+        .header("sec-ch-ua-mobile", "?0")
+        .header("sec-ch-ua-platform", "\"Windows\"")
+        .header("sec-fetch-dest", "empty")
+        .header("sec-fetch-mode", "cors")
+        .header("sec-fetch-site", "same-site")
         .send()
         .await
         .map_err(|e| anyhow::anyhow!("请求B站API失败: {}", e))?;
