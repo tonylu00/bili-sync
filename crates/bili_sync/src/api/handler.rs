@@ -6,6 +6,7 @@ use axum::extract::{Extension, Path, Query};
 use chrono::Datelike;
 
 use crate::utils::time_format::{now_standard_string, to_standard_string};
+use crate::http::headers::{create_image_headers, create_api_headers};
 use bili_sync_entity::{collection, favorite, page, submission, video, video_source, watch_later};
 use bili_sync_migration::Expr;
 use reqwest;
@@ -7536,14 +7537,7 @@ pub async fn proxy_image(
 
     let request = client
         .get(url)
-        .header("Referer", "https://www.bilibili.com/")
-        .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0.0.0 Safari/537.36")
-        .header("sec-ch-ua", "\"Chromium\";v=\"140\", \"Not=A?Brand\";v=\"24\", \"Google Chrome\";v=\"140\"")
-        .header("sec-ch-ua-mobile", "?0")
-        .header("sec-ch-ua-platform", "\"Windows\"")
-        .header("sec-fetch-dest", "image")
-        .header("sec-fetch-mode", "no-cors")
-        .header("sec-fetch-site", "cross-site");
+        .headers(create_image_headers());
 
     // 图片下载请求头日志已在建造器时设置
 
@@ -8233,15 +8227,8 @@ pub async fn get_current_user() -> Result<ApiResponse<crate::api::response::QRUs
 
     let request = client
         .get(request_url)
-        .header("Cookie", cookie_str)
-        .header("Referer", "https://www.bilibili.com")
-        .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0.0.0 Safari/537.36")
-        .header("sec-ch-ua", "\"Chromium\";v=\"140\", \"Not=A?Brand\";v=\"24\", \"Google Chrome\";v=\"140\"")
-        .header("sec-ch-ua-mobile", "?0")
-        .header("sec-ch-ua-platform", "\"Windows\"")
-        .header("sec-fetch-dest", "empty")
-        .header("sec-fetch-mode", "cors")
-        .header("sec-fetch-site", "same-site");
+        .headers(create_api_headers())
+        .header("Cookie", cookie_str);
 
     // 用户信息请求头日志已在建造器时设置
 

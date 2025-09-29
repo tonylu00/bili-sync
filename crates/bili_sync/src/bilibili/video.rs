@@ -12,6 +12,8 @@ use crate::bilibili::credential::encoded_query;
 use crate::bilibili::danmaku::{DanmakuElem, DanmakuWriter, DmSegMobileReply};
 use crate::bilibili::subtitle::{SubTitle, SubTitleBody, SubTitleInfo, SubTitlesInfo};
 use crate::bilibili::{Validate, VideoInfo, MIXIN_KEY};
+use crate::hardware::HardwareFingerprint;
+use crate::http::headers::create_api_headers;
 
 static MASK_CODE: u64 = 2251799813685247;
 static XOR_CODE: u64 = 23442827791579;
@@ -655,7 +657,17 @@ impl<'a> Video<'a> {
         // 修复字符串生命周期问题
         let cid_string = page.cid.to_string();
 
-        // 恢复原始API参数配置，基于工作版本的设置
+        // 生成硬件指纹
+        let fingerprint = HardwareFingerprint::default();
+        let hardware = fingerprint.get_hardware();
+
+        // 生成弹幕防挡参数
+        let dm_img_str = hardware.generate_dm_img_str();
+        let dm_cover_img_str = hardware.generate_dm_cover_img_str();
+        let dm_img_list = fingerprint.generate_dm_img_list(page.duration as u32);
+        let dm_img_inter = fingerprint.generate_dm_img_inter();
+
+        // 增强的API参数配置，包含硬件指纹和弹幕防挡参数
         let params = vec![
             ("avid", self.aid.as_str()),
             ("cid", cid_string.as_str()),
@@ -663,6 +675,14 @@ impl<'a> Video<'a> {
             ("otype", "json"),
             ("fnval", "4048"), // 恢复原始fnval值
             ("fourk", "1"),    // 启用4K支持
+            ("voice_balance", "1"), // 音频平衡
+            ("gaia_source", "pre-load"), // Gaia预加载
+            ("isGaiaAvoided", "true"), // Gaia避免策略
+            ("web_location", "1315873"), // 网页位置标识
+            ("dm_img_str", dm_img_str.as_str()), // WebGL信息
+            ("dm_cover_img_str", dm_cover_img_str.as_str()), // GPU信息
+            ("dm_img_list", dm_img_list.as_str()), // 弹幕交互数据
+            ("dm_img_inter", dm_img_inter.as_str()), // 弹幕交互统计
         ];
 
         let encoded_params = encoded_query(params.clone(), MIXIN_KEY.load().as_deref());
@@ -677,15 +697,7 @@ impl<'a> Video<'a> {
             .request(Method::GET, request_url)
             .await
             .query(&encoded_params)
-            .header("Referer", "https://www.bilibili.com/")
-            .header("Origin", "https://www.bilibili.com")
-            .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0.0.0 Safari/537.36")
-            .header("sec-ch-ua", "\"Chromium\";v=\"140\", \"Not=A?Brand\";v=\"24\", \"Google Chrome\";v=\"140\"")
-            .header("sec-ch-ua-mobile", "?0")
-            .header("sec-ch-ua-platform", "\"Windows\"")
-            .header("sec-fetch-dest", "empty")
-            .header("sec-fetch-mode", "cors")
-            .header("sec-fetch-site", "cross-site");
+            .headers(create_api_headers());
 
         // 请求头日志已在建造器时设置
 
@@ -859,7 +871,17 @@ impl<'a> Video<'a> {
         // 修复字符串生命周期问题
         let cid_string = page.cid.to_string();
 
-        // 恢复原始API参数配置，基于工作版本的设置
+        // 生成硬件指纹
+        let fingerprint = HardwareFingerprint::default();
+        let hardware = fingerprint.get_hardware();
+
+        // 生成弹幕防挡参数
+        let dm_img_str = hardware.generate_dm_img_str();
+        let dm_cover_img_str = hardware.generate_dm_cover_img_str();
+        let dm_img_list = fingerprint.generate_dm_img_list(page.duration as u32);
+        let dm_img_inter = fingerprint.generate_dm_img_inter();
+
+        // 增强的API参数配置，包含硬件指纹和弹幕防挡参数
         let params = vec![
             ("avid", self.aid.as_str()),
             ("cid", cid_string.as_str()),
@@ -867,6 +889,14 @@ impl<'a> Video<'a> {
             ("otype", "json"),
             ("fnval", "4048"), // 恢复原始fnval值
             ("fourk", "1"),    // 启用4K支持
+            ("voice_balance", "1"), // 音频平衡
+            ("gaia_source", "pre-load"), // Gaia预加载
+            ("isGaiaAvoided", "true"), // Gaia避免策略
+            ("web_location", "1315873"), // 网页位置标识
+            ("dm_img_str", dm_img_str.as_str()), // WebGL信息
+            ("dm_cover_img_str", dm_cover_img_str.as_str()), // GPU信息
+            ("dm_img_list", dm_img_list.as_str()), // 弹幕交互数据
+            ("dm_img_inter", dm_img_inter.as_str()), // 弹幕交互统计
         ];
 
         tracing::debug!("=== API参数调试 ===");
@@ -884,15 +914,7 @@ impl<'a> Video<'a> {
             .request(Method::GET, request_url)
             .await
             .query(&encoded_params)
-            .header("Referer", "https://www.bilibili.com/")
-            .header("Origin", "https://www.bilibili.com")
-            .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0.0.0 Safari/537.36")
-            .header("sec-ch-ua", "\"Chromium\";v=\"140\", \"Not=A?Brand\";v=\"24\", \"Google Chrome\";v=\"140\"")
-            .header("sec-ch-ua-mobile", "?0")
-            .header("sec-ch-ua-platform", "\"Windows\"")
-            .header("sec-fetch-dest", "empty")
-            .header("sec-fetch-mode", "cors")
-            .header("sec-fetch-site", "cross-site");
+            .headers(create_api_headers());
 
         // 请求头日志已在建造器时设置
 
@@ -1101,7 +1123,17 @@ impl<'a> Video<'a> {
         // 修复字符串生命周期问题
         let cid_string = page.cid.to_string();
 
-        // 恢复原始番剧API参数配置
+        // 生成硬件指纹
+        let fingerprint = HardwareFingerprint::default();
+        let hardware = fingerprint.get_hardware();
+
+        // 生成弹幕防挡参数
+        let dm_img_str = hardware.generate_dm_img_str();
+        let dm_cover_img_str = hardware.generate_dm_cover_img_str();
+        let dm_img_list = fingerprint.generate_dm_img_list(page.duration as u32);
+        let dm_img_inter = fingerprint.generate_dm_img_inter();
+
+        // 增强的番剧API参数配置，包含硬件指纹和弹幕防挡参数
         let params = [
             ("ep_id", ep_id),
             ("cid", cid_string.as_str()),
@@ -1109,6 +1141,14 @@ impl<'a> Video<'a> {
             ("otype", "json"),
             ("fnval", "4048"), // 恢复原始fnval值
             ("fourk", "1"),    // 启用4K支持
+            ("voice_balance", "1"), // 音频平衡
+            ("gaia_source", "pre-load"), // Gaia预加载
+            ("isGaiaAvoided", "true"), // Gaia避免策略
+            ("web_location", "1315873"), // 网页位置标识
+            ("dm_img_str", dm_img_str.as_str()), // WebGL信息
+            ("dm_cover_img_str", dm_cover_img_str.as_str()), // GPU信息
+            ("dm_img_list", dm_img_list.as_str()), // 弹幕交互数据
+            ("dm_img_inter", dm_img_inter.as_str()), // 弹幕交互统计
         ];
 
         tracing::debug!("番剧API参数: {:?}", params);
@@ -1121,15 +1161,7 @@ impl<'a> Video<'a> {
             .request(Method::GET, request_url)
             .await
             .query(&params)
-            .header("Referer", "https://www.bilibili.com/")
-            .header("Origin", "https://www.bilibili.com")
-            .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0.0.0 Safari/537.36")
-            .header("sec-ch-ua", "\"Chromium\";v=\"140\", \"Not=A?Brand\";v=\"24\", \"Google Chrome\";v=\"140\"")
-            .header("sec-ch-ua-mobile", "?0")
-            .header("sec-ch-ua-platform", "\"Windows\"")
-            .header("sec-fetch-dest", "empty")
-            .header("sec-fetch-mode", "cors")
-            .header("sec-fetch-site", "cross-site");
+            .headers(create_api_headers());
 
         // 番剧请求头日志已在建造器时设置
 
@@ -1222,7 +1254,17 @@ impl<'a> Video<'a> {
         // 修复字符串生命周期问题
         let cid_string = page.cid.to_string();
 
-        // 恢复原始番剧API参数配置
+        // 生成硬件指纹
+        let fingerprint = HardwareFingerprint::default();
+        let hardware = fingerprint.get_hardware();
+
+        // 生成弹幕防挡参数
+        let dm_img_str = hardware.generate_dm_img_str();
+        let dm_cover_img_str = hardware.generate_dm_cover_img_str();
+        let dm_img_list = fingerprint.generate_dm_img_list(page.duration as u32);
+        let dm_img_inter = fingerprint.generate_dm_img_inter();
+
+        // 增强的番剧API参数配置，包含硬件指纹和弹幕防挡参数
         let params = [
             ("ep_id", ep_id),
             ("cid", cid_string.as_str()),
@@ -1230,6 +1272,14 @@ impl<'a> Video<'a> {
             ("otype", "json"),
             ("fnval", "4048"), // 恢复原始fnval值
             ("fourk", "1"),    // 启用4K支持
+            ("voice_balance", "1"), // 音频平衡
+            ("gaia_source", "pre-load"), // Gaia预加载
+            ("isGaiaAvoided", "true"), // Gaia避免策略
+            ("web_location", "1315873"), // 网页位置标识
+            ("dm_img_str", dm_img_str.as_str()), // WebGL信息
+            ("dm_cover_img_str", dm_cover_img_str.as_str()), // GPU信息
+            ("dm_img_list", dm_img_list.as_str()), // 弹幕交互数据
+            ("dm_img_inter", dm_img_inter.as_str()), // 弹幕交互统计
         ];
 
         tracing::debug!("=== 番剧API参数调试 ===");
@@ -1256,15 +1306,7 @@ impl<'a> Video<'a> {
             .request(Method::GET, request_url)
             .await
             .query(&params)
-            .header("Referer", "https://www.bilibili.com/")
-            .header("Origin", "https://www.bilibili.com")
-            .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0.0.0 Safari/537.36")
-            .header("sec-ch-ua", "\"Chromium\";v=\"140\", \"Not=A?Brand\";v=\"24\", \"Google Chrome\";v=\"140\"")
-            .header("sec-ch-ua-mobile", "?0")
-            .header("sec-ch-ua-platform", "\"Windows\"")
-            .header("sec-fetch-dest", "empty")
-            .header("sec-fetch-mode", "cors")
-            .header("sec-fetch-site", "cross-site");
+            .headers(create_api_headers());
 
         // 番剧请求头日志已在建造器时设置
 

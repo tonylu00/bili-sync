@@ -7,6 +7,7 @@ use tokio::sync::RwLock;
 use uuid::Uuid;
 
 use crate::bilibili::Credential;
+use crate::http::headers::{create_navigation_headers, create_api_headers};
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct QRCodeInfo {
@@ -74,13 +75,7 @@ impl QRLoginService {
 
         let homepage_request = self.client
             .get(homepage_url)
-            .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0.0.0 Safari/537.36")
-            .header("sec-ch-ua", "\"Chromium\";v=\"140\", \"Not=A?Brand\";v=\"24\", \"Google Chrome\";v=\"140\"")
-            .header("sec-ch-ua-mobile", "?0")
-            .header("sec-ch-ua-platform", "\"Windows\"")
-            .header("sec-fetch-dest", "document")
-            .header("sec-fetch-mode", "navigate")
-            .header("sec-fetch-site", "none");
+            .headers(create_navigation_headers());
 
         // B站主页访问请求头日志已在建造器时设置
 
@@ -100,9 +95,7 @@ impl QRLoginService {
         let qrcode_request = self
             .client
             .get(qrcode_url)
-            .header("Referer", "https://www.bilibili.com")
-            .header("Origin", "https://www.bilibili.com")
-            .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0.0.0 Safari/537.36");
+            .headers(create_api_headers());
 
         // 二维码生成请求头日志已在建造器时设置
 
@@ -118,7 +111,6 @@ impl QRLoginService {
             }
         };
 
-        let status = response.status();
 
         let data: serde_json::Value = response.json().await.map_err(|e| {
             tracing::error!("解析B站API响应失败: {}", e);
@@ -196,9 +188,7 @@ impl QRLoginService {
             .client
             .get(poll_url)
             .query(&[("qrcode_key", &session.qrcode_key)])
-            .header("Referer", "https://www.bilibili.com")
-            .header("Origin", "https://www.bilibili.com")
-            .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0.0.0 Safari/537.36");
+            .headers(create_api_headers());
 
         // 扫码状态检查请求头日志已在建造器时设置
 

@@ -10,6 +10,7 @@ mod config;
 mod database;
 mod downloader;
 mod error;
+mod hardware;
 mod http;
 mod initialization;
 mod task;
