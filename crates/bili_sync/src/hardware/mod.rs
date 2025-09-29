@@ -1,10 +1,12 @@
 pub mod gpu;
 pub mod webgl;
 pub mod fingerprint;
+pub mod persistence;
 
 pub use fingerprint::HardwareFingerprint;
-pub use gpu::GpuInfo;
+pub use gpu::{GpuInfo, GpuVendor};
 pub use webgl::WebGLInfo;
+pub use persistence::HardwareFingerprintManager;
 
 #[derive(Debug, Clone)]
 pub struct HardwareInfo {

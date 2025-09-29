@@ -27,10 +27,11 @@ use task::{http_server, video_downloader};
 use tokio_util::sync::CancellationToken;
 use tokio_util::task::TaskTracker;
 
-use crate::config::{init_config_with_database, ARGS};
+use crate::config::{init_config_with_database, ARGS, CONFIG_BUNDLE};
 use crate::database::setup_database;
 use crate::utils::signal::terminate;
 use crate::utils::{file_logger, init_logger};
+use crate::hardware::HardwareFingerprint;
 use anyhow::Result;
 
 #[tokio::main]
@@ -42,6 +43,14 @@ async fn main() -> Result<()> {
     // 初始化数据库配置系统
     if let Err(e) = init_config_with_database(connection.as_ref().clone()).await {
         warn!("数据库配置系统初始化失败: {}, 继续使用TOML配置", e);
+    }
+
+    // 初始化基于用户的硬件指纹系统
+    if let Err(e) = init_hardware_fingerprint_for_user(&connection).await {
+        warn!("硬件指纹初始化失败: {}, 使用默认配置", e);
+        // 如果初始化失败，回退到原有的方式
+        use crate::hardware::HardwareFingerprint;
+        let _ = HardwareFingerprint::get_global();
     }
 
     // 恢复断点信息到内存
@@ -152,13 +161,7 @@ fn init() {
     info!("原项目地址：https://github.com/amtoaer/bili-sync");
     debug!("系统初始化完成，日志级别: {}", ARGS.log_level);
 
-    // 初始化硬件指纹系统（触发全局配置生成）
-    use crate::hardware::HardwareFingerprint;
-    let _ = HardwareFingerprint::get_global(); // 触发硬件指纹初始化和日志记录
-    // 移除配置文件强制加载 - 配置现在完全基于数据库
-    // debug!("开始加载配置文件...");
-    // Lazy::force(&CONFIG);
-    // debug!("配置文件加载完成");
+    // 硬件指纹初始化已移至main函数中的数据库初始化后
 }
 
 async fn handle_shutdown(tracker: TaskTracker, token: CancellationToken) {
@@ -187,6 +190,32 @@ async fn handle_shutdown(tracker: TaskTracker, token: CancellationToken) {
             finalize_global_systems().await;
         }
     }
+}
+
+/// 初始化基于用户的硬件指纹系统
+async fn init_hardware_fingerprint_for_user(connection: &sea_orm::DatabaseConnection) -> Result<()> {
+    debug!("开始初始化基于用户的硬件指纹系统");
+
+    // 从配置中获取用户ID
+    let config_bundle = CONFIG_BUNDLE.load();
+    if let Some(credential) = config_bundle.config.credential.load_full() {
+        if let Ok(user_id) = credential.dedeuserid.parse::<i64>() {
+            info!("检测到用户ID: {}, 初始化硬件指纹", user_id);
+
+            // 初始化该用户的硬件指纹
+            HardwareFingerprint::init_global_for_user(user_id, connection).await?;
+
+            info!("用户 {} 的硬件指纹初始化完成", user_id);
+        } else {
+            warn!("无效的用户ID格式: {}", credential.dedeuserid);
+            return Err(anyhow::anyhow!("无效的用户ID格式"));
+        }
+    } else {
+        warn!("未找到有效的用户凭据，将使用默认硬件指纹");
+        return Err(anyhow::anyhow!("未找到有效的用户凭据"));
+    }
+
+    Ok(())
 }
 
 /// 完成全局系统清理

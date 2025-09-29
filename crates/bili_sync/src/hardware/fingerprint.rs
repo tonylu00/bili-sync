@@ -1,11 +1,13 @@
-use super::HardwareInfo;
+use super::{HardwareInfo, HardwareFingerprintManager};
 use rand::Rng;
 use serde_json::json;
-use tracing::{debug, info};
+use tracing::{debug, info, warn};
 use std::sync::OnceLock;
+use anyhow::Result;
 
-// 全局硬件指纹管理器 - 确保会话期间指纹固定
+// 全局硬件指纹和用户ID管理 - 确保会话期间指纹固定
 static GLOBAL_HARDWARE_FINGERPRINT: OnceLock<HardwareFingerprint> = OnceLock::new();
+static CURRENT_USER_ID: OnceLock<i64> = OnceLock::new();
 
 #[derive(Debug, Clone)]
 pub struct HardwareFingerprint {
@@ -378,7 +380,110 @@ impl HardwareFingerprint {
         }
     }
 
-    // 获取全局固定的硬件指纹
+    // 基于用户加载或创建硬件指纹
+    pub async fn load_or_create_for_user(user_id: i64, db: &sea_orm::DatabaseConnection) -> Result<HardwareFingerprint> {
+        let manager = HardwareFingerprintManager::new(db.clone());
+
+        // 先尝试从数据库加载
+        if let Some(fingerprint) = manager.load_for_user(user_id).await? {
+            info!("成功加载用户 {} 的硬件指纹", user_id);
+            return Ok(fingerprint);
+        }
+
+        // 如果数据库中没有，则生成新的硬件指纹
+        info!("用户 {} 首次使用，生成新的硬件指纹", user_id);
+        let fingerprint = Self::ultimate_random();
+
+        // 确定配置类型
+        let config_type = Self::determine_config_type(&fingerprint);
+
+        // 保存到数据库
+        manager.save_for_user(user_id, &fingerprint, &config_type).await?;
+
+        // 记录详细信息
+        Self::log_fingerprint_details(&fingerprint, true);
+
+        Ok(fingerprint)
+    }
+
+    // 初始化全局硬件指纹（基于用户）
+    pub async fn init_global_for_user(user_id: i64, db: &sea_orm::DatabaseConnection) -> Result<()> {
+        // 检查是否需要重新初始化
+        if let Some(current_user) = CURRENT_USER_ID.get() {
+            if *current_user == user_id {
+                debug!("用户 {} 硬件指纹已初始化，无需重新加载", user_id);
+                return Ok(());
+            } else {
+                warn!("检测到用户切换：{} -> {}，将重新初始化硬件指纹", current_user, user_id);
+                // 清除当前指纹（通过重置OnceLock实现 - 这里需要重新设计）
+                // 注意：OnceLock一旦设置就无法清除，所以我们需要换个策略
+            }
+        }
+
+        // 为新用户初始化硬件指纹
+        let fingerprint = Self::load_or_create_for_user(user_id, db).await?;
+
+        // 设置全局指纹（只在首次设置时生效）
+        let _ = GLOBAL_HARDWARE_FINGERPRINT.set(fingerprint);
+        let _ = CURRENT_USER_ID.set(user_id);
+
+        Ok(())
+    }
+
+    // 确定配置类型名称
+    fn determine_config_type(fingerprint: &HardwareFingerprint) -> String {
+        let gpu_info = &fingerprint.hardware.gpu;
+        let browser_type = if fingerprint.hardware.webgl.vendor == "Mozilla" {
+            "firefox"
+        } else {
+            "chrome"
+        };
+
+        if gpu_info.angle_info.contains("RTX 4090") {
+            format!("{}_gaming_high_end", browser_type)
+        } else if gpu_info.angle_info.contains("RTX 4070") {
+            format!("{}_gaming_mainstream", browser_type)
+        } else if gpu_info.angle_info.contains("RX 7900 XTX") {
+            format!("{}_workstation_high_end", browser_type)
+        } else if gpu_info.angle_info.contains("RX 7800 XT") {
+            format!("{}_workstation_setup", browser_type)
+        } else if gpu_info.angle_info.contains("Arc A") {
+            format!("{}_budget", browser_type)
+        } else {
+            format!("{}_random", browser_type)
+        }
+    }
+
+    // 记录硬件指纹详细信息
+    fn log_fingerprint_details(fingerprint: &HardwareFingerprint, is_new: bool) {
+        let action = if is_new { "生成" } else { "加载" };
+
+        let gpu_name = fingerprint.get_gpu_name();
+        let browser_type = fingerprint.get_browser_type();
+        let (width, height, _) = fingerprint.get_screen_info();
+
+        // 获取详细的硬件信息
+        let gpu_vendor = fingerprint.hardware.gpu.get_vendor_name();
+        let gpu_full_info = fingerprint.hardware.gpu.get_full_info();
+        let webgl_context = fingerprint.hardware.webgl.get_full_context_info();
+        let webgl_extensions = fingerprint.hardware.webgl.get_extensions_string();
+
+        info!("=== 会话硬件指纹已{}（基于用户） ===", action);
+        info!("GPU: {}", gpu_name);
+        info!("GPU厂商: {}", gpu_vendor);
+        info!("GPU详细信息: {}", gpu_full_info);
+        info!("浏览器: {}", browser_type);
+        info!("WebGL上下文: {}", webgl_context);
+        info!("WebGL扩展: {}", if webgl_extensions.len() > 100 {
+            format!("{}... (共{}个字符)", &webgl_extensions[..100], webgl_extensions.len())
+        } else {
+            webgl_extensions
+        });
+        info!("分辨率: {}x{}", width, height);
+        info!("===========================");
+    }
+
+    // 获取全局固定的硬件指纹（兼容性方法）
     pub fn get_global() -> &'static HardwareFingerprint {
         GLOBAL_HARDWARE_FINGERPRINT.get_or_init(|| {
             let fingerprint = Self::ultimate_random();
@@ -443,6 +548,38 @@ impl HardwareFingerprint {
             "Firefox"
         } else {
             "Chrome"
+        }
+    }
+
+    // Public accessor methods for persistence layer
+    pub fn get_hardware_info(&self) -> &HardwareInfo {
+        &self.hardware
+    }
+
+    pub fn get_screen_resolution(&self) -> (u32, u32) {
+        self.screen_resolution
+    }
+
+    pub fn get_device_pixel_ratio(&self) -> f32 {
+        self.device_pixel_ratio
+    }
+
+    pub fn get_timezone_offset(&self) -> i32 {
+        self.timezone_offset
+    }
+
+    // Constructor for persistence layer
+    pub fn from_components(
+        hardware: HardwareInfo,
+        screen_resolution: (u32, u32),
+        device_pixel_ratio: f32,
+        timezone_offset: i32
+    ) -> Self {
+        Self {
+            hardware,
+            screen_resolution,
+            device_pixel_ratio,
+            timezone_offset,
         }
     }
 }
