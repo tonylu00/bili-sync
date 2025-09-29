@@ -1,4 +1,4 @@
-use super::{HardwareInfo, HardwareFingerprintManager};
+use super::HardwareInfo;
 use rand::Rng;
 use serde_json::json;
 use tracing::{debug, info, warn};
@@ -381,24 +381,66 @@ impl HardwareFingerprint {
     }
 
     // 基于用户加载或创建硬件指纹
-    pub async fn load_or_create_for_user(user_id: i64, db: &sea_orm::DatabaseConnection) -> Result<HardwareFingerprint> {
-        let manager = HardwareFingerprintManager::new(db.clone());
+    pub async fn load_or_create_for_user(user_id: i64, db: &sea_orm::DatabaseConnection, force_regenerate: bool) -> Result<HardwareFingerprint> {
+        use crate::config::ConfigManager;
 
-        // 注释掉加载旧指纹的逻辑，每次登录都生成新的随机指纹
-        // if let Some(fingerprint) = manager.load_for_user(user_id).await? {
-        //     info!("成功加载用户 {} 的硬件指纹", user_id);
-        //     return Ok(fingerprint);
-        // }
+        let config_manager = ConfigManager::new(db.clone());
+        let config_key = format!("hardware_fingerprint.user_{}", user_id);
 
-        // 每次登录都生成新的随机硬件指纹
-        info!("用户 {} 重新登录，生成新的随机硬件指纹", user_id);
+        // 如果不强制重新生成，先尝试从数据库加载
+        if !force_regenerate {
+            if let Ok(Some(existing_config)) = config_manager.get_config_item(&config_key).await {
+                if let Ok(fingerprint_data) = serde_json::from_value::<serde_json::Value>(existing_config) {
+                    // 尝试从JSON恢复硬件指纹
+                    if let Ok(fingerprint) = Self::from_json(&fingerprint_data) {
+                        info!("成功从数据库加载用户 {} 的硬件指纹", user_id);
+                        return Ok(fingerprint);
+                    } else {
+                        warn!("用户 {} 的硬件指纹数据格式错误，将生成新的", user_id);
+                    }
+                } else {
+                    warn!("用户 {} 的硬件指纹配置解析失败，将生成新的", user_id);
+                }
+            } else {
+                info!("用户 {} 首次使用，生成新的硬件指纹", user_id);
+            }
+        } else {
+            info!("用户 {} 重新登录，强制生成新的随机硬件指纹", user_id);
+        }
+
+        // 生成新的随机硬件指纹
         let fingerprint = Self::ultimate_random();
 
-        // 确定配置类型
-        let config_type = Self::determine_config_type(&fingerprint);
+        // 将硬件指纹数据序列化为JSON
+        let fingerprint_json = json!({
+            "hardware": {
+                "gpu": {
+                    "vendor": format!("{:?}", fingerprint.hardware.gpu.vendor),
+                    "model": fingerprint.hardware.gpu.model,
+                    "device_id": fingerprint.hardware.gpu.device_id,
+                    "driver_version": fingerprint.hardware.gpu.driver_version,
+                    "directx_version": fingerprint.hardware.gpu.directx_version,
+                    "angle_info": fingerprint.hardware.gpu.angle_info
+                },
+                "webgl": {
+                    "version": fingerprint.hardware.webgl.version,
+                    "shading_language_version": fingerprint.hardware.webgl.shading_language_version,
+                    "vendor": fingerprint.hardware.webgl.vendor,
+                    "renderer": fingerprint.hardware.webgl.renderer,
+                    "extensions": fingerprint.hardware.webgl.extensions
+                }
+            },
+            "screen_resolution": [fingerprint.screen_resolution.0, fingerprint.screen_resolution.1],
+            "device_pixel_ratio": fingerprint.device_pixel_ratio,
+            "timezone_offset": fingerprint.timezone_offset
+        });
 
-        // 保存到数据库（会自动删除旧记录）
-        manager.save_for_user(user_id, &fingerprint, &config_type).await?;
+        // 保存到config_items表
+        if let Err(e) = config_manager.update_config_item(&config_key, fingerprint_json).await {
+            warn!("保存硬件指纹到配置失败: {}", e);
+        } else {
+            info!("硬件指纹已保存到配置: {}", config_key);
+        }
 
         // 记录详细信息
         Self::log_fingerprint_details(&fingerprint, true);
@@ -408,20 +450,26 @@ impl HardwareFingerprint {
 
     // 初始化全局硬件指纹（基于用户）
     pub async fn init_global_for_user(user_id: i64, db: &sea_orm::DatabaseConnection) -> Result<()> {
-        // 检查是否需要重新初始化
+        // 检查是否为已知用户
         if let Some(current_user) = CURRENT_USER_ID.get() {
             if *current_user == user_id {
-                debug!("用户 {} 硬件指纹已初始化，无需重新加载", user_id);
+                // 相同用户重新登录，生成新指纹但不更新全局状态（保持会话一致性）
+                info!("用户 {} 重新登录，生成新指纹并保存到数据库", user_id);
+                let _new_fingerprint = Self::load_or_create_for_user(user_id, db, true).await?;
+                info!("用户 {} 的新硬件指纹已生成并保存，当前会话继续使用原指纹", user_id);
                 return Ok(());
             } else {
-                warn!("检测到用户切换：{} -> {}，需要重新初始化硬件指纹", current_user, user_id);
-                // OnceLock无法重置，需要程序重启后才能更换用户硬件指纹
-                return Err(anyhow::anyhow!("用户切换需要重启程序以使用新的硬件指纹"));
+                // 用户切换，为新用户生成指纹
+                info!("检测到用户切换：{} -> {}，为新用户生成硬件指纹", current_user, user_id);
+                let _new_fingerprint = Self::load_or_create_for_user(user_id, db, true).await?;
+                info!("用户 {} 的硬件指纹已生成，当前会话继续使用原用户 {} 的指纹", user_id, current_user);
+                return Ok(());
             }
         }
 
-        // 为新用户初始化硬件指纹
-        let fingerprint = Self::load_or_create_for_user(user_id, db).await?;
+        // 首次初始化：为新用户加载或生成指纹并设置全局状态
+        info!("首次为用户 {} 初始化硬件指纹", user_id);
+        let fingerprint = Self::load_or_create_for_user(user_id, db, false).await?;
 
         // 设置全局指纹（只在首次设置时生效）
         let _ = GLOBAL_HARDWARE_FINGERPRINT.set(fingerprint);
@@ -618,6 +666,70 @@ impl HardwareFingerprint {
             device_pixel_ratio,
             timezone_offset,
         }
+    }
+
+    // 从JSON数据恢复硬件指纹
+    pub fn from_json(json_data: &serde_json::Value) -> Result<Self> {
+        let device_pixel_ratio = json_data["device_pixel_ratio"]
+            .as_f64()
+            .unwrap_or(1.0) as f32;
+
+        let timezone_offset = json_data["timezone_offset"]
+            .as_i64()
+            .unwrap_or(-480) as i32;
+
+        let screen_resolution = if let Some(resolution) = json_data["screen_resolution"].as_array() {
+            (
+                resolution[0].as_u64().unwrap_or(2560) as u32,
+                resolution[1].as_u64().unwrap_or(1440) as u32,
+            )
+        } else {
+            (2560, 1440)
+        };
+
+        // 解析GPU信息
+        let hardware_data = &json_data["hardware"];
+        let gpu_data = &hardware_data["gpu"];
+
+        let gpu_vendor = match gpu_data["vendor"].as_str().unwrap_or("Nvidia") {
+            "Nvidia" => crate::hardware::GpuVendor::Nvidia,
+            "Amd" => crate::hardware::GpuVendor::Amd,
+            "Intel" => crate::hardware::GpuVendor::Intel,
+            _ => crate::hardware::GpuVendor::Nvidia,
+        };
+
+        let gpu = crate::hardware::GpuInfo {
+            vendor: gpu_vendor,
+            model: gpu_data["model"].as_str().unwrap_or("Unknown GPU").to_string(),
+            device_id: gpu_data["device_id"].as_str().unwrap_or("0x0000").to_string(),
+            driver_version: gpu_data["driver_version"].as_str().unwrap_or("Unknown").to_string(),
+            directx_version: gpu_data["directx_version"].as_str().unwrap_or("Unknown").to_string(),
+            angle_info: gpu_data["angle_info"].as_str().unwrap_or("Unknown").to_string(),
+        };
+
+        // 解析WebGL信息
+        let webgl_data = &hardware_data["webgl"];
+        let extensions: Vec<String> = webgl_data["extensions"]
+            .as_array()
+            .map(|arr| arr.iter().filter_map(|v| v.as_str().map(|s| s.to_string())).collect())
+            .unwrap_or_else(|| vec!["ANGLE_instanced_arrays".to_string()]);
+
+        let webgl = crate::hardware::WebGLInfo {
+            version: webgl_data["version"].as_str().unwrap_or("WebGL 1.0").to_string(),
+            shading_language_version: webgl_data["shading_language_version"].as_str().unwrap_or("WebGL GLSL ES 1.0").to_string(),
+            vendor: webgl_data["vendor"].as_str().unwrap_or("WebKit").to_string(),
+            renderer: webgl_data["renderer"].as_str().unwrap_or("WebKit WebGL").to_string(),
+            extensions,
+        };
+
+        let hardware = HardwareInfo { gpu, webgl };
+
+        Ok(Self {
+            hardware,
+            screen_resolution,
+            device_pixel_ratio,
+            timezone_offset,
+        })
     }
 }
 
