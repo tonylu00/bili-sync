@@ -1041,11 +1041,24 @@ pub async fn download_unprocessed_videos(
     }
 
     let mut assigned_upper = HashSet::new();
+    let mut assigned_bangumi_seasons = HashSet::new();
     let tasks = unhandled_videos_pages
         .into_iter()
         .map(|(video_model, pages_model)| {
-            let should_download_upper = !assigned_upper.contains(&video_model.upper_id);
-            assigned_upper.insert(video_model.upper_id);
+            let should_download_upper = if let Some(season_id) = &video_model.season_id {
+                // 番剧：基于season_id判断是否需要生成series级别文件
+                let season_key = format!("season_{}", season_id);
+                let should_download = !assigned_bangumi_seasons.contains(&season_key);
+                assigned_bangumi_seasons.insert(season_key);
+                debug!("番剧视频「{}」season_id={}, should_download_upper={}",
+                       video_model.name, season_id, should_download);
+                should_download
+            } else {
+                // 普通视频：基于upper_id判断
+                let should_download = !assigned_upper.contains(&video_model.upper_id);
+                assigned_upper.insert(video_model.upper_id);
+                should_download
+            };
             debug!("下载视频: {}", video_model.name);
             download_video_pages(
                 bili_client,
@@ -1158,12 +1171,25 @@ pub async fn retry_failed_videos_once(
     let current_config = crate::config::reload_config();
     let semaphore = Semaphore::new(current_config.concurrent_limit.video);
     let mut assigned_upper = HashSet::new();
+    let mut assigned_bangumi_seasons = HashSet::new();
 
     let tasks = failed_videos_pages
         .into_iter()
         .map(|(video_model, pages_model)| {
-            let should_download_upper = !assigned_upper.contains(&video_model.upper_id);
-            assigned_upper.insert(video_model.upper_id);
+            let should_download_upper = if let Some(season_id) = &video_model.season_id {
+                // 番剧：基于season_id判断是否需要生成series级别文件
+                let season_key = format!("season_{}", season_id);
+                let should_download = !assigned_bangumi_seasons.contains(&season_key);
+                assigned_bangumi_seasons.insert(season_key);
+                debug!("重试番剧视频「{}」season_id={}, should_download_upper={}",
+                       video_model.name, season_id, should_download);
+                should_download
+            } else {
+                // 普通视频：基于upper_id判断
+                let should_download = !assigned_upper.contains(&video_model.upper_id);
+                assigned_upper.insert(video_model.upper_id);
+                should_download
+            };
             debug!("重试视频: {}", video_model.name);
             download_video_pages(
                 bili_client,
@@ -2007,23 +2033,23 @@ pub async fn download_video_pages(
 
             info!("准备下载季度级图片到: {:?} 和 {:?}", poster_path, fanart_path);
 
-            // 季度级图片：poster使用封面，fanart使用横版封面（优先级：新EP封面 > 横版封面 > 专门背景图 > 竖版封面）
+            // 季度级图片：poster使用封面，fanart使用横版封面（优先级：横版封面 > 专门背景图 > 竖版封面 > 新EP封面截图）
             let season_info_ref = season_info.as_ref().unwrap();
             let season_cover_url = season_info_ref.cover.as_deref();
             let season_fanart_url = season_info_ref
-                .new_ep_cover
+                .horizontal_cover_169
                 .as_deref()
                 .filter(|s| !s.is_empty())
-                .or(season_info_ref
-                    .horizontal_cover_169
-                    .as_deref()
-                    .filter(|s| !s.is_empty()))
                 .or(season_info_ref
                     .horizontal_cover_1610
                     .as_deref()
                     .filter(|s| !s.is_empty()))
                 .or(season_info_ref.bkg_cover.as_deref().filter(|s| !s.is_empty()))
-                .or(season_info_ref.cover.as_deref().filter(|s| !s.is_empty()));
+                .or(season_info_ref.cover.as_deref().filter(|s| !s.is_empty()))
+                .or(season_info_ref
+                    .new_ep_cover
+                    .as_deref()
+                    .filter(|s| !s.is_empty()));
 
             info!("Season级别fanart选择逻辑:");
             info!("  最终选择的season fanart URL: {:?}", season_fanart_url);
@@ -2114,17 +2140,17 @@ pub async fn download_video_pages(
             } else {
                 None
             },
-            // 番剧fanart优先级：新EP封面 > 横版封面 > 专门背景图 > 竖版封面，普通视频复用poster
+            // 番剧fanart优先级：横版封面 > 专门背景图 > 竖版封面 > 新EP封面截图，普通视频复用poster
             if is_bangumi && season_info.is_some() {
                 let season = season_info.as_ref().unwrap();
                 let fanart_url = season
-                    .new_ep_cover
+                    .horizontal_cover_169
                     .as_deref()
                     .filter(|s| !s.is_empty())
-                    .or(season.horizontal_cover_169.as_deref().filter(|s| !s.is_empty()))
                     .or(season.horizontal_cover_1610.as_deref().filter(|s| !s.is_empty()))
                     .or(season.bkg_cover.as_deref().filter(|s| !s.is_empty()))
-                    .or(season.cover.as_deref().filter(|s| !s.is_empty()));
+                    .or(season.cover.as_deref().filter(|s| !s.is_empty()))
+                    .or(season.new_ep_cover.as_deref().filter(|s| !s.is_empty()));
 
                 info!("番剧「{}」fanart选择逻辑:", video_model.name);
                 debug!(
