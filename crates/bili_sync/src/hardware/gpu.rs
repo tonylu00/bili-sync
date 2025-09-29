@@ -62,6 +62,62 @@ impl GpuInfo {
         }
     }
 
+    // 新增高端GPU型号
+    pub fn nvidia_rtx4090() -> Self {
+        Self {
+            vendor: GpuVendor::Nvidia,
+            model: "NVIDIA GeForce RTX 4090".to_string(),
+            device_id: "0x00002684".to_string(),
+            driver_version: "vs_5_0 ps_5_0".to_string(),
+            directx_version: "Direct3D11".to_string(),
+            angle_info: "ANGLE (NVIDIA, NVIDIA GeForce RTX 4090 (0x00002684) Direct3D11 vs_5_0 ps_5_0, D3D11)Google Inc. (NVIDIA)".to_string(),
+        }
+    }
+
+    pub fn nvidia_rtx4070() -> Self {
+        Self {
+            vendor: GpuVendor::Nvidia,
+            model: "NVIDIA GeForce RTX 4070".to_string(),
+            device_id: "0x00002786".to_string(),
+            driver_version: "vs_5_0 ps_5_0".to_string(),
+            directx_version: "Direct3D11".to_string(),
+            angle_info: "ANGLE (NVIDIA, NVIDIA GeForce RTX 4070 (0x00002786) Direct3D11 vs_5_0 ps_5_0, D3D11)Google Inc. (NVIDIA)".to_string(),
+        }
+    }
+
+    pub fn amd_rx7900xtx() -> Self {
+        Self {
+            vendor: GpuVendor::Amd,
+            model: "AMD Radeon RX 7900 XTX".to_string(),
+            device_id: "0x0000744C".to_string(),
+            driver_version: "vs_5_0 ps_5_0".to_string(),
+            directx_version: "Direct3D11".to_string(),
+            angle_info: "ANGLE (AMD, AMD Radeon RX 7900 XTX (0x0000744C) Direct3D11 vs_5_0 ps_5_0, D3D11)ATI Technologies Inc.".to_string(),
+        }
+    }
+
+    pub fn amd_rx7700xt() -> Self {
+        Self {
+            vendor: GpuVendor::Amd,
+            model: "AMD Radeon RX 7700 XT".to_string(),
+            device_id: "0x000074E8".to_string(),
+            driver_version: "vs_5_0 ps_5_0".to_string(),
+            directx_version: "Direct3D11".to_string(),
+            angle_info: "ANGLE (AMD, AMD Radeon RX 7700 XT (0x000074E8) Direct3D11 vs_5_0 ps_5_0, D3D11)ATI Technologies Inc.".to_string(),
+        }
+    }
+
+    pub fn intel_arc_a750() -> Self {
+        Self {
+            vendor: GpuVendor::Intel,
+            model: "Intel Arc A750 Graphics".to_string(),
+            device_id: "0x000056A1".to_string(),
+            driver_version: "vs_5_0 ps_5_0".to_string(),
+            directx_version: "Direct3D11".to_string(),
+            angle_info: "ANGLE (Intel, Intel Arc A750 Graphics (0x000056A1) Direct3D11 vs_5_0 ps_5_0, D3D11)Intel Inc.".to_string(),
+        }
+    }
+
     pub fn to_dm_cover_img_str(&self) -> String {
         general_purpose::STANDARD.encode(&self.angle_info)
     }

@@ -3,7 +3,7 @@ pub mod webgl;
 pub mod fingerprint;
 
 pub use fingerprint::HardwareFingerprint;
-pub use gpu::{GpuInfo, GpuVendor};
+pub use gpu::GpuInfo;
 pub use webgl::WebGLInfo;
 
 #[derive(Debug, Clone)]
@@ -35,6 +35,71 @@ impl HardwareInfo {
         Self {
             gpu: GpuInfo::intel_arc_a770(),
             webgl: WebGLInfo::chrome_default(),
+        }
+    }
+
+    // 新增高端GPU配置
+    pub fn nvidia_rtx4090() -> Self {
+        Self {
+            gpu: GpuInfo::nvidia_rtx4090(),
+            webgl: WebGLInfo::chrome_default(),
+        }
+    }
+
+    pub fn nvidia_rtx4070() -> Self {
+        Self {
+            gpu: GpuInfo::nvidia_rtx4070(),
+            webgl: WebGLInfo::chrome_default(),
+        }
+    }
+
+    pub fn amd_rx7900xtx() -> Self {
+        Self {
+            gpu: GpuInfo::amd_rx7900xtx(),
+            webgl: WebGLInfo::chrome_default(),
+        }
+    }
+
+    pub fn amd_rx7700xt() -> Self {
+        Self {
+            gpu: GpuInfo::amd_rx7700xt(),
+            webgl: WebGLInfo::chrome_default(),
+        }
+    }
+
+    pub fn intel_arc_a750() -> Self {
+        Self {
+            gpu: GpuInfo::intel_arc_a750(),
+            webgl: WebGLInfo::chrome_default(),
+        }
+    }
+
+    // Firefox环境配置
+    pub fn nvidia_rtx4070ti_firefox() -> Self {
+        Self {
+            gpu: GpuInfo::nvidia_rtx4070ti(),
+            webgl: WebGLInfo::firefox_default(),
+        }
+    }
+
+    pub fn nvidia_rtx4090_firefox() -> Self {
+        Self {
+            gpu: GpuInfo::nvidia_rtx4090(),
+            webgl: WebGLInfo::firefox_default(),
+        }
+    }
+
+    pub fn amd_rx7800xt_firefox() -> Self {
+        Self {
+            gpu: GpuInfo::amd_rx7800xt(),
+            webgl: WebGLInfo::firefox_default(),
+        }
+    }
+
+    pub fn amd_rx7900xtx_firefox() -> Self {
+        Self {
+            gpu: GpuInfo::amd_rx7900xtx(),
+            webgl: WebGLInfo::firefox_default(),
         }
     }
 

@@ -662,10 +662,13 @@ impl<'a> Video<'a> {
         let hardware = fingerprint.get_hardware();
 
         // 生成弹幕防挡参数
+        debug!("开始生成硬件指纹参数，视频时长: {}秒", page.duration);
         let dm_img_str = hardware.generate_dm_img_str();
         let dm_cover_img_str = hardware.generate_dm_cover_img_str();
         let dm_img_list = fingerprint.generate_dm_img_list(page.duration as u32);
         let dm_img_inter = fingerprint.generate_dm_img_inter();
+        debug!("硬件指纹参数生成完成 - WebGL: {} 字符, GPU: {} 字符",
+               dm_img_str.len(), dm_cover_img_str.len());
 
         // 增强的API参数配置，包含硬件指纹和弹幕防挡参数
         let params = vec![
@@ -876,10 +879,13 @@ impl<'a> Video<'a> {
         let hardware = fingerprint.get_hardware();
 
         // 生成弹幕防挡参数
+        debug!("开始生成硬件指纹参数，视频时长: {}秒", page.duration);
         let dm_img_str = hardware.generate_dm_img_str();
         let dm_cover_img_str = hardware.generate_dm_cover_img_str();
         let dm_img_list = fingerprint.generate_dm_img_list(page.duration as u32);
         let dm_img_inter = fingerprint.generate_dm_img_inter();
+        debug!("硬件指纹参数生成完成 - WebGL: {} 字符, GPU: {} 字符",
+               dm_img_str.len(), dm_cover_img_str.len());
 
         // 增强的API参数配置，包含硬件指纹和弹幕防挡参数
         let params = vec![
@@ -1128,10 +1134,13 @@ impl<'a> Video<'a> {
         let hardware = fingerprint.get_hardware();
 
         // 生成弹幕防挡参数
+        debug!("开始生成硬件指纹参数，视频时长: {}秒", page.duration);
         let dm_img_str = hardware.generate_dm_img_str();
         let dm_cover_img_str = hardware.generate_dm_cover_img_str();
         let dm_img_list = fingerprint.generate_dm_img_list(page.duration as u32);
         let dm_img_inter = fingerprint.generate_dm_img_inter();
+        debug!("硬件指纹参数生成完成 - WebGL: {} 字符, GPU: {} 字符",
+               dm_img_str.len(), dm_cover_img_str.len());
 
         // 增强的番剧API参数配置，包含硬件指纹和弹幕防挡参数
         let params = [
@@ -1259,10 +1268,13 @@ impl<'a> Video<'a> {
         let hardware = fingerprint.get_hardware();
 
         // 生成弹幕防挡参数
+        debug!("开始生成硬件指纹参数，视频时长: {}秒", page.duration);
         let dm_img_str = hardware.generate_dm_img_str();
         let dm_cover_img_str = hardware.generate_dm_cover_img_str();
         let dm_img_list = fingerprint.generate_dm_img_list(page.duration as u32);
         let dm_img_inter = fingerprint.generate_dm_img_inter();
+        debug!("硬件指纹参数生成完成 - WebGL: {} 字符, GPU: {} 字符",
+               dm_img_str.len(), dm_cover_img_str.len());
 
         // 增强的番剧API参数配置，包含硬件指纹和弹幕防挡参数
         let params = [
