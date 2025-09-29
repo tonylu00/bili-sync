@@ -83,8 +83,16 @@ impl WebGLInfo {
     }
 
     pub fn to_dm_img_str(&self) -> String {
-        let webgl_info = format!("{} (OpenGL ES 2.0 Chromium)", self.version);
-        general_purpose::STANDARD.encode(webgl_info)
+        // 生成包含完整WebGL上下文信息的指纹字符串
+        let full_webgl_info = format!(
+            "{} | {} | {} | GLSL: {} | Extensions: {}",
+            self.version,
+            self.get_full_context_info(),
+            self.renderer,
+            self.shading_language_version,
+            self.get_extensions_string()
+        );
+        general_purpose::STANDARD.encode(full_webgl_info)
     }
 
     pub fn get_full_context_info(&self) -> String {

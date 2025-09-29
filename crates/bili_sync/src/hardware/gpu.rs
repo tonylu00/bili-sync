@@ -119,7 +119,16 @@ impl GpuInfo {
     }
 
     pub fn to_dm_cover_img_str(&self) -> String {
-        general_purpose::STANDARD.encode(&self.angle_info)
+        // 生成包含完整GPU信息的硬件指纹字符串
+        let full_gpu_info = format!(
+            "{} | {} | Device: {} | Driver: {} | DirectX: {}",
+            self.angle_info,
+            self.get_full_info(),
+            self.device_id,
+            self.driver_version,
+            self.directx_version
+        );
+        general_purpose::STANDARD.encode(full_gpu_info)
     }
 
     pub fn get_vendor_name(&self) -> &'static str {

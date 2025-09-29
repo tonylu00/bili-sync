@@ -151,6 +151,10 @@ fn init() {
     info!("现项目地址：https://github.com/qq1582185982/bili-sync-01");
     info!("原项目地址：https://github.com/amtoaer/bili-sync");
     debug!("系统初始化完成，日志级别: {}", ARGS.log_level);
+
+    // 初始化硬件指纹系统（触发全局配置生成）
+    use crate::hardware::HardwareFingerprint;
+    let _ = HardwareFingerprint::get_global(); // 触发硬件指纹初始化和日志记录
     // 移除配置文件强制加载 - 配置现在完全基于数据库
     // debug!("开始加载配置文件...");
     // Lazy::force(&CONFIG);

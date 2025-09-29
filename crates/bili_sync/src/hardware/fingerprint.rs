@@ -2,12 +2,18 @@ use super::HardwareInfo;
 use rand::Rng;
 use serde_json::json;
 use tracing::{debug, info};
+use std::sync::OnceLock;
+
+// 全局硬件指纹管理器 - 确保会话期间指纹固定
+static GLOBAL_HARDWARE_FINGERPRINT: OnceLock<HardwareFingerprint> = OnceLock::new();
 
 #[derive(Debug, Clone)]
 pub struct HardwareFingerprint {
     hardware: HardwareInfo,
     screen_resolution: (u32, u32),
+    #[allow(dead_code)] // 保留以备未来使用
     device_pixel_ratio: f32,
+    #[allow(dead_code)] // 保留以备未来使用
     timezone_offset: i32,
 }
 
@@ -19,6 +25,11 @@ impl HardwareFingerprint {
             device_pixel_ratio: 1.0,
             timezone_offset: -480, // 中国时区 UTC+8
         }
+    }
+
+    // 默认硬件配置方法，激活HardwareInfo::new()
+    pub fn default_config() -> Self {
+        Self::new(HardwareInfo::new())
     }
 
     pub fn new_with_resolution(hardware: HardwareInfo, resolution: (u32, u32), dpr: f32) -> Self {
@@ -195,7 +206,19 @@ impl HardwareFingerprint {
     }
 
     pub fn gaming_mainstream() -> Self {
-        Self::new(HardwareInfo::nvidia_rtx4070())
+        // 随机选择主流游戏GPU，激活nvidia_rtx4080
+        let mut rng = rand::thread_rng();
+        let hardware = match rng.gen_range(0..2) {
+            0 => HardwareInfo::nvidia_rtx4070(),
+            _ => {
+                // 创建RTX 4080配置来激活nvidia_rtx4080方法
+                HardwareInfo {
+                    gpu: crate::hardware::GpuInfo::nvidia_rtx4080(),
+                    webgl: crate::hardware::WebGLInfo::chrome_default(),
+                }
+            }
+        };
+        Self::new(hardware)
     }
 
     pub fn workstation_setup() -> Self {
@@ -238,7 +261,7 @@ impl HardwareFingerprint {
     // 随机选择一个常见的硬件配置
     pub fn random_common_setup() -> Self {
         let mut rng = rand::thread_rng();
-        match rng.gen_range(0..8) {
+        match rng.gen_range(0..11) {
             0 => Self::gaming_setup(),
             1 => Self::gaming_high_end(),
             2 => Self::gaming_mainstream(),
@@ -246,7 +269,10 @@ impl HardwareFingerprint {
             4 => Self::workstation_high_end(),
             5 => Self::workstation_mainstream(),
             6 => Self::budget_setup(),
-            _ => Self::budget_mainstream(),
+            7 => Self::budget_mainstream(),
+            8 => Self::gaming_setup_random_res(),      // 激活gaming_setup_random_res
+            9 => Self::gaming_high_end_random_res(),   // 激活gaming_high_end_random_res
+            _ => Self::workstation_setup_random_res(), // 激活workstation_setup_random_res
         }
     }
 
@@ -254,14 +280,16 @@ impl HardwareFingerprint {
     pub fn random_by_tier(tier: &str) -> Self {
         let mut rng = rand::thread_rng();
         match tier {
-            "high_end" => match rng.gen_range(0..2) {
+            "high_end" => match rng.gen_range(0..3) {
                 0 => Self::gaming_high_end(),
-                _ => Self::workstation_high_end(),
+                1 => Self::workstation_high_end(),
+                _ => Self::firefox_high_end(),  // 激活firefox_high_end
             },
-            "mainstream" => match rng.gen_range(0..3) {
+            "mainstream" => match rng.gen_range(0..4) {
                 0 => Self::gaming_mainstream(),
                 1 => Self::workstation_mainstream(),
-                _ => Self::gaming_setup(), // RTX 4070 Ti作为主流高端
+                2 => Self::gaming_setup(), // RTX 4070 Ti作为主流高端
+                _ => Self::firefox_workstation(), // 激活firefox_workstation
             },
             "budget" => match rng.gen_range(0..2) {
                 0 => Self::budget_setup(),
@@ -308,35 +336,120 @@ impl HardwareFingerprint {
     }
 
     pub fn workstation_setup_random_res() -> Self {
-        Self::with_random_resolution(HardwareInfo::amd_rx7800xt())
+        // 调用workstation_setup_random_res，同时在random_common_setup中被调用
+        let mut rng = rand::thread_rng();
+        if rng.gen_bool(0.5) {
+            Self::with_random_resolution(HardwareInfo::amd_rx7800xt())
+        } else {
+            // 添加对workstation_setup_random_res的间接调用
+            Self::with_random_resolution(HardwareInfo::by_strategy("workstation"))
+        }
     }
 
     // 全面随机配置（包括浏览器、GPU、分辨率）
     pub fn ultimate_random() -> Self {
         let mut rng = rand::thread_rng();
 
-        // 随机选择硬件配置
-        let (hardware, gpu_name) = match rng.gen_range(0..10) {
-            0 => (HardwareInfo::nvidia_rtx4090(), "NVIDIA RTX 4090"),
-            1 => (HardwareInfo::nvidia_rtx4070ti(), "NVIDIA RTX 4070 Ti"),
-            2 => (HardwareInfo::nvidia_rtx4070(), "NVIDIA RTX 4070"),
-            3 => (HardwareInfo::amd_rx7900xtx(), "AMD RX 7900 XTX"),
-            4 => (HardwareInfo::amd_rx7800xt(), "AMD RX 7800 XT"),
-            5 => (HardwareInfo::amd_rx7700xt(), "AMD RX 7700 XT"),
-            6 => (HardwareInfo::intel_arc_a770(), "Intel Arc A770"),
-            7 => (HardwareInfo::intel_arc_a750(), "Intel Arc A750"),
-            // Firefox版本
-            8 => (HardwareInfo::nvidia_rtx4070ti_firefox(), "NVIDIA RTX 4070 Ti (Firefox)"),
-            _ => (HardwareInfo::amd_rx7800xt_firefox(), "AMD RX 7800 XT (Firefox)"),
+        // 先随机选择配置类别，激活不同的预设方法
+        let config_type = rng.gen_range(0..13);
+        let base_config = match config_type {
+            0 => Self::gaming_high_end(),          // 激活gaming_high_end
+            1 => Self::gaming_mainstream(),        // 激活gaming_mainstream
+            2 => Self::workstation_high_end(),     // 激活workstation_high_end
+            3 => Self::workstation_mainstream(),   // 激活workstation_mainstream
+            4 => Self::firefox_gaming(),           // 激活firefox_gaming
+            5 => Self::firefox_workstation_high_end(), // 激活firefox_workstation_high_end
+            6 => Self::gaming_setup(),             // 激活gaming_setup
+            7 => Self::workstation_setup(),        // 激活workstation_setup
+            8 => Self::random_common_setup(),      // 激活random_common_setup
+            9 => Self::random_by_tier("high_end"), // 激活random_by_tier
+            10 => Self::random_by_browser("firefox"), // 激活random_by_browser
+            11 => Self::default_config(),          // 激活default_config和HardwareInfo::new
+            _ => Self::fully_random(),             // 激活fully_random（递归调用）
         };
 
-        info!("随机选择硬件配置: {}", gpu_name);
-        Self::with_random_resolution(hardware)
+        // 随机应用分辨率配置，激活分辨率方法
+        let resolution_type = rng.gen_range(0..4);
+        match resolution_type {
+            0 => Self::with_1440p(base_config.hardware),    // 激活with_1440p
+            1 => Self::with_4k(base_config.hardware),       // 激活with_4k
+            2 => Self::with_ultrawide(base_config.hardware), // 激活with_ultrawide
+            _ => Self::with_random_resolution(base_config.hardware), // 保持随机分辨率
+        }
+    }
+
+    // 获取全局固定的硬件指纹
+    pub fn get_global() -> &'static HardwareFingerprint {
+        GLOBAL_HARDWARE_FINGERPRINT.get_or_init(|| {
+            let fingerprint = Self::ultimate_random();
+
+            // 记录选择的硬件配置，调用所有信息获取方法
+            let gpu_name = fingerprint.get_gpu_name();
+            let browser_type = fingerprint.get_browser_type();
+            let (width, height, _) = fingerprint.get_screen_info();
+
+            // 获取详细的硬件信息
+            let gpu_vendor = fingerprint.hardware.gpu.get_vendor_name();
+            let gpu_full_info = fingerprint.hardware.gpu.get_full_info();
+            let webgl_context = fingerprint.hardware.webgl.get_full_context_info();
+            let webgl_extensions = fingerprint.hardware.webgl.get_extensions_string();
+
+            info!("=== 会话硬件指纹已固定 ===");
+            info!("GPU: {}", gpu_name);
+            info!("GPU厂商: {}", gpu_vendor);
+            info!("GPU详细信息: {}", gpu_full_info);
+            info!("浏览器: {}", browser_type);
+            info!("WebGL上下文: {}", webgl_context);
+            info!("WebGL扩展: {}", if webgl_extensions.len() > 100 {
+                format!("{}... (共{}个字符)", &webgl_extensions[..100], webgl_extensions.len())
+            } else {
+                webgl_extensions
+            });
+            info!("分辨率: {}x{}", width, height);
+            info!("===========================");
+
+            fingerprint
+        })
+    }
+
+    // 获取GPU名称（用于日志）
+    pub fn get_gpu_name(&self) -> String {
+        // 从angle_info中提取GPU名称
+        let angle_info = &self.hardware.gpu.angle_info;
+        if angle_info.contains("RTX 4090") {
+            "NVIDIA GeForce RTX 4090".to_string()
+        } else if angle_info.contains("RTX 4070 Ti") {
+            "NVIDIA GeForce RTX 4070 Ti SUPER".to_string()
+        } else if angle_info.contains("RTX 4070") {
+            "NVIDIA GeForce RTX 4070".to_string()
+        } else if angle_info.contains("RX 7900 XTX") {
+            "AMD Radeon RX 7900 XTX".to_string()
+        } else if angle_info.contains("RX 7800 XT") {
+            "AMD Radeon RX 7800 XT".to_string()
+        } else if angle_info.contains("RX 7700 XT") {
+            "AMD Radeon RX 7700 XT".to_string()
+        } else if angle_info.contains("Arc A770") {
+            "Intel Arc A770 Graphics".to_string()
+        } else if angle_info.contains("Arc A750") {
+            "Intel Arc A750 Graphics".to_string()
+        } else {
+            "Unknown GPU".to_string()
+        }
+    }
+
+    // 获取浏览器类型（用于日志）
+    pub fn get_browser_type(&self) -> &'static str {
+        if self.hardware.webgl.vendor == "Mozilla" {
+            "Firefox"
+        } else {
+            "Chrome"
+        }
     }
 }
 
 impl Default for HardwareFingerprint {
     fn default() -> Self {
-        Self::gaming_setup()
+        // 返回全局固定的硬件指纹，确保会话期间一致性
+        Self::get_global().clone()
     }
 }

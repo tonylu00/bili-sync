@@ -17,6 +17,18 @@ impl HardwareInfo {
         Self::default()
     }
 
+    // 根据策略名称选择硬件配置
+    pub fn by_strategy(strategy: &str) -> Self {
+        match strategy {
+            "firefox_high_end" => Self::nvidia_rtx4090_firefox(),
+            "firefox_workstation" => Self::amd_rx7900xtx_firefox(),
+            "gaming" => Self::nvidia_rtx4070ti(),
+            "workstation" => Self::amd_rx7800xt(),
+            "budget" => Self::intel_arc_a770(),
+            _ => Self::default(),
+        }
+    }
+
     pub fn nvidia_rtx4070ti() -> Self {
         Self {
             gpu: GpuInfo::nvidia_rtx4070ti(),
