@@ -69,38 +69,56 @@ impl QRLoginService {
         tracing::info!("开始调用B站API生成二维码");
 
         // 首先访问B站主页获取 buvid3
-        tracing::info!("访问B站主页获取设备标识...");
-        let _ = self.client
-            .get("https://www.bilibili.com")
+        let homepage_url = "https://www.bilibili.com";
+        tracing::info!("发起B站主页访问请求: {}", homepage_url);
+
+        let homepage_request = self.client
+            .get(homepage_url)
             .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0.0.0 Safari/537.36")
             .header("sec-ch-ua", "\"Chromium\";v=\"140\", \"Not=A?Brand\";v=\"24\", \"Google Chrome\";v=\"140\"")
             .header("sec-ch-ua-mobile", "?0")
             .header("sec-ch-ua-platform", "\"Windows\"")
             .header("sec-fetch-dest", "document")
             .header("sec-fetch-mode", "navigate")
-            .header("sec-fetch-site", "none")
-            .send()
-            .await
-            .map_err(|e| {
-                tracing::warn!("访问B站主页失败，继续尝试生成二维码: {}", e);
-                e
-            });
+            .header("sec-fetch-site", "none");
+
+        // B站主页访问请求头日志已在建造器时设置
+
+        let _ = homepage_request.send().await.map_err(|e| {
+            tracing::warn!("B站主页访问失败，继续尝试生成二维码 - 错误: {}", e);
+            e
+        }).map(|resp| {
+            tracing::info!("B站主页访问成功 - 状态码: {}", resp.status());
+            tracing::debug!("B站主页响应头: {:?}", resp.headers());
+            resp
+        });
 
         // 调用B站API生成二维码
-        let response = self
+        let qrcode_url = "https://passport.bilibili.com/x/passport-login/web/qrcode/generate";
+        tracing::info!("发起二维码生成请求: {}", qrcode_url);
+
+        let qrcode_request = self
             .client
-            .get("https://passport.bilibili.com/x/passport-login/web/qrcode/generate")
+            .get(qrcode_url)
             .header("Referer", "https://www.bilibili.com")
             .header("Origin", "https://www.bilibili.com")
-            .send()
-            .await
-            .map_err(|e| {
-                tracing::error!("请求B站API失败: {}", e);
-                e
-            })?;
+            .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0.0.0 Safari/537.36");
+
+        // 二维码生成请求头日志已在建造器时设置
+
+        let response = qrcode_request.send().await;
+        let response = match response {
+            Ok(resp) => {
+                tracing::info!("二维码生成请求成功 - 状态码: {}, URL: {}", resp.status(), resp.url());
+                resp
+            }
+            Err(e) => {
+                tracing::error!("二维码生成请求失败 - 错误: {}", e);
+                return Err(e.into());
+            }
+        };
 
         let status = response.status();
-        tracing::info!("B站API响应状态: {}", status);
 
         let data: serde_json::Value = response.json().await.map_err(|e| {
             tracing::error!("解析B站API响应失败: {}", e);
@@ -171,18 +189,45 @@ impl QRLoginService {
         }
 
         // 调用B站API检查状态
-        let response = self
+        let poll_url = "https://passport.bilibili.com/x/passport-login/web/qrcode/poll";
+        tracing::debug!("发起扫码状态检查请求: {} - qrcode_key: {}...", poll_url, &session.qrcode_key[..std::cmp::min(session.qrcode_key.len(), 20)]);
+
+        let poll_request = self
             .client
-            .get("https://passport.bilibili.com/x/passport-login/web/qrcode/poll")
+            .get(poll_url)
             .query(&[("qrcode_key", &session.qrcode_key)])
             .header("Referer", "https://www.bilibili.com")
             .header("Origin", "https://www.bilibili.com")
-            .send()
-            .await?;
+            .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0.0.0 Safari/537.36");
+
+        // 扫码状态检查请求头日志已在建造器时设置
+
+        let response = poll_request.send().await;
+        let response = match response {
+            Ok(resp) => {
+                tracing::debug!("扫码状态检查请求成功 - 状态码: {}", resp.status());
+                resp
+            }
+            Err(e) => {
+                tracing::error!("扫码状态检查请求失败 - 错误: {}", e);
+                return Err(e.into());
+            }
+        };
 
         // 先提取headers
         let headers = response.headers().clone();
-        let data: serde_json::Value = response.json().await?;
+        tracing::debug!("扫码状态检查响应头: {:?}", headers);
+
+        let data: serde_json::Value = match response.json().await {
+            Ok(json) => {
+                tracing::debug!("扫码状态检查响应解析成功");
+                json
+            }
+            Err(e) => {
+                tracing::error!("扫码状态检查响应解析失败 - 错误: {}", e);
+                return Err(e.into());
+            }
+        };
 
         match data["data"]["code"].as_i64() {
             Some(0) => {

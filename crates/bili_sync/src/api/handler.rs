@@ -7532,7 +7532,9 @@ pub async fn proxy_image(
     let client = reqwest::Client::new();
 
     // 请求图片，添加必要的请求头
-    let response = client
+    tracing::info!("发起图片下载请求: {}", url);
+
+    let request = client
         .get(url)
         .header("Referer", "https://www.bilibili.com/")
         .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0.0.0 Safari/537.36")
@@ -7541,12 +7543,24 @@ pub async fn proxy_image(
         .header("sec-ch-ua-platform", "\"Windows\"")
         .header("sec-fetch-dest", "image")
         .header("sec-fetch-mode", "no-cors")
-        .header("sec-fetch-site", "cross-site")
-        .send()
-        .await
-        .map_err(|e| anyhow!("请求图片失败: {}", e))?;
+        .header("sec-fetch-site", "cross-site");
+
+    // 图片下载请求头日志已在建造器时设置
+
+    let response = request.send().await;
+    let response = match response {
+        Ok(resp) => {
+            tracing::info!("图片下载请求成功 - 状态码: {}, URL: {}", resp.status(), resp.url());
+            resp
+        }
+        Err(e) => {
+            tracing::error!("图片下载请求失败 - URL: {}, 错误: {}", url, e);
+            return Err(anyhow!("请求图片失败: {}", e).into());
+        }
+    };
 
     if !response.status().is_success() {
+        tracing::error!("图片下载状态码错误 - URL: {}, 状态码: {}", url, response.status());
         return Err(anyhow!("图片请求失败: {}", response.status()).into());
     }
 
@@ -8211,8 +8225,14 @@ pub async fn get_current_user() -> Result<ApiResponse<crate::api::response::QRUs
     let client = reqwest::Client::new();
 
     // 调用B站API获取用户信息
-    let response = client
-        .get("https://api.bilibili.com/x/web-interface/nav")
+    let request_url = "https://api.bilibili.com/x/web-interface/nav";
+    tracing::info!("发起用户信息请求: {} - User ID: {}", request_url, cred.dedeuserid);
+    tracing::debug!("用户信息Cookie: SESSDATA={}..., bili_jct={}...",
+        &cred.sessdata[..std::cmp::min(cred.sessdata.len(), 20)],
+        &cred.bili_jct[..std::cmp::min(cred.bili_jct.len(), 20)]);
+
+    let request = client
+        .get(request_url)
         .header("Cookie", cookie_str)
         .header("Referer", "https://www.bilibili.com")
         .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0.0.0 Safari/537.36")
@@ -8221,15 +8241,32 @@ pub async fn get_current_user() -> Result<ApiResponse<crate::api::response::QRUs
         .header("sec-ch-ua-platform", "\"Windows\"")
         .header("sec-fetch-dest", "empty")
         .header("sec-fetch-mode", "cors")
-        .header("sec-fetch-site", "same-site")
-        .send()
-        .await
-        .map_err(|e| anyhow::anyhow!("请求B站API失败: {}", e))?;
+        .header("sec-fetch-site", "same-site");
 
-    let data: serde_json::Value = response
-        .json()
-        .await
-        .map_err(|e| anyhow::anyhow!("解析响应失败: {}", e))?;
+    // 用户信息请求头日志已在建造器时设置
+
+    let response = request.send().await;
+    let response = match response {
+        Ok(resp) => {
+            tracing::info!("用户信息请求成功 - 状态码: {}, URL: {}", resp.status(), resp.url());
+            resp
+        }
+        Err(e) => {
+            tracing::error!("用户信息请求失败 - User ID: {}, 错误: {}", cred.dedeuserid, e);
+            return Err(anyhow::anyhow!("请求B站API失败: {}", e).into());
+        }
+    };
+
+    let data: serde_json::Value = match response.json().await {
+        Ok(json) => {
+            tracing::debug!("用户信息响应解析成功 - User ID: {}", cred.dedeuserid);
+            json
+        }
+        Err(e) => {
+            tracing::error!("用户信息响应解析失败 - User ID: {}, 错误: {}", cred.dedeuserid, e);
+            return Err(anyhow::anyhow!("解析响应失败: {}", e).into());
+        }
+    };
 
     if data["code"].as_i64() != Some(0) {
         return Err(anyhow::anyhow!(

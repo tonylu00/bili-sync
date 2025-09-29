@@ -89,40 +89,50 @@ impl<'a> Video<'a> {
     /// 检查视频是否存在
     /// 调用视频详情API，如果返回-404则表示视频已被删除
     pub async fn check_video_exists(&self) -> Result<bool> {
-        tracing::debug!("检查视频是否存在: BVID={}", self.bvid);
+        let request_url = "https://api.bilibili.com/x/web-interface/view";
+        tracing::info!("检查视频是否存在: {} - BVID: {}", request_url, self.bvid);
 
-        let res = match self
+        let response = self
             .client
-            .request(Method::GET, "https://api.bilibili.com/x/web-interface/view")
+            .request(Method::GET, request_url)
             .await
             .query(&[("bvid", &self.bvid)])
             .send()
-            .await
-        {
-            Ok(response) => response,
-            Err(_) => {
-                // 网络错误，假设视频存在，避免误判
+            .await;
+
+        let res = match response {
+            Ok(resp) => {
+                tracing::info!("视频存在性检查请求成功 - 状态码: {}, BVID: {}", resp.status(), self.bvid);
+                resp
+            }
+            Err(e) => {
+                tracing::warn!("视频存在性检查网络错误，假设视频存在 - BVID: {}, 错误: {}", self.bvid, e);
                 return Ok(true);
             }
         };
 
         let json_res = match res.json::<serde_json::Value>().await {
-            Ok(json) => json,
-            Err(_) => {
-                // JSON解析错误，假设视频存在，避免误判
+            Ok(json) => {
+                tracing::debug!("视频存在性检查响应解析成功 - BVID: {}", self.bvid);
+                json
+            }
+            Err(e) => {
+                tracing::warn!("视频存在性检查JSON解析错误，假设视频存在 - BVID: {}, 错误: {}", self.bvid, e);
                 return Ok(true);
             }
         };
 
         // 检查API返回码
         if let Some(code) = json_res["code"].as_i64() {
+            tracing::debug!("视频存在性检查返回码: {} - BVID: {}", code, self.bvid);
             if code == -404 {
-                tracing::debug!("视频已被删除: BVID={}", self.bvid);
+                tracing::warn!("视频已被删除(API返回-404): BVID={}", self.bvid);
                 return Ok(false);
             }
         }
 
         // 其他情况假设视频存在
+        tracing::debug!("视频存在性检查完成，视频存在 - BVID: {}", self.bvid);
         Ok(true)
     }
 
@@ -655,15 +665,18 @@ impl<'a> Video<'a> {
             ("fourk", "1"),    // 启用4K支持
         ];
 
+        let encoded_params = encoded_query(params.clone(), MIXIN_KEY.load().as_deref());
         tracing::debug!("API参数: {:?}", params);
+        tracing::debug!("编码后参数: {:?}", encoded_params);
 
         let request_url = "https://api.bilibili.com/x/player/wbi/playurl";
+        tracing::info!("发起playurl请求: {} - BVID: {}, CID: {}", request_url, self.bvid, page.cid);
 
-        let res = self
+        let request = self
             .client
             .request(Method::GET, request_url)
             .await
-            .query(&encoded_query(params, MIXIN_KEY.load().as_deref()))
+            .query(&encoded_params)
             .header("Referer", "https://www.bilibili.com/")
             .header("Origin", "https://www.bilibili.com")
             .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0.0.0 Safari/537.36")
@@ -672,12 +685,27 @@ impl<'a> Video<'a> {
             .header("sec-ch-ua-platform", "\"Windows\"")
             .header("sec-fetch-dest", "empty")
             .header("sec-fetch-mode", "cors")
-            .header("sec-fetch-site", "cross-site")
-            .send()
-            .await?
+            .header("sec-fetch-site", "cross-site");
+
+        // 请求头日志已在建造器时设置
+
+        let response = request.send().await;
+        match &response {
+            Ok(resp) => {
+                tracing::info!("playurl请求成功 - 状态码: {}, URL: {}", resp.status(), resp.url());
+                tracing::debug!("响应头: {:?}", resp.headers());
+            }
+            Err(e) => {
+                tracing::error!("playurl请求失败 - BVID: {}, 错误: {}", self.bvid, e);
+            }
+        }
+
+        let res = response?
             .error_for_status()?
             .json::<serde_json::Value>()
             .await?;
+
+        tracing::debug!("playurl响应数据大小: {} bytes", serde_json::to_string(&res).unwrap_or_default().len());
 
         // 添加详细的API响应日志
         tracing::debug!(
@@ -843,17 +871,19 @@ impl<'a> Video<'a> {
 
         tracing::debug!("=== API参数调试 ===");
         tracing::debug!("视频: {} (aid: {})", self.bvid, self.aid);
+        let encoded_params = encoded_query(params.clone(), MIXIN_KEY.load().as_deref());
         tracing::debug!("分页: cid: {}", page.cid);
         tracing::debug!("请求参数: {:?}", params);
+        tracing::debug!("编码后参数: {:?}", encoded_params);
 
         let request_url = "https://api.bilibili.com/x/player/wbi/playurl";
-        tracing::debug!("请求URL: {}", request_url);
+        tracing::info!("发起playurl请求(分页): {} - BVID: {}, CID: {}", request_url, self.bvid, page.cid);
 
-        let res = self
+        let request = self
             .client
             .request(Method::GET, request_url)
             .await
-            .query(&encoded_query(params, MIXIN_KEY.load().as_deref()))
+            .query(&encoded_params)
             .header("Referer", "https://www.bilibili.com/")
             .header("Origin", "https://www.bilibili.com")
             .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0.0.0 Safari/537.36")
@@ -862,12 +892,27 @@ impl<'a> Video<'a> {
             .header("sec-ch-ua-platform", "\"Windows\"")
             .header("sec-fetch-dest", "empty")
             .header("sec-fetch-mode", "cors")
-            .header("sec-fetch-site", "cross-site")
-            .send()
-            .await?
+            .header("sec-fetch-site", "cross-site");
+
+        // 请求头日志已在建造器时设置
+
+        let response = request.send().await;
+        match &response {
+            Ok(resp) => {
+                tracing::info!("playurl请求成功(分页) - 状态码: {}, URL: {}", resp.status(), resp.url());
+                tracing::debug!("响应头: {:?}", resp.headers());
+            }
+            Err(e) => {
+                tracing::error!("playurl请求失败(分页) - BVID: {}, CID: {}, 错误: {}", self.bvid, page.cid, e);
+            }
+        }
+
+        let res = response?
             .error_for_status()?
             .json::<serde_json::Value>()
             .await?;
+
+        tracing::debug!("playurl响应数据大小(分页): {} bytes", serde_json::to_string(&res).unwrap_or_default().len());
 
         // 增强的API响应调试信息
         tracing::debug!("=== API响应调试 ===");
@@ -1069,8 +1114,9 @@ impl<'a> Video<'a> {
         tracing::debug!("番剧API参数: {:?}", params);
 
         let request_url = "https://api.bilibili.com/pgc/player/web/playurl";
+        tracing::info!("发起番剧playurl请求: {} - Episode ID: {}, CID: {}, 质量: {}", request_url, ep_id, page.cid, qn);
 
-        let res = self
+        let request = self
             .client
             .request(Method::GET, request_url)
             .await
@@ -1083,12 +1129,27 @@ impl<'a> Video<'a> {
             .header("sec-ch-ua-platform", "\"Windows\"")
             .header("sec-fetch-dest", "empty")
             .header("sec-fetch-mode", "cors")
-            .header("sec-fetch-site", "cross-site")
-            .send()
-            .await?
+            .header("sec-fetch-site", "cross-site");
+
+        // 番剧请求头日志已在建造器时设置
+
+        let response = request.send().await;
+        match &response {
+            Ok(resp) => {
+                tracing::info!("番剧playurl请求成功 - 状态码: {}, URL: {}", resp.status(), resp.url());
+                tracing::debug!("番剧响应头: {:?}", resp.headers());
+            }
+            Err(e) => {
+                tracing::error!("番剧playurl请求失败 - Episode ID: {}, CID: {}, 错误: {}", ep_id, page.cid, e);
+            }
+        }
+
+        let res = response?
             .error_for_status()?
             .json::<serde_json::Value>()
             .await?;
+
+        tracing::debug!("番剧playurl响应数据大小: {} bytes", serde_json::to_string(&res).unwrap_or_default().len());
 
         // 添加详细的番剧API响应日志
         tracing::debug!(
@@ -1187,11 +1248,10 @@ impl<'a> Video<'a> {
             full_url.push_str(&format!("{}={}", key, value));
         }
 
-        tracing::debug!("==================== 番剧API请求 ====================");
+        tracing::info!("发起番剧playurl请求(分页): {} - EP ID: {}, CID: {}", request_url, ep_id, page.cid);
         tracing::debug!("完整请求URL: {}", full_url);
-        tracing::debug!("==================================================");
 
-        let res = self
+        let request = self
             .client
             .request(Method::GET, request_url)
             .await
@@ -1204,12 +1264,27 @@ impl<'a> Video<'a> {
             .header("sec-ch-ua-platform", "\"Windows\"")
             .header("sec-fetch-dest", "empty")
             .header("sec-fetch-mode", "cors")
-            .header("sec-fetch-site", "cross-site")
-            .send()
-            .await?
+            .header("sec-fetch-site", "cross-site");
+
+        // 番剧请求头日志已在建造器时设置
+
+        let response = request.send().await;
+        match &response {
+            Ok(resp) => {
+                tracing::info!("番剧playurl请求成功(分页) - 状态码: {}, URL: {}", resp.status(), resp.url());
+                tracing::debug!("番剧响应头(分页): {:?}", resp.headers());
+            }
+            Err(e) => {
+                tracing::error!("番剧playurl请求失败(分页) - EP ID: {}, CID: {}, 错误: {}", ep_id, page.cid, e);
+            }
+        }
+
+        let res = response?
             .error_for_status()?
             .json::<serde_json::Value>()
             .await?;
+
+        tracing::debug!("番剧playurl响应数据大小(分页): {} bytes", serde_json::to_string(&res).unwrap_or_default().len());
 
         // 增强的番剧API响应调试信息
         tracing::debug!("=== 番剧API响应调试 ===");

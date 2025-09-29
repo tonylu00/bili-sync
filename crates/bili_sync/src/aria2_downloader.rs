@@ -110,14 +110,19 @@ pub struct Aria2Downloader {
 impl Aria2Downloader {
     /// 创建新的aria2下载器实例，支持多进程
     pub async fn new(client: Client) -> Result<Self> {
+        tracing::info!("初始化aria2下载器...");
+
         // 启动前先清理所有旧的aria2进程
+        tracing::debug!("清理旧的aria2进程...");
         Self::cleanup_all_aria2_processes().await;
 
+        tracing::debug!("提取aria2可执行文件...");
         let aria2_binary_path = Self::extract_aria2_binary().await?;
+        tracing::info!("aria2可执行文件路径: {}", aria2_binary_path.display());
 
         // 确定进程数量：根据系统资源动态计算
         let instance_count = Self::calculate_optimal_instance_count();
-        debug!("创建 {} 个aria2进程实例", instance_count);
+        tracing::info!("计算得出最佳aria2实例数: {}", instance_count);
 
         let mut downloader = Self {
             client,
@@ -128,13 +133,15 @@ impl Aria2Downloader {
         };
 
         // 启动所有aria2进程实例
+        tracing::info!("正在启动{}aria2实例...", instance_count);
         downloader.start_all_instances().await?;
+        tracing::info!("aria2实例启动完成");
 
         // 检查是否启用aria2健康检查
         let config = crate::config::with_config(|bundle| bundle.config.clone());
 
         if config.enable_aria2_health_check {
-            debug!("aria2健康检查已启用，启动监控任务");
+            tracing::info!("aria2健康检查已启用，正在启动监控任务...");
 
             // 智能健康检查监控任务
             let instances = Arc::clone(&downloader.aria2_instances);
@@ -965,6 +972,12 @@ impl Aria2Downloader {
         };
 
         // 构建基础选项 - 增强网络容错
+        tracing::info!("配置aria2下载任务 - 文件: {}, 线程数: {}, 目标目录: {}", file_name, threads, dir);
+        tracing::debug!("aria2下载链接数量: {}", urls.len());
+        for (i, url) in urls.iter().enumerate() {
+            tracing::debug!("aria2下载链接{}: {}", i+1, url);
+        }
+
         let mut options = serde_json::json!({
             "dir": dir,
             "out": file_name,
@@ -1034,6 +1047,9 @@ impl Aria2Downloader {
                 Duration::from_millis(1000),
                 Duration::from_secs(10),
                 || async {
+                    tracing::debug!("发送aria2 API请求 - URL: {}", url);
+                    tracing::debug!("aria2 API请求载荷: {}", serde_json::to_string_pretty(&payload).unwrap_or_default());
+
                     let response = self
                         .client
                         .post(&url)
@@ -1042,7 +1058,10 @@ impl Aria2Downloader {
                         .await
                         .context("发送添加下载任务请求失败")?;
 
+                    tracing::debug!("aria2 API响应状态: {}", response.status());
+
                     let json: serde_json::Value = response.json().await?;
+                    tracing::debug!("aria2 API响应数据: {}", serde_json::to_string_pretty(&json).unwrap_or_default());
 
                     if let Some(error) = json.get("error") {
                         bail!("aria2 API错误: {}", error);
