@@ -267,6 +267,12 @@ pub async fn video_downloader(connection: Arc<DatabaseConnection>) {
         }
 
         'inner: {
+            // 如果没有启用的视频源，跳过扫描
+            if enabled_sources_count == 0 {
+                debug!("没有启用的视频源，跳过本轮扫描");
+                break 'inner;
+            }
+
             // 在开始扫描前再次检查是否暂停
             if TASK_CONTROLLER.is_paused() {
                 debug!("扫描开始前检测到暂停信号，跳过本轮扫描");

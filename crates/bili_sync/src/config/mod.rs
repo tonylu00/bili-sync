@@ -94,6 +94,22 @@ fn default_bind_address() -> String {
     "0.0.0.0:12345".to_string()
 }
 
+fn default_video_name() -> Cow<'static, str> {
+    Cow::Borrowed("{{upper_name}}/{{title}}")
+}
+
+fn default_page_name() -> Cow<'static, str> {
+    Cow::Borrowed("{{pubtime}}-{{bvid}}-{{truncate title 20}}")
+}
+
+fn default_interval() -> u64 {
+    1200
+}
+
+fn default_upper_path() -> PathBuf {
+    CONFIG_DIR.join("upper_face")
+}
+
 // 移除不再需要的默认函数
 // fn default_download_all_seasons() -> bool {
 //     false
@@ -129,11 +145,15 @@ pub struct Config {
     pub auth_token: Option<String>,
     #[serde(default = "default_bind_address")]
     pub bind_address: String,
+    #[serde(default)]
     pub credential: ArcSwapOption<Credential>,
+    #[serde(default)]
     pub filter_option: FilterOption,
     #[serde(default)]
     pub danmaku_option: DanmakuOption,
+    #[serde(default = "default_video_name")]
     pub video_name: Cow<'static, str>,
+    #[serde(default = "default_page_name")]
     pub page_name: Cow<'static, str>,
     #[serde(default = "default_multi_page_name")]
     pub multi_page_name: Cow<'static, str>,
@@ -145,7 +165,9 @@ pub struct Config {
     pub bangumi_folder_name: Cow<'static, str>,
     #[serde(default = "default_collection_folder_mode")]
     pub collection_folder_mode: Cow<'static, str>,
+    #[serde(default = "default_interval")]
     pub interval: u64,
+    #[serde(default = "default_upper_path")]
     pub upper_path: PathBuf,
     #[serde(default)]
     pub nfo_time_type: NFOTimeType,

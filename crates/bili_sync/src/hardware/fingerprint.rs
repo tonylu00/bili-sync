@@ -468,7 +468,7 @@ impl HardwareFingerprint {
         }
 
         // 首次初始化：为新用户加载或生成指纹并设置全局状态
-        info!("首次为用户 {} 初始化硬件指纹", user_id);
+        info!("为用户 {} 初始化硬件指纹", user_id);
         let fingerprint = Self::load_or_create_for_user(user_id, db, false).await?;
 
         // 设置全局指纹（只在首次设置时生效）
@@ -503,29 +503,6 @@ impl HardwareFingerprint {
         Ok(())
     }
 
-    // 确定配置类型名称
-    fn determine_config_type(fingerprint: &HardwareFingerprint) -> String {
-        let gpu_info = &fingerprint.hardware.gpu;
-        let browser_type = if fingerprint.hardware.webgl.vendor == "Mozilla" {
-            "firefox"
-        } else {
-            "chrome"
-        };
-
-        if gpu_info.angle_info.contains("RTX 4090") {
-            format!("{}_gaming_high_end", browser_type)
-        } else if gpu_info.angle_info.contains("RTX 4070") {
-            format!("{}_gaming_mainstream", browser_type)
-        } else if gpu_info.angle_info.contains("RX 7900 XTX") {
-            format!("{}_workstation_high_end", browser_type)
-        } else if gpu_info.angle_info.contains("RX 7800 XT") {
-            format!("{}_workstation_setup", browser_type)
-        } else if gpu_info.angle_info.contains("Arc A") {
-            format!("{}_budget", browser_type)
-        } else {
-            format!("{}_random", browser_type)
-        }
-    }
 
     // 记录硬件指纹详细信息
     fn log_fingerprint_details(fingerprint: &HardwareFingerprint, is_new: bool) {
@@ -556,50 +533,9 @@ impl HardwareFingerprint {
         info!("===========================");
     }
 
-    // 检查硬件指纹是否已初始化
-    pub fn is_initialized() -> bool {
-        GLOBAL_HARDWARE_FINGERPRINT.get().is_some()
-    }
-
     // 获取全局硬件指纹（如果已初始化）
     pub fn get_global_if_initialized() -> Option<&'static HardwareFingerprint> {
         GLOBAL_HARDWARE_FINGERPRINT.get()
-    }
-
-    // 获取全局固定的硬件指纹（兼容性方法 - 仅在测试或特殊情况下使用）
-    pub fn get_global() -> &'static HardwareFingerprint {
-        GLOBAL_HARDWARE_FINGERPRINT.get_or_init(|| {
-            warn!("硬件指纹未正确初始化，生成临时随机指纹");
-            let fingerprint = Self::ultimate_random();
-
-            // 记录选择的硬件配置，调用所有信息获取方法
-            let gpu_name = fingerprint.get_gpu_name();
-            let browser_type = fingerprint.get_browser_type();
-            let (width, height, _) = fingerprint.get_screen_info();
-
-            // 获取详细的硬件信息
-            let gpu_vendor = fingerprint.hardware.gpu.get_vendor_name();
-            let gpu_full_info = fingerprint.hardware.gpu.get_full_info();
-            let webgl_context = fingerprint.hardware.webgl.get_full_context_info();
-            let webgl_extensions = fingerprint.hardware.webgl.get_extensions_string();
-
-            info!("=== 临时硬件指纹已生成 ===");
-            info!("GPU: {}", gpu_name);
-            info!("GPU厂商: {}", gpu_vendor);
-            info!("GPU详细信息: {}", gpu_full_info);
-            info!("浏览器: {}", browser_type);
-            info!("WebGL上下文: {}", webgl_context);
-            info!("WebGL扩展: {}", if webgl_extensions.len() > 100 {
-                format!("{}... (共{}个字符)", &webgl_extensions[..100], webgl_extensions.len())
-            } else {
-                webgl_extensions
-            });
-            info!("分辨率: {}x{}", width, height);
-            info!("注意: 此为临时指纹，用户登录后将重新生成");
-            info!("===========================");
-
-            fingerprint
-        })
     }
 
     // 获取GPU名称（用于日志）
@@ -636,37 +572,6 @@ impl HardwareFingerprint {
         }
     }
 
-    // Public accessor methods for persistence layer
-    pub fn get_hardware_info(&self) -> &HardwareInfo {
-        &self.hardware
-    }
-
-    pub fn get_screen_resolution(&self) -> (u32, u32) {
-        self.screen_resolution
-    }
-
-    pub fn get_device_pixel_ratio(&self) -> f32 {
-        self.device_pixel_ratio
-    }
-
-    pub fn get_timezone_offset(&self) -> i32 {
-        self.timezone_offset
-    }
-
-    // Constructor for persistence layer
-    pub fn from_components(
-        hardware: HardwareInfo,
-        screen_resolution: (u32, u32),
-        device_pixel_ratio: f32,
-        timezone_offset: i32
-    ) -> Self {
-        Self {
-            hardware,
-            screen_resolution,
-            device_pixel_ratio,
-            timezone_offset,
-        }
-    }
 
     // 从JSON数据恢复硬件指纹
     pub fn from_json(json_data: &serde_json::Value) -> Result<Self> {
