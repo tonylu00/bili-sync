@@ -47,10 +47,8 @@ async fn main() -> Result<()> {
 
     // 初始化基于用户的硬件指纹系统
     if let Err(e) = init_hardware_fingerprint_for_user(&connection).await {
-        warn!("硬件指纹初始化失败: {}, 使用默认配置", e);
-        // 如果初始化失败，回退到原有的方式
-        use crate::hardware::HardwareFingerprint;
-        let _ = HardwareFingerprint::get_global();
+        debug!("硬件指纹初始化跳过: {}", e);
+        // 无有效用户ID时跳过硬件指纹初始化，等待用户登录后再初始化
     }
 
     // 恢复断点信息到内存
@@ -207,12 +205,12 @@ async fn init_hardware_fingerprint_for_user(connection: &sea_orm::DatabaseConnec
 
             info!("用户 {} 的硬件指纹初始化完成", user_id);
         } else {
-            warn!("无效的用户ID格式: {}", credential.dedeuserid);
-            return Err(anyhow::anyhow!("无效的用户ID格式"));
+            debug!("无效的用户ID格式: {}，跳过硬件指纹初始化", credential.dedeuserid);
+            return Err(anyhow::anyhow!("无效的用户ID格式，等待用户登录"));
         }
     } else {
-        warn!("未找到有效的用户凭据，将使用默认硬件指纹");
-        return Err(anyhow::anyhow!("未找到有效的用户凭据"));
+        debug!("未找到有效的用户凭据，跳过硬件指纹初始化");
+        return Err(anyhow::anyhow!("未找到有效的用户凭据，等待用户登录"));
     }
 
     Ok(())

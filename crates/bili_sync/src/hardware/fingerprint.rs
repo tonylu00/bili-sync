@@ -384,20 +384,20 @@ impl HardwareFingerprint {
     pub async fn load_or_create_for_user(user_id: i64, db: &sea_orm::DatabaseConnection) -> Result<HardwareFingerprint> {
         let manager = HardwareFingerprintManager::new(db.clone());
 
-        // 先尝试从数据库加载
-        if let Some(fingerprint) = manager.load_for_user(user_id).await? {
-            info!("成功加载用户 {} 的硬件指纹", user_id);
-            return Ok(fingerprint);
-        }
+        // 注释掉加载旧指纹的逻辑，每次登录都生成新的随机指纹
+        // if let Some(fingerprint) = manager.load_for_user(user_id).await? {
+        //     info!("成功加载用户 {} 的硬件指纹", user_id);
+        //     return Ok(fingerprint);
+        // }
 
-        // 如果数据库中没有，则生成新的硬件指纹
-        info!("用户 {} 首次使用，生成新的硬件指纹", user_id);
+        // 每次登录都生成新的随机硬件指纹
+        info!("用户 {} 重新登录，生成新的随机硬件指纹", user_id);
         let fingerprint = Self::ultimate_random();
 
         // 确定配置类型
         let config_type = Self::determine_config_type(&fingerprint);
 
-        // 保存到数据库
+        // 保存到数据库（会自动删除旧记录）
         manager.save_for_user(user_id, &fingerprint, &config_type).await?;
 
         // 记录详细信息
@@ -414,9 +414,9 @@ impl HardwareFingerprint {
                 debug!("用户 {} 硬件指纹已初始化，无需重新加载", user_id);
                 return Ok(());
             } else {
-                warn!("检测到用户切换：{} -> {}，将重新初始化硬件指纹", current_user, user_id);
-                // 清除当前指纹（通过重置OnceLock实现 - 这里需要重新设计）
-                // 注意：OnceLock一旦设置就无法清除，所以我们需要换个策略
+                warn!("检测到用户切换：{} -> {}，需要重新初始化硬件指纹", current_user, user_id);
+                // OnceLock无法重置，需要程序重启后才能更换用户硬件指纹
+                return Err(anyhow::anyhow!("用户切换需要重启程序以使用新的硬件指纹"));
             }
         }
 
@@ -426,6 +426,31 @@ impl HardwareFingerprint {
         // 设置全局指纹（只在首次设置时生效）
         let _ = GLOBAL_HARDWARE_FINGERPRINT.set(fingerprint);
         let _ = CURRENT_USER_ID.set(user_id);
+
+        Ok(())
+    }
+
+    // 动态重新初始化硬件指纹（用于配置更新后）
+    pub async fn reinit_if_user_changed(db: &sea_orm::DatabaseConnection) -> Result<()> {
+        use crate::config::CONFIG_BUNDLE;
+
+        debug!("检查用户ID是否变更，决定是否重新初始化硬件指纹");
+
+        let config_bundle = CONFIG_BUNDLE.load();
+        if let Some(credential) = config_bundle.config.credential.load_full() {
+            if let Ok(user_id) = credential.dedeuserid.parse::<i64>() {
+                info!("检测到有效用户ID: {}，尝试初始化硬件指纹", user_id);
+
+                // 尝试初始化硬件指纹
+                Self::init_global_for_user(user_id, db).await?;
+
+                info!("用户 {} 的硬件指纹重新初始化完成", user_id);
+            } else {
+                debug!("用户ID格式无效: {}", credential.dedeuserid);
+            }
+        } else {
+            debug!("未找到有效的用户凭据");
+        }
 
         Ok(())
     }
@@ -483,9 +508,20 @@ impl HardwareFingerprint {
         info!("===========================");
     }
 
-    // 获取全局固定的硬件指纹（兼容性方法）
+    // 检查硬件指纹是否已初始化
+    pub fn is_initialized() -> bool {
+        GLOBAL_HARDWARE_FINGERPRINT.get().is_some()
+    }
+
+    // 获取全局硬件指纹（如果已初始化）
+    pub fn get_global_if_initialized() -> Option<&'static HardwareFingerprint> {
+        GLOBAL_HARDWARE_FINGERPRINT.get()
+    }
+
+    // 获取全局固定的硬件指纹（兼容性方法 - 仅在测试或特殊情况下使用）
     pub fn get_global() -> &'static HardwareFingerprint {
         GLOBAL_HARDWARE_FINGERPRINT.get_or_init(|| {
+            warn!("硬件指纹未正确初始化，生成临时随机指纹");
             let fingerprint = Self::ultimate_random();
 
             // 记录选择的硬件配置，调用所有信息获取方法
@@ -499,7 +535,7 @@ impl HardwareFingerprint {
             let webgl_context = fingerprint.hardware.webgl.get_full_context_info();
             let webgl_extensions = fingerprint.hardware.webgl.get_extensions_string();
 
-            info!("=== 会话硬件指纹已固定 ===");
+            info!("=== 临时硬件指纹已生成 ===");
             info!("GPU: {}", gpu_name);
             info!("GPU厂商: {}", gpu_vendor);
             info!("GPU详细信息: {}", gpu_full_info);
@@ -511,6 +547,7 @@ impl HardwareFingerprint {
                 webgl_extensions
             });
             info!("分辨率: {}x{}", width, height);
+            info!("注意: 此为临时指纹，用户登录后将重新生成");
             info!("===========================");
 
             fingerprint
@@ -586,7 +623,14 @@ impl HardwareFingerprint {
 
 impl Default for HardwareFingerprint {
     fn default() -> Self {
-        // 返回全局固定的硬件指纹，确保会话期间一致性
-        Self::get_global().clone()
+        // 检查是否已初始化全局硬件指纹
+        if let Some(fingerprint) = Self::get_global_if_initialized() {
+            // 使用已初始化的全局硬件指纹，确保会话期间一致性
+            fingerprint.clone()
+        } else {
+            // 未初始化时生成临时随机指纹，不保存到全局状态
+            debug!("硬件指纹未初始化，生成临时随机指纹用于API调用");
+            Self::ultimate_random()
+        }
     }
 }

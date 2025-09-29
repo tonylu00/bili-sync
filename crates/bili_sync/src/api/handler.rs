@@ -8162,6 +8162,14 @@ pub async fn poll_qr_status(
                     // 回退到传统的重新加载方式
                     crate::config::reload_config();
                 }
+
+                // 用户登录成功后，尝试初始化硬件指纹
+                use crate::hardware::HardwareFingerprint;
+                if let Err(e) = HardwareFingerprint::reinit_if_user_changed(db.as_ref()).await {
+                    debug!("硬件指纹初始化失败: {}", e);
+                } else {
+                    info!("登录后硬件指纹初始化完成");
+                }
             }
 
             crate::api::response::QRPollResponse {
