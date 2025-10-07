@@ -1370,6 +1370,7 @@ async fn write_upper_nfo(mut writer: Writer<&mut BufWriter<&mut Vec<u8>>>, upper
 
     /// 计算番剧的实际总季数
     /// 通过分析番剧标题中的季度信息来推断总季数
+    #[allow(dead_code)]
     fn calculate_total_seasons_from_title(title: &str) -> i32 {
         // 如果标题包含季度信息，尝试提取季度数字
         if let Some(season_match) = regex::Regex::new(r"第([一二三四五六七八九十\d]+)季")
@@ -1691,8 +1692,8 @@ impl<'a> From<&'a video::Model> for TVShow<'a> {
             country: None,              // 使用默认值（中国）
             studio: None,               // 使用默认值（哔哩哔哩）
             status: Some("Continuing"), // 默认持续播出状态
-            total_seasons: Some(NFO::calculate_total_seasons_from_title(nfo_title)),
-            total_episodes: None, // 从分页数量推断
+            total_seasons: None,        // 不生成totalseasons，让Jellyfin自动发现
+            total_episodes: None,       // 从分页数量推断
             duration: None,       // video模型中没有duration字段
             view_count: None,     // video模型中没有view_count字段
             like_count: None,     // video模型中没有like_count字段
@@ -1839,9 +1840,7 @@ impl<'a> TVShow<'a> {
             country,
             studio: None, // 可以从制作公司获取，但API中暂无此字段
             status,
-            total_seasons: season_info
-                .total_seasons
-                .or_else(|| Some(NFO::calculate_total_seasons_from_title(&season_info.title))),
+            total_seasons: None, // 不生成totalseasons，让Jellyfin自动发现
             total_episodes: season_info.total_episodes,
             duration: None, // 单集平均时长，需要计算
             view_count: season_info.total_views,
@@ -1912,12 +1911,24 @@ impl<'a> From<&'a page::Model> for Episode<'a> {
 impl<'a> Episode<'a> {
     /// 从视频模型和页面模型创建Episode，使用正确的episode_number
     pub fn from_video_and_page(video: &'a video::Model, page: &'a page::Model) -> Self {
+        // 判断是否为番剧且启用了Season结构
+        let is_bangumi = video.source_type == Some(1);
+        let config = crate::config::reload_config();
+        let use_unified_season = is_bangumi && config.bangumi_use_season_structure;
+
+        // 启用Season结构时，统一使用season=1；否则使用原始season_number
+        let season_number = if use_unified_season {
+            1
+        } else {
+            video.season_number.unwrap_or(1)
+        };
+
         Self {
             name: &page.name,
             original_title: &page.name,
             pid: page.pid.to_string(),
             plot: Some(&video.intro),                                 // 使用视频简介
-            season: video.season_number.unwrap_or(1),                 // 使用video的season_number
+            season: season_number,                                    // 根据配置使用统一season或原始season_number
             episode_number: video.episode_number.unwrap_or(page.pid), // 使用video的episode_number
             aired: Some(video.pubtime),                               // 使用视频发布时间
             duration: Some(page.duration as i32 / 60),                // 分页时长转换为分钟

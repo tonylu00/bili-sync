@@ -64,6 +64,7 @@ pub struct SeasonInfo {
     pub publish_time: Option<String>,          // 发布时间
     pub total_views: Option<i64>,              // 总播放量
     pub total_favorites: Option<i64>,          // 总收藏数
+    #[allow(dead_code)]
     pub total_seasons: Option<i32>,            // 总季数（从API的seasons数组计算）
     pub show_season_type: Option<i32>,         // 番剧季度类型
 }
@@ -1495,7 +1496,7 @@ pub async fn download_video_pages(
             let series_title = api_title.as_deref().unwrap_or(&video_model.name);
             let season_title = format_args.get("season_title").and_then(|v| v.as_str());
 
-            let (base_series_name, season_number) =
+            let (base_series_name, _season_number) =
                 crate::utils::bangumi_name_extractor::BangumiNameExtractor::extract_series_name_and_season(
                     series_title,
                     season_title,
@@ -1504,9 +1505,8 @@ pub async fn download_video_pages(
             // 系列根目录路径，延迟创建
             let series_root_path = bangumi_root_path.join(&base_series_name);
 
-            // 生成标准的Season文件夹名称
-            let season_folder_name =
-                crate::utils::bangumi_name_extractor::BangumiNameExtractor::generate_season_folder_name(season_number);
+            // 生成标准的Season文件夹名称，统一使用Season 01
+            let season_folder_name = "Season 01".to_string();
             let season_path = series_root_path.join(&season_folder_name);
 
             (season_path, Some(season_folder_name), Some(series_root_path))
@@ -1979,17 +1979,11 @@ pub async fn download_video_pages(
     let season_nfo_result = if is_bangumi && season_info.is_some() {
         let config = crate::config::reload_config();
         if config.bangumi_use_season_structure {
-            // 提取季度信息来生成season.nfo
+            // 提取季度信息来生成season.nfo，统一使用season_number=1
             let series_title = season_info.as_ref().unwrap().title.as_str();
+            let season_number = 1; // 启用Season结构时统一使用1
 
-            // 直接从series_title中提取季度信息
-            let (_, season_number) =
-                crate::utils::bangumi_name_extractor::BangumiNameExtractor::extract_series_name_and_season(
-                    series_title,
-                    None, // 让算法从title中自动提取
-                );
-
-            info!("番剧「{}」提取的季度编号: {}", series_title, season_number);
+            info!("番剧「{}」统一使用季度编号: {}", series_title, season_number);
 
             // 独立检查season.nfo文件是否存在（不依赖tvshow.nfo检查）
             let season_nfo_path = base_path.join("season.nfo");
@@ -2015,28 +2009,28 @@ pub async fn download_video_pages(
     let season_images_result = if is_bangumi && season_info.is_some() && should_download_upper {
         let config = crate::config::reload_config();
         if config.bangumi_use_season_structure {
-            // 获取季度编号用于生成正确的文件名
-            let series_title = season_info.as_ref().unwrap().title.as_str();
-            let (_, season_number) =
-                crate::utils::bangumi_name_extractor::BangumiNameExtractor::extract_series_name_and_season(
-                    series_title,
-                    None,
-                );
+            // 统一使用season_number=1
+            let _series_title = season_info.as_ref().unwrap().title.as_str();
+            let season_number = 1;
 
             // 季度级图片应该放在系列根目录，使用标准命名
             let series_root = bangumi_folder_path.as_ref().unwrap();
-            let poster_path = series_root.join(format!("Season{:02}-thumb.jpg", season_number));
-            let fanart_path = series_root.join(format!("Season{:02}-fanart.jpg", season_number));
+            let poster_path = series_root.join("Season01-thumb.jpg");
+            let fanart_path = series_root.join("Season01-fanart.jpg");
 
-            // 独立检查季度级图片文件是否存在
-            let should_download_season_images = separate_status[0] && (!poster_path.exists() || !fanart_path.exists());
+            // 定义所有三个Season级别文件路径
+            let season_poster_path = series_root.join("Season01-poster.jpg");
 
-            info!("准备下载季度级图片到: {:?} 和 {:?}", poster_path, fanart_path);
+            // 独立检查季度级图片文件是否存在（三个文件都要检查）
+            let should_download_season_images = separate_status[0] &&
+                (!poster_path.exists() || !fanart_path.exists() || !season_poster_path.exists());
 
-            // 季度级图片：poster使用封面，fanart使用横版封面（优先级：横版封面 > 专门背景图 > 竖版封面 > 新EP封面截图）
+            info!("准备下载季度级图片到: {:?}, {:?} 和 {:?}", poster_path, fanart_path, season_poster_path);
+
+            // 季度级图片：thumb使用横版封面，fanart使用竖版封面
             let season_info_ref = season_info.as_ref().unwrap();
-            let season_cover_url = season_info_ref.cover.as_deref();
-            let season_fanart_url = season_info_ref
+            // thumb使用横版封面（优先级：横版封面 > 专门背景图 > 竖版封面 > 新EP封面截图）
+            let season_thumb_url = season_info_ref
                 .horizontal_cover_169
                 .as_deref()
                 .filter(|s| !s.is_empty())
@@ -2050,29 +2044,62 @@ pub async fn download_video_pages(
                     .new_ep_cover
                     .as_deref()
                     .filter(|s| !s.is_empty()));
+            // fanart使用竖版封面
+            let season_fanart_url = season_info_ref.cover.as_deref().filter(|s| !s.is_empty());
 
-            info!("Season级别fanart选择逻辑:");
-            info!("  最终选择的season fanart URL: {:?}", season_fanart_url);
+            info!("Season级别图片选择逻辑:");
+            info!("  Season{:02}-thumb.jpg URL: {:?}", season_number, season_thumb_url);
+            info!("  Season{:02}-fanart.jpg URL: {:?}", season_number, season_fanart_url);
 
-            fetch_video_poster(
-                should_download_season_images,
-                &video_model,
-                downloader,
-                poster_path,
-                fanart_path,
-                token.clone(),
-                season_fanart_url, // 使用横版封面作为thumb
-                season_cover_url,  // 使用季度封面作为fanart
-            )
-            .await
+            // 并行下载三个Season级别的图片文件
+            let (thumb_result, fanart_result, poster_result) = tokio::join!(
+                // Season01-thumb.jpg (横版封面)
+                fetch_video_poster(
+                    should_download_season_images,
+                    &video_model,
+                    downloader,
+                    poster_path.clone(), // 这里实际是thumb路径
+                    std::path::PathBuf::from("/dev/null"), // 占位，因为我们只下载一个文件
+                    token.clone(),
+                    season_thumb_url,  // 使用横版封面作为thumb
+                    None, // 不使用fanart URL
+                ),
+                // Season01-fanart.jpg (竖版封面)
+                fetch_video_poster(
+                    should_download_season_images,
+                    &video_model,
+                    downloader,
+                    fanart_path.clone(),
+                    std::path::PathBuf::from("/dev/null"), // 占位，因为我们只下载一个文件
+                    token.clone(),
+                    season_fanart_url, // 使用竖版封面作为fanart
+                    None, // 不使用fanart URL
+                ),
+                // Season01-poster.jpg (竖版封面，Jellyfin优先级最高)
+                fetch_bangumi_poster(
+                    should_download_season_images,
+                    &video_model,
+                    downloader,
+                    season_poster_path,
+                    token.clone(),
+                    season_fanart_url, // 使用竖版封面作为主封面
+                )
+            );
+
+            // 返回综合结果
+            Some(match (thumb_result, fanart_result, poster_result) {
+                (Ok(ExecutionStatus::Succeeded), Ok(ExecutionStatus::Succeeded), Ok(ExecutionStatus::Succeeded)) => ExecutionStatus::Succeeded,
+                (Ok(_), Ok(_), Ok(_)) => ExecutionStatus::Skipped,
+                _ => ExecutionStatus::Failed(anyhow::anyhow!("Season级别图片下载失败")),
+            })
         } else {
-            Ok(ExecutionStatus::Skipped)
+            Some(ExecutionStatus::Skipped)
         }
     } else {
-        Ok(ExecutionStatus::Skipped)
+        Some(ExecutionStatus::Skipped)
     };
 
-    let (res_1, res_3, res_4, res_5) = tokio::join!(
+    let (res_1, res_2, res_3, res_4, res_5) = tokio::join!(
         // 下载视频封面（番剧和普通视频采用不同策略）
         fetch_video_poster(
             if is_bangumi {
@@ -2174,6 +2201,32 @@ pub async fn download_video_pages(
                 None
             },
         ),
+        // 下载番剧主封面 poster.jpg（仅番剧需要，用于详情页左侧显示）
+        fetch_bangumi_poster(
+            is_bangumi && bangumi_folder_path.is_some() && should_download_bangumi_poster,
+            &video_model,
+            downloader,
+            if is_bangumi && bangumi_folder_path.is_some() {
+                bangumi_folder_path
+                    .as_ref()
+                    .unwrap()
+                    .join("poster.jpg")
+            } else {
+                // 非番剧不需要 poster.jpg，使用占位路径
+                std::path::PathBuf::from("/dev/null")
+            },
+            token.clone(),
+            // 使用竖版封面作为主封面
+            if is_bangumi && season_info.is_some() {
+                let season = season_info.as_ref().unwrap();
+                let poster_url = season.cover.as_deref().filter(|s| !s.is_empty());
+                info!("番剧「{}」poster.jpg选择逻辑:", video_model.name);
+                info!("  最终选择的poster URL: {:?}", poster_url);
+                poster_url
+            } else {
+                None
+            },
+        ),
         // 下载 Up 主头像（番剧跳过，因为番剧没有UP主信息）
         fetch_upper_face(
             separate_status[2] && should_download_upper && !is_bangumi,
@@ -2212,10 +2265,11 @@ pub async fn download_video_pages(
         .collect::<Vec<_>>();
     status.update_status(&main_results);
 
-    // 额外的结果单独处理（季度NFO和季度图片）
+    // 额外的结果单独处理（季度NFO、季度图片和番剧主封面）
     let extra_results = [
         Ok(season_nfo_result.unwrap_or(ExecutionStatus::Skipped)),
         Ok(season_images_result.unwrap_or(ExecutionStatus::Skipped)),
+        res_2, // 番剧主封面 poster.jpg 的结果
     ]
     .into_iter()
     .map(Into::into)
@@ -3495,6 +3549,44 @@ pub async fn generate_upper_nfo(
         return Ok(ExecutionStatus::Skipped);
     }
     generate_nfo(NFO::Upper(video_model.into()), nfo_path).await?;
+    Ok(ExecutionStatus::Succeeded)
+}
+
+pub async fn fetch_bangumi_poster(
+    should_run: bool,
+    video_model: &video::Model,
+    downloader: &UnifiedDownloader,
+    poster_path: PathBuf,
+    token: CancellationToken,
+    custom_poster_url: Option<&str>,
+) -> Result<ExecutionStatus> {
+    if !should_run {
+        return Ok(ExecutionStatus::Skipped);
+    }
+
+    info!("开始处理番剧「{}」的主封面 poster.jpg", video_model.name);
+    info!("  poster路径: {:?}", poster_path);
+    info!("  custom_poster_url: {:?}", custom_poster_url);
+
+    // 检查文件是否已存在，避免重复下载
+    if poster_path.exists() {
+        info!("  ✓ poster.jpg文件已存在，跳过下载");
+        return Ok(ExecutionStatus::Skipped);
+    }
+
+    // 下载 poster.jpg 文件
+    ensure_parent_dir_for_file(&poster_path).await?;
+
+    let poster_url = custom_poster_url.unwrap_or(video_model.cover.as_str());
+    let urls = vec![poster_url];
+
+    tokio::select! {
+        biased;
+        _ = token.cancelled() => return Ok(ExecutionStatus::Skipped),
+        res = downloader.fetch_with_fallback(&urls, &poster_path) => res,
+    }?;
+
+    info!("✓ 成功下载番剧主封面 poster.jpg: {}", poster_url);
     Ok(ExecutionStatus::Succeeded)
 }
 

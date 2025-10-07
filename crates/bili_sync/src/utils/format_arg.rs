@@ -127,9 +127,16 @@ pub fn bangumi_page_format_args(
     let episode_number = video_model.episode_number.unwrap_or(page_model.pid);
 
     // 优先从标题中提取季度编号，如果提取失败则使用数据库中存储的值，最后默认为1
-    let season_number = match extract_season_number(&video_model.name) {
+    let raw_season_number = match extract_season_number(&video_model.name) {
         1 => video_model.season_number.unwrap_or(1), // 如果从标题提取到1，可能是默认值，使用数据库值
         extracted => extracted,                      // 从标题提取到了明确的季度信息，使用提取的值
+    };
+
+    // 如果启用了番剧Season结构，统一使用season=1
+    let season_number = if current_config.bangumi_use_season_structure {
+        1
+    } else {
+        raw_season_number
     };
 
     // 从发布时间提取年份
