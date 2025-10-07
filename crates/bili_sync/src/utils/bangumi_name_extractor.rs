@@ -187,4 +187,20 @@ mod tests {
         assert_eq!(base_name, "鬼灭之刃");
         assert_eq!(season, 1);
     }
+
+    #[test]
+    fn test_xianwang_seasons() {
+        // 测试仙王的日常生活系列的不同季度
+        let (base_name, season) = BangumiNameExtractor::extract_series_name_and_season("仙王的日常生活", None);
+        assert_eq!(base_name, "仙王的日常生活");
+        assert_eq!(season, 1);
+        
+        let (base_name, season) = BangumiNameExtractor::extract_series_name_and_season("仙王的日常生活 第二季", None);
+        assert_eq!(base_name, "仙王的日常生活");
+        assert_eq!(season, 2);
+        
+        let (base_name, season) = BangumiNameExtractor::extract_series_name_and_season("仙王的日常生活 第三季", None);
+        assert_eq!(base_name, "仙王的日常生活");
+        assert_eq!(season, 3);
+    }
 }
