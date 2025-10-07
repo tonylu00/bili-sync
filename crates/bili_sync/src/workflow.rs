@@ -1975,31 +1975,34 @@ pub async fn download_video_pages(
         None
     };
 
-    // 为启用Season结构的番剧生成season.nfo
-    let season_nfo_result = if is_bangumi && season_info.is_some() {
+    // 为有Season文件夹的番剧生成season.nfo（无论是否启用统一结构）
+    let season_nfo_result = if is_bangumi && season_info.is_some() && season_folder.is_some() {
         let config = crate::config::reload_config();
-        if config.bangumi_use_season_structure {
-            // 提取季度信息来生成season.nfo，统一使用season_number=1
-            let series_title = season_info.as_ref().unwrap().title.as_str();
-            let season_number = 1; // 启用Season结构时统一使用1
 
-            info!("番剧「{}」统一使用季度编号: {}", series_title, season_number);
-
-            // 独立检查season.nfo文件是否存在（不依赖tvshow.nfo检查）
-            let season_nfo_path = base_path.join("season.nfo");
-            let should_generate_season_nfo = separate_status[2] && !season_nfo_path.exists();
-
-            generate_bangumi_season_nfo(
-                should_generate_season_nfo,
-                &video_model,
-                season_info.as_ref().unwrap(),
-                base_path.clone(),
-                season_number,
-            )
-            .await
+        // 确定使用的season_number
+        let season_number = if config.bangumi_use_season_structure {
+            // 启用统一结构：固定使用1
+            1
         } else {
-            Ok(ExecutionStatus::Skipped)
-        }
+            // 未启用统一结构：使用video_model中的原始season_number
+            video_model.season_number.unwrap_or(1) as u32
+        };
+
+        let series_title = season_info.as_ref().unwrap().title.as_str();
+        info!("番剧「{}」使用季度编号: {}", series_title, season_number);
+
+        // 独立检查season.nfo文件是否存在（不依赖tvshow.nfo检查）
+        let season_nfo_path = base_path.join("season.nfo");
+        let should_generate_season_nfo = separate_status[2] && !season_nfo_path.exists();
+
+        generate_bangumi_season_nfo(
+            should_generate_season_nfo,
+            &video_model,
+            season_info.as_ref().unwrap(),
+            base_path.clone(),
+            season_number,
+        )
+        .await
     } else {
         Ok(ExecutionStatus::Skipped)
     };
