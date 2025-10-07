@@ -1862,11 +1862,9 @@ impl<'a> TVShow<'a> {
                 .or(season_info.horizontal_cover_1610.as_deref())
                 .unwrap_or(&video.cover),
             fanart_url: season_info
-                .new_ep_cover
+                .cover
                 .as_deref()
-                .or(season_info.horizontal_cover_169.as_deref())
-                .or(season_info.horizontal_cover_1610.as_deref())
-                .or(season_info.bkg_cover.as_deref()),
+                .filter(|s| !s.is_empty()),
             upper_face_url: if !video.upper_face.is_empty() { Some(&video.upper_face) } else { None },
             // 使用season_id和media_id作为额外的uniqueid（通过扩展字段传递）
             season_id: Some(season_info.season_id.clone()),
@@ -2115,11 +2113,9 @@ impl<'a> Season<'a> {
                 .or(season_info.horizontal_cover_1610.as_deref())
                 .unwrap_or(&video.cover),
             fanart_url: season_info
-                .new_ep_cover
+                .cover
                 .as_deref()
-                .or(season_info.horizontal_cover_169.as_deref())
-                .or(season_info.horizontal_cover_1610.as_deref())
-                .or(season_info.bkg_cover.as_deref()),
+                .filter(|s| !s.is_empty()),
             upper_face_url: if !video.upper_face.is_empty() { Some(&video.upper_face) } else { None },
             // 使用season_id和media_id作为额外的uniqueid
             season_id: Some(season_info.season_id.clone()),

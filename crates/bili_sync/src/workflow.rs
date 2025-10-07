@@ -2061,8 +2061,8 @@ pub async fn download_video_pages(
                 poster_path,
                 fanart_path,
                 token.clone(),
-                season_cover_url,  // 使用季度封面URL
-                season_fanart_url, // 使用横版封面作为fanart
+                season_fanart_url, // 使用横版封面作为thumb
+                season_cover_url,  // 使用季度封面作为fanart
             )
             .await
         } else {
@@ -2132,18 +2132,10 @@ pub async fn download_video_pages(
                 }
             },
             token.clone(),
-            // 封面URL选择逻辑：番剧使用季度封面，合集使用API获取的封面，普通视频使用默认封面
-            if is_bangumi && season_info.is_some() {
-                season_info.as_ref().unwrap().cover.as_deref()
-            } else if let Some(ref cover_url) = collection_cover_url {
-                Some(cover_url.as_str())
-            } else {
-                None
-            },
-            // 番剧fanart优先级：横版封面 > 专门背景图 > 竖版封面 > 新EP封面截图，普通视频复用poster
+            // thumb URL选择逻辑：番剧使用横版封面，合集和普通视频使用默认封面
             if is_bangumi && season_info.is_some() {
                 let season = season_info.as_ref().unwrap();
-                let fanart_url = season
+                let thumb_url = season
                     .horizontal_cover_169
                     .as_deref()
                     .filter(|s| !s.is_empty())
@@ -2152,15 +2144,29 @@ pub async fn download_video_pages(
                     .or(season.cover.as_deref().filter(|s| !s.is_empty()))
                     .or(season.new_ep_cover.as_deref().filter(|s| !s.is_empty()));
 
-                info!("番剧「{}」fanart选择逻辑:", video_model.name);
+                info!("番剧「{}」thumb选择逻辑:", video_model.name);
                 debug!(
-                    "  字段值: new_ep_cover={:?}, h169={:?}, h1610={:?}, bkg={:?}, cover={:?}",
-                    season.new_ep_cover,
+                    "  字段值: h169={:?}, h1610={:?}, bkg={:?}, cover={:?}, new_ep_cover={:?}",
                     season.horizontal_cover_169,
                     season.horizontal_cover_1610,
                     season.bkg_cover,
-                    season.cover
+                    season.cover,
+                    season.new_ep_cover
                 );
+                info!("  最终选择的thumb URL: {:?}", thumb_url);
+
+                thumb_url
+            } else if let Some(ref cover_url) = collection_cover_url {
+                Some(cover_url.as_str())
+            } else {
+                None
+            },
+            // fanart URL选择逻辑：番剧使用竖版封面，普通视频复用poster
+            if is_bangumi && season_info.is_some() {
+                let season = season_info.as_ref().unwrap();
+                let fanart_url = season.cover.as_deref().filter(|s| !s.is_empty());
+
+                info!("番剧「{}」fanart选择逻辑:", video_model.name);
                 info!("  最终选择的fanart URL: {:?}", fanart_url);
 
                 fanart_url
@@ -3368,9 +3374,9 @@ pub async fn fetch_video_poster(
     }
 
     info!("开始处理视频「{}」的封面和背景图", video_model.name);
-    info!("  poster路径: {:?}", poster_path);
+    info!("  thumb路径: {:?}", poster_path);
     info!("  fanart路径: {:?}", fanart_path);
-    info!("  custom_cover_url: {:?}", custom_cover_url);
+    info!("  custom_thumb_url: {:?}", custom_cover_url);
     info!("  custom_fanart_url: {:?}", custom_fanart_url);
 
     // 检查文件是否已存在，避免重复下载
@@ -3391,14 +3397,14 @@ pub async fn fetch_video_poster(
         info!("  ✓ 背景图文件已存在，跳过背景图下载");
     }
 
-    // 下载poster封面（仅在文件不存在时）
+    // 下载thumb封面（仅在文件不存在时）
     if !poster_exists {
         // 在并发环境下，下载前再次检查文件是否已被其他任务创建
         if poster_path.exists() {
-            info!("  ✓ 封面文件在下载前检查时已存在，跳过下载");
+            info!("  ✓ thumb文件在下载前检查时已存在，跳过下载");
         } else {
-            let cover_url = custom_cover_url.unwrap_or(video_model.cover.as_str());
-            let urls = vec![cover_url];
+            let thumb_url = custom_cover_url.unwrap_or(video_model.cover.as_str());
+            let urls = vec![thumb_url];
             tokio::select! {
                 biased;
                 _ = token.cancelled() => return Ok(ExecutionStatus::Skipped),
@@ -3428,23 +3434,23 @@ pub async fn fetch_video_poster(
                             },
                             Err(e) => {
                                 warn!("✗ fanart背景图下载失败，URL: {}, 错误: {:#}", fanart_url, e);
-                                warn!("回退策略：复制poster作为fanart");
-                                // fanart下载失败，回退到复制poster
+                                warn!("回退策略：复制thumb作为fanart");
+                                // fanart下载失败，回退到复制thumb
                                 if poster_path.exists() {
                                     fs::copy(&poster_path, &fanart_path).await?;
                                 } else {
-                                    warn!("poster文件不存在，无法复制作为fanart");
+                                    warn!("thumb文件不存在，无法复制作为fanart");
                                 }
                             }
                         }
                     },
                 }
             } else {
-                // 没有专门的fanart URL，直接复制poster
+                // 没有专门的fanart URL，直接复制thumb
                 if poster_path.exists() {
                     fs::copy(&poster_path, &fanart_path).await?;
                 } else {
-                    warn!("poster文件不存在，无法复制作为fanart");
+                    warn!("thumb文件不存在，无法复制作为fanart");
                 }
             }
         }
