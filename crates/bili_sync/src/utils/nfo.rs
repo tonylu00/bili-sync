@@ -487,7 +487,7 @@ impl NFO<'_> {
                     // 对于番剧，尝试提取番剧名称作为主标题
                     if let Some(bangumi_title) = Self::extract_bangumi_title_from_full_name(tvshow.name) {
                         let cfg = crate::config::reload_config();
-                        let normalized = if cfg.bangumi_normalize_series_name {
+                        let normalized = if cfg.bangumi_use_season_structure {
                             crate::utils::bangumi_name_extractor::BangumiNameExtractor::normalize_series_name(&bangumi_title)
                         } else {
                             bangumi_title
@@ -520,7 +520,7 @@ impl NFO<'_> {
                 // 排序标题
                 if let Some(ref sorttitle) = tvshow.sorttitle {
                     let cfg = crate::config::reload_config();
-                    let sorttitle_normalized = if cfg.bangumi_normalize_series_name && Self::is_bangumi_video(tvshow.category) {
+                    let sorttitle_normalized = if cfg.bangumi_use_season_structure && Self::is_bangumi_video(tvshow.category) {
                         crate::utils::bangumi_name_extractor::BangumiNameExtractor::normalize_series_name(sorttitle)
                     } else {
                         sorttitle.clone()
@@ -532,7 +532,7 @@ impl NFO<'_> {
                 } else {
                     // 使用显示标题作为默认排序标题
                     let cfg = crate::config::reload_config();
-                    let sort_title_to_write = if cfg.bangumi_normalize_series_name && Self::is_bangumi_video(tvshow.category) {
+                    let sort_title_to_write = if cfg.bangumi_use_season_structure && Self::is_bangumi_video(tvshow.category) {
                         crate::utils::bangumi_name_extractor::BangumiNameExtractor::normalize_series_name(&display_title)
                     } else {
                         display_title.clone()

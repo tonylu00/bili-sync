@@ -202,12 +202,9 @@ pub struct Config {
     // 合集是否使用Season文件夹结构
     #[serde(default = "default_collection_use_season_structure")]
     pub collection_use_season_structure: bool,
-    // 番剧是否使用Season文件夹结构
+    // 番剧是否使用Season文件夹结构（同时启用系列名标准化）
     #[serde(default = "default_bangumi_use_season_structure")]
     pub bangumi_use_season_structure: bool,
-    // 是否对番剧系列名称进行标准化（仅用于归并判断，不改真实文件名）
-    #[serde(default = "default_bangumi_normalize_series_name")]
-    pub bangumi_normalize_series_name: bool,
     // 推送通知配置
     #[serde(default)]
     pub notification: NotificationConfig,
@@ -239,11 +236,7 @@ fn default_collection_use_season_structure() -> bool {
 }
 
 fn default_bangumi_use_season_structure() -> bool {
-    true // 默认使用Season结构
-}
-
-fn default_bangumi_normalize_series_name() -> bool {
-    true // 默认开启，自动标准化系列名用于归并
+    true // 默认使用Season结构（同时启用系列名标准化）
 }
 
 // 推送通知配置结构体
@@ -472,7 +465,6 @@ impl Clone for Config {
             multi_page_use_season_structure: self.multi_page_use_season_structure,
             collection_use_season_structure: self.collection_use_season_structure,
             bangumi_use_season_structure: self.bangumi_use_season_structure,
-            bangumi_normalize_series_name: self.bangumi_normalize_series_name,
             notification: self.notification.clone(),
             enable_startup_data_fix: self.enable_startup_data_fix,
             enable_cid_population: self.enable_cid_population,
@@ -513,7 +505,6 @@ impl Default for Config {
             multi_page_use_season_structure: default_multi_page_use_season_structure(),
             collection_use_season_structure: default_collection_use_season_structure(),
             bangumi_use_season_structure: default_bangumi_use_season_structure(),
-            bangumi_normalize_series_name: default_bangumi_normalize_series_name(),
             notification: NotificationConfig::default(),
             enable_startup_data_fix: false, // 默认关闭，减少不必要的日志
             enable_cid_population: false,   // 默认关闭，减少不必要的日志
