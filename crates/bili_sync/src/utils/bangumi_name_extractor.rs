@@ -148,6 +148,49 @@ impl BangumiNameExtractor {
     pub fn generate_season_folder_name(season_number: u32) -> String {
         format!("Season {:02}", season_number)
     }
+
+    /// 标准化系列名称，仅用于归并判断，不修改真实文件名
+    /// 去除常见的版本/介质/分辨率标签，合并多余空白
+    pub fn normalize_series_name(input: &str) -> String {
+        use regex::Regex;
+
+        let mut name = input.to_string();
+
+        // 1) 去除括号或书名号/方括号内的标签（若命中关键词）
+        // 支持 () [] 【】 《》
+        let bracket_patterns = vec![
+            r"\([^\)]*?(中配|日配|国语|粤语|配音|双语|简中|繁中|中字|外挂|内封|无修|未删减|WEB(?:-DL)?|TV|BD|Blu-?ray|UHD|4K|1080P|720P)[^\)]*?\)",
+            r"\[[^\]]*?(中配|日配|国语|粤语|配音|双语|简中|繁中|中字|外挂|内封|无修|未删减|WEB(?:-DL)?|TV|BD|Blu-?ray|UHD|4K|1080P|720P)[^\]]*?\]",
+            r"【[^】]*?(中配|日配|国语|粤语|配音|双语|简中|繁中|中字|外挂|内封|无修|未删减|WEB(?:-DL)?|TV|BD|Blu-?ray|UHD|4K|1080P|720P)[^】]*?】",
+            r"《[^》]*?(中配|日配|国语|粤语|配音|双语|简中|繁中|中字|外挂|内封|无修|未删减|WEB(?:-DL)?|TV|BD|Blu-?ray|UHD|4K|1080P|720P)[^》]*?》",
+        ];
+        for pat in bracket_patterns {
+            if let Ok(re) = Regex::new(pat) {
+                name = re.replace_all(&name, "").to_string();
+            }
+        }
+
+        // 2) 去除尾部/中间的短标签
+        let tail_patterns = vec![
+            r"[\s\-·]?(中配版|日配版|国语版|粤语版)$",
+            r"[\s\-·]?(中配|日配|国语|粤语)$",
+            r"[\s\-·]?(WEB(?:-DL)?|TV|BD|Blu-?ray|UHD)$",
+            r"[ \-_·]?(4K|1080P|720P)$",
+        ];
+        for pat in tail_patterns {
+            if let Ok(re) = Regex::new(pat) {
+                name = re.replace(&name, "").to_string();
+            }
+        }
+
+        // 3) 合并多余空白并trim
+        if let Ok(re_space) = Regex::new(r"\s+") {
+            name = re_space.replace_all(&name, " ").to_string();
+        }
+        name = name.trim().to_string();
+
+        if name.is_empty() { input.to_string() } else { name }
+    }
 }
 
 #[cfg(test)]

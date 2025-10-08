@@ -486,7 +486,13 @@ impl NFO<'_> {
                 let (display_title, original_title) = if Self::is_bangumi_video(tvshow.category) {
                     // 对于番剧，尝试提取番剧名称作为主标题
                     if let Some(bangumi_title) = Self::extract_bangumi_title_from_full_name(tvshow.name) {
-                        (bangumi_title, tvshow.name.to_string())
+                        let cfg = crate::config::reload_config();
+                        let normalized = if cfg.bangumi_normalize_series_name {
+                            crate::utils::bangumi_name_extractor::BangumiNameExtractor::normalize_series_name(&bangumi_title)
+                        } else {
+                            bangumi_title
+                        };
+                        (normalized, tvshow.name.to_string())
                     } else {
                         (tvshow.name.to_string(), tvshow.original_title.to_string())
                     }
@@ -513,15 +519,27 @@ impl NFO<'_> {
 
                 // 排序标题
                 if let Some(ref sorttitle) = tvshow.sorttitle {
+                    let cfg = crate::config::reload_config();
+                    let sorttitle_normalized = if cfg.bangumi_normalize_series_name && Self::is_bangumi_video(tvshow.category) {
+                        crate::utils::bangumi_name_extractor::BangumiNameExtractor::normalize_series_name(sorttitle)
+                    } else {
+                        sorttitle.clone()
+                    };
                     writer
                         .create_element("sorttitle")
-                        .write_text_content_async(BytesText::new(sorttitle))
+                        .write_text_content_async(BytesText::new(&sorttitle_normalized))
                         .await?;
                 } else {
                     // 使用显示标题作为默认排序标题
+                    let cfg = crate::config::reload_config();
+                    let sort_title_to_write = if cfg.bangumi_normalize_series_name && Self::is_bangumi_video(tvshow.category) {
+                        crate::utils::bangumi_name_extractor::BangumiNameExtractor::normalize_series_name(&display_title)
+                    } else {
+                        display_title.clone()
+                    };
                     writer
                         .create_element("sorttitle")
-                        .write_text_content_async(BytesText::new(&display_title))
+                        .write_text_content_async(BytesText::new(&sort_title_to_write))
                         .await?;
                 }
 

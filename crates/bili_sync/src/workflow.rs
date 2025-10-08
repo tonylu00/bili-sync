@@ -1496,11 +1496,21 @@ pub async fn download_video_pages(
             let series_title = api_title.as_deref().unwrap_or(&video_model.name);
             let season_title = format_args.get("season_title").and_then(|v| v.as_str());
 
-            let (base_series_name, season_number) =
+            let (base_series_name_raw, season_number) =
                 crate::utils::bangumi_name_extractor::BangumiNameExtractor::extract_series_name_and_season(
                     series_title,
                     season_title,
                 );
+
+            // 开关式系列名标准化（仅用于归并判断）
+            let base_series_name = {
+                let cfg = crate::config::reload_config();
+                if cfg.bangumi_normalize_series_name {
+                    crate::utils::bangumi_name_extractor::BangumiNameExtractor::normalize_series_name(&base_series_name_raw)
+                } else {
+                    base_series_name_raw
+                }
+            };
 
             // 系列根目录路径，延迟创建
             let series_root_path = bangumi_root_path.join(&base_series_name);
