@@ -13,7 +13,7 @@ impl MigrationTrait for Migration {
             .columns([ConfigItem::KeyName, ConfigItem::ValueJson])
             .to_owned();
 
-        query.values_panic(["collection_use_season_structure".into(), "false".into()]);
+        query.values_panic(["collection_use_season_structure".into(), "true".into()]);
 
         query.on_conflict(OnConflict::column(ConfigItem::KeyName).do_nothing().to_owned());
 

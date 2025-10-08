@@ -177,7 +177,7 @@ pub struct Config {
     pub concurrent_limit: ConcurrentLimit,
     #[serde(default = "default_time_format")]
     pub time_format: String,
-    #[serde(default)]
+    #[serde(default = "default_cdn_sorting")]
     pub cdn_sorting: bool,
     #[serde(default)]
     pub submission_risk_control: crate::config::item::SubmissionRiskControlConfig,
@@ -237,6 +237,10 @@ fn default_collection_use_season_structure() -> bool {
 
 fn default_bangumi_use_season_structure() -> bool {
     true // 默认使用Season结构（同时启用系列名标准化）
+}
+
+fn default_cdn_sorting() -> bool {
+    true // 默认启用CDN排序
 }
 
 // 推送通知配置结构体
@@ -346,7 +350,7 @@ fn default_solve_timeout() -> u64 {
 }
 
 fn default_risk_control_mode() -> String {
-    "skip".to_string() // 默认跳过验证
+    "manual".to_string() // 默认弹出验证页面进行手动验证
 }
 
 fn default_risk_control_timeout() -> u64 {
@@ -356,7 +360,7 @@ fn default_risk_control_timeout() -> u64 {
 impl Default for RiskControlConfig {
     fn default() -> Self {
         Self {
-            enabled: false,
+            enabled: true,
             mode: default_risk_control_mode(),
             timeout: default_risk_control_timeout(),
             auto_solve: None,
@@ -494,7 +498,7 @@ impl Default for Config {
             nfo_config: NFOConfig::default(),
             concurrent_limit: ConcurrentLimit::default(),
             time_format: default_time_format(),
-            cdn_sorting: true,
+            cdn_sorting: default_cdn_sorting(),
             submission_risk_control: crate::config::item::SubmissionRiskControlConfig::default(),
             scan_deleted_videos: false,
             skip_bangumi_preview: default_skip_bangumi_preview(),
