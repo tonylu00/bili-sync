@@ -50,6 +50,53 @@ fn normalize_file_path(path: &str) -> String {
     path.replace('\\', "/")
 }
 
+/// 清理空的父目录
+/// 
+/// # 参数
+/// - `deleted_path`: 已删除的文件夹路径
+/// - `stop_at`: 停止清理的父目录路径（避免删除配置的基础路径）
+fn cleanup_empty_parent_dirs(deleted_path: &str, _stop_at: &str) {
+    use std::path::Path;
+    use std::fs;
+    
+    let mut current_path = Path::new(deleted_path).parent();
+    while let Some(parent) = current_path {
+        let parent_str = parent.to_string_lossy().to_string();
+        
+        // 检查父目录是否为空
+        if parent.exists() {
+            match fs::read_dir(parent) {
+                Ok(mut entries) => {
+                    // 如果目录为空（没有子项），则删除它
+                    if entries.next().is_none() {
+                        match fs::remove_dir(parent) {
+                            Ok(_) => {
+                                info!("清理空父目录: {}", parent_str);
+                                current_path = parent.parent();
+                                continue;
+                            }
+                            Err(e) => {
+                                warn!("无法删除空父目录 {}: {}", parent_str, e);
+                                break;
+                            }
+                        }
+                    } else {
+                        // 目录不为空，停止清理
+                        info!("目录不为空，停止清理: {}", parent_str);
+                        break;
+                    }
+                }
+                Err(e) => {
+                    warn!("无法读取父目录 {}: {}", parent_str, e);
+                    break;
+                }
+            }
+        } else {
+            break;
+        }
+    }
+}
+
 /// 处理包含路径分隔符的模板结果，对每个路径段单独应用filenamify
 /// 这样可以保持目录结构同时确保每个段都是安全的文件名
 fn process_path_with_filenamify(input: &str) -> String {
@@ -2890,6 +2937,9 @@ pub async fn delete_video_source_internal(
                                         info!("成功删除合集视频文件夹: {} ({:.2} MB)", video.path, size_mb);
                                         deleted_folders.insert(video.path.clone());
                                         total_deleted_size += size;
+                                        
+                                        // 删除后清理空的父目录
+                                        cleanup_empty_parent_dirs(&video.path, base_path);
                                     }
                                 }
                                 Err(e) => {
@@ -2899,6 +2949,9 @@ pub async fn delete_video_source_internal(
                                     } else {
                                         info!("成功删除合集视频文件夹: {}", video.path);
                                         deleted_folders.insert(video.path.clone());
+                                        
+                                        // 删除后清理空的父目录
+                                        cleanup_empty_parent_dirs(&video.path, base_path);
                                     }
                                 }
                             }
@@ -3011,6 +3064,9 @@ pub async fn delete_video_source_internal(
                                         info!("成功删除收藏夹视频文件夹: {} ({:.2} MB)", video.path, size_mb);
                                         deleted_folders.insert(video.path.clone());
                                         total_deleted_size += size;
+                                        
+                                        // 删除后清理空的父目录
+                                        cleanup_empty_parent_dirs(&video.path, base_path);
                                     }
                                 }
                                 Err(e) => {
@@ -3020,6 +3076,9 @@ pub async fn delete_video_source_internal(
                                     } else {
                                         info!("成功删除收藏夹视频文件夹: {}", video.path);
                                         deleted_folders.insert(video.path.clone());
+                                        
+                                        // 删除后清理空的父目录
+                                        cleanup_empty_parent_dirs(&video.path, base_path);
                                     }
                                 }
                             }
@@ -3135,6 +3194,9 @@ pub async fn delete_video_source_internal(
                                         info!("成功删除UP主投稿视频文件夹: {} ({:.2} MB)", video.path, size_mb);
                                         deleted_folders.insert(video.path.clone());
                                         total_deleted_size += size;
+                                        
+                                        // 删除后清理空的父目录
+                                        cleanup_empty_parent_dirs(&video.path, base_path);
                                     }
                                 }
                                 Err(e) => {
@@ -3144,6 +3206,9 @@ pub async fn delete_video_source_internal(
                                     } else {
                                         info!("成功删除UP主投稿视频文件夹: {}", video.path);
                                         deleted_folders.insert(video.path.clone());
+                                        
+                                        // 删除后清理空的父目录
+                                        cleanup_empty_parent_dirs(&video.path, base_path);
                                     }
                                 }
                             }
@@ -3256,6 +3321,9 @@ pub async fn delete_video_source_internal(
                                         info!("成功删除稍后再看视频文件夹: {} ({:.2} MB)", video.path, size_mb);
                                         deleted_folders.insert(video.path.clone());
                                         total_deleted_size += size;
+                                        
+                                        // 删除后清理空的父目录
+                                        cleanup_empty_parent_dirs(&video.path, base_path);
                                     }
                                 }
                                 Err(e) => {
@@ -3265,6 +3333,9 @@ pub async fn delete_video_source_internal(
                                     } else {
                                         info!("成功删除稍后再看视频文件夹: {}", video.path);
                                         deleted_folders.insert(video.path.clone());
+                                        
+                                        // 删除后清理空的父目录
+                                        cleanup_empty_parent_dirs(&video.path, base_path);
                                     }
                                 }
                             }
@@ -3376,22 +3447,28 @@ pub async fn delete_video_source_internal(
                                     let size_mb = size as f64 / 1024.0 / 1024.0;
                                     info!("删除番剧季度文件夹: {} (大小: {:.2} MB)", video.path, size_mb);
 
-                                    if let Err(e) = std::fs::remove_dir_all(&video.path) {
-                                        error!("删除番剧季度文件夹失败: {} - {}", video.path, e);
-                                    } else {
-                                        info!("成功删除番剧季度文件夹: {} ({:.2} MB)", video.path, size_mb);
-                                        deleted_folders.insert(video.path.clone());
-                                        total_deleted_size += size;
-                                    }
+                                     if let Err(e) = std::fs::remove_dir_all(&video.path) {
+                                         error!("删除番剧季度文件夹失败: {} - {}", video.path, e);
+                                     } else {
+                                         info!("成功删除番剧季度文件夹: {} ({:.2} MB)", video.path, size_mb);
+                                         deleted_folders.insert(video.path.clone());
+                                         total_deleted_size += size;
+                                         
+                                         // 删除后清理空的父目录
+                                         cleanup_empty_parent_dirs(&video.path, base_path);
+                                     }
                                 }
                                 Err(e) => {
                                     warn!("无法计算文件夹大小: {} - {}", video.path, e);
-                                    if let Err(e) = std::fs::remove_dir_all(&video.path) {
-                                        error!("删除番剧季度文件夹失败: {} - {}", video.path, e);
-                                    } else {
-                                        info!("成功删除番剧季度文件夹: {}", video.path);
-                                        deleted_folders.insert(video.path.clone());
-                                    }
+                                     if let Err(e) = std::fs::remove_dir_all(&video.path) {
+                                         error!("删除番剧季度文件夹失败: {} - {}", video.path, e);
+                                     } else {
+                                         info!("成功删除番剧季度文件夹: {}", video.path);
+                                         deleted_folders.insert(video.path.clone());
+                                         
+                                         // 删除后清理空的父目录
+                                         cleanup_empty_parent_dirs(&video.path, base_path);
+                                     }
                                 }
                             }
                         }
