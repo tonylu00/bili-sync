@@ -7610,7 +7610,7 @@ pub async fn proxy_image(
     let client = reqwest::Client::new();
 
     // 请求图片，添加必要的请求头
-    tracing::info!("发起图片下载请求: {}", url);
+    tracing::debug!("发起图片下载请求: {}", url);
 
     let request = client
         .get(url)
@@ -7621,7 +7621,7 @@ pub async fn proxy_image(
     let response = request.send().await;
     let response = match response {
         Ok(resp) => {
-            tracing::info!("图片下载请求成功 - 状态码: {}, URL: {}", resp.status(), resp.url());
+            tracing::debug!("图片下载请求成功 - 状态码: {}, URL: {}", resp.status(), resp.url());
             resp
         }
         Err(e) => {
@@ -8305,7 +8305,7 @@ pub async fn get_current_user() -> Result<ApiResponse<crate::api::response::QRUs
 
     // 调用B站API获取用户信息
     let request_url = "https://api.bilibili.com/x/web-interface/nav";
-    tracing::info!("发起用户信息请求: {} - User ID: {}", request_url, cred.dedeuserid);
+    tracing::debug!("发起用户信息请求: {} - User ID: {}", request_url, cred.dedeuserid);
     tracing::debug!("用户信息Cookie: SESSDATA={}..., bili_jct={}...",
         &cred.sessdata[..std::cmp::min(cred.sessdata.len(), 20)],
         &cred.bili_jct[..std::cmp::min(cred.bili_jct.len(), 20)]);
@@ -8320,7 +8320,7 @@ pub async fn get_current_user() -> Result<ApiResponse<crate::api::response::QRUs
     let response = request.send().await;
     let response = match response {
         Ok(resp) => {
-            tracing::info!("用户信息请求成功 - 状态码: {}, URL: {}", resp.status(), resp.url());
+            tracing::debug!("用户信息请求成功 - 状态码: {}, URL: {}", resp.status(), resp.url());
             resp
         }
         Err(e) => {

@@ -690,7 +690,7 @@ impl<'a> Video<'a> {
         tracing::debug!("编码后参数: {:?}", encoded_params);
 
         let request_url = "https://api.bilibili.com/x/player/wbi/playurl";
-        tracing::info!("发起playurl请求: {} - BVID: {}, CID: {}", request_url, self.bvid, page.cid);
+        tracing::debug!("发起playurl请求: {} - BVID: {}, CID: {}", request_url, self.bvid, page.cid);
 
         let request = self
             .client
@@ -704,7 +704,7 @@ impl<'a> Video<'a> {
         let response = request.send().await;
         match &response {
             Ok(resp) => {
-                tracing::info!("playurl请求成功 - 状态码: {}, URL: {}", resp.status(), resp.url());
+                tracing::debug!("playurl请求成功 - 状态码: {}, URL: {}", resp.status(), resp.url());
                 tracing::debug!("响应头: {:?}", resp.headers());
             }
             Err(e) => {
@@ -907,7 +907,7 @@ impl<'a> Video<'a> {
         tracing::debug!("编码后参数: {:?}", encoded_params);
 
         let request_url = "https://api.bilibili.com/x/player/wbi/playurl";
-        tracing::info!("发起playurl请求(分页): {} - BVID: {}, CID: {}", request_url, self.bvid, page.cid);
+        tracing::debug!("发起playurl请求(分页): {} - BVID: {}, CID: {}", request_url, self.bvid, page.cid);
 
         let request = self
             .client
@@ -921,7 +921,7 @@ impl<'a> Video<'a> {
         let response = request.send().await;
         match &response {
             Ok(resp) => {
-                tracing::info!("playurl请求成功(分页) - 状态码: {}, URL: {}", resp.status(), resp.url());
+                tracing::debug!("playurl请求成功(分页) - 状态码: {}, URL: {}", resp.status(), resp.url());
                 tracing::debug!("响应头: {:?}", resp.headers());
             }
             Err(e) => {
@@ -1168,7 +1168,7 @@ impl<'a> Video<'a> {
         let response = request.send().await;
         match &response {
             Ok(resp) => {
-                tracing::info!("番剧playurl请求成功 - 状态码: {}, URL: {}", resp.status(), resp.url());
+                tracing::debug!("番剧playurl请求成功 - 状态码: {}, URL: {}", resp.status(), resp.url());
                 tracing::debug!("番剧响应头: {:?}", resp.headers());
             }
             Err(e) => {
@@ -1313,7 +1313,7 @@ impl<'a> Video<'a> {
         let response = request.send().await;
         match &response {
             Ok(resp) => {
-                tracing::info!("番剧playurl请求成功(分页) - 状态码: {}, URL: {}", resp.status(), resp.url());
+                tracing::debug!("番剧playurl请求成功(分页) - 状态码: {}, URL: {}", resp.status(), resp.url());
                 tracing::debug!("番剧响应头(分页): {:?}", resp.headers());
             }
             Err(e) => {
