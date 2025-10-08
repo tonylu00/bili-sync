@@ -1502,18 +1502,9 @@ pub async fn download_video_pages(
                     season_title,
                 );
 
-            // 开关式系列名标准化（仅用于归并判断）
-            let base_series_name = {
-                let cfg = crate::config::reload_config();
-                if cfg.bangumi_normalize_series_name {
-                    crate::utils::bangumi_name_extractor::BangumiNameExtractor::normalize_series_name(&base_series_name_raw)
-                } else {
-                    base_series_name_raw
-                }
-            };
-
-            // 系列根目录路径，延迟创建
-            let series_root_path = bangumi_root_path.join(&base_series_name);
+            // 系列根目录路径，直接使用提取后的基础系列名称（不应用标准化）
+            // 这样确保同一系列的不同季度使用相同的根目录
+            let series_root_path = bangumi_root_path.join(&base_series_name_raw);
 
             // 生成标准的Season文件夹名称，根据实际季度编号生成
             let season_folder_name = format!("Season {:02}", season_number);
@@ -1738,17 +1729,31 @@ pub async fn download_video_pages(
     // 只有第一个集（should_download_upper=true）才负责下载Series级别图片
     let (should_download_bangumi_poster, should_download_bangumi_nfo) =
         if is_bangumi && bangumi_folder_path.is_some() && should_download_upper {
-            let bangumi_path = bangumi_folder_path.as_ref().unwrap();
-            let poster_path = bangumi_path.join(format!("{}-thumb.jpg", bangumi_base_name));
-            let fanart_path = bangumi_path.join(format!("{}-fanart.jpg", bangumi_base_name));
-            let nfo_path = bangumi_path.join("tvshow.nfo");
+            let config = crate::config::reload_config();
+            
+            // 如果启用了番剧统一Season结构，跳过带番剧名的图片下载
+            // 因为已经有Season级别的图片和poster.jpg了
+            if config.bangumi_use_season_structure {
+                let bangumi_path = bangumi_folder_path.as_ref().unwrap();
+                let nfo_path = bangumi_path.join("tvshow.nfo");
+                let nfo_exists = nfo_path.exists();
+                
+                // 只检查NFO文件，不下载带番剧名的图片
+                (false, !nfo_exists)
+            } else {
+                // 未启用统一Season结构时，保持原有逻辑
+                let bangumi_path = bangumi_folder_path.as_ref().unwrap();
+                let poster_path = bangumi_path.join(format!("{}-thumb.jpg", bangumi_base_name));
+                let fanart_path = bangumi_path.join(format!("{}-fanart.jpg", bangumi_base_name));
+                let nfo_path = bangumi_path.join("tvshow.nfo");
 
-            // 分别检查poster和fanart的存在性
-            // 只有当两个文件都存在时，才不需要下载
-            let both_images_exist = poster_path.exists() && fanart_path.exists();
-            let nfo_exists = nfo_path.exists();
+                // 分别检查poster和fanart的存在性
+                // 只有当两个文件都存在时，才不需要下载
+                let both_images_exist = poster_path.exists() && fanart_path.exists();
+                let nfo_exists = nfo_path.exists();
 
-            (!both_images_exist, !nfo_exists)
+                (!both_images_exist, !nfo_exists)
+            }
         } else {
             (false, false)
         };
@@ -1993,7 +1998,7 @@ pub async fn download_video_pages(
         let season_number = if config.bangumi_use_season_structure {
             // 启用统一结构：使用从番剧名称提取的季度编号
             let series_title = season_info.as_ref().unwrap().title.as_str();
-            let (_, extracted_season_number) = 
+            let (_, extracted_season_number) =
                 crate::utils::bangumi_name_extractor::BangumiNameExtractor::extract_series_name_and_season(
                     series_title,
                     None, // 不提供season_title，让提取器从完整标题中识别
@@ -2028,22 +2033,14 @@ pub async fn download_video_pages(
     let season_images_result = if is_bangumi && season_info.is_some() && should_download_upper {
         let config = crate::config::reload_config();
         if config.bangumi_use_season_structure {
-            // 使用实际的季度编号，而不是硬编码的1
-            let _series_title = season_info.as_ref().unwrap().title.as_str();
-            // 使用实际的季度编号，而不是硬编码的1
-            let season_number = if config.bangumi_use_season_structure {
-                // 启用统一结构：使用从番剧名称提取的季度编号
-                let series_title = season_info.as_ref().unwrap().title.as_str();
-                let (_, extracted_season_number) = 
-                    crate::utils::bangumi_name_extractor::BangumiNameExtractor::extract_series_name_and_season(
-                        series_title,
-                        None, // 不提供season_title，让提取器从完整标题中识别
-                    );
-                extracted_season_number
-            } else {
-                // 未启用统一结构：使用video_model中的原始season_number
-                video_model.season_number.unwrap_or(1) as u32
-            };
+            // 启用统一结构：使用从番剧名称提取的季度编号
+            let series_title = season_info.as_ref().unwrap().title.as_str();
+            let (_, extracted_season_number) =
+                crate::utils::bangumi_name_extractor::BangumiNameExtractor::extract_series_name_and_season(
+                    series_title,
+                    None, // 不提供season_title，让提取器从完整标题中识别
+                );
+            let season_number = extracted_season_number;
 
             // 季度级图片应该放在系列根目录，使用标准命名
             let series_root = bangumi_folder_path.as_ref().unwrap();
@@ -2148,10 +2145,18 @@ pub async fn download_video_pages(
             downloader,
             if is_bangumi && bangumi_folder_path.is_some() {
                 // 番剧封面放在番剧文件夹根目录
-                bangumi_folder_path
-                    .as_ref()
-                    .unwrap()
-                    .join(format!("{}-thumb.jpg", bangumi_base_name))
+                let config = crate::config::reload_config();
+                if config.bangumi_use_season_structure {
+                    // 启用统一Season结构时，跳过带番剧名的图片下载
+                    // 使用一个不存在的路径，这样下载会被跳过
+                    bangumi_folder_path.as_ref().unwrap().join("__skip_download__")
+                } else {
+                    // 未启用统一Season结构时，保持原有逻辑
+                    bangumi_folder_path
+                        .as_ref()
+                        .unwrap()
+                        .join(format!("{}-thumb.jpg", bangumi_base_name))
+                }
             } else {
                 // 多P视频或合集使用Season结构时，封面放在视频根目录
                 let config = crate::config::reload_config();
@@ -2170,10 +2175,18 @@ pub async fn download_video_pages(
             },
             if is_bangumi && bangumi_folder_path.is_some() {
                 // 番剧fanart放在番剧文件夹根目录
-                bangumi_folder_path
-                    .as_ref()
-                    .unwrap()
-                    .join(format!("{}-fanart.jpg", bangumi_base_name))
+                let config = crate::config::reload_config();
+                if config.bangumi_use_season_structure {
+                    // 启用统一Season结构时，跳过带番剧名的图片下载
+                    // 使用一个不存在的路径，这样下载会被跳过
+                    bangumi_folder_path.as_ref().unwrap().join("__skip_download__")
+                } else {
+                    // 未启用统一Season结构时，保持原有逻辑
+                    bangumi_folder_path
+                        .as_ref()
+                        .unwrap()
+                        .join(format!("{}-fanart.jpg", bangumi_base_name))
+                }
             } else {
                 // 多P视频或合集使用Season结构时，fanart放在视频根目录
                 let config = crate::config::reload_config();

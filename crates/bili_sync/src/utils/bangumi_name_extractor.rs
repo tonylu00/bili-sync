@@ -29,8 +29,8 @@ impl BangumiNameExtractor {
     fn extract_from_title(title: &str) -> (String, u32) {
         // 常见的季度模式
         let patterns = [
-            // 中文季度模式：第一季、第二季、第三季等
-            r"(.+?)\s*第([一二三四五六七八九十\d]+)季\s*",
+            // 中文季度模式：第一季、第二季、第三季等（保留季度后的后缀标签）
+            r"(.+?)\s*第([一二三四五六七八九十\d]+)季\s*(.*)$",
             // 英文季度模式：S1、S2、Season 1等
             r"(.+?)\s*S(\d+)\s*$",
             r"(.+?)\s*Season\s*(\d+)\s*$",
@@ -43,8 +43,17 @@ impl BangumiNameExtractor {
         for pattern in &patterns {
             if let Ok(regex) = Regex::new(pattern) {
                 if let Some(captures) = regex.captures(title) {
-                    let base_name = captures.get(1).map_or("", |m| m.as_str()).trim().to_string();
+                    let base_name_prefix = captures.get(1).map_or("", |m| m.as_str()).trim();
                     let season_str = captures.get(2).map_or("1", |m| m.as_str());
+                    let base_name_suffix = captures.get(3).map_or("", |m| m.as_str()).trim();
+                    
+                    // 合并前缀和后缀，中间用空格连接（如果后缀不为空）
+                    let base_name = if !base_name_suffix.is_empty() {
+                        format!("{} {}", base_name_prefix, base_name_suffix)
+                    } else {
+                        base_name_prefix.to_string()
+                    };
+                    
                     let season_number = Self::parse_season_number(season_str);
 
                     if !base_name.is_empty() {
@@ -245,5 +254,18 @@ mod tests {
         let (base_name, season) = BangumiNameExtractor::extract_series_name_and_season("仙王的日常生活 第三季", None);
         assert_eq!(base_name, "仙王的日常生活");
         assert_eq!(season, 3);
+    }
+
+    #[test]
+    fn test_kobayashi_seasons() {
+        // 测试小林家的龙女仆系列
+        let (base_name, season) = BangumiNameExtractor::extract_series_name_and_season("小林家的龙女仆 第二季 中配版", None);
+        assert_eq!(base_name, "小林家的龙女仆 中配版");
+        assert_eq!(season, 2);
+        
+        // 测试第一季（没有季度信息）
+        let (base_name, season) = BangumiNameExtractor::extract_series_name_and_season("小林家的龙女仆 中配版", None);
+        assert_eq!(base_name, "小林家的龙女仆 中配版");
+        assert_eq!(season, 1);
     }
 }
