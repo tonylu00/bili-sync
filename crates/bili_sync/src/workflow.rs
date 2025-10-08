@@ -1725,65 +1725,34 @@ pub async fn download_video_pages(
         return Err(anyhow!("Download cancelled"));
     }
 
-    // 为番剧检查元数据文件是否已存在，避免重复下载
+    // 为番剧判断是否下载元数据（依赖数据库状态，不检查文件存在性）
     // 只有第一个集（should_download_upper=true）才负责下载Series级别图片
     let (should_download_bangumi_poster, should_download_bangumi_nfo) =
         if is_bangumi && bangumi_folder_path.is_some() && should_download_upper {
             let config = crate::config::reload_config();
-            
+
             // 如果启用了番剧统一Season结构，跳过带番剧名的图片下载
             // 因为已经有Season级别的图片和poster.jpg了
             if config.bangumi_use_season_structure {
-                let bangumi_path = bangumi_folder_path.as_ref().unwrap();
-                let nfo_path = bangumi_path.join("tvshow.nfo");
-                let nfo_exists = nfo_path.exists();
-                
-                // 只检查NFO文件，不下载带番剧名的图片
-                (false, !nfo_exists)
+                // 不下载带番剧名的图片，依赖should_run控制NFO下载
+                (false, true)
             } else {
-                // 未启用统一Season结构时，保持原有逻辑
-                let bangumi_path = bangumi_folder_path.as_ref().unwrap();
-                let poster_path = bangumi_path.join(format!("{}-thumb.jpg", bangumi_base_name));
-                let fanart_path = bangumi_path.join(format!("{}-fanart.jpg", bangumi_base_name));
-                let nfo_path = bangumi_path.join("tvshow.nfo");
-
-                // 分别检查poster和fanart的存在性
-                // 只有当两个文件都存在时，才不需要下载
-                let both_images_exist = poster_path.exists() && fanart_path.exists();
-                let nfo_exists = nfo_path.exists();
-
-                (!both_images_exist, !nfo_exists)
+                // 未启用统一Season结构时，依赖should_run参数控制下载
+                (true, true)
             }
         } else {
             (false, false)
         };
 
-    // 为启用Season结构的非番剧视频检查封面文件是否已存在，避免重复下载
+    // 为启用Season结构的合集视频判断是否下载封面（依赖数据库状态，不检查文件存在性）
     let should_download_season_poster = if !is_bangumi {
         let config = crate::config::reload_config();
         let uses_season_structure = (is_collection && config.collection_use_season_structure)
             || (!is_single_page && config.multi_page_use_season_structure);
 
         if uses_season_structure && season_folder.is_some() {
-            // 计算封面文件路径（与下载逻辑保持一致）
-            let poster_path = base_path
-                .parent()
-                .map(|parent| parent.join(format!("{}-thumb.jpg", video_base_name)))
-                .unwrap_or_else(|| base_path.join(format!("{}-thumb.jpg", video_base_name)));
-            let fanart_path = base_path
-                .parent()
-                .map(|parent| parent.join(format!("{}-fanart.jpg", video_base_name)))
-                .unwrap_or_else(|| base_path.join(format!("{}-fanart.jpg", video_base_name)));
-
-            let poster_exists = poster_path.exists() && fanart_path.exists();
-            let video_type = if is_collection { "合集" } else { "多P视频" };
-            info!(
-                "{}「{}」封面检查: poster_path={:?}, fanart_path={:?}, exists={}",
-                video_type, video_model.name, poster_path, fanart_path, poster_exists
-            );
-
             // 对于合集，只有第一个视频才下载合集封面
-            if is_collection && !poster_exists {
+            if is_collection {
                 if let VideoSourceEnum::Collection(collection_source) = video_source {
                     match get_collection_video_episode_number(connection, collection_source.id, &video_model.bvid).await
                     {
@@ -1804,7 +1773,7 @@ pub async fn download_video_pages(
                     false
                 }
             } else {
-                !poster_exists
+                true // 非合集的多P视频，依赖should_run参数控制
             }
         } else {
             true // 未启用Season结构时不进行检查
@@ -2012,9 +1981,8 @@ pub async fn download_video_pages(
         let series_title = season_info.as_ref().unwrap().title.as_str();
         info!("番剧「{}」使用季度编号: {}", series_title, season_number);
 
-        // 独立检查season.nfo文件是否存在（不依赖tvshow.nfo检查）
-        let season_nfo_path = base_path.join("season.nfo");
-        let should_generate_season_nfo = separate_status[2] && !season_nfo_path.exists();
+        // season.nfo生成依赖separate_status[2]状态（重置状态后会强制重新生成）
+        let should_generate_season_nfo = separate_status[2];
 
         generate_bangumi_season_nfo(
             should_generate_season_nfo,
@@ -2050,9 +2018,8 @@ pub async fn download_video_pages(
             // 定义所有三个Season级别文件路径
             let season_poster_path = series_root.join(format!("Season{:02}-poster.jpg", season_number));
 
-            // 独立检查季度级图片文件是否存在（三个文件都要检查）
-            let should_download_season_images = separate_status[0] &&
-                (!poster_path.exists() || !fanart_path.exists() || !season_poster_path.exists());
+            // 依赖数据库状态决定是否下载季度级图片（不检查文件存在性，以支持重置状态后重新下载）
+            let should_download_season_images = separate_status[0];
 
             info!("准备下载季度级图片到: {:?}, {:?} 和 {:?}", poster_path, fanart_path, season_poster_path);
 
@@ -3478,80 +3445,48 @@ pub async fn fetch_video_poster(
     info!("  custom_thumb_url: {:?}", custom_cover_url);
     info!("  custom_fanart_url: {:?}", custom_fanart_url);
 
-    // 检查文件是否已存在，避免重复下载
-    // 为了处理并发场景，在下载过程中再次检查
-    let poster_exists = poster_path.exists();
-    let fanart_exists = fanart_path.exists();
+    // 下载thumb封面（依赖should_run参数，重置状态后会强制重新下载）
+    let thumb_url = custom_cover_url.unwrap_or(video_model.cover.as_str());
+    let urls = vec![thumb_url];
+    tokio::select! {
+        biased;
+        _ = token.cancelled() => return Ok(ExecutionStatus::Skipped),
+        res = downloader.fetch_with_fallback(&urls, &poster_path) => res,
+    }?;
 
-    if poster_exists && fanart_exists {
-        info!("  ✓ 封面和背景图文件已存在，跳过下载");
-        return Ok(ExecutionStatus::Skipped);
-    }
-
-    if poster_exists {
-        info!("  ✓ 封面文件已存在，跳过封面下载");
-    }
-
-    if fanart_exists {
-        info!("  ✓ 背景图文件已存在，跳过背景图下载");
-    }
-
-    // 下载thumb封面（仅在文件不存在时）
-    if !poster_exists {
-        // 在并发环境下，下载前再次检查文件是否已被其他任务创建
-        if poster_path.exists() {
-            info!("  ✓ thumb文件在下载前检查时已存在，跳过下载");
-        } else {
-            let thumb_url = custom_cover_url.unwrap_or(video_model.cover.as_str());
-            let urls = vec![thumb_url];
-            tokio::select! {
-                biased;
-                _ = token.cancelled() => return Ok(ExecutionStatus::Skipped),
-                res = downloader.fetch_with_fallback(&urls, &poster_path) => res,
-            }?;
-        }
-    }
-
-    // 下载fanart背景图（仅在文件不存在时）
-    if !fanart_exists {
-        // 在并发环境下，下载前再次检查文件是否已被其他任务创建
-        if fanart_path.exists() {
-            info!("  ✓ 背景图文件在下载前检查时已存在，跳过下载");
-        } else {
-            ensure_parent_dir_for_file(&fanart_path).await?;
-            if let Some(fanart_url) = custom_fanart_url {
-                // 如果有专门的fanart URL，独立下载
-                let fanart_urls = vec![fanart_url];
-                tokio::select! {
-                    biased;
-                    _ = token.cancelled() => return Ok(ExecutionStatus::Skipped),
-                    res = downloader.fetch_with_fallback(&fanart_urls, &fanart_path) => {
-                        match res {
-                            Ok(_) => {
-                                info!("✓ 成功下载fanart背景图: {}", fanart_url);
-                                return Ok(ExecutionStatus::Succeeded);
-                            },
-                            Err(e) => {
-                                warn!("✗ fanart背景图下载失败，URL: {}, 错误: {:#}", fanart_url, e);
-                                warn!("回退策略：复制thumb作为fanart");
-                                // fanart下载失败，回退到复制thumb
-                                if poster_path.exists() {
-                                    fs::copy(&poster_path, &fanart_path).await?;
-                                } else {
-                                    warn!("thumb文件不存在，无法复制作为fanart");
-                                }
-                            }
-                        }
+    // 下载fanart背景图
+    ensure_parent_dir_for_file(&fanart_path).await?;
+    if let Some(fanart_url) = custom_fanart_url {
+        // 如果有专门的fanart URL，独立下载
+        let fanart_urls = vec![fanart_url];
+        tokio::select! {
+            biased;
+            _ = token.cancelled() => return Ok(ExecutionStatus::Skipped),
+            res = downloader.fetch_with_fallback(&fanart_urls, &fanart_path) => {
+                match res {
+                    Ok(_) => {
+                        info!("✓ 成功下载fanart背景图: {}", fanart_url);
+                        return Ok(ExecutionStatus::Succeeded);
                     },
+                    Err(e) => {
+                        warn!("✗ fanart背景图下载失败，URL: {}, 错误: {:#}", fanart_url, e);
+                        warn!("回退策略：复制thumb作为fanart");
+                        // fanart下载失败，回退到复制thumb
+                        if poster_path.exists() {
+                            fs::copy(&poster_path, &fanart_path).await?;
+                        } else {
+                            warn!("thumb文件不存在，无法复制作为fanart");
+                        }
+                    }
                 }
-            } else {
-                // 没有专门的fanart URL，直接复制thumb
-                if poster_path.exists() {
-                    fs::copy(&poster_path, &fanart_path).await?;
-                } else {
-                    warn!("thumb文件不存在，无法复制作为fanart");
-                }
-            }
+            },
+        }
+    } else {
+        // 没有专门的fanart URL，直接复制thumb
+        if poster_path.exists() {
+            fs::copy(&poster_path, &fanart_path).await?;
+        } else {
+            warn!("thumb文件不存在，无法复制作为fanart");
         }
     }
 
@@ -3613,13 +3548,7 @@ pub async fn fetch_bangumi_poster(
     info!("  poster路径: {:?}", poster_path);
     info!("  custom_poster_url: {:?}", custom_poster_url);
 
-    // 检查文件是否已存在，避免重复下载
-    if poster_path.exists() {
-        info!("  ✓ poster.jpg文件已存在，跳过下载");
-        return Ok(ExecutionStatus::Skipped);
-    }
-
-    // 下载 poster.jpg 文件
+    // 下载 poster.jpg 文件（依赖should_run参数，重置状态后会强制重新下载）
     ensure_parent_dir_for_file(&poster_path).await?;
 
     let poster_url = custom_poster_url.unwrap_or(video_model.cover.as_str());

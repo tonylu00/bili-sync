@@ -885,6 +885,19 @@ impl Aria2Downloader {
             bail!("No URLs provided");
         }
 
+        // 尝试删除已存在的文件以确保重新下载（忽略文件不存在的错误）
+        // 使用 remove_file 而不是 exists() 检查，避免Windows路径混合斜杠导致的问题
+        match tokio::fs::remove_file(path).await {
+            Ok(_) => debug!("删除已存在的文件以重新下载: {}", path.display()),
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+                // 文件不存在，继续下载
+            }
+            Err(e) => {
+                warn!("删除文件失败: {}, 错误: {:#}", path.display(), e);
+                // 即使删除失败也继续尝试下载，aria2会覆盖
+            }
+        }
+
         // 确保目标目录存在
         if let Some(parent) = path.parent() {
             tokio::fs::create_dir_all(parent).await?;
