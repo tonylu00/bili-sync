@@ -132,15 +132,21 @@ pub fn bangumi_page_format_args(
         extracted => extracted,                      // 从标题提取到了明确的季度信息，使用提取的值
     } as u32;
 
-    // 如果启用了番剧Season结构，使用从标题提取的实际季度编号
+    // 如果启用了番剧Season结构，使用从番剧系列标题提取的季度编号
     let season_number = if current_config.bangumi_use_season_structure {
-        // 启用统一结构：使用从番剧名称提取的季度编号
-        let (_, extracted_season_number) = 
-            crate::utils::bangumi_name_extractor::BangumiNameExtractor::extract_series_name_and_season(
-                &video_model.name,
-                None, // 不提供season_title，让提取器从完整标题中识别
-            );
-        extracted_season_number
+        // 从API标题（系列标题）中提取季度信息，而不是从单集标题中提取
+        // 这样可以确保同一个番剧源的所有集数都在同一个Season内
+        if let Some(series_title) = api_title {
+            let (_, extracted_season_number) =
+                crate::utils::bangumi_name_extractor::BangumiNameExtractor::extract_series_name_and_season(
+                    series_title,  // 使用番剧系列标题，如"名侦探柯南"
+                    None,
+                );
+            extracted_season_number
+        } else {
+            // 如果没有API标题，默认为Season 01
+            1
+        }
     } else {
         raw_season_number
     };
