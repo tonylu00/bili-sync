@@ -8055,7 +8055,7 @@ pub async fn update_credential(
                 if data["code"].as_i64() == Some(0) {
                     if let Some(buvid4) = data["data"]["b_4"].as_str() {
                         new_credential.buvid4 = Some(buvid4.to_string());
-                        tracing::info!("通过 spi 接口获取到 buvid4: {}", buvid4);
+                        tracing::debug!("通过 spi 接口获取到 buvid4: {}", buvid4);
                     } else {
                         tracing::warn!("spi 接口未返回 buvid4");
                     }
@@ -8063,12 +8063,12 @@ pub async fn update_credential(
             }
         }
     } else {
-        tracing::info!("使用用户提供的 buvid4");
+        tracing::debug!("使用用户提供的 buvid4");
     }
 
     // 记录 dedeuserid_ckmd5 的来源
     if new_credential.dedeuserid_ckmd5.is_some() {
-        tracing::info!("使用用户提供的 DedeUserID__ckMd5");
+        tracing::debug!("使用用户提供的 DedeUserID__ckMd5");
     }
 
     // 更新配置中的凭证
@@ -8172,12 +8172,20 @@ pub async fn poll_qr_status(
     Extension(db): Extension<Arc<DatabaseConnection>>,
     Query(params): Query<crate::api::request::QRPollRequest>,
 ) -> Result<ApiResponse<crate::api::response::QRPollResponse>, ApiError> {
-    info!("收到轮询请求: session_id={}", params.session_id);
+    debug!("收到轮询请求: session_id={}", params.session_id);
 
     // 轮询登录状态
     let status = match QR_SERVICE.poll_login_status(&params.session_id).await {
         Ok(s) => {
-            info!("轮询成功: session_id={}, status={:?}", params.session_id, s);
+            // 根据状态决定日志级别：Pending/Scanned 使用 debug，Confirmed 使用 info
+            match &s {
+                crate::auth::LoginStatus::Confirmed(_) => {
+                    info!("轮询成功: session_id={}, status={:?}", params.session_id, s);
+                }
+                _ => {
+                    debug!("轮询成功: session_id={}, status={:?}", params.session_id, s);
+                }
+            }
             s
         }
         Err(e) => {

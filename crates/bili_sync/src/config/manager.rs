@@ -61,7 +61,7 @@ impl ConfigManager {
         // 尝试从数据库加载配置
         match self.load_from_database().await {
             Ok(config) => {
-                info!("从数据库加载配置成功");
+                debug!("从数据库加载配置成功");
                 ConfigBundle::from_config(config)
             }
             Err(e) => {

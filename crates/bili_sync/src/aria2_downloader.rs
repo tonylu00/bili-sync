@@ -118,11 +118,11 @@ impl Aria2Downloader {
 
         tracing::debug!("提取aria2可执行文件...");
         let aria2_binary_path = Self::extract_aria2_binary().await?;
-        tracing::info!("aria2可执行文件路径: {}", aria2_binary_path.display());
+        tracing::debug!("aria2可执行文件路径: {}", aria2_binary_path.display());
 
         // 确定进程数量：根据系统资源动态计算
         let instance_count = Self::calculate_optimal_instance_count();
-        tracing::info!("计算得出最佳aria2实例数: {}", instance_count);
+        tracing::debug!("计算得出最佳aria2实例数: {}", instance_count);
 
         let mut downloader = Self {
             client,
@@ -974,7 +974,7 @@ impl Aria2Downloader {
         let threads = if let Some(file_size_bytes) = self.try_get_file_size(urls[0]).await {
             let file_size_mb = file_size_bytes / 1_048_576; // 转换为MB
             let smart_threads = Self::calculate_smart_threads_for_file(file_size_mb, base_threads, total_threads);
-            info!(
+            debug!(
                 "文件大小: {} MB，智能调整线程数: {} (基础: {}, 总线程: {})",
                 file_size_mb, smart_threads, base_threads, total_threads
             );
@@ -985,7 +985,7 @@ impl Aria2Downloader {
         };
 
         // 构建基础选项 - 增强网络容错
-        tracing::info!("配置aria2下载任务 - 文件: {}, 线程数: {}, 目标目录: {}", file_name, threads, dir);
+        tracing::debug!("配置aria2下载任务 - 文件: {}, 线程数: {}, 目标目录: {}", file_name, threads, dir);
         tracing::debug!("aria2下载链接数量: {}", urls.len());
         for (i, url) in urls.iter().enumerate() {
             tracing::debug!("aria2下载链接{}: {}", i+1, url);

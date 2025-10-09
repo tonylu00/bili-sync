@@ -518,19 +518,19 @@ impl HardwareFingerprint {
         let webgl_context = fingerprint.hardware.webgl.get_full_context_info();
         let webgl_extensions = fingerprint.hardware.webgl.get_extensions_string();
 
-        info!("=== 会话硬件指纹已{}（基于用户） ===", action);
-        info!("GPU: {}", gpu_name);
-        info!("GPU厂商: {}", gpu_vendor);
-        info!("GPU详细信息: {}", gpu_full_info);
-        info!("浏览器: {}", browser_type);
-        info!("WebGL上下文: {}", webgl_context);
-        info!("WebGL扩展: {}", if webgl_extensions.len() > 100 {
+        debug!("=== 会话硬件指纹已{}（基于用户） ===", action);
+        debug!("GPU: {}", gpu_name);
+        debug!("GPU厂商: {}", gpu_vendor);
+        debug!("GPU详细信息: {}", gpu_full_info);
+        debug!("浏览器: {}", browser_type);
+        debug!("WebGL上下文: {}", webgl_context);
+        debug!("WebGL扩展: {}", if webgl_extensions.len() > 100 {
             format!("{}... (共{}个字符)", &webgl_extensions[..100], webgl_extensions.len())
         } else {
             webgl_extensions
         });
-        info!("分辨率: {}x{}", width, height);
-        info!("===========================");
+        debug!("分辨率: {}x{}", width, height);
+        debug!("===========================");
     }
 
     // 获取全局硬件指纹（如果已初始化）

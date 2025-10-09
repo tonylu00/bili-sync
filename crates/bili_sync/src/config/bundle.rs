@@ -35,7 +35,7 @@ impl ConfigBundle {
     /// 构建 Handlebars 模板引擎
     fn build_handlebars(config: &Config) -> Result<Handlebars<'static>> {
         use handlebars::handlebars_helper;
-        use tracing::{debug, info};
+        use tracing::debug;
 
         debug!("开始构建Handlebars模板引擎...");
         let mut handlebars = Handlebars::new();
@@ -107,7 +107,7 @@ impl ConfigBundle {
             bangumi_folder_name, safe_bangumi_folder_name
         );
 
-        info!("Handlebars模板引擎构建完成，共注册 {} 个模板", 6);
+        debug!("Handlebars模板引擎构建完成，共注册 {} 个模板", 6);
         Ok(handlebars)
     }
 

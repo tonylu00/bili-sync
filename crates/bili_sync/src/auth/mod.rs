@@ -71,7 +71,7 @@ impl QRLoginService {
 
         // 首先访问B站主页获取 buvid3
         let homepage_url = "https://www.bilibili.com";
-        tracing::info!("发起B站主页访问请求: {}", homepage_url);
+        tracing::debug!("发起B站主页访问请求: {}", homepage_url);
 
         let homepage_request = self.client
             .get(homepage_url)
@@ -83,14 +83,14 @@ impl QRLoginService {
             tracing::warn!("B站主页访问失败，继续尝试生成二维码 - 错误: {}", e);
             e
         }).map(|resp| {
-            tracing::info!("B站主页访问成功 - 状态码: {}", resp.status());
+            tracing::debug!("B站主页访问成功 - 状态码: {}", resp.status());
             tracing::debug!("B站主页响应头: {:?}", resp.headers());
             resp
         });
 
         // 调用B站API生成二维码
         let qrcode_url = "https://passport.bilibili.com/x/passport-login/web/qrcode/generate";
-        tracing::info!("发起二维码生成请求: {}", qrcode_url);
+        tracing::debug!("发起二维码生成请求: {}", qrcode_url);
 
         let qrcode_request = self
             .client
@@ -102,7 +102,7 @@ impl QRLoginService {
         let response = qrcode_request.send().await;
         let response = match response {
             Ok(resp) => {
-                tracing::info!("二维码生成请求成功 - 状态码: {}, URL: {}", resp.status(), resp.url());
+                tracing::debug!("二维码生成请求成功 - 状态码: {}, URL: {}", resp.status(), resp.url());
                 resp
             }
             Err(e) => {
@@ -117,7 +117,7 @@ impl QRLoginService {
             e
         })?;
 
-        tracing::info!("B站API响应数据: {}", data);
+        tracing::debug!("B站API响应数据: {}", data);
 
         if data["code"].as_i64() != Some(0) {
             let error_msg = format!(
@@ -147,9 +147,9 @@ impl QRLoginService {
         // 打印当前存储的所有会话
         {
             let sessions = self.sessions.read().await;
-            tracing::info!("当前会话数量: {}", sessions.len());
+            tracing::debug!("当前会话数量: {}", sessions.len());
             for (id, _) in sessions.iter() {
-                tracing::info!("存储的会话ID: {}", id);
+                tracing::debug!("存储的会话ID: {}", id);
             }
         }
 
@@ -158,14 +158,14 @@ impl QRLoginService {
 
     /// 轮询登录状态
     pub async fn poll_login_status(&self, session_id: &str) -> Result<LoginStatus> {
-        tracing::info!("轮询登录状态: session_id={}", session_id);
+        tracing::debug!("轮询登录状态: session_id={}", session_id);
 
         // 打印当前存储的所有会话
         {
             let sessions = self.sessions.read().await;
-            tracing::info!("轮询时会话数量: {}", sessions.len());
+            tracing::debug!("轮询时会话数量: {}", sessions.len());
             for (id, _) in sessions.iter() {
-                tracing::info!("存储的会话ID: {}", id);
+                tracing::debug!("存储的会话ID: {}", id);
             }
         }
 
@@ -244,13 +244,13 @@ impl QRLoginService {
                     if let Some(current_cred) = current_config.credential.load().as_ref() {
                         if buvid3.is_empty() && !current_cred.buvid3.is_empty() {
                             buvid3 = current_cred.buvid3.clone();
-                            tracing::info!("使用现有配置中的 buvid3");
+                            tracing::debug!("使用现有配置中的 buvid3");
                         }
                         if buvid4.is_none() {
                             if let Some(ref existing_buvid4) = current_cred.buvid4 {
                                 if !existing_buvid4.is_empty() {
                                     buvid4 = Some(existing_buvid4.clone());
-                                    tracing::info!("使用现有配置中的 buvid4");
+                                    tracing::debug!("使用现有配置中的 buvid4");
                                 }
                             }
                         }
@@ -262,12 +262,12 @@ impl QRLoginService {
                             Ok((new_buvid3, new_buvid4)) => {
                                 if buvid3.is_empty() {
                                     buvid3 = new_buvid3;
-                                    tracing::info!("成功生成新的 buvid3");
+                                    tracing::debug!("成功生成新的 buvid3");
                                 }
                                 if buvid4.is_none() {
                                     buvid4 = new_buvid4;
                                     if let Some(ref b4) = buvid4 {
-                                        tracing::info!("成功生成新的 buvid4: {}", b4);
+                                        tracing::debug!("成功生成新的 buvid4: {}", b4);
                                     } else {
                                         tracing::warn!("未能获取 buvid4");
                                     }
@@ -388,7 +388,7 @@ impl QRLoginService {
 
     /// 生成 buvid3 和 buvid4
     async fn generate_buvids(&self) -> Result<(String, Option<String>)> {
-        tracing::info!("尝试生成 buvid3 和 buvid4...");
+        tracing::debug!("尝试生成 buvid3 和 buvid4...");
 
         // 方法1：访问 B站的 buvid3/buvid4 生成接口
         let response = self
@@ -406,9 +406,9 @@ impl QRLoginService {
             let buvid4 = data["data"]["b_4"].as_str();
 
             if let Some(buvid3) = buvid3 {
-                tracing::info!("从 spi 接口获取到 buvid3: {}", buvid3);
+                tracing::debug!("从 spi 接口获取到 buvid3: {}", buvid3);
                 if let Some(buvid4) = buvid4 {
-                    tracing::info!("从 spi 接口获取到 buvid4: {}", buvid4);
+                    tracing::debug!("从 spi 接口获取到 buvid4: {}", buvid4);
                     return Ok((buvid3.to_string(), Some(buvid4.to_string())));
                 } else {
                     tracing::warn!("spi 接口未返回 buvid4");
@@ -429,7 +429,7 @@ impl QRLoginService {
             })
             .collect();
 
-        tracing::info!("生成随机 buvid3: {}", buvid3);
+        tracing::debug!("生成随机 buvid3: {}", buvid3);
         tracing::warn!("无法获取 buvid4，将使用空值");
         Ok((buvid3, None))
     }

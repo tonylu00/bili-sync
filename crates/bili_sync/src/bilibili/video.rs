@@ -92,7 +92,7 @@ impl<'a> Video<'a> {
     /// 调用视频详情API，如果返回-404则表示视频已被删除
     pub async fn check_video_exists(&self) -> Result<bool> {
         let request_url = "https://api.bilibili.com/x/web-interface/view";
-        tracing::info!("检查视频是否存在: {} - BVID: {}", request_url, self.bvid);
+        tracing::debug!("检查视频是否存在: {} - BVID: {}", request_url, self.bvid);
 
         let response = self
             .client
@@ -104,7 +104,7 @@ impl<'a> Video<'a> {
 
         let res = match response {
             Ok(resp) => {
-                tracing::info!("视频存在性检查请求成功 - 状态码: {}, BVID: {}", resp.status(), self.bvid);
+                tracing::debug!("视频存在性检查请求成功 - 状态码: {}, BVID: {}", resp.status(), self.bvid);
                 resp
             }
             Err(e) => {
@@ -266,7 +266,7 @@ impl<'a> Video<'a> {
             });
 
         if let Some(ref epid_value) = epid {
-            tracing::info!("✓ 成功从视频详情API获取到epid: {}", epid_value);
+            tracing::debug!("✓ 成功从视频详情API获取到epid: {}", epid_value);
         } else {
             tracing::debug!("视频详情API中未找到epid信息，可能不是番剧视频");
             tracing::debug!("已检查的字段: redirect_url, season.episodes, epid, episode_id, ugc_season.episodes");
@@ -601,17 +601,17 @@ impl<'a> Video<'a> {
                 };
 
                 if should_fallback_to_bangumi {
-                    tracing::info!("普通视频API返回-404错误，尝试降级到番剧API: {}", e);
+                    tracing::debug!("普通视频API返回-404错误，尝试降级到番剧API: {}", e);
 
                     // 获取epid：优先使用传入的ep_id，如果没有则从视频详情API获取
                     let epid_to_use = if let Some(provided_epid) = ep_id {
                         tracing::debug!("使用提供的ep_id: {}", provided_epid);
                         Some(provided_epid.to_string())
                     } else {
-                        tracing::info!("缺少ep_id，尝试从视频详情API获取epid信息");
+                        tracing::debug!("缺少ep_id，尝试从视频详情API获取epid信息");
                         match self.get_video_detail_for_epid().await {
                             Ok(Some(epid)) => {
-                                tracing::info!("✓ 成功从视频详情API获取到epid: {}", epid);
+                                tracing::debug!("✓ 成功从视频详情API获取到epid: {}", epid);
                                 Some(epid)
                             }
                             Ok(None) => {
@@ -627,10 +627,10 @@ impl<'a> Video<'a> {
 
                     // 如果有epid，尝试番剧API降级
                     if let Some(epid) = epid_to_use {
-                        tracing::info!("使用epid {} 尝试番剧API降级", epid);
+                        tracing::debug!("使用epid {} 尝试番剧API降级", epid);
                         match self.get_bangumi_page_analyzer_with_fallback(page, &epid).await {
                             Ok(analyzer) => {
-                                tracing::info!("✓ 番剧API降级成功，获取到播放地址");
+                                tracing::debug!("✓ 番剧API降级成功，获取到播放地址");
                                 Ok(analyzer)
                             }
                             Err(bangumi_err) => {
@@ -1154,7 +1154,7 @@ impl<'a> Video<'a> {
         tracing::debug!("番剧API参数: {:?}", params);
 
         let request_url = "https://api.bilibili.com/pgc/player/web/playurl";
-        tracing::info!("发起番剧playurl请求: {} - Episode ID: {}, CID: {}, 质量: {}", request_url, ep_id, page.cid, qn);
+        tracing::debug!("发起番剧playurl请求: {} - Episode ID: {}, CID: {}, 质量: {}", request_url, ep_id, page.cid, qn);
 
         let request = self
             .client
@@ -1298,7 +1298,7 @@ impl<'a> Video<'a> {
             full_url.push_str(&format!("{}={}", key, value));
         }
 
-        tracing::info!("发起番剧playurl请求(分页): {} - EP ID: {}, CID: {}", request_url, ep_id, page.cid);
+        tracing::debug!("发起番剧playurl请求(分页): {} - EP ID: {}, CID: {}", request_url, ep_id, page.cid);
         tracing::debug!("完整请求URL: {}", full_url);
 
         let request = self

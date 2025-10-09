@@ -2043,9 +2043,9 @@ pub async fn download_video_pages(
             // fanart使用竖版封面
             let season_fanart_url = season_info_ref.cover.as_deref().filter(|s| !s.is_empty());
 
-            info!("Season级别图片选择逻辑:");
-            info!("  Season{:02}-thumb.jpg URL: {:?}", season_number, season_thumb_url);
-            info!("  Season{:02}-fanart.jpg URL: {:?}", season_number, season_fanart_url);
+            debug!("Season级别图片选择逻辑:");
+            debug!("  Season{:02}-thumb.jpg URL: {:?}", season_number, season_thumb_url);
+            debug!("  Season{:02}-fanart.jpg URL: {:?}", season_number, season_fanart_url);
 
             // 并行下载三个Season级别的图片文件
             let (thumb_result, fanart_result, poster_result) = tokio::join!(
@@ -2084,8 +2084,13 @@ pub async fn download_video_pages(
 
             // 返回综合结果
             Some(match (thumb_result, fanart_result, poster_result) {
-                (Ok(ExecutionStatus::Succeeded), Ok(ExecutionStatus::Succeeded), Ok(ExecutionStatus::Succeeded)) => ExecutionStatus::Succeeded,
-                (Ok(_), Ok(_), Ok(_)) => ExecutionStatus::Skipped,
+                // 只要都是Ok且至少有一个Succeeded，就算成功
+                (Ok(ExecutionStatus::Succeeded), Ok(_), Ok(_))
+                | (Ok(_), Ok(ExecutionStatus::Succeeded), Ok(_))
+                | (Ok(_), Ok(_), Ok(ExecutionStatus::Succeeded)) => ExecutionStatus::Succeeded,
+                // 都是Ok但都是Skipped
+                (Ok(ExecutionStatus::Skipped), Ok(ExecutionStatus::Skipped), Ok(ExecutionStatus::Skipped)) => ExecutionStatus::Skipped,
+                // 有任何错误才报Failed
                 _ => ExecutionStatus::Failed(anyhow::anyhow!("Season级别图片下载失败")),
             })
         } else {
@@ -2183,7 +2188,7 @@ pub async fn download_video_pages(
                     .or(season.cover.as_deref().filter(|s| !s.is_empty()))
                     .or(season.new_ep_cover.as_deref().filter(|s| !s.is_empty()));
 
-                info!("番剧「{}」thumb选择逻辑:", video_model.name);
+                debug!("番剧「{}」thumb选择逻辑:", video_model.name);
                 debug!(
                     "  字段值: h169={:?}, h1610={:?}, bkg={:?}, cover={:?}, new_ep_cover={:?}",
                     season.horizontal_cover_169,
@@ -2192,7 +2197,7 @@ pub async fn download_video_pages(
                     season.cover,
                     season.new_ep_cover
                 );
-                info!("  最终选择的thumb URL: {:?}", thumb_url);
+                debug!("  最终选择的thumb URL: {:?}", thumb_url);
 
                 thumb_url
             } else if let Some(ref cover_url) = collection_cover_url {
@@ -2205,8 +2210,8 @@ pub async fn download_video_pages(
                 let season = season_info.as_ref().unwrap();
                 let fanart_url = season.cover.as_deref().filter(|s| !s.is_empty());
 
-                info!("番剧「{}」fanart选择逻辑:", video_model.name);
-                info!("  最终选择的fanart URL: {:?}", fanart_url);
+                debug!("番剧「{}」fanart选择逻辑:", video_model.name);
+                debug!("  最终选择的fanart URL: {:?}", fanart_url);
 
                 fanart_url
             } else {
@@ -2232,8 +2237,8 @@ pub async fn download_video_pages(
             if is_bangumi && season_info.is_some() {
                 let season = season_info.as_ref().unwrap();
                 let poster_url = season.cover.as_deref().filter(|s| !s.is_empty());
-                info!("番剧「{}」poster.jpg选择逻辑:", video_model.name);
-                info!("  最终选择的poster URL: {:?}", poster_url);
+                debug!("番剧「{}」poster.jpg选择逻辑:", video_model.name);
+                debug!("  最终选择的poster URL: {:?}", poster_url);
                 poster_url
             } else {
                 None
@@ -3113,7 +3118,7 @@ pub async fn fetch_page_video(
                 let quality_value = *quality as u32;
                 let requested_quality = filter_option.video_max_quality as u32;
 
-                info!("✓ 选择视频流: {} {:?}", quality, codecs);
+                debug!("✓ 选择视频流: {} {:?}", quality, codecs);
 
                 // 质量对比分析
                 if quality_value < requested_quality {
@@ -3135,7 +3140,7 @@ pub async fn fetch_page_video(
                         );
                     }
                 } else {
-                    info!("✓ 获得预期质量或更高");
+                    debug!("✓ 获得预期质量或更高");
                 }
             }
             if let Some(VideoStream::DashAudio { quality, .. }) = audio {
@@ -3439,11 +3444,11 @@ pub async fn fetch_video_poster(
         return Ok(ExecutionStatus::Skipped);
     }
 
-    info!("开始处理视频「{}」的封面和背景图", video_model.name);
-    info!("  thumb路径: {:?}", poster_path);
-    info!("  fanart路径: {:?}", fanart_path);
-    info!("  custom_thumb_url: {:?}", custom_cover_url);
-    info!("  custom_fanart_url: {:?}", custom_fanart_url);
+    debug!("开始处理视频「{}」的封面和背景图", video_model.name);
+    debug!("  thumb路径: {:?}", poster_path);
+    debug!("  fanart路径: {:?}", fanart_path);
+    debug!("  custom_thumb_url: {:?}", custom_cover_url);
+    debug!("  custom_fanart_url: {:?}", custom_fanart_url);
 
     // 下载thumb封面（依赖should_run参数，重置状态后会强制重新下载）
     let thumb_url = custom_cover_url.unwrap_or(video_model.cover.as_str());
@@ -3544,9 +3549,9 @@ pub async fn fetch_bangumi_poster(
         return Ok(ExecutionStatus::Skipped);
     }
 
-    info!("开始处理番剧「{}」的主封面 poster.jpg", video_model.name);
-    info!("  poster路径: {:?}", poster_path);
-    info!("  custom_poster_url: {:?}", custom_poster_url);
+    debug!("开始处理番剧「{}」的主封面 poster.jpg", video_model.name);
+    debug!("  poster路径: {:?}", poster_path);
+    debug!("  custom_poster_url: {:?}", custom_poster_url);
 
     // 下载 poster.jpg 文件（依赖should_run参数，重置状态后会强制重新下载）
     ensure_parent_dir_for_file(&poster_path).await?;
@@ -3560,7 +3565,7 @@ pub async fn fetch_bangumi_poster(
         res = downloader.fetch_with_fallback(&urls, &poster_path) => res,
     }?;
 
-    info!("✓ 成功下载番剧主封面 poster.jpg: {}", poster_url);
+    debug!("✓ 成功下载番剧主封面 poster.jpg: {}", poster_url);
     Ok(ExecutionStatus::Succeeded)
 }
 
@@ -4134,12 +4139,12 @@ async fn get_season_info_from_api(
                     current_bkg.map(|s| s.to_string()),
                 );
                 first_available_covers = Some(covers);
-                info!("💾 记录为第一个可用的横版封面备选：season_id={}", season_season_id);
+                debug!("💾 记录为第一个可用的横版封面备选：season_id={}", season_season_id);
             }
 
             // 检查是否匹配当前season_id
             if season_season_id.to_string() == season_id {
-                info!(
+                debug!(
                     "✓ 找到匹配的season_id: {} (第{}个条目)",
                     season_season_id,
                     target_season_covers.len() + 1
@@ -4160,7 +4165,7 @@ async fn get_season_info_from_api(
 
         // 从目标season的所有条目中选择第一个有有效横版封面的
         let found_season_covers = if !target_season_covers.is_empty() {
-            info!(
+            debug!(
                 "共找到 {} 个 season_id {} 的条目",
                 target_season_covers.len(),
                 season_id
@@ -4175,7 +4180,7 @@ async fn get_season_info_from_api(
             });
 
             if let Some(covers) = valid_cover {
-                info!("✓ 找到有有效横版封面的season_id {} 条目", season_id);
+                debug!("✓ 找到有有效横版封面的season_id {} 条目", season_id);
                 Some(covers.clone())
             } else {
                 warn!("⚠️ 目标season {} 的所有条目都没有有效的横版封面", season_id);
@@ -4195,13 +4200,13 @@ async fn get_season_info_from_api(
                     || bkg.as_ref().map(|s| !s.is_empty()).unwrap_or(false);
 
                 if has_valid_covers {
-                    info!("✓ 目标season {} 有有效的横版封面，直接使用", season_id);
+                    debug!("✓ 目标season {} 有有效的横版封面，直接使用", season_id);
                     (new_ep, h1610, h169, bkg)
                 } else if let Some((fallback_new_ep, fallback_h1610, fallback_h169, fallback_bkg)) =
                     first_available_covers
                 {
                     warn!("⚠️ 目标season {} 没有有效的横版封面，使用第一个可用的备选", season_id);
-                    info!(
+                    debug!(
                         "  备选横版封面: new_ep={:?}, h1610={:?}, h169={:?}, bkg={:?}",
                         fallback_new_ep, fallback_h1610, fallback_h169, fallback_bkg
                     );
