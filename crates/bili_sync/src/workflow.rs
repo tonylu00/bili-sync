@@ -785,7 +785,11 @@ pub async fn fetch_video_details(
                                 ..
                             } = &mut view_info
                             else {
-                                unreachable!()
+                                error!(
+                                    "获取视频 {} - {} 的详细信息失败，错误为：view_info",
+                                    &video_model.bvid, &video_model.name
+                                );
+                                return Err(anyhow!("Download failed, view_info is not type view_info"));
                             };
 
                             // 革命性充电视频检测：基于API返回的upower字段进行精确判断
