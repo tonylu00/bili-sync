@@ -1438,9 +1438,9 @@ pub async fn download_video_pages(
             VideoSourceEnum::BangumiSource(source) => source,
             _ => {
                 return Err(anyhow!(
-+                    "Expected VideoSourceEnum::BangumiSource variant when handling bangumi, got non-bangumi variant (type: {})",
-+                    std::any::type_name_of_val(video_source)
-+                ));
+                    "Expected VideoSourceEnum::BangumiSource variant when handling bangumi, got non-bangumi variant (type: {})",
+                    std::any::type_name_of_val(video_source)
+                ));
             }
         };
 
