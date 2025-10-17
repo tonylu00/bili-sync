@@ -1436,7 +1436,9 @@ pub async fn download_video_pages(
     let (base_path, season_folder, bangumi_folder_path) = if is_bangumi {
         let bangumi_source = match video_source {
             VideoSourceEnum::BangumiSource(source) => source,
-            _ => unreachable!(),
+            _ => {
+                return Err(anyhow!("Expected VideoSourceEnum::BangumiSource variant, got {:?}", video_source));
+            }
         };
 
         // 为番剧创建独立的文件夹：配置路径 -> 番剧文件夹 -> Season文件夹
