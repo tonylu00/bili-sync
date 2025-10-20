@@ -81,6 +81,7 @@ const PLAYURL_JITTER_MAX_MS: u64 = 210;
 enum PlayurlFailureKind {
     RiskControl,
     WafRateLimit,
+    NotFound,
     Other,
 }
 
@@ -209,14 +210,23 @@ fn classify_playurl_error(err: &anyhow::Error) -> PlayurlFailureKind {
                 | crate::bilibili::BiliError::RiskControlVerificationRequired(_) => {
                     return PlayurlFailureKind::RiskControl;
                 }
+                crate::bilibili::BiliError::VideoStreamDenied(code) if *code == -404 => {
+                    return PlayurlFailureKind::NotFound;
+                }
                 crate::bilibili::BiliError::RequestFailed(code, _) if matches!(*code, -352 | -412) => {
                     return PlayurlFailureKind::RiskControl;
+                }
+                crate::bilibili::BiliError::RequestFailed(code, _) if *code == -404 => {
+                    return PlayurlFailureKind::NotFound;
                 }
                 _ => {}
             }
         }
 
         if let Some(reqwest_err) = cause.downcast_ref::<reqwest::Error>() {
+            if reqwest_err.status() == Some(StatusCode::NOT_FOUND) {
+                return PlayurlFailureKind::NotFound;
+            }
             if reqwest_err.status() == Some(StatusCode::PRECONDITION_FAILED) {
                 return PlayurlFailureKind::WafRateLimit;
             }
@@ -327,17 +337,19 @@ impl<'a> Video<'a> {
 
         let reqwest_error = response.error_for_status_ref().err();
 
-        let mut body_len = 0usize;
-        let mut body_voucher = None;
-        let mut body_code = None;
-        let mut body_message = None;
+    let mut body_len = 0usize;
+    let mut body_voucher = None;
+    let mut body_code = None;
+    let mut body_message = None;
+    let mut body_text_preview: Option<String> = None;
 
         match response.bytes().await {
             Ok(bytes) => {
                 body_len = bytes.len();
                 if !bytes.is_empty() {
                     if let Ok(text) = std::str::from_utf8(&bytes) {
-                        if text.trim_start().starts_with('{') {
+                        let trimmed = text.trim_start();
+                        if trimmed.starts_with('{') {
                             if let Ok(json) = serde_json::from_str::<serde_json::Value>(text) {
                                 body_voucher = json["data"]["v_voucher"]
                                     .as_str()
@@ -346,6 +358,9 @@ impl<'a> Video<'a> {
                                 body_code = json["code"].as_i64();
                                 body_message = json["message"].as_str().map(|s| s.to_string());
                             }
+                        } else {
+                            const MAX_PREVIEW: usize = 240;
+                            body_text_preview = Some(trimmed.chars().take(MAX_PREVIEW).collect());
                         }
                     }
                 }
@@ -367,7 +382,7 @@ impl<'a> Video<'a> {
         };
 
         tracing::warn!(
-            "playurl 412 classified as {} (kind={}, bvid={}, cid={}, qn={:?}, ep_id={:?}, status={}, content_type={:?}, body_len={} bytes, gaia_vvoucher_header={}, body_voucher_present={}, x_sec_request_id={:?}, x_bili_trace_id={:?}, body_code={:?}, body_message={:?}, url={})",
+            "playurl 412 classified as {} (kind={}, bvid={}, cid={}, qn={:?}, ep_id={:?}, status={}, content_type={:?}, body_len={} bytes, gaia_vvoucher_header={}, body_voucher_present={}, x_sec_request_id={:?}, x_bili_trace_id={:?}, body_code={:?}, body_message={:?}, body_preview={:?}, url={})",
             classification_label,
             context.kind.as_str(),
             context.bvid,
@@ -383,6 +398,7 @@ impl<'a> Video<'a> {
             x_bili_trace_id.as_deref(),
             body_code,
             body_message,
+            body_text_preview.as_deref(),
             url,
         );
 
@@ -406,8 +422,11 @@ impl<'a> Video<'a> {
                 }
             }
             Playurl412Kind::WafRateLimit => {
-                match self.check_video_exists().await {
+                let existence_check = self.check_video_exists().await;
+                let mut video_exists = true;
+                match existence_check {
                     Ok(exists) => {
+                        video_exists = exists;
                         tracing::debug!(
                             "playurl 412 WAF/rate-limit后的视频存在性检查: exists={} - BVID: {}",
                             exists,
@@ -421,6 +440,21 @@ impl<'a> Video<'a> {
                             check_err
                         );
                     }
+                }
+
+                if !video_exists {
+                    tracing::warn!(
+                        "playurl 412 判定为稿件缺失: BVID={}, CID={}, qn={:?}, preview={:?}",
+                        context.bvid,
+                        context.cid,
+                        context.quality,
+                        body_text_preview.as_deref()
+                    );
+                    return crate::bilibili::BiliError::RequestFailed(
+                        -404,
+                        "稿件不存在或已删除 (playurl 返回 412 并且稿件详情为 -404)".to_string(),
+                    )
+                    .into();
                 }
 
                 if let Some(err) = reqwest_error {
@@ -803,6 +837,14 @@ impl<'a> Video<'a> {
                 }
                 Err(e) => {
                     let failure_kind = classify_playurl_error(&e);
+                    if matches!(failure_kind, PlayurlFailureKind::NotFound) {
+                        tracing::info!(
+                            "检测到视频不存在或已被删除(quality={}): {}，停止后续重试",
+                            qn,
+                            e
+                        );
+                        return Err(e);
+                    }
                     if matches!(failure_kind, PlayurlFailureKind::WafRateLimit) {
                         consecutive_waf_failures = consecutive_waf_failures.saturating_add(1);
                     } else {
@@ -901,6 +943,9 @@ impl<'a> Video<'a> {
                                 );
                                 return Err(e);
                             }
+                            PlayurlFailureKind::NotFound => {
+                                return Err(e);
+                            }
                             PlayurlFailureKind::Other => {
                                 let error_str_lower = e.to_string().to_lowercase();
                                 if error_str_lower.contains("检测到试看")
@@ -963,6 +1008,14 @@ impl<'a> Video<'a> {
 
                 if should_fallback_to_bangumi {
                     tracing::debug!("普通视频API返回-404错误，尝试降级到番剧API: {}", e);
+
+                    if let Ok(false) = self.check_video_exists().await {
+                        tracing::info!(
+                            "稿件不存在(BVID={})，跳过番剧API降级，直接返回错误",
+                            self.bvid
+                        );
+                        return Err(e);
+                    }
 
                     // 获取epid：优先使用传入的ep_id，如果没有则从视频详情API获取
                     let epid_to_use = if let Some(provided_epid) = ep_id {
@@ -1469,6 +1522,14 @@ impl<'a> Video<'a> {
                 }
                 Err(e) => {
                     let failure_kind = classify_playurl_error(&e);
+                    if matches!(failure_kind, PlayurlFailureKind::NotFound) {
+                        tracing::info!(
+                            "检测到番剧视频不存在或已被删除(quality={}): {}，停止后续重试",
+                            qn,
+                            e
+                        );
+                        return Err(e);
+                    }
                     if matches!(failure_kind, PlayurlFailureKind::WafRateLimit) {
                         consecutive_waf_failures = consecutive_waf_failures.saturating_add(1);
                     } else {
@@ -1524,6 +1585,9 @@ impl<'a> Video<'a> {
                                 tracing::warn!(
                                     "所有番剧质量级别都获取失败，错误归类为WAF/速率限制 412，将错误上抛"
                                 );
+                                return Err(e);
+                            }
+                            PlayurlFailureKind::NotFound => {
                                 return Err(e);
                             }
                             PlayurlFailureKind::Other => {
