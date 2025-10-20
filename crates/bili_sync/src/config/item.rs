@@ -6,6 +6,7 @@ use serde::{Deserialize, Serialize};
 use crate::utils::filenamify::filenamify;
 
 /// 稍后再看的配置
+#[allow(dead_code)]
 #[derive(Serialize, Deserialize, Default)]
 pub struct WatchLaterConfig {
     pub enabled: bool,
