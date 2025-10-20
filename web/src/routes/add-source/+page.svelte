@@ -103,6 +103,46 @@
 	let batchProgress = { current: 0, total: 0 }; // 批量添加进度
 	let batchDialogOpen = false; // 批量配置对话框状态
 
+	const LAST_DOWNLOAD_PATH_KEY = 'bili-sync-last-download-path';
+	let lastDownloadPath: string | null = null;
+
+	// Filter out placeholder paths before persisting them for reuse.
+	function sanitizeLastDownloadPath(raw: string | null): string | null {
+		if (!raw) return null;
+		const trimmed = raw.trim();
+		if (!trimmed) return null;
+		const normalizedForCheck = trimmed.replace(/\\/g, '/').replace(/\/+$/, '');
+		const lowered = normalizedForCheck.toLowerCase();
+		if (lowered === '/download' || lowered === '/downloads') return null;
+		return trimmed;
+	}
+
+	function persistLastDownloadPath(raw: string | null) {
+		if (typeof window === 'undefined') return;
+		const sanitized = sanitizeLastDownloadPath(raw);
+		if (sanitized) {
+			localStorage.setItem(LAST_DOWNLOAD_PATH_KEY, sanitized);
+			lastDownloadPath = sanitized;
+		}
+	}
+
+	function loadLastDownloadPath() {
+		if (typeof window === 'undefined') return;
+		const stored = localStorage.getItem(LAST_DOWNLOAD_PATH_KEY);
+		const sanitized = sanitizeLastDownloadPath(stored);
+		if (sanitized) {
+			lastDownloadPath = sanitized;
+			if (!path) {
+				path = sanitized;
+			}
+			if (!batchBasePath || batchBasePath === '/Downloads') {
+				batchBasePath = sanitized;
+			}
+		} else {
+			lastDownloadPath = null;
+		}
+	}
+
 	// 响应式语句：当Map变化时更新checkbox状态对象
 	$: {
 		const newStates = {};
@@ -185,6 +225,7 @@
 			{ label: '主页', href: '/' },
 			{ label: '添加视频源', isActive: true }
 		]);
+		loadLastDownloadPath();
 		await loadExistingVideoSources();
 	});
 
@@ -492,6 +533,11 @@
 			const result = await api.addVideoSource(params);
 
 			if (result.data.success) {
+				const submittedPath = path;
+				persistLastDownloadPath(submittedPath);
+				if (lastDownloadPath) {
+					batchBasePath = lastDownloadPath;
+				}
 				toast.success('添加成功', { description: result.data.message });
 				// 重置表单
 				sourceId = '';
@@ -1715,6 +1761,13 @@
 				await new Promise((resolve) => setTimeout(resolve, 200));
 			}
 
+			if (successCount > 0) {
+				persistLastDownloadPath(batchBasePath);
+				if (lastDownloadPath) {
+					batchBasePath = lastDownloadPath;
+				}
+			}
+
 			// 显示结果
 			if (successCount > 0 && failedCount === 0) {
 				toast.success('批量添加完成', {
@@ -2232,6 +2285,18 @@
 								<p class="text-xs text-purple-600">合并时自动沿用目标番剧源的保存路径</p>
 							{:else}
 								<p class="text-muted-foreground text-sm">请输入绝对路径</p>
+								{#if lastDownloadPath}
+									<div class="text-muted-foreground mt-1 flex flex-wrap items-center gap-2 text-xs">
+										<span>上次使用路径：</span>
+										<button
+											type="button"
+											onclick={() => (path = lastDownloadPath ?? path)}
+											class="text-blue-600 hover:underline dark:text-blue-400"
+										>
+											{lastDownloadPath}
+										</button>
+									</div>
+								{/if}
 							{/if}
 						</div>
 
@@ -3817,6 +3882,18 @@
 						class="mt-1"
 					/>
 					<p class="text-muted-foreground mt-1 text-xs">所有选中的视频源将保存到此路径</p>
+					{#if lastDownloadPath}
+						<p class="text-muted-foreground mt-1 text-xs">
+							上次使用路径：
+							<button
+								type="button"
+								onclick={() => (batchBasePath = lastDownloadPath ?? batchBasePath)}
+								class="text-blue-600 hover:underline dark:text-blue-400"
+							>
+								{lastDownloadPath}
+							</button>
+						</p>
+					{/if}
 				</div>
 
 				<div class="max-h-60 overflow-y-auto rounded border">
