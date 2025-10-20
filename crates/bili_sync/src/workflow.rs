@@ -785,11 +785,17 @@ pub async fn fetch_video_details(
                                 ..
                             } = &mut view_info
                             else {
+                                let raw_type = std::any::type_name_of_val(&view_info);
                                 error!(
-                                    "获取视频 {} - {} 的详细信息失败，错误为：view_info",
-                                    &video_model.bvid, &video_model.name
+                                    "获取视频 {} - {} 的详细信息失败，返回的view_info类型异常: {}",
+                                    &video_model.bvid,
+                                    &video_model.name,
+                                    raw_type
                                 );
-                                return Err(anyhow!("Download failed, view_info is not type view_info"));
+                                return Err(anyhow!(
+                                    "Download failed, view_info is not type view_info (actual type: {})",
+                                    raw_type
+                                ));
                             };
 
                             // 革命性充电视频检测：基于API返回的upower字段进行精确判断
