@@ -1,8 +1,12 @@
 use anyhow::{anyhow, bail, ensure, Result};
 use futures::stream::FuturesUnordered;
 use futures::TryStreamExt;
+use once_cell::sync::Lazy;
 use prost::Message;
-use reqwest::Method;
+use rand::Rng;
+use reqwest::{header::CONTENT_TYPE, Method, StatusCode};
+use std::time::{Duration, Instant};
+use tokio::sync::Mutex;
 use tokio_util::sync::CancellationToken;
 use tracing::{debug, warn};
 
@@ -61,6 +65,183 @@ pub struct Dimension {
     pub rotate: u32,
 }
 
+static LAST_PLAYURL_REQUEST: Lazy<Mutex<Option<Instant>>> = Lazy::new(|| Mutex::new(None));
+
+const DURL_TRIAL_TIMELENGTH_THRESHOLD_MS: u64 = 60_000;
+const DURL_SINGLE_SEGMENT_THRESHOLD_MS: u64 = 45_000;
+const PLAYURL_BASE_DELAY_MIN_MS: u64 = 150;
+const PLAYURL_BASE_DELAY_MAX_MS: u64 = 600;
+const PLAYURL_ATTEMPT_BACKOFF_STEP_MS: u64 = 80;
+const PLAYURL_WAF_BACKOFF_STEP_MS: u64 = 500;
+const PLAYURL_WAF_BACKOFF_MAX_STEPS: u64 = 5;
+const PLAYURL_JITTER_MIN_MS: u64 = 60;
+const PLAYURL_JITTER_MAX_MS: u64 = 210;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum PlayurlFailureKind {
+    RiskControl,
+    WafRateLimit,
+    Other,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum PlayurlRequestKind {
+    Normal,
+    Bangumi,
+}
+
+impl PlayurlRequestKind {
+    fn as_str(&self) -> &'static str {
+        match self {
+            Self::Normal => "normal",
+            Self::Bangumi => "bangumi",
+        }
+    }
+}
+
+struct Playurl412Context<'a> {
+    kind: PlayurlRequestKind,
+    bvid: &'a str,
+    cid: i64,
+    quality: Option<&'a str>,
+    ep_id: Option<&'a str>,
+}
+
+#[derive(Debug)]
+struct DurlOnlyAssessment {
+    treat_as_trial: bool,
+    reasons: Vec<String>,
+}
+
+#[derive(Debug, Clone)]
+enum Playurl412Kind {
+    RiskControl { voucher: Option<String> },
+    WafRateLimit,
+}
+
+fn detect_trial_keyword(field: &str, value: &str) -> Option<String> {
+    const TRIAL_KEYWORDS: &[&str] = &[
+        "试看",
+        "试看模式",
+        "试看片段",
+        "试用",
+        "trial",
+        "trial-only",
+        "charging",
+        "charging-only",
+        "charge-only",
+        "充电",
+        "充电专享",
+        "大会员专享",
+        "会员专享",
+    ];
+
+    let lower = value.to_lowercase();
+    for keyword in TRIAL_KEYWORDS {
+        if value.contains(keyword) || lower.contains(keyword) {
+            return Some(format!("{} contains '{}'", field, keyword));
+        }
+    }
+    None
+}
+
+fn assess_durl_only(data: &serde_json::Value, top_level_message: Option<&str>) -> DurlOnlyAssessment {
+    let timelength = data["timelength"].as_u64().unwrap_or_default();
+    let is_short = timelength > 0 && timelength <= DURL_TRIAL_TIMELENGTH_THRESHOLD_MS;
+
+    let mut keyword_reasons = Vec::new();
+    let keyword_sources = [
+        ("data.result", data["result"].as_str()),
+        ("data.message", data["message"].as_str()),
+        ("data.from", data["from"].as_str()),
+        ("data.format", data["format"].as_str()),
+        ("response.message", top_level_message),
+    ];
+
+    for (field, value_opt) in keyword_sources {
+        if let Some(value) = value_opt {
+            if let Some(reason) = detect_trial_keyword(field, value) {
+                keyword_reasons.push(reason);
+            }
+        }
+    }
+
+    let mut reasons = Vec::new();
+
+    let mut single_segment_short = false;
+    if let Some(durl_segments) = data["durl"].as_array() {
+        if durl_segments.len() == 1 {
+            if let Some(length_ms) = durl_segments[0]["length"].as_u64() {
+                if length_ms > 0 && length_ms <= DURL_SINGLE_SEGMENT_THRESHOLD_MS {
+                    single_segment_short = true;
+                    reasons.push(format!(
+                        "single segment length {}ms <= {}ms",
+                        length_ms, DURL_SINGLE_SEGMENT_THRESHOLD_MS
+                    ));
+                }
+            }
+        }
+    }
+
+    if is_short && !keyword_reasons.is_empty() {
+        reasons.push(format!(
+            "timelength {}ms <= {}ms",
+            timelength, DURL_TRIAL_TIMELENGTH_THRESHOLD_MS
+        ));
+        reasons.extend(keyword_reasons.clone());
+    } else if !keyword_reasons.is_empty() {
+        reasons.extend(keyword_reasons.clone());
+    }
+
+    let treat_as_trial = (is_short && !keyword_reasons.is_empty()) || single_segment_short;
+
+    DurlOnlyAssessment {
+        treat_as_trial,
+        reasons,
+    }
+}
+
+fn classify_playurl_error(err: &anyhow::Error) -> PlayurlFailureKind {
+    for cause in err.chain() {
+        if let Some(bili_err) = cause.downcast_ref::<crate::bilibili::BiliError>() {
+            match bili_err {
+                crate::bilibili::BiliError::RiskControlOccurred
+                | crate::bilibili::BiliError::RiskControlVerificationRequired(_) => {
+                    return PlayurlFailureKind::RiskControl;
+                }
+                crate::bilibili::BiliError::RequestFailed(code, _) if matches!(*code, -352 | -412) => {
+                    return PlayurlFailureKind::RiskControl;
+                }
+                _ => {}
+            }
+        }
+
+        if let Some(reqwest_err) = cause.downcast_ref::<reqwest::Error>() {
+            if reqwest_err.status() == Some(StatusCode::PRECONDITION_FAILED) {
+                return PlayurlFailureKind::WafRateLimit;
+            }
+        }
+    }
+
+    PlayurlFailureKind::Other
+}
+
+fn classify_412_evidence(header_voucher: Option<&str>, body_voucher: Option<&str>) -> Playurl412Kind {
+    if let Some(voucher) = header_voucher.filter(|v| !v.is_empty()) {
+        return Playurl412Kind::RiskControl {
+            voucher: Some(voucher.to_string()),
+        };
+    }
+
+    if let Some(voucher) = body_voucher.filter(|v| !v.is_empty()) {
+        return Playurl412Kind::RiskControl {
+            voucher: Some(voucher.to_string()),
+        };
+    }
+
+    Playurl412Kind::WafRateLimit
+}
+
 impl<'a> Video<'a> {
     pub fn new(client: &'a BiliClient, bvid: String) -> Self {
         let aid = bvid_to_aid(&bvid).to_string();
@@ -70,6 +251,185 @@ impl<'a> Video<'a> {
     /// 创建一个使用特定 aid 的 Video 实例，用于番剧等特殊情况
     pub fn new_with_aid(client: &'a BiliClient, bvid: String, aid: String) -> Self {
         Self { client, aid, bvid }
+    }
+
+    async fn wait_for_playurl_slot(&self, attempt_index: usize, consecutive_waf: usize) {
+        let config = crate::config::reload_config();
+        let configured_base = config.submission_risk_control.base_request_delay;
+        let clamped_base = configured_base.clamp(PLAYURL_BASE_DELAY_MIN_MS, PLAYURL_BASE_DELAY_MAX_MS);
+
+        let progressive_multiplier = if config.submission_risk_control.enable_progressive_delay {
+            let max_multiplier = config.submission_risk_control.max_delay_multiplier.max(1);
+            ((attempt_index + 1) as u64).min(max_multiplier)
+        } else {
+            1
+        };
+
+        let base_component_ms = (clamped_base * progressive_multiplier).min(1_200);
+        let attempt_component_ms = ((attempt_index as u64).saturating_mul(PLAYURL_ATTEMPT_BACKOFF_STEP_MS)).min(400);
+        let waf_component_ms = (consecutive_waf as u64)
+            .min(PLAYURL_WAF_BACKOFF_MAX_STEPS)
+            .saturating_mul(PLAYURL_WAF_BACKOFF_STEP_MS);
+
+        let jitter_ms = {
+            let mut rng = rand::thread_rng();
+            if PLAYURL_JITTER_MAX_MS > PLAYURL_JITTER_MIN_MS {
+                rng.gen_range(PLAYURL_JITTER_MIN_MS..=PLAYURL_JITTER_MAX_MS)
+            } else {
+                PLAYURL_JITTER_MIN_MS
+            }
+        };
+
+        let desired_delay = Duration::from_millis(base_component_ms + attempt_component_ms + waf_component_ms + jitter_ms);
+
+        let mut guard = LAST_PLAYURL_REQUEST.lock().await;
+        let now = Instant::now();
+        let wait_duration = if let Some(last) = *guard {
+            let elapsed = now.saturating_duration_since(last);
+            desired_delay.saturating_sub(elapsed)
+        } else {
+            desired_delay
+        };
+
+        if wait_duration > Duration::from_millis(0) {
+            drop(guard);
+            tokio::time::sleep(wait_duration).await;
+            let mut guard = LAST_PLAYURL_REQUEST.lock().await;
+            *guard = Some(Instant::now());
+        } else {
+            *guard = Some(now);
+        }
+    }
+
+    async fn handle_playurl_412(&self, response: reqwest::Response, context: Playurl412Context<'_>) -> anyhow::Error {
+        debug_assert_eq!(response.status(), StatusCode::PRECONDITION_FAILED);
+
+        let url = response.url().clone();
+        let headers = response.headers().clone();
+        let content_type = headers
+            .get(CONTENT_TYPE)
+            .and_then(|v| v.to_str().ok())
+            .map(|s| s.to_string());
+        let header_voucher = headers
+            .get("x-bili-gaia-vvoucher")
+            .and_then(|v| v.to_str().ok())
+            .map(|s| s.trim())
+            .filter(|s| !s.is_empty())
+            .map(|s| s.to_string());
+        let x_sec_request_id = headers
+            .get("x-sec-request-id")
+            .and_then(|v| v.to_str().ok())
+            .map(|s| s.to_string());
+        let x_bili_trace_id = headers
+            .get("x-bili-trace-id")
+            .and_then(|v| v.to_str().ok())
+            .map(|s| s.to_string());
+
+        let reqwest_error = response.error_for_status_ref().err();
+
+        let mut body_len = 0usize;
+        let mut body_voucher = None;
+        let mut body_code = None;
+        let mut body_message = None;
+
+        match response.bytes().await {
+            Ok(bytes) => {
+                body_len = bytes.len();
+                if !bytes.is_empty() {
+                    if let Ok(text) = std::str::from_utf8(&bytes) {
+                        if text.trim_start().starts_with('{') {
+                            if let Ok(json) = serde_json::from_str::<serde_json::Value>(text) {
+                                body_voucher = json["data"]["v_voucher"]
+                                    .as_str()
+                                    .filter(|s| !s.is_empty())
+                                    .map(|s| s.to_string());
+                                body_code = json["code"].as_i64();
+                                body_message = json["message"].as_str().map(|s| s.to_string());
+                            }
+                        }
+                    }
+                }
+            }
+            Err(e) => {
+                tracing::debug!(
+                    "读取playurl 412响应体失败: {} (bvid={}, cid={})",
+                    e,
+                    context.bvid,
+                    context.cid
+                );
+            }
+        }
+
+        let classification = classify_412_evidence(header_voucher.as_deref(), body_voucher.as_deref());
+        let classification_label = match &classification {
+            Playurl412Kind::RiskControl { .. } => "risk_control",
+            Playurl412Kind::WafRateLimit => "waf_rate_limit",
+        };
+
+        tracing::warn!(
+            "playurl 412 classified as {} (kind={}, bvid={}, cid={}, qn={:?}, ep_id={:?}, status={}, content_type={:?}, body_len={} bytes, gaia_vvoucher_header={}, body_voucher_present={}, x_sec_request_id={:?}, x_bili_trace_id={:?}, body_code={:?}, body_message={:?}, url={})",
+            classification_label,
+            context.kind.as_str(),
+            context.bvid,
+            context.cid,
+            context.quality,
+            context.ep_id,
+            StatusCode::PRECONDITION_FAILED,
+            content_type,
+            body_len,
+            header_voucher.is_some(),
+            body_voucher.is_some(),
+            x_sec_request_id.as_deref(),
+            x_bili_trace_id.as_deref(),
+            body_code,
+            body_message,
+            url,
+        );
+
+        if let Playurl412Kind::RiskControl {
+            voucher: Some(voucher),
+        } = &classification
+        {
+            tracing::warn!(
+                "playurl 412 risk-control voucher detected (len={}): {}",
+                voucher.len(),
+                voucher
+            );
+        }
+
+        match classification {
+            Playurl412Kind::RiskControl { voucher } => {
+                if let Some(voucher_value) = voucher {
+                    crate::bilibili::BiliError::RiskControlVerificationRequired(voucher_value).into()
+                } else {
+                    crate::bilibili::BiliError::RiskControlOccurred.into()
+                }
+            }
+            Playurl412Kind::WafRateLimit => {
+                match self.check_video_exists().await {
+                    Ok(exists) => {
+                        tracing::debug!(
+                            "playurl 412 WAF/rate-limit后的视频存在性检查: exists={} - BVID: {}",
+                            exists,
+                            self.bvid
+                        );
+                    }
+                    Err(check_err) => {
+                        tracing::debug!(
+                            "playurl 412 WAF/rate-limit存在性检查失败 - BVID: {}, 错误: {}",
+                            self.bvid,
+                            check_err
+                        );
+                    }
+                }
+
+                if let Some(err) = reqwest_error {
+                    err.into()
+                } else {
+                    anyhow!("HTTP 412 Precondition Failed (WAF/rate-limit) without reqwest error")
+                }
+            }
+        }
     }
 
     /// 直接调用视频信息接口获取详细的视频信息，视频信息中包含了视频的分页信息
@@ -123,6 +483,10 @@ impl<'a> Video<'a> {
                 return Ok(true);
             }
         };
+
+        if let Some(message) = json_res["message"].as_str() {
+            tracing::debug!("视频存在性检查返回message: {} - BVID: {}", message, self.bvid);
+        }
 
         // 检查API返回码
         if let Some(code) = json_res["code"].as_i64() {
@@ -421,7 +785,10 @@ impl<'a> Video<'a> {
         // 质量回退列表：从最高到最低，恢复原始顺序
         let quality_levels = ["127", "126", "125", "120", "116", "112", "80", "64", "32", "16"];
 
+        let mut consecutive_waf_failures = 0usize;
+
         for (attempt, qn) in quality_levels.iter().enumerate() {
+            self.wait_for_playurl_slot(attempt, consecutive_waf_failures).await;
             tracing::debug!(
                 "尝试获取视频流 (尝试 {}/{}): qn={}",
                 attempt + 1,
@@ -431,38 +798,44 @@ impl<'a> Video<'a> {
 
             match self.get_page_analyzer_with_quality(page, qn).await {
                 Ok(analyzer) => {
+                    consecutive_waf_failures = 0;
                     tracing::debug!("✓ 成功获取视频流: qn={}", qn);
                     return Ok(analyzer);
                 }
                 Err(e) => {
+                    let failure_kind = classify_playurl_error(&e);
+                    if matches!(failure_kind, PlayurlFailureKind::WafRateLimit) {
+                        consecutive_waf_failures = consecutive_waf_failures.saturating_add(1);
+                    } else {
+                        consecutive_waf_failures = 0;
+                    }
+
                     // 检查是否为风控验证错误
                     if let Some(crate::bilibili::BiliError::RiskControlVerificationRequired(v_voucher)) =
                         e.downcast_ref::<crate::bilibili::BiliError>()
                     {
                         tracing::warn!("检测到风控，开始验证流程: v_voucher={}", v_voucher);
 
-                        // 尝试进行验证流程
                         match self.handle_risk_control_verification(v_voucher.clone()).await {
                             Ok(gaia_vtoken) => {
                                 tracing::info!("风控验证成功，已获取gaia_vtoken，重试获取视频流");
                                 self.client.set_gaia_vtoken(gaia_vtoken);
 
-                                // 重试当前质量级别
+                                self.wait_for_playurl_slot(attempt, consecutive_waf_failures).await;
                                 match self.get_page_analyzer_with_quality(page, qn).await {
                                     Ok(analyzer) => {
                                         tracing::info!("✓ 风控验证后成功获取视频流: qn={}", qn);
+                                        consecutive_waf_failures = 0;
                                         return Ok(analyzer);
                                     }
                                     Err(retry_err) => {
                                         tracing::warn!("风控验证后重试失败: {}", retry_err);
-                                        // 继续尝试下一个质量级别
                                     }
                                 }
                             }
                             Err(verify_err) => {
                                 tracing::error!("风控验证失败，视频: {}, 错误: {}", self.bvid, verify_err);
 
-                                // 检查是否是端口冲突问题
                                 if verify_err.to_string().contains("os error 10048") {
                                     tracing::warn!("检测到端口冲突，建议检查其他验证进程");
                                 }
@@ -480,7 +853,6 @@ impl<'a> Video<'a> {
                                     (true, msg.contains("试看视频"))
                                 }
                                 crate::bilibili::BiliError::RequestFailed(code, msg) => {
-                                    // 检查其他可能的充电专享视频错误码或消息
                                     let is_charging = msg.contains("充电专享")
                                         || msg.contains("需要充电")
                                         || msg.contains("试看视频")
@@ -491,7 +863,6 @@ impl<'a> Video<'a> {
                                 _ => (false, false),
                             }
                         } else {
-                            // 检查非BiliError类型的错误是否可能是充电专享视频错误
                             let error_str = e.to_string().to_lowercase();
                             let is_charging = error_str.contains("充电专享")
                                 || error_str.contains("需要充电")
@@ -505,60 +876,52 @@ impl<'a> Video<'a> {
                     if !is_charging_video_error {
                         tracing::debug!("× 质量 qn={} 获取失败: {}", qn, e);
                     } else if attempt == 0 && is_trial_video {
-                        // 只在第一次尝试时记录试看视频信息
                         tracing::info!("检测到试看视频，需要充电才能观看完整版");
                     }
 
                     if attempt == quality_levels.len() - 1 {
-                        // 最后一次尝试也失败了
                         if is_charging_video_error {
                             if !is_trial_video {
                                 tracing::info!("视频需要充电才能观看");
                             }
-                            // 对于充电专享视频，统一返回87007错误以便上层正确处理
                             return Err(crate::bilibili::BiliError::RequestFailed(
                                 87007,
                                 "充电专享视频，需要为UP主充电才能观看".to_string(),
                             )
                             .into());
-                        } else {
-                            tracing::error!("所有质量级别都获取失败");
+                        }
 
-                            // 检查是否为HTTP 412风控错误
-                            let error_str = e.to_string();
-                            if error_str.contains("412 Precondition Failed") {
-                                // 先检查视频是否已被删除
-                                if let Ok(exists) = self.check_video_exists().await {
-                                    if !exists {
-                                        tracing::warn!("检测到HTTP 412但视频已被删除，返回404错误而非风控");
-                                        return Err(crate::bilibili::BiliError::RequestFailed(
-                                            -404,
-                                            "视频已被删除".to_string(),
-                                        )
-                                        .into());
-                                    }
-                                }
-                                tracing::warn!("检测到HTTP 412风控错误，转换为风控异常");
-                                return Err(crate::bilibili::BiliError::RiskControlOccurred.into());
+                        tracing::error!("所有质量级别都获取失败");
+
+                        match failure_kind {
+                            PlayurlFailureKind::RiskControl => {
+                                return Err(e);
                             }
+                            PlayurlFailureKind::WafRateLimit => {
+                                tracing::warn!(
+                                    "所有质量级别都获取失败，错误归类为WAF/速率限制 412，将错误上抛以便上层退避"
+                                );
+                                return Err(e);
+                            }
+                            PlayurlFailureKind::Other => {
+                                let error_str_lower = e.to_string().to_lowercase();
+                                if error_str_lower.contains("检测到试看")
+                                    || error_str_lower.contains("试看模式")
+                                    || error_str_lower.contains("试看片段")
+                                {
+                                    tracing::info!("检测到隐蔽的充电专享视频（试看片段模式）");
+                                    return Err(crate::bilibili::BiliError::RequestFailed(
+                                        87008,
+                                        "充电专享视频（试看片段），需要为UP主充电才能观看".to_string(),
+                                    )
+                                    .into());
+                                }
 
-                            // 检查是否可能是隐蔽的充电专享视频（API成功但实际是试看片段）
-                            let error_str_lower = error_str.to_lowercase();
-                            if error_str_lower.contains("检测到试看")
-                                || error_str_lower.contains("试看模式")
-                                || error_str_lower.contains("试看片段")
-                            {
-                                tracing::info!("检测到隐蔽的充电专享视频（试看片段模式）");
-                                return Err(crate::bilibili::BiliError::RequestFailed(
-                                    87008,
-                                    "充电专享视频（试看片段），需要为UP主充电才能观看".to_string(),
-                                )
-                                .into());
+                                return Err(e);
                             }
                         }
-                        return Err(e);
                     }
-                    // 继续尝试下一个质量级别
+
                     continue;
                 }
             }
@@ -701,21 +1064,35 @@ impl<'a> Video<'a> {
 
         // 请求头日志已在建造器时设置
 
-        let response = request.send().await;
-        match &response {
-            Ok(resp) => {
-                tracing::debug!("playurl请求成功 - 状态码: {}, URL: {}", resp.status(), resp.url());
-                tracing::debug!("响应头: {:?}", resp.headers());
-            }
+    let response = match request.send().await {
+            Ok(resp) => resp,
             Err(e) => {
                 tracing::error!("playurl请求失败 - BVID: {}, 错误: {}", self.bvid, e);
+                return Err(e.into());
             }
+        };
+
+        tracing::debug!("playurl请求成功 - 状态码: {}, URL: {}", response.status(), response.url());
+        tracing::debug!("响应头: {:?}", response.headers());
+
+        if response.status() == StatusCode::PRECONDITION_FAILED {
+            let err = self
+                .handle_playurl_412(
+                    response,
+                    Playurl412Context {
+                        kind: PlayurlRequestKind::Normal,
+                        bvid: &self.bvid,
+                        cid: page.cid,
+                        quality: Some(qn),
+                        ep_id: None,
+                    },
+                )
+                .await;
+            return Err(err);
         }
 
-        let res = response?
-            .error_for_status()?
-            .json::<serde_json::Value>()
-            .await?;
+        let response = response.error_for_status()?;
+        let res = response.json::<serde_json::Value>().await?;
 
         tracing::debug!("playurl响应数据大小: {} bytes", serde_json::to_string(&res).unwrap_or_default().len());
 
@@ -733,10 +1110,12 @@ impl<'a> Video<'a> {
             tracing::debug!("API返回message: {}", message);
         }
 
+        let data = &res["data"];
+
         // 检查data字段是否存在
-        if res["data"].is_null() {
+        if data.is_null() {
             tracing::debug!("API返回的data字段为null");
-        } else if let Some(dash) = res["data"]["dash"].as_object() {
+        } else if let Some(dash) = data["dash"].as_object() {
             tracing::debug!(
                 "dash对象存在，视频流数量: {}",
                 dash.get("video")
@@ -764,10 +1143,10 @@ impl<'a> Video<'a> {
         }
 
         // 检测v_voucher风控响应
-        if let Some(v_voucher) = res["data"]["v_voucher"].as_str() {
+    if let Some(v_voucher) = data["v_voucher"].as_str() {
             // 检查是否只有v_voucher而没有实际的视频流数据
-            let has_dash = res["data"]["dash"]["video"].as_array().is_some_and(|v| !v.is_empty());
-            let has_durl = res["data"]["durl"].as_array().is_some_and(|v| !v.is_empty());
+            let has_dash = data["dash"]["video"].as_array().is_some_and(|v| !v.is_empty());
+            let has_durl = data["durl"].as_array().is_some_and(|v| !v.is_empty());
 
             if !has_dash && !has_durl {
                 tracing::warn!(
@@ -779,43 +1158,93 @@ impl<'a> Video<'a> {
                 );
                 tracing::debug!(
                     "v_voucher响应详情: {}",
-                    serde_json::to_string_pretty(&res["data"]).unwrap_or_else(|_| "无法序列化".to_string())
+                    serde_json::to_string_pretty(data).unwrap_or_else(|_| "无法序列化".to_string())
                 );
                 return Err(crate::bilibili::BiliError::RiskControlVerificationRequired(v_voucher.to_string()).into());
             }
         }
 
-        // 检查是否有可用的视频流 (只接受dash格式，durl是试看片段)
-        let has_dash_video = res["data"]["dash"]["video"].as_array().is_some_and(|v| !v.is_empty());
-        let has_durl_only = res["data"]["durl"].as_array().is_some_and(|v| !v.is_empty()) && !has_dash_video;
+        // 检查是否有可用的视频流 (只接受dash格式，优先dash，允许durl-only)
+        let has_dash_video = data["dash"]["video"].as_array().is_some_and(|v| !v.is_empty());
+        let mut durl_only_is_playable = false;
 
-        if has_durl_only {
-            // 只在debug级别记录试看视频详情，避免日志过多
-            tracing::debug!(
-                "试看视频data字段: {}",
-                serde_json::to_string_pretty(&res["data"]).unwrap_or_else(|_| "无法序列化".to_string())
-            );
-            // 返回充电视频错误，触发自动删除
-            return Err(crate::bilibili::BiliError::RequestFailed(
-                87008,
-                "试看视频，需要充电才能观看完整版".to_string(),
-            )
-            .into());
+        if let Some(durl_segments) = data["durl"].as_array() {
+            let has_durl_only = !has_dash_video && !durl_segments.is_empty();
+            if has_durl_only {
+                let segment_lengths: Vec<u64> = durl_segments
+                    .iter()
+                    .map(|seg| seg["length"].as_u64().unwrap_or_default())
+                    .collect();
+                let accept_quality: Vec<u64> = data["accept_quality"]
+                    .as_array()
+                    .map(|arr| arr.iter().filter_map(|v| v.as_u64()).collect())
+                    .unwrap_or_default();
+                let timelength = data["timelength"].as_u64().unwrap_or_default();
+                let assessment = assess_durl_only(data, res["message"].as_str());
+
+                tracing::debug!(
+                    "durl-only流检测: classification={}, result={:?}, from={:?}, format={:?}, timelength_ms={}, accept_quality={:?}, segments={}, segment_lengths_ms={:?}",
+                    if assessment.treat_as_trial { "trial_or_charging" } else { "playable" },
+                    data["result"].as_str(),
+                    data["from"].as_str(),
+                    data["format"].as_str(),
+                    timelength,
+                    accept_quality,
+                    segment_lengths.len(),
+                    segment_lengths
+                );
+
+                if !assessment.reasons.is_empty() {
+                    tracing::debug!("durl-only判定提示: {:?}", assessment.reasons);
+                }
+
+                tracing::debug!(
+                    "试看视频data字段(原始durl-only数据): {}",
+                    serde_json::to_string_pretty(data).unwrap_or_else(|_| "无法序列化".to_string())
+                );
+
+                if assessment.treat_as_trial {
+                    let reason_summary = if assessment.reasons.is_empty() {
+                        "判定条件成立".to_string()
+                    } else {
+                        assessment.reasons.join("; ")
+                    };
+                    tracing::info!(
+                        "durl-only流被判定为试看/充电专享: BVID={}, CID={}, 原因: {}",
+                        self.bvid,
+                        page.cid,
+                        reason_summary
+                    );
+                    return Err(crate::bilibili::BiliError::RequestFailed(
+                        87008,
+                        format!("试看视频，需要充电才能观看完整版 ({})", reason_summary),
+                    )
+                    .into());
+                } else {
+                    tracing::debug!(
+                        "durl-only流判定为可播放的FLV流: BVID={}, CID={}, segments={}",
+                        self.bvid,
+                        page.cid,
+                        segment_lengths.len()
+                    );
+                    durl_only_is_playable = true;
+                }
+            }
         }
 
         // 检查是否为可疑的充电视频：API返回成功但可能是试看片段
         if has_dash_video {
             // 检查视频时长是否异常短（可能是试看片段）
-            if let Some(timelength) = res["data"]["timelength"].as_u64() {
+            if let Some(timelength) = data["timelength"].as_u64() {
                 // 如果视频时长小于30秒且同时存在durl字段，可能是试看视频
-                if timelength < 30000 && res["data"]["durl"].as_array().is_some_and(|v| !v.is_empty()) {
+                if timelength < 30000 && data["durl"].as_array().is_some_and(|v| !v.is_empty()) {
                     tracing::debug!(
                         "检测到可疑的短视频片段，时长: {}ms，可能为充电专享视频的试看片段",
                         timelength
                     );
                     tracing::debug!(
                         "可疑试看视频data字段: {}",
-                        serde_json::to_string_pretty(&res["data"]).unwrap_or_else(|_| "无法序列化".to_string())
+                        serde_json::to_string_pretty(data).unwrap_or_else(|_| "无法序列化".to_string())
                     );
                     return Err(crate::bilibili::BiliError::RequestFailed(
                         87008,
@@ -826,15 +1255,15 @@ impl<'a> Video<'a> {
             }
 
             // 检查是否存在特定的充电专享视频标识字段
-            if let Some(result) = res["data"]["result"].as_str() {
+            if let Some(result) = data["result"].as_str() {
                 if result == "suee" {
                     // "suee" 可能是试看片段的标识，结合其他字段进一步判断
-                    let has_limited_content = res["data"]["durl"].as_array().is_some_and(|v| !v.is_empty());
+                    let has_limited_content = data["durl"].as_array().is_some_and(|v| !v.is_empty());
                     if has_limited_content {
                         tracing::debug!("检测到result=suee且存在durl，可能为充电专享视频的试看模式");
                         tracing::debug!(
                             "疑似充电专享视频data字段: {}",
-                            serde_json::to_string_pretty(&res["data"]).unwrap_or_else(|_| "无法序列化".to_string())
+                            serde_json::to_string_pretty(data).unwrap_or_else(|_| "无法序列化".to_string())
                         );
                         return Err(crate::bilibili::BiliError::RequestFailed(
                             87008,
@@ -846,19 +1275,19 @@ impl<'a> Video<'a> {
             }
         }
 
-        if !has_dash_video {
+        if !has_dash_video && !durl_only_is_playable {
             tracing::error!(
                 "视频流为空，完整的data字段: {}",
-                serde_json::to_string_pretty(&res["data"]).unwrap_or_else(|_| "无法序列化".to_string())
+                serde_json::to_string_pretty(data).unwrap_or_else(|_| "无法序列化".to_string())
             );
             return Err(crate::bilibili::BiliError::VideoStreamEmpty("API返回的视频流为空".to_string()).into());
         }
 
         // 记录成功获取的质量信息
-        if let Some(quality) = res["data"]["quality"].as_u64() {
+        if let Some(quality) = data["quality"].as_u64() {
             tracing::debug!("API返回的实际质量: {}", quality);
         }
-        if let Some(accept_quality) = res["data"]["accept_quality"].as_array() {
+        if let Some(accept_quality) = data["accept_quality"].as_array() {
             let qualities: Vec<u64> = accept_quality.iter().filter_map(|v| v.as_u64()).collect();
             tracing::debug!("可用质量列表: {:?}", qualities);
         }
@@ -1024,7 +1453,10 @@ impl<'a> Video<'a> {
         // 质量回退列表：从最高到最低，恢复原始顺序
         let quality_levels = ["127", "126", "125", "120", "116", "112", "80", "64", "32", "16"];
 
+        let mut consecutive_waf_failures = 0usize;
+
         for (attempt, qn) in quality_levels.iter().enumerate() {
+            self.wait_for_playurl_slot(attempt, consecutive_waf_failures).await;
             tracing::debug!(
                 "尝试获取番剧视频流 (尝试 {}/{}): qn={}",
                 attempt + 1,
@@ -1034,17 +1466,23 @@ impl<'a> Video<'a> {
 
             match self.get_bangumi_page_analyzer_with_quality(page, ep_id, qn).await {
                 Ok(analyzer) => {
+                    consecutive_waf_failures = 0;
                     tracing::debug!("✓ 成功获取番剧视频流: qn={}", qn);
                     return Ok(analyzer);
                 }
                 Err(e) => {
-                    // 检查是否为充电专享视频错误，如果是则不输出详细的质量级别失败日志
+                    let failure_kind = classify_playurl_error(&e);
+                    if matches!(failure_kind, PlayurlFailureKind::WafRateLimit) {
+                        consecutive_waf_failures = consecutive_waf_failures.saturating_add(1);
+                    } else {
+                        consecutive_waf_failures = 0;
+                    }
+
                     let is_charging_video_error = {
                         if let Some(bili_err) = e.downcast_ref::<crate::bilibili::BiliError>() {
                             match bili_err {
                                 crate::bilibili::BiliError::RequestFailed(87007 | 87008, _) => true,
                                 crate::bilibili::BiliError::RequestFailed(code, msg) => {
-                                    // 检查其他可能的充电专享视频错误码或消息
                                     msg.contains("充电专享")
                                         || msg.contains("需要充电")
                                         || msg.contains("试看视频")
@@ -1054,7 +1492,6 @@ impl<'a> Video<'a> {
                                 _ => false,
                             }
                         } else {
-                            // 检查非BiliError类型的错误是否可能是充电专享视频错误
                             let error_str = e.to_string().to_lowercase();
                             error_str.contains("充电专享")
                                 || error_str.contains("需要充电")
@@ -1071,39 +1508,33 @@ impl<'a> Video<'a> {
                     }
 
                     if attempt == quality_levels.len() - 1 {
-                        // 最后一次尝试也失败了
                         if is_charging_video_error {
                             tracing::info!("番剧需要充电才能观看");
-                            // 对于充电专享番剧，统一返回87007错误以便上层正确处理
                             return Err(crate::bilibili::BiliError::RequestFailed(
                                 87007,
                                 "充电专享视频，需要为UP主充电才能观看".to_string(),
                             )
                             .into());
-                        } else {
-                            tracing::error!("所有番剧质量级别都获取失败");
+                        }
 
-                            // 检查是否为HTTP 412风控错误
-                            let error_str = e.to_string();
-                            if error_str.contains("412 Precondition Failed") {
-                                // 先检查视频是否已被删除
-                                if let Ok(exists) = self.check_video_exists().await {
-                                    if !exists {
-                                        tracing::warn!("检测到番剧HTTP 412但视频已被删除，返回404错误而非风控");
-                                        return Err(crate::bilibili::BiliError::RequestFailed(
-                                            -404,
-                                            "视频已被删除".to_string(),
-                                        )
-                                        .into());
-                                    }
-                                }
-                                tracing::warn!("检测到番剧HTTP 412风控错误，转换为风控异常");
-                                return Err(crate::bilibili::BiliError::RiskControlOccurred.into());
+                        tracing::error!("所有番剧质量级别都获取失败");
+
+                        match failure_kind {
+                            PlayurlFailureKind::RiskControl => {
+                                return Err(e);
+                            }
+                            PlayurlFailureKind::WafRateLimit => {
+                                tracing::warn!(
+                                    "所有番剧质量级别都获取失败，错误归类为WAF/速率限制 412，将错误上抛"
+                                );
+                                return Err(e);
+                            }
+                            PlayurlFailureKind::Other => {
+                                return Err(e);
                             }
                         }
-                        return Err(e);
                     }
-                    // 继续尝试下一个质量级别
+
                     continue;
                 }
             }
@@ -1165,21 +1596,35 @@ impl<'a> Video<'a> {
 
         // 番剧请求头日志已在建造器时设置
 
-        let response = request.send().await;
-        match &response {
-            Ok(resp) => {
-                tracing::debug!("番剧playurl请求成功 - 状态码: {}, URL: {}", resp.status(), resp.url());
-                tracing::debug!("番剧响应头: {:?}", resp.headers());
-            }
+    let response = match request.send().await {
+            Ok(resp) => resp,
             Err(e) => {
                 tracing::error!("番剧playurl请求失败 - Episode ID: {}, CID: {}, 错误: {}", ep_id, page.cid, e);
+                return Err(e.into());
             }
+        };
+
+        tracing::debug!("番剧playurl请求成功 - 状态码: {}, URL: {}", response.status(), response.url());
+        tracing::debug!("番剧响应头: {:?}", response.headers());
+
+        if response.status() == StatusCode::PRECONDITION_FAILED {
+            let err = self
+                .handle_playurl_412(
+                    response,
+                    Playurl412Context {
+                        kind: PlayurlRequestKind::Bangumi,
+                        bvid: &self.bvid,
+                        cid: page.cid,
+                        quality: Some(qn),
+                        ep_id: Some(ep_id),
+                    },
+                )
+                .await;
+            return Err(err);
         }
 
-        let res = response?
-            .error_for_status()?
-            .json::<serde_json::Value>()
-            .await?;
+        let response = response.error_for_status()?;
+        let res = response.json::<serde_json::Value>().await?;
 
         tracing::debug!("番剧playurl响应数据大小: {} bytes", serde_json::to_string(&res).unwrap_or_default().len());
 
@@ -1569,6 +2014,69 @@ impl<'a> Video<'a> {
                 anyhow::bail!("未知的风控模式: {}", risk_config.mode);
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    #[test]
+    fn durl_only_long_stream_is_playable() {
+        let data = json!({
+            "timelength": 279_150,
+            "result": "suee",
+            "from": "local",
+            "format": "flv480",
+            "durl": [
+                {
+                    "length": 279_150,
+                }
+            ],
+            "accept_quality": [80, 64, 32, 16]
+        });
+
+        let assessment = assess_durl_only(&data, Some("0"));
+        assert!(!assessment.treat_as_trial);
+    }
+
+    #[test]
+    fn durl_only_short_with_trial_keywords_is_classified_as_trial() {
+        let data = json!({
+            "timelength": 15_000,
+            "result": "试看模式",
+            "from": "local",
+            "format": "flv480",
+            "durl": [
+                {
+                    "length": 12_000,
+                }
+            ],
+            "accept_quality": [32]
+        });
+
+        let assessment = assess_durl_only(&data, Some("试看视频需要充电"));
+        assert!(assessment.treat_as_trial);
+    }
+
+    #[test]
+    fn classify_412_evidence_detects_header_voucher() {
+        let classification = classify_412_evidence(Some("voucher123"), None);
+        match classification {
+            Playurl412Kind::RiskControl { voucher } => {
+                assert_eq!(voucher.as_deref(), Some("voucher123"));
+            }
+            _ => panic!("expected risk control classification"),
+        }
+    }
+
+    #[test]
+    fn classify_412_evidence_without_signals_is_waf() {
+        assert!(matches!(
+            classify_412_evidence(None, None),
+            Playurl412Kind::WafRateLimit
+        ));
     }
 }
 

@@ -219,14 +219,11 @@ impl ErrorClassifier {
             let status_code = status.as_u16();
             let _error_message = err.to_string();
 
-            // HTTP 412 错误直接归类为风控，不再检测充电视频
-            // 充电视频检测在获取视频信息时已经完成
-
             let error_type = match status_code {
                 401 => ErrorType::Authentication,
                 403 => ErrorType::Authorization,
                 404 => ErrorType::NotFound,
-                412 => ErrorType::RiskControl, // HTTP 412 始终是风控
+                412 => ErrorType::RateLimit,
                 429 => ErrorType::RateLimit,
                 500..=599 => ErrorType::ServerError,
                 400..=499 => ErrorType::ClientError,
@@ -237,15 +234,13 @@ impl ErrorClassifier {
                 401 => "认证失败，请检查登录状态".to_string(),
                 403 => "权限不足，无法访问该资源".to_string(),
                 404 => "请求的资源不存在".to_string(),
-                412 => "触发B站风控限制，需要进行验证".to_string(),
+                412 => "请求被服务端拒绝(HTTP 412)，可能是WAF或速率限制".to_string(),
                 429 => "请求过于频繁，请稍后重试".to_string(),
                 500..=599 => "服务器内部错误".to_string(),
                 _ => format!("HTTP错误: {}", status_code),
             };
 
             let classified_error = ClassifiedError::new(error_type.clone(), message).with_status_code(status_code);
-
-            // HTTP 412 是风控错误，不需要自动删除，应触发风控验证流程
 
             return classified_error;
         }
