@@ -92,6 +92,10 @@ impl HardwareFingerprint {
 
         // 根据视频长度智能调整交互次数
         let max_duration = std::cmp::min(video_duration * 1000, 60000); // 最多1分钟
+        if max_duration == 0 {
+            warn!("视频时长未知或为 0，跳过弹幕交互数据生成");
+            return "[]".to_string();
+        }
         let interaction_count = if max_duration < 10000 {
             rng.gen_range(2..=4) // 短视频少点交互
         } else if max_duration < 30000 {
