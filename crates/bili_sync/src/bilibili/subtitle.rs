@@ -48,6 +48,20 @@ impl SubTitleInfo {
         }
         self.subtitle_url.contains("ai_subtitle")
     }
+
+    pub fn normalized_lan(&self) -> String {
+        let trimmed = self.lan.trim();
+        if let Some(rest) = trimmed.strip_prefix("ai-") {
+            let rest = rest.trim();
+            if rest.is_empty() {
+                trimmed.to_string()
+            } else {
+                rest.to_string()
+            }
+        } else {
+            trimmed.to_string()
+        }
+    }
 }
 
 impl Display for SubTitleBody {
@@ -126,5 +140,22 @@ mod tests {
             lan_doc: Some("中文".to_string()),
         };
         assert!(!normal_info.is_ai_sub());
+    }
+
+    #[test]
+    fn normalized_lan_strips_ai_prefix() {
+        let info = SubTitleInfo {
+            lan: "ai-zh-CN".to_string(),
+            subtitle_url: "https://example.com/subtitle.json".to_string(),
+            lan_doc: None,
+        };
+        assert_eq!(info.normalized_lan(), "zh-CN");
+
+        let no_prefix = SubTitleInfo {
+            lan: "en-US".to_string(),
+            subtitle_url: "https://example.com/subtitle.json".to_string(),
+            lan_doc: None,
+        };
+        assert_eq!(no_prefix.normalized_lan(), "en-US");
     }
 }

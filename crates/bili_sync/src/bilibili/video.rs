@@ -1961,12 +1961,8 @@ impl<'a> Video<'a> {
     }
 
     async fn get_subtitle(&self, info: SubTitleInfo) -> Result<SubTitle> {
-        let SubTitleInfo {
-            lan,
-            subtitle_url,
-            lan_doc: _,
-        } = info;
-        let url = Self::normalize_subtitle_url(&subtitle_url);
+        let lan_tag = info.normalized_lan();
+        let url = Self::normalize_subtitle_url(&info.subtitle_url);
         let referer = format!("https://www.bilibili.com/video/{}", self.bvid);
 
         let response = self
@@ -1989,10 +1985,7 @@ impl<'a> Video<'a> {
                 .collect::<String>();
             warn!(
                 "字幕请求失败: status={} url={} referer={} body_snippet={}",
-                status,
-                url,
-                referer,
-                body_preview
+                status, url, referer, body_preview
             );
             bail!("字幕请求失败: {}", status);
         }
@@ -2005,9 +1998,9 @@ impl<'a> Video<'a> {
             .get_mut("body")
             .with_context(|| format!("字幕响应缺少 body 字段: {}", url))?
             .take();
-        let body: SubTitleBody = serde_json::from_value(body_value)
-            .with_context(|| format!("解析字幕内容失败: {}", url))?;
-        Ok(SubTitle { lan, body })
+        let body: SubTitleBody =
+            serde_json::from_value(body_value).with_context(|| format!("解析字幕内容失败: {}", url))?;
+        Ok(SubTitle { lan: lan_tag, body })
     }
 
     fn normalize_subtitle_url(raw: &str) -> String {
