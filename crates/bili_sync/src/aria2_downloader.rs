@@ -985,10 +985,15 @@ impl Aria2Downloader {
         };
 
         // 构建基础选项 - 增强网络容错
-        tracing::debug!("配置aria2下载任务 - 文件: {}, 线程数: {}, 目标目录: {}", file_name, threads, dir);
+        tracing::debug!(
+            "配置aria2下载任务 - 文件: {}, 线程数: {}, 目标目录: {}",
+            file_name,
+            threads,
+            dir
+        );
         tracing::debug!("aria2下载链接数量: {}", urls.len());
         for (i, url) in urls.iter().enumerate() {
-            tracing::debug!("aria2下载链接{}: {}", i+1, url);
+            tracing::debug!("aria2下载链接{}: {}", i + 1, url);
         }
 
         let mut options = serde_json::json!({
@@ -1061,7 +1066,10 @@ impl Aria2Downloader {
                 Duration::from_secs(10),
                 || async {
                     tracing::debug!("发送aria2 API请求 - URL: {}", url);
-                    tracing::debug!("aria2 API请求载荷: {}", serde_json::to_string_pretty(&payload).unwrap_or_default());
+                    tracing::debug!(
+                        "aria2 API请求载荷: {}",
+                        serde_json::to_string_pretty(&payload).unwrap_or_default()
+                    );
 
                     let response = self
                         .client
@@ -1074,7 +1082,10 @@ impl Aria2Downloader {
                     tracing::debug!("aria2 API响应状态: {}", response.status());
 
                     let json: serde_json::Value = response.json().await?;
-                    tracing::debug!("aria2 API响应数据: {}", serde_json::to_string_pretty(&json).unwrap_or_default());
+                    tracing::debug!(
+                        "aria2 API响应数据: {}",
+                        serde_json::to_string_pretty(&json).unwrap_or_default()
+                    );
 
                     if let Some(error) = json.get("error") {
                         bail!("aria2 API错误: {}", error);

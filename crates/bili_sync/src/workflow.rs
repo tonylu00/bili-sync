@@ -65,7 +65,7 @@ pub struct SeasonInfo {
     pub total_views: Option<i64>,              // 总播放量
     pub total_favorites: Option<i64>,          // 总收藏数
     #[allow(dead_code)]
-    pub total_seasons: Option<i32>,            // 总季数（从API的seasons数组计算）
+    pub total_seasons: Option<i32>, // 总季数（从API的seasons数组计算）
     pub show_season_type: Option<i32>,         // 番剧季度类型
 }
 
@@ -167,9 +167,15 @@ pub async fn process_video_source(
         return Ok((new_video_count, new_videos));
     }
     if new_video_count == 0 {
-        let has_unfilled = !filter_unfilled_videos(video_source.filter_expr(), connection).await?.is_empty();
-        let has_unhandled = !filter_unhandled_video_pages(video_source.filter_expr(), connection).await?.is_empty();
-        let has_failed = !get_failed_videos_in_current_cycle(video_source.filter_expr(), connection).await?.is_empty();
+        let has_unfilled = !filter_unfilled_videos(video_source.filter_expr(), connection)
+            .await?
+            .is_empty();
+        let has_unhandled = !filter_unhandled_video_pages(video_source.filter_expr(), connection)
+            .await?
+            .is_empty();
+        let has_failed = !get_failed_videos_in_current_cycle(video_source.filter_expr(), connection)
+            .await?
+            .is_empty();
         if !(has_unfilled || has_unhandled || has_failed) {
             info!("本轮未发现新视频，且无待处理任务，跳过详情与下载阶段");
             return Ok((new_video_count, new_videos));
@@ -788,9 +794,7 @@ pub async fn fetch_video_details(
                                 let raw_type = std::any::type_name_of_val(&view_info);
                                 error!(
                                     "获取视频 {} - {} 的详细信息失败，返回的view_info类型异常: {}",
-                                    &video_model.bvid,
-                                    &video_model.name,
-                                    raw_type
+                                    &video_model.bvid, &video_model.name, raw_type
                                 );
                                 return Err(anyhow!(
                                     "Download failed, view_info is not type view_info (actual type: {})",
@@ -1061,8 +1065,10 @@ pub async fn download_unprocessed_videos(
                 let season_key = format!("season_{}", season_id);
                 let should_download = !assigned_bangumi_seasons.contains(&season_key);
                 assigned_bangumi_seasons.insert(season_key);
-                debug!("番剧视频「{}」season_id={}, should_download_upper={}",
-                       video_model.name, season_id, should_download);
+                debug!(
+                    "番剧视频「{}」season_id={}, should_download_upper={}",
+                    video_model.name, season_id, should_download
+                );
                 should_download
             } else {
                 // 普通视频：基于upper_id判断
@@ -1192,8 +1198,10 @@ pub async fn retry_failed_videos_once(
                 let season_key = format!("season_{}", season_id);
                 let should_download = !assigned_bangumi_seasons.contains(&season_key);
                 assigned_bangumi_seasons.insert(season_key);
-                debug!("重试番剧视频「{}」season_id={}, should_download_upper={}",
-                       video_model.name, season_id, should_download);
+                debug!(
+                    "重试番剧视频「{}」season_id={}, should_download_upper={}",
+                    video_model.name, season_id, should_download
+                );
                 should_download
             } else {
                 // 普通视频：基于upper_id判断
@@ -2036,7 +2044,10 @@ pub async fn download_video_pages(
             // 依赖数据库状态决定是否下载季度级图片（不检查文件存在性，以支持重置状态后重新下载）
             let should_download_season_images = separate_status[0];
 
-            info!("准备下载季度级图片到: {:?}, {:?} 和 {:?}", poster_path, fanart_path, season_poster_path);
+            info!(
+                "准备下载季度级图片到: {:?}, {:?} 和 {:?}",
+                poster_path, fanart_path, season_poster_path
+            );
 
             // 季度级图片：thumb使用横版封面，fanart使用竖版封面
             let season_info_ref = season_info.as_ref().unwrap();
@@ -2051,10 +2062,7 @@ pub async fn download_video_pages(
                     .filter(|s| !s.is_empty()))
                 .or(season_info_ref.bkg_cover.as_deref().filter(|s| !s.is_empty()))
                 .or(season_info_ref.cover.as_deref().filter(|s| !s.is_empty()))
-                .or(season_info_ref
-                    .new_ep_cover
-                    .as_deref()
-                    .filter(|s| !s.is_empty()));
+                .or(season_info_ref.new_ep_cover.as_deref().filter(|s| !s.is_empty()));
             // fanart使用竖版封面
             let season_fanart_url = season_info_ref.cover.as_deref().filter(|s| !s.is_empty());
 
@@ -2069,11 +2077,11 @@ pub async fn download_video_pages(
                     should_download_season_images,
                     &video_model,
                     downloader,
-                    poster_path.clone(), // 这里实际是thumb路径
+                    poster_path.clone(),                   // 这里实际是thumb路径
                     std::path::PathBuf::from("/dev/null"), // 占位，因为我们只下载一个文件
                     token.clone(),
-                    season_thumb_url,  // 使用横版封面作为thumb
-                    None, // 不使用fanart URL
+                    season_thumb_url, // 使用横版封面作为thumb
+                    None,             // 不使用fanart URL
                 ),
                 // Season01-fanart.jpg (竖版封面)
                 fetch_video_poster(
@@ -2084,7 +2092,7 @@ pub async fn download_video_pages(
                     std::path::PathBuf::from("/dev/null"), // 占位，因为我们只下载一个文件
                     token.clone(),
                     season_fanart_url, // 使用竖版封面作为fanart
-                    None, // 不使用fanart URL
+                    None,              // 不使用fanart URL
                 ),
                 // Season01-poster.jpg (竖版封面，Jellyfin优先级最高)
                 fetch_bangumi_poster(
@@ -2104,7 +2112,9 @@ pub async fn download_video_pages(
                 | (Ok(_), Ok(ExecutionStatus::Succeeded), Ok(_))
                 | (Ok(_), Ok(_), Ok(ExecutionStatus::Succeeded)) => ExecutionStatus::Succeeded,
                 // 都是Ok但都是Skipped
-                (Ok(ExecutionStatus::Skipped), Ok(ExecutionStatus::Skipped), Ok(ExecutionStatus::Skipped)) => ExecutionStatus::Skipped,
+                (Ok(ExecutionStatus::Skipped), Ok(ExecutionStatus::Skipped), Ok(ExecutionStatus::Skipped)) => {
+                    ExecutionStatus::Skipped
+                }
                 // 有任何错误才报Failed
                 _ => ExecutionStatus::Failed(anyhow::anyhow!("Season级别图片下载失败")),
             })
@@ -2239,10 +2249,7 @@ pub async fn download_video_pages(
             &video_model,
             downloader,
             if is_bangumi && bangumi_folder_path.is_some() {
-                bangumi_folder_path
-                    .as_ref()
-                    .unwrap()
-                    .join("poster.jpg")
+                bangumi_folder_path.as_ref().unwrap().join("poster.jpg")
             } else {
                 // 非番剧不需要 poster.jpg，使用占位路径
                 std::path::PathBuf::from("/dev/null")
@@ -3407,7 +3414,9 @@ pub async fn generate_page_nfo(
                     // 对于合集视频，如果数据库中尚未带有 episode_number，按合集顺序编号
                     if video_model.collection_id.is_some() && video_model.episode_number.is_none() {
                         if let Some(col_id) = video_model.collection_id {
-                            if let Ok(ep_no) = get_collection_video_episode_number(_connection, col_id, &video_model.bvid).await {
+                            if let Ok(ep_no) =
+                                get_collection_video_episode_number(_connection, col_id, &video_model.bvid).await
+                            {
                                 episode.episode_number = ep_no;
                             }
                         }
@@ -3431,7 +3440,9 @@ pub async fn generate_page_nfo(
             if video_model.category != 1 {
                 if let Some(col_id) = video_model.collection_id {
                     if video_model.episode_number.is_none() {
-                        if let Ok(ep_no) = get_collection_video_episode_number(_connection, col_id, &video_model.bvid).await {
+                        if let Ok(ep_no) =
+                            get_collection_video_episode_number(_connection, col_id, &video_model.bvid).await
+                        {
                             episode.episode_number = ep_no;
                         }
                     }

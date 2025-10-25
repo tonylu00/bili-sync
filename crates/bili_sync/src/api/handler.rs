@@ -5,8 +5,8 @@ use anyhow::{anyhow, Context, Result};
 use axum::extract::{Extension, Path, Query};
 use chrono::Datelike;
 
+use crate::http::headers::{create_api_headers, create_image_headers};
 use crate::utils::time_format::{now_standard_string, to_standard_string};
-use crate::http::headers::{create_image_headers, create_api_headers};
 use bili_sync_entity::{collection, favorite, page, submission, video, video_source, watch_later};
 use bili_sync_migration::Expr;
 use reqwest;
@@ -29,13 +29,13 @@ use crate::api::request::{
     UpdateConfigItemRequest, UpdateConfigRequest, UpdateCredentialRequest, UpdateVideoStatusRequest, VideosRequest,
 };
 use crate::api::response::{
-    AddVideoSourceResponse, BangumiSeasonInfo, BangumiSourceListResponse, BangumiSourceOption, ConfigChangeInfo, ConfigHistoryResponse, ConfigItemResponse,
-    ConfigReloadResponse, ConfigResponse, ConfigValidationResponse, DashBoardResponse, DeleteVideoResponse,
-    DeleteVideoSourceResponse, HotReloadStatusResponse, InitialSetupCheckResponse, MonitoringStatus, PageInfo,
-    QRGenerateResponse, QRPollResponse, QRUserInfo, ResetAllVideosResponse, ResetVideoResponse,
-    ResetVideoSourcePathResponse, SetupAuthTokenResponse, SubmissionVideosResponse, UpdateConfigResponse,
-    UpdateCredentialResponse, UpdateVideoStatusResponse, VideoInfo, VideoResponse, VideoSource, VideoSourcesResponse,
-    VideosResponse,
+    AddVideoSourceResponse, BangumiSeasonInfo, BangumiSourceListResponse, BangumiSourceOption, ConfigChangeInfo,
+    ConfigHistoryResponse, ConfigItemResponse, ConfigReloadResponse, ConfigResponse, ConfigValidationResponse,
+    DashBoardResponse, DeleteVideoResponse, DeleteVideoSourceResponse, HotReloadStatusResponse,
+    InitialSetupCheckResponse, MonitoringStatus, PageInfo, QRGenerateResponse, QRPollResponse, QRUserInfo,
+    ResetAllVideosResponse, ResetVideoResponse, ResetVideoSourcePathResponse, SetupAuthTokenResponse,
+    SubmissionVideosResponse, UpdateConfigResponse, UpdateCredentialResponse, UpdateVideoStatusResponse, VideoInfo,
+    VideoResponse, VideoSource, VideoSourcesResponse, VideosResponse,
 };
 use crate::api::wrapper::{ApiError, ApiResponse};
 use crate::utils::status::{PageStatus, VideoStatus};
@@ -51,18 +51,18 @@ fn normalize_file_path(path: &str) -> String {
 }
 
 /// 清理空的父目录
-/// 
+///
 /// # 参数
 /// - `deleted_path`: 已删除的文件夹路径
 /// - `stop_at`: 停止清理的父目录路径（避免删除配置的基础路径）
 fn cleanup_empty_parent_dirs(deleted_path: &str, _stop_at: &str) {
-    use std::path::Path;
     use std::fs;
-    
+    use std::path::Path;
+
     let mut current_path = Path::new(deleted_path).parent();
     while let Some(parent) = current_path {
         let parent_str = parent.to_string_lossy().to_string();
-        
+
         // 检查父目录是否为空
         if parent.exists() {
             match fs::read_dir(parent) {
@@ -436,15 +436,17 @@ pub async fn get_video_sources(
                 m_id,
                 upper_id,
             )| {
-                let selected_seasons = selected_seasons_json.as_ref().and_then(|json| {
-                    match serde_json::from_str::<Vec<String>>(json) {
-                        Ok(seasons) if !seasons.is_empty() => Some(seasons),
-                        Ok(_) => None,
-                        Err(err) => {                    warn!("Failed to parse selected_seasons for bangumi source {}: {}", id, err);
-                            None
-                        }
-                    }
-                });
+                let selected_seasons =
+                    selected_seasons_json
+                        .as_ref()
+                        .and_then(|json| match serde_json::from_str::<Vec<String>>(json) {
+                            Ok(seasons) if !seasons.is_empty() => Some(seasons),
+                            Ok(_) => None,
+                            Err(err) => {
+                                warn!("Failed to parse selected_seasons for bangumi source {}: {}", id, err);
+                                None
+                            }
+                        });
 
                 VideoSource {
                     id,
@@ -1122,7 +1124,9 @@ pub async fn reset_all_videos(
     // 触发立即扫描（缩短等待）
     crate::task::resume_scanning();
     // 触发立即扫描（缩短等待）
-    if resetted { crate::task::resume_scanning(); }
+    if resetted {
+        crate::task::resume_scanning();
+    }
     Ok(ApiResponse::ok(ResetAllVideosResponse {
         resetted,
         resetted_videos_count: resetted_videos_info.len(),
@@ -1561,7 +1565,9 @@ pub async fn update_video_status(
     }
 
     // 触发立即扫描（缩短等待）
-    if has_video_updates || has_page_updates { crate::task::resume_scanning(); }
+    if has_video_updates || has_page_updates {
+        crate::task::resume_scanning();
+    }
     Ok(ApiResponse::ok(UpdateVideoStatusResponse {
         success: has_video_updates || has_page_updates,
         video: video_info,
@@ -2937,7 +2943,7 @@ pub async fn delete_video_source_internal(
                                         info!("成功删除合集视频文件夹: {} ({:.2} MB)", video.path, size_mb);
                                         deleted_folders.insert(video.path.clone());
                                         total_deleted_size += size;
-                                        
+
                                         // 删除后清理空的父目录
                                         cleanup_empty_parent_dirs(&video.path, base_path);
                                     }
@@ -2949,7 +2955,7 @@ pub async fn delete_video_source_internal(
                                     } else {
                                         info!("成功删除合集视频文件夹: {}", video.path);
                                         deleted_folders.insert(video.path.clone());
-                                        
+
                                         // 删除后清理空的父目录
                                         cleanup_empty_parent_dirs(&video.path, base_path);
                                     }
@@ -3064,7 +3070,7 @@ pub async fn delete_video_source_internal(
                                         info!("成功删除收藏夹视频文件夹: {} ({:.2} MB)", video.path, size_mb);
                                         deleted_folders.insert(video.path.clone());
                                         total_deleted_size += size;
-                                        
+
                                         // 删除后清理空的父目录
                                         cleanup_empty_parent_dirs(&video.path, base_path);
                                     }
@@ -3076,7 +3082,7 @@ pub async fn delete_video_source_internal(
                                     } else {
                                         info!("成功删除收藏夹视频文件夹: {}", video.path);
                                         deleted_folders.insert(video.path.clone());
-                                        
+
                                         // 删除后清理空的父目录
                                         cleanup_empty_parent_dirs(&video.path, base_path);
                                     }
@@ -3194,7 +3200,7 @@ pub async fn delete_video_source_internal(
                                         info!("成功删除UP主投稿视频文件夹: {} ({:.2} MB)", video.path, size_mb);
                                         deleted_folders.insert(video.path.clone());
                                         total_deleted_size += size;
-                                        
+
                                         // 删除后清理空的父目录
                                         cleanup_empty_parent_dirs(&video.path, base_path);
                                     }
@@ -3206,7 +3212,7 @@ pub async fn delete_video_source_internal(
                                     } else {
                                         info!("成功删除UP主投稿视频文件夹: {}", video.path);
                                         deleted_folders.insert(video.path.clone());
-                                        
+
                                         // 删除后清理空的父目录
                                         cleanup_empty_parent_dirs(&video.path, base_path);
                                     }
@@ -3321,7 +3327,7 @@ pub async fn delete_video_source_internal(
                                         info!("成功删除稍后再看视频文件夹: {} ({:.2} MB)", video.path, size_mb);
                                         deleted_folders.insert(video.path.clone());
                                         total_deleted_size += size;
-                                        
+
                                         // 删除后清理空的父目录
                                         cleanup_empty_parent_dirs(&video.path, base_path);
                                     }
@@ -3333,7 +3339,7 @@ pub async fn delete_video_source_internal(
                                     } else {
                                         info!("成功删除稍后再看视频文件夹: {}", video.path);
                                         deleted_folders.insert(video.path.clone());
-                                        
+
                                         // 删除后清理空的父目录
                                         cleanup_empty_parent_dirs(&video.path, base_path);
                                     }
@@ -3447,28 +3453,28 @@ pub async fn delete_video_source_internal(
                                     let size_mb = size as f64 / 1024.0 / 1024.0;
                                     info!("删除番剧季度文件夹: {} (大小: {:.2} MB)", video.path, size_mb);
 
-                                     if let Err(e) = std::fs::remove_dir_all(&video.path) {
-                                         error!("删除番剧季度文件夹失败: {} - {}", video.path, e);
-                                     } else {
-                                         info!("成功删除番剧季度文件夹: {} ({:.2} MB)", video.path, size_mb);
-                                         deleted_folders.insert(video.path.clone());
-                                         total_deleted_size += size;
-                                         
-                                         // 删除后清理空的父目录
-                                         cleanup_empty_parent_dirs(&video.path, base_path);
-                                     }
+                                    if let Err(e) = std::fs::remove_dir_all(&video.path) {
+                                        error!("删除番剧季度文件夹失败: {} - {}", video.path, e);
+                                    } else {
+                                        info!("成功删除番剧季度文件夹: {} ({:.2} MB)", video.path, size_mb);
+                                        deleted_folders.insert(video.path.clone());
+                                        total_deleted_size += size;
+
+                                        // 删除后清理空的父目录
+                                        cleanup_empty_parent_dirs(&video.path, base_path);
+                                    }
                                 }
                                 Err(e) => {
                                     warn!("无法计算文件夹大小: {} - {}", video.path, e);
-                                     if let Err(e) = std::fs::remove_dir_all(&video.path) {
-                                         error!("删除番剧季度文件夹失败: {} - {}", video.path, e);
-                                     } else {
-                                         info!("成功删除番剧季度文件夹: {}", video.path);
-                                         deleted_folders.insert(video.path.clone());
-                                         
-                                         // 删除后清理空的父目录
-                                         cleanup_empty_parent_dirs(&video.path, base_path);
-                                     }
+                                    if let Err(e) = std::fs::remove_dir_all(&video.path) {
+                                        error!("删除番剧季度文件夹失败: {} - {}", video.path, e);
+                                    } else {
+                                        info!("成功删除番剧季度文件夹: {}", video.path);
+                                        deleted_folders.insert(video.path.clone());
+
+                                        // 删除后清理空的父目录
+                                        cleanup_empty_parent_dirs(&video.path, base_path);
+                                    }
                                 }
                             }
                         }
@@ -5250,10 +5256,7 @@ pub async fn update_config_internal(
                     }
                 }
                 _ => {
-                    return Err(anyhow!(
-                        "无效的验证码识别服务，只支持 '2captcha' 或 'anticaptcha'"
-                    )
-                    .into());
+                    return Err(anyhow!("无效的验证码识别服务，只支持 '2captcha' 或 'anticaptcha'").into());
                 }
             }
         }
@@ -7612,9 +7615,7 @@ pub async fn proxy_image(
     // 请求图片，添加必要的请求头
     tracing::debug!("发起图片下载请求: {}", url);
 
-    let request = client
-        .get(url)
-        .headers(create_image_headers());
+    let request = client.get(url).headers(create_image_headers());
 
     // 图片下载请求头日志已在建造器时设置
 
@@ -8314,9 +8315,11 @@ pub async fn get_current_user() -> Result<ApiResponse<crate::api::response::QRUs
     // 调用B站API获取用户信息
     let request_url = "https://api.bilibili.com/x/web-interface/nav";
     tracing::debug!("发起用户信息请求: {} - User ID: {}", request_url, cred.dedeuserid);
-    tracing::debug!("用户信息Cookie: SESSDATA={}..., bili_jct={}...",
+    tracing::debug!(
+        "用户信息Cookie: SESSDATA={}..., bili_jct={}...",
         &cred.sessdata[..std::cmp::min(cred.sessdata.len(), 20)],
-        &cred.bili_jct[..std::cmp::min(cred.bili_jct.len(), 20)]);
+        &cred.bili_jct[..std::cmp::min(cred.bili_jct.len(), 20)]
+    );
 
     let request = client
         .get(request_url)
@@ -10927,9 +10930,7 @@ async fn handle_bangumi_merge_to_existing(
             target_update.name = sea_orm::Set(params.name);
         }
 
-        video_source::Entity::update(target_update)
-            .exec(txn)
-            .await?;
+        video_source::Entity::update(target_update).exec(txn).await?;
 
         // 清除番剧缓存，强制重新扫描新合并的季度
         let clear_cache_update = video_source::ActiveModel {

@@ -35,16 +35,16 @@ pub struct Movie<'a> {
     pub studio: Option<&'a str>,
     pub director: Option<&'a str>,
     pub credits: Option<&'a str>,
-    pub duration: Option<i32>,       // 视频时长（分钟）
-    pub view_count: Option<i64>,     // 播放量
-    pub like_count: Option<i64>,     // 点赞数
-    pub category: i32,               // 视频分类（用于番剧检测）
-    pub tagline: Option<String>,     // 标语/副标题（从share_copy提取）
-    pub set: Option<String>,         // 系列名称
-    pub sorttitle: Option<String>,   // 排序标题
-    pub actors_info: Option<String>, // 演员信息字符串（从API获取）
-    pub cover_url: &'a str,          // 封面图片URL
-    pub fanart_url: Option<&'a str>, // 背景图片URL
+    pub duration: Option<i32>,           // 视频时长（分钟）
+    pub view_count: Option<i64>,         // 播放量
+    pub like_count: Option<i64>,         // 点赞数
+    pub category: i32,                   // 视频分类（用于番剧检测）
+    pub tagline: Option<String>,         // 标语/副标题（从share_copy提取）
+    pub set: Option<String>,             // 系列名称
+    pub sorttitle: Option<String>,       // 排序标题
+    pub actors_info: Option<String>,     // 演员信息字符串（从API获取）
+    pub cover_url: &'a str,              // 封面图片URL
+    pub fanart_url: Option<&'a str>,     // 背景图片URL
     pub upper_face_url: Option<&'a str>, // UP主头像URL（用于演员thumb）
 }
 
@@ -69,16 +69,16 @@ pub struct TVShow<'a> {
     pub duration: Option<i32>, // 视频时长（分钟）
     pub view_count: Option<i64>,
     pub like_count: Option<i64>,
-    pub category: i32,               // 视频分类（用于番剧检测）
-    pub tagline: Option<String>,     // 标语/副标题（从share_copy提取）
-    pub set: Option<String>,         // 系列名称
-    pub sorttitle: Option<String>,   // 排序标题
-    pub actors_info: Option<String>, // 演员信息字符串（从API获取）
-    pub cover_url: &'a str,          // 封面图片URL
-    pub fanart_url: Option<&'a str>, // 背景图片URL
+    pub category: i32,                   // 视频分类（用于番剧检测）
+    pub tagline: Option<String>,         // 标语/副标题（从share_copy提取）
+    pub set: Option<String>,             // 系列名称
+    pub sorttitle: Option<String>,       // 排序标题
+    pub actors_info: Option<String>,     // 演员信息字符串（从API获取）
+    pub cover_url: &'a str,              // 封面图片URL
+    pub fanart_url: Option<&'a str>,     // 背景图片URL
     pub upper_face_url: Option<&'a str>, // UP主头像URL（用于演员thumb）
-    pub season_id: Option<String>,   // 番剧季度ID（从API获取）
-    pub media_id: Option<i64>,       // 媒体ID（从API获取）
+    pub season_id: Option<String>,       // 番剧季度ID（从API获取）
+    pub media_id: Option<i64>,           // 媒体ID（从API获取）
 }
 
 pub struct Upper {
@@ -128,19 +128,19 @@ pub struct Season<'a> {
     pub studio: Option<&'a str>,
     pub status: Option<&'a str>,
     pub total_episodes: Option<i32>,
-    pub duration: Option<i32>,       // 平均集时长（分钟）
-    pub view_count: Option<i64>,     // 总播放量
-    pub like_count: Option<i64>,     // 总点赞数
-    pub category: i32,               // 视频分类
-    pub tagline: Option<String>,     // 标语/副标题
-    pub set: Option<String>,         // 系列名称
-    pub sorttitle: Option<String>,   // 排序标题
-    pub actors_info: Option<String>, // 演员信息字符串
-    pub cover_url: &'a str,          // 封面图片URL
-    pub fanart_url: Option<&'a str>, // 背景图片URL
+    pub duration: Option<i32>,           // 平均集时长（分钟）
+    pub view_count: Option<i64>,         // 总播放量
+    pub like_count: Option<i64>,         // 总点赞数
+    pub category: i32,                   // 视频分类
+    pub tagline: Option<String>,         // 标语/副标题
+    pub set: Option<String>,             // 系列名称
+    pub sorttitle: Option<String>,       // 排序标题
+    pub actors_info: Option<String>,     // 演员信息字符串
+    pub cover_url: &'a str,              // 封面图片URL
+    pub fanart_url: Option<&'a str>,     // 背景图片URL
     pub upper_face_url: Option<&'a str>, // UP主头像URL（用于演员thumb）
-    pub season_id: Option<String>,   // 番剧季度ID
-    pub media_id: Option<i64>,       // 媒体ID
+    pub season_id: Option<String>,       // 番剧季度ID
+    pub media_id: Option<i64>,           // 媒体ID
 }
 
 impl NFO<'_> {
@@ -488,7 +488,9 @@ impl NFO<'_> {
                     if let Some(bangumi_title) = Self::extract_bangumi_title_from_full_name(tvshow.name) {
                         let cfg = crate::config::reload_config();
                         let normalized = if cfg.bangumi_use_season_structure {
-                            crate::utils::bangumi_name_extractor::BangumiNameExtractor::normalize_series_name(&bangumi_title)
+                            crate::utils::bangumi_name_extractor::BangumiNameExtractor::normalize_series_name(
+                                &bangumi_title,
+                            )
                         } else {
                             bangumi_title
                         };
@@ -520,11 +522,12 @@ impl NFO<'_> {
                 // 排序标题
                 if let Some(ref sorttitle) = tvshow.sorttitle {
                     let cfg = crate::config::reload_config();
-                    let sorttitle_normalized = if cfg.bangumi_use_season_structure && Self::is_bangumi_video(tvshow.category) {
-                        crate::utils::bangumi_name_extractor::BangumiNameExtractor::normalize_series_name(sorttitle)
-                    } else {
-                        sorttitle.clone()
-                    };
+                    let sorttitle_normalized =
+                        if cfg.bangumi_use_season_structure && Self::is_bangumi_video(tvshow.category) {
+                            crate::utils::bangumi_name_extractor::BangumiNameExtractor::normalize_series_name(sorttitle)
+                        } else {
+                            sorttitle.clone()
+                        };
                     writer
                         .create_element("sorttitle")
                         .write_text_content_async(BytesText::new(&sorttitle_normalized))
@@ -532,11 +535,14 @@ impl NFO<'_> {
                 } else {
                     // 使用显示标题作为默认排序标题
                     let cfg = crate::config::reload_config();
-                    let sort_title_to_write = if cfg.bangumi_use_season_structure && Self::is_bangumi_video(tvshow.category) {
-                        crate::utils::bangumi_name_extractor::BangumiNameExtractor::normalize_series_name(&display_title)
-                    } else {
-                        display_title.clone()
-                    };
+                    let sort_title_to_write =
+                        if cfg.bangumi_use_season_structure && Self::is_bangumi_video(tvshow.category) {
+                            crate::utils::bangumi_name_extractor::BangumiNameExtractor::normalize_series_name(
+                                &display_title,
+                            )
+                        } else {
+                            display_title.clone()
+                        };
                     writer
                         .create_element("sorttitle")
                         .write_text_content_async(BytesText::new(&sort_title_to_write))
@@ -792,7 +798,7 @@ impl NFO<'_> {
         Ok(())
     }
 
-async fn write_upper_nfo(mut writer: Writer<&mut BufWriter<&mut Vec<u8>>>, upper: Upper) -> Result<()> {
+    async fn write_upper_nfo(mut writer: Writer<&mut BufWriter<&mut Vec<u8>>>, upper: Upper) -> Result<()> {
         writer
             .create_element("person")
             .write_inner_content_async::<_, _, Error>(|writer| async move {
@@ -1631,7 +1637,11 @@ impl<'a> From<&'a video::Model> for Movie<'a> {
             actors_info: video.actors.clone(),
             cover_url: &video.cover,
             fanart_url: None, // Movie暂不单独设置fanart URL
-            upper_face_url: if !video.upper_face.is_empty() { Some(&video.upper_face) } else { None },
+            upper_face_url: if !video.upper_face.is_empty() {
+                Some(&video.upper_face)
+            } else {
+                None
+            },
         }
     }
 }
@@ -1712,9 +1722,9 @@ impl<'a> From<&'a video::Model> for TVShow<'a> {
             status: Some("Continuing"), // 默认持续播出状态
             total_seasons: None,        // 不生成totalseasons，让Jellyfin自动发现
             total_episodes: None,       // 从分页数量推断
-            duration: None,       // video模型中没有duration字段
-            view_count: None,     // video模型中没有view_count字段
-            like_count: None,     // video模型中没有like_count字段
+            duration: None,             // video模型中没有duration字段
+            view_count: None,           // video模型中没有view_count字段
+            like_count: None,           // video模型中没有like_count字段
             category: video.category,
             tagline,
             set: set_name,
@@ -1722,9 +1732,13 @@ impl<'a> From<&'a video::Model> for TVShow<'a> {
             actors_info: video.actors.clone(),
             cover_url: &video.cover,
             fanart_url: None, // 普通视频没有单独的fanart URL
-            upper_face_url: if !video.upper_face.is_empty() { Some(&video.upper_face) } else { None },
-            season_id: None,  // 普通视频没有season_id
-            media_id: None,   // 普通视频没有media_id
+            upper_face_url: if !video.upper_face.is_empty() {
+                Some(&video.upper_face)
+            } else {
+                None
+            },
+            season_id: None, // 普通视频没有season_id
+            media_id: None,  // 普通视频没有media_id
         }
     }
 }
@@ -1878,11 +1892,12 @@ impl<'a> TVShow<'a> {
                 .or(season_info.horizontal_cover_169.as_deref())
                 .or(season_info.horizontal_cover_1610.as_deref())
                 .unwrap_or(&video.cover),
-            fanart_url: season_info
-                .cover
-                .as_deref()
-                .filter(|s| !s.is_empty()),
-            upper_face_url: if !video.upper_face.is_empty() { Some(&video.upper_face) } else { None },
+            fanart_url: season_info.cover.as_deref().filter(|s| !s.is_empty()),
+            upper_face_url: if !video.upper_face.is_empty() {
+                Some(&video.upper_face)
+            } else {
+                None
+            },
             // 使用season_id和media_id作为额外的uniqueid（通过扩展字段传递）
             season_id: Some(season_info.season_id.clone()),
             media_id: season_info.media_id,
@@ -2054,9 +2069,13 @@ impl<'a> From<&'a video::Model> for Season<'a> {
             actors_info: video.actors.clone(),
             cover_url: &video.cover,
             fanart_url: None, // 普通视频没有单独的fanart URL
-            upper_face_url: if !video.upper_face.is_empty() { Some(&video.upper_face) } else { None },
-            season_id: None,  // 普通视频没有season_id
-            media_id: None,   // 普通视频没有media_id
+            upper_face_url: if !video.upper_face.is_empty() {
+                Some(&video.upper_face)
+            } else {
+                None
+            },
+            season_id: None, // 普通视频没有season_id
+            media_id: None,  // 普通视频没有media_id
         }
     }
 }
@@ -2141,11 +2160,12 @@ impl<'a> Season<'a> {
                 .or(season_info.horizontal_cover_169.as_deref())
                 .or(season_info.horizontal_cover_1610.as_deref())
                 .unwrap_or(&video.cover),
-            fanart_url: season_info
-                .cover
-                .as_deref()
-                .filter(|s| !s.is_empty()),
-            upper_face_url: if !video.upper_face.is_empty() { Some(&video.upper_face) } else { None },
+            fanart_url: season_info.cover.as_deref().filter(|s| !s.is_empty()),
+            upper_face_url: if !video.upper_face.is_empty() {
+                Some(&video.upper_face)
+            } else {
+                None
+            },
             // 使用season_id和media_id作为额外的uniqueid
             season_id: Some(season_info.season_id.clone()),
             media_id: season_info.media_id,
