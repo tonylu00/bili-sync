@@ -1,10 +1,10 @@
-use anyhow::{anyhow, bail, ensure, Result};
+use anyhow::{anyhow, bail, ensure, Context, Result};
 use futures::stream::FuturesUnordered;
 use futures::TryStreamExt;
 use once_cell::sync::Lazy;
 use prost::Message;
 use rand::Rng;
-use reqwest::{header::CONTENT_TYPE, Method, StatusCode};
+use reqwest::{header::{self, CONTENT_TYPE}, Method, StatusCode};
 use std::time::{Duration, Instant};
 use tokio::sync::Mutex;
 use tokio_util::sync::CancellationToken;
@@ -16,6 +16,7 @@ use crate::bilibili::credential::encoded_query;
 use crate::bilibili::danmaku::{DanmakuElem, DanmakuWriter, DmSegMobileReply};
 use crate::bilibili::subtitle::{SubTitle, SubTitleBody, SubTitleInfo, SubTitlesInfo};
 use crate::bilibili::{Validate, VideoInfo, MIXIN_KEY};
+use crate::config::with_config;
 use crate::hardware::HardwareFingerprint;
 use crate::http::headers::create_api_headers;
 
@@ -1936,27 +1937,88 @@ impl<'a> Video<'a> {
 
         // 接口返回的信息，包含了一系列的字幕，每个字幕包含了字幕的语言和 json 下载地址
         let subtitles_info: SubTitlesInfo = serde_json::from_value(subtitle_data.clone())?;
-        let tasks = subtitles_info
-            .subtitles
-            .into_iter()
-            .filter(|v| !v.is_ai_sub())
-            .map(|v| self.get_subtitle(v))
+        if subtitles_info.subtitles.is_empty() {
+            debug!("字幕列表为空");
+            return Ok(Vec::new());
+        }
+
+        let (ai_subtitles, regular_subtitles): (Vec<_>, Vec<_>) =
+            subtitles_info.subtitles.into_iter().partition(|info| info.is_ai_sub());
+
+        if !ai_subtitles.is_empty() {
+            debug!("检测到 {} 条 AI 字幕", ai_subtitles.len());
+            let has_credential = with_config(|bundle| bundle.config.credential.load().is_some());
+            if !has_credential {
+                warn!("检测到 AI 字幕，但当前缺少登录凭据（SESSDATA），字幕下载可能失败");
+            }
+        }
+
+        let ordered_subtitles = ai_subtitles.into_iter().chain(regular_subtitles.into_iter());
+        let tasks = ordered_subtitles
+            .map(|info| self.get_subtitle(info))
             .collect::<FuturesUnordered<_>>();
         tasks.try_collect().await
     }
 
     async fn get_subtitle(&self, info: SubTitleInfo) -> Result<SubTitle> {
-        let mut res = self
+        let SubTitleInfo {
+            lan,
+            subtitle_url,
+            lan_doc: _,
+        } = info;
+        let url = Self::normalize_subtitle_url(&subtitle_url);
+        let referer = format!("https://www.bilibili.com/video/{}", self.bvid);
+
+        let response = self
             .client
-            .client // 这里可以直接使用 inner_client，因为该请求不需要鉴权
-            .request(Method::GET, format!("https:{}", &info.subtitle_url).as_str(), None)
+            .request(Method::GET, &url)
+            .await
+            .header(header::REFERER, &referer)
             .send()
-            .await?
-            .error_for_status()?
+            .await
+            .with_context(|| format!("请求字幕失败: {}", url))?;
+
+        let status = response.status();
+        if !status.is_success() {
+            let body_preview = response
+                .text()
+                .await
+                .unwrap_or_default()
+                .chars()
+                .take(200)
+                .collect::<String>();
+            warn!(
+                "字幕请求失败: status={} url={} referer={} body_snippet={}",
+                status,
+                url,
+                referer,
+                body_preview
+            );
+            bail!("字幕请求失败: {}", status);
+        }
+
+        let mut json = response
             .json::<serde_json::Value>()
-            .await?;
-        let body: SubTitleBody = serde_json::from_value(res["body"].take())?;
-        Ok(SubTitle { lan: info.lan, body })
+            .await
+            .with_context(|| format!("解析字幕 JSON 失败: {}", url))?;
+        let body_value = json
+            .get_mut("body")
+            .with_context(|| format!("字幕响应缺少 body 字段: {}", url))?
+            .take();
+        let body: SubTitleBody = serde_json::from_value(body_value)
+            .with_context(|| format!("解析字幕内容失败: {}", url))?;
+        Ok(SubTitle { lan, body })
+    }
+
+    fn normalize_subtitle_url(raw: &str) -> String {
+        let trimmed = raw.trim();
+        if trimmed.starts_with("//") {
+            format!("https:{}", trimmed)
+        } else if trimmed.starts_with("http://") || trimmed.starts_with("https://") {
+            trimmed.to_string()
+        } else {
+            format!("https://{}", trimmed.trim_start_matches('/'))
+        }
     }
 
     /// 处理风控验证流程
@@ -2139,6 +2201,12 @@ mod tests {
             Playurl412Kind::WafRateLimit
         ));
     }
+
+    #[test]
+    fn test_bvid_to_aid() {
+        assert_eq!(super::bvid_to_aid("BV1Tr421n746"), 1401752220u64);
+        assert_eq!(super::bvid_to_aid("BV1sH4y1s7fe"), 1051892992u64);
+    }
 }
 
 pub fn bvid_to_aid(bvid: &str) -> u64 {
@@ -2151,15 +2219,4 @@ pub fn bvid_to_aid(bvid: &str) -> u64 {
         tmp = tmp * BASE + idx as u64;
     }
     (tmp & MASK_CODE) ^ XOR_CODE
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_bvid_to_aid() {
-        assert_eq!(bvid_to_aid("BV1Tr421n746"), 1401752220u64);
-        assert_eq!(bvid_to_aid("BV1sH4y1s7fe"), 1051892992u64);
-    }
 }
