@@ -1,5 +1,6 @@
 use std::borrow::Cow;
 use std::path::PathBuf;
+use std::str::FromStr;
 use std::sync::Arc;
 
 use arc_swap::ArcSwapOption;
@@ -244,11 +245,67 @@ fn default_cdn_sorting() -> bool {
     true // 默认启用CDN排序
 }
 
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum NotificationMethod {
+    Serverchan,
+    Bark,
+}
+
+impl NotificationMethod {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            NotificationMethod::Serverchan => "serverchan",
+            NotificationMethod::Bark => "bark",
+        }
+    }
+}
+
+impl Default for NotificationMethod {
+    fn default() -> Self {
+        NotificationMethod::Serverchan
+    }
+}
+
+impl FromStr for NotificationMethod {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s.to_ascii_lowercase().replace('-', "").replace('_', "").as_str() {
+            "serverchan" | "server酱" => Ok(NotificationMethod::Serverchan),
+            "bark" => Ok(NotificationMethod::Bark),
+            other => Err(format!("不支持的推送方式: {}", other)),
+        }
+    }
+}
+
+impl std::fmt::Display for NotificationMethod {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+
+fn default_notification_method() -> NotificationMethod {
+    NotificationMethod::default()
+}
+
+pub const DEFAULT_BARK_SERVER: &str = "https://api.day.app";
+
+fn default_bark_server() -> String {
+    DEFAULT_BARK_SERVER.to_string()
+}
+
 // 推送通知配置结构体
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct NotificationConfig {
+    #[serde(default = "default_notification_method")]
+    pub method: NotificationMethod,
     #[serde(default)]
     pub serverchan_key: Option<String>,
+    #[serde(default = "default_bark_server")]
+    pub bark_server: String,
+    #[serde(default)]
+    pub bark_device_key: Option<String>,
     #[serde(default)]
     pub enable_scan_notifications: bool,
     #[serde(default = "default_notification_min_videos")]
@@ -274,7 +331,10 @@ fn default_notification_retry_count() -> u8 {
 impl Default for NotificationConfig {
     fn default() -> Self {
         Self {
+            method: default_notification_method(),
             serverchan_key: None,
+            bark_server: default_bark_server(),
+            bark_device_key: None,
             enable_scan_notifications: false,
             notification_min_videos: default_notification_min_videos(),
             notification_timeout: default_notification_timeout(),
@@ -286,8 +346,22 @@ impl Default for NotificationConfig {
 impl NotificationConfig {
     #[allow(dead_code)]
     pub fn validate(&self) -> Result<(), String> {
-        if self.enable_scan_notifications && self.serverchan_key.is_none() {
-            return Err("启用推送通知时必须配置Server酱密钥".to_string());
+        if self.enable_scan_notifications {
+            match self.method {
+                NotificationMethod::Serverchan => {
+                    if self.serverchan_key.as_deref().map(str::trim).filter(|v| !v.is_empty()).is_none() {
+                        return Err("启用推送通知时必须配置Server酱 SendKey".to_string());
+                    }
+                }
+                NotificationMethod::Bark => {
+                    if self.bark_device_key.as_deref().map(str::trim).filter(|v| !v.is_empty()).is_none() {
+                        return Err("启用推送通知时必须配置 Bark Device Key".to_string());
+                    }
+                    if self.bark_server.trim().is_empty() {
+                        return Err("启用推送通知时必须配置 Bark 服务器地址".to_string());
+                    }
+                }
+            }
         }
 
         if self.notification_min_videos == 0 {

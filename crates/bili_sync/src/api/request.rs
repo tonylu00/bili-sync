@@ -221,7 +221,10 @@ pub struct StatusUpdate {
 // 推送配置更新请求
 #[derive(Deserialize, ToSchema)]
 pub struct UpdateNotificationConfigRequest {
+    pub notification_method: Option<String>,
     pub serverchan_key: Option<String>,
+    pub bark_server: Option<String>,
+    pub bark_device_key: Option<String>,
     pub enable_scan_notifications: Option<bool>,
     pub notification_min_videos: Option<usize>,
     pub notification_timeout: Option<u64>,

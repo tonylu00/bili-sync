@@ -572,6 +572,7 @@ class ApiClient {
 			last_notification_time: string | null;
 			total_notifications_sent: number;
 			last_error: string | null;
+			method: string;
 		}>
 	> {
 		return this.get<{
@@ -580,6 +581,7 @@ class ApiClient {
 			last_notification_time: string | null;
 			total_notifications_sent: number;
 			last_error: string | null;
+			method: string;
 		}>('/notification/status');
 	}
 
@@ -588,16 +590,22 @@ class ApiClient {
 	 */
 	async getNotificationConfig(): Promise<
 		ApiResponse<{
+			notification_method: string;
 			enable_scan_notifications: boolean;
 			serverchan_key?: string;
+			bark_server: string;
+			bark_device_key?: string;
 			notification_min_videos: number;
 			notification_timeout: number;
 			notification_retry_count: number;
 		}>
 	> {
 		return this.get<{
+			notification_method: string;
 			enable_scan_notifications: boolean;
 			serverchan_key?: string;
+			bark_server: string;
+			bark_device_key?: string;
 			notification_min_videos: number;
 			notification_timeout: number;
 			notification_retry_count: number;
@@ -608,9 +616,14 @@ class ApiClient {
 	 * 更新推送通知配置
 	 */
 	async updateNotificationConfig(config: {
+		notification_method?: string;
 		enable_scan_notifications?: boolean;
 		serverchan_key?: string;
+		bark_server?: string;
+		bark_device_key?: string;
 		notification_min_videos?: number;
+		notification_timeout?: number;
+		notification_retry_count?: number;
 	}): Promise<
 		ApiResponse<{
 			success: boolean;
@@ -632,10 +645,11 @@ class ApiClient {
 			message: string;
 		}>
 	> {
+		const payload = message ? { custom_message: message } : {};
 		return this.post<{
 			success: boolean;
 			message: string;
-		}>('/notification/test', { message });
+		}>('/notification/test', payload);
 	}
 }
 

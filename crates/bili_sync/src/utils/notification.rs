@@ -4,13 +4,20 @@ use serde::{Deserialize, Serialize};
 use std::time::Duration;
 use tracing::{debug, error, info, warn};
 
-use crate::config::NotificationConfig;
+use crate::config::{NotificationConfig, NotificationMethod};
 
 // Server酱API请求结构
 #[derive(Serialize)]
 struct ServerChanRequest {
     title: String,
     desp: String,
+}
+
+#[derive(Serialize)]
+struct BarkRequest<'a> {
+    title: &'a str,
+    body: &'a str,
+    device_key: &'a str,
 }
 
 // Server酱API响应结构
@@ -90,8 +97,8 @@ impl NotificationClient {
         Self { client, config }
     }
 
-    // 清理可能导致Server酱数据库问题的特殊字符
-    fn sanitize_for_serverchan(text: &str) -> String {
+    // 清理推送内容中的特殊字符
+    fn sanitize_text(text: &str) -> String {
         text
             .replace('「', "[")
             .replace('」', "]")
@@ -121,27 +128,71 @@ impl NotificationClient {
             return Ok(());
         }
 
-        let Some(ref key) = self.config.serverchan_key else {
-            warn!("未配置Server酱密钥，无法发送推送");
-            return Ok(());
-        };
-
         let (title, content) = self.format_scan_message(summary);
 
-        for attempt in 1..=self.config.notification_retry_count {
-            match self.send_to_serverchan(key, &title, &content).await {
-                Ok(_) => {
-                    info!("扫描完成推送发送成功");
+        match self.config.method {
+            NotificationMethod::Serverchan => {
+                let Some(ref key) = self.config.serverchan_key else {
+                    warn!("未配置Server酱 SendKey，无法发送推送");
+                    return Ok(());
+                };
+
+                let key = key.trim();
+                if key.is_empty() {
+                    warn!("Server酱 SendKey 为空，无法发送推送");
                     return Ok(());
                 }
-                Err(e) => {
-                    warn!(
-                        "推送发送失败 (尝试 {}/{}): {}",
-                        attempt, self.config.notification_retry_count, e
-                    );
 
-                    if attempt < self.config.notification_retry_count {
-                        tokio::time::sleep(Duration::from_secs(2)).await;
+                for attempt in 1..=self.config.notification_retry_count {
+                    match self.send_to_serverchan(key, &title, &content).await {
+                        Ok(_) => {
+                            info!("扫描完成推送发送成功");
+                            return Ok(());
+                        }
+                        Err(e) => {
+                            warn!(
+                                "推送发送失败 (尝试 {}/{}): {}",
+                                attempt, self.config.notification_retry_count, e
+                            );
+
+                            if attempt < self.config.notification_retry_count {
+                                tokio::time::sleep(Duration::from_secs(2)).await;
+                            }
+                        }
+                    }
+                }
+            }
+            NotificationMethod::Bark => {
+                let Some(ref device_key) = self.config.bark_device_key else {
+                    warn!("未配置 Bark Device Key，无法发送推送");
+                    return Ok(());
+                };
+
+                let device_key = device_key.trim();
+                if device_key.is_empty() {
+                    warn!("Bark Device Key 为空，无法发送推送");
+                    return Ok(());
+                }
+
+                let server = self.effective_bark_server();
+                let body = Self::markdown_to_plain_text(&content);
+
+                for attempt in 1..=self.config.notification_retry_count {
+                    match self.send_to_bark(&server, device_key, &title, &body).await {
+                        Ok(_) => {
+                            info!("扫描完成推送发送成功");
+                            return Ok(());
+                        }
+                        Err(e) => {
+                            warn!(
+                                "推送发送失败 (尝试 {}/{}): {}",
+                                attempt, self.config.notification_retry_count, e
+                            );
+
+                            if attempt < self.config.notification_retry_count {
+                                tokio::time::sleep(Duration::from_secs(2)).await;
+                            }
+                        }
                     }
                 }
             }
@@ -149,6 +200,15 @@ impl NotificationClient {
 
         error!("推送发送失败，已达到最大重试次数");
         Ok(()) // 不返回错误，避免影响主要功能
+    }
+
+    fn effective_bark_server(&self) -> String {
+        let server = self.config.bark_server.trim();
+        if server.is_empty() {
+            "https://api.day.app".to_string()
+        } else {
+            server.trim_end_matches('/').to_string()
+        }
     }
 
     async fn send_to_serverchan(&self, key: &str, title: &str, content: &str) -> Result<()> {
@@ -168,6 +228,25 @@ impl NotificationClient {
             Ok(())
         } else {
             Err(anyhow!("Server酱返回错误: {}", server_response.message))
+        }
+    }
+
+    async fn send_to_bark(&self, server: &str, device_key: &str, title: &str, body: &str) -> Result<()> {
+        let url = format!("{}/push", server.trim_end_matches('/'));
+        let request = BarkRequest {
+            title,
+            body,
+            device_key,
+        };
+
+        let response = self.client.post(&url).json(&request).send().await?;
+
+        if response.status().is_success() {
+            Ok(())
+        } else {
+            let status = response.status();
+            let text = response.text().await.unwrap_or_default();
+            Err(anyhow!("Bark返回错误: {} {}", status, text))
         }
     }
 
@@ -220,7 +299,7 @@ impl NotificationClient {
                     };
 
                     // 清理源名称中的特殊字符
-                    let clean_source_name = Self::sanitize_for_serverchan(&source_result.source_name);
+                    let clean_source_name = Self::sanitize_text(&source_result.source_name);
 
                     content.push_str(&format!(
                         "{} **{}** - {} ({}个新视频):\n",
@@ -262,7 +341,7 @@ impl NotificationClient {
                         videos_shown += 1;
 
                         // 清理视频标题中的特殊字符
-                        let clean_title = Self::sanitize_for_serverchan(&video.title);
+                        let clean_title = Self::sanitize_text(&video.title);
                         let mut video_line =
                             format!("- [{}](https://www.bilibili.com/video/{})", clean_title, video.bvid);
 
@@ -299,7 +378,7 @@ impl NotificationClient {
         }
 
         // 最终清理整个内容，确保没有问题字符
-        let clean_content = Self::sanitize_for_serverchan(&content);
+    let clean_content = Self::sanitize_text(&content);
 
         // 确保内容不超过限制
         let final_content = if clean_content.len() > MAX_CONTENT_LENGTH {
@@ -313,26 +392,131 @@ impl NotificationClient {
         (title, final_content)
     }
 
+    fn markdown_to_plain_text(markdown: &str) -> String {
+        let mut plain = String::with_capacity(markdown.len());
+        let mut chars = markdown.chars().peekable();
+
+        while let Some(c) = chars.next() {
+            match c {
+                '[' => {
+                    let mut label = String::new();
+                    while let Some(&next) = chars.peek() {
+                        chars.next();
+                        if next == ']' {
+                            break;
+                        }
+                        label.push(next);
+                    }
+
+                    if let Some(&'(') = chars.peek() {
+                        // 丢弃链接地址
+                        chars.next();
+                        let mut depth = 1;
+                        while let Some(next) = chars.next() {
+                            if next == '(' {
+                                depth += 1;
+                            } else if next == ')' {
+                                depth -= 1;
+                                if depth == 0 {
+                                    break;
+                                }
+                            }
+                        }
+                    }
+
+                    plain.push_str(&label);
+                }
+                '*' | '`' | '_' => {
+                    // 忽略简单的Markdown强调符号
+                }
+                '-' => {
+                    if matches!(chars.peek(), Some(' ')) {
+                        plain.push('•');
+                        plain.push(' ');
+                        chars.next();
+                    } else {
+                        plain.push('-');
+                    }
+                }
+                _ => plain.push(c),
+            }
+        }
+
+        plain
+    }
+
     pub async fn test_notification(&self) -> Result<()> {
-        let Some(ref key) = self.config.serverchan_key else {
-            return Err(anyhow!("未配置Server酱密钥"));
-        };
+        match self.config.method {
+            NotificationMethod::Serverchan => {
+                let Some(ref key) = self.config.serverchan_key else {
+                    return Err(anyhow!("未配置Server酱 SendKey"));
+                };
 
-        let title = "Bili Sync 测试推送";
-        let content = "这是一条测试推送消息，如果您收到此消息，说明推送配置正确。\n\n🎉 推送功能工作正常！";
+                let key = key.trim();
+                if key.is_empty() {
+                    return Err(anyhow!("Server酱 SendKey 为空"));
+                }
 
-        self.send_to_serverchan(key, title, content).await
+                let title = "Bili Sync 测试推送";
+                let content = "这是一条测试推送消息，如果您收到此消息，说明推送配置正确。\n\n🎉 推送功能工作正常！";
+
+                self.send_to_serverchan(key, title, content).await
+            }
+            NotificationMethod::Bark => {
+                let Some(ref device_key) = self.config.bark_device_key else {
+                    return Err(anyhow!("未配置 Bark Device Key"));
+                };
+
+                let device_key = device_key.trim();
+                if device_key.is_empty() {
+                    return Err(anyhow!("Bark Device Key 为空"));
+                }
+
+                let title = "Bili Sync 测试推送";
+                let content = "这是一条测试推送消息，如果您收到此消息，说明 Bark 推送配置正确。\n\n🎉 推送功能工作正常！";
+                let body = Self::markdown_to_plain_text(content);
+                let server = self.effective_bark_server();
+
+                self.send_to_bark(&server, device_key, title, &body).await
+            }
+        }
     }
 
     pub async fn send_custom_test(&self, message: &str) -> Result<()> {
-        let Some(ref key) = self.config.serverchan_key else {
-            return Err(anyhow!("未配置Server酱密钥"));
-        };
+        match self.config.method {
+            NotificationMethod::Serverchan => {
+                let Some(ref key) = self.config.serverchan_key else {
+                    return Err(anyhow!("未配置Server酱 SendKey"));
+                };
 
-        let title = "Bili Sync 自定义测试推送";
-        let content = format!("🧪 **自定义测试消息**\n\n{}", message);
+                let key = key.trim();
+                if key.is_empty() {
+                    return Err(anyhow!("Server酱 SendKey 为空"));
+                }
 
-        self.send_to_serverchan(key, title, &content).await
+                let title = "Bili Sync 自定义测试推送";
+                let content = format!("🧪 **自定义测试消息**\n\n{}", message);
+
+                self.send_to_serverchan(key, title, &content).await
+            }
+            NotificationMethod::Bark => {
+                let Some(ref device_key) = self.config.bark_device_key else {
+                    return Err(anyhow!("未配置 Bark Device Key"));
+                };
+
+                let device_key = device_key.trim();
+                if device_key.is_empty() {
+                    return Err(anyhow!("Bark Device Key 为空"));
+                }
+
+                let title = "Bili Sync 自定义测试推送";
+                let content = format!("🧪 自定义测试消息\n\n{}", message);
+                let body = Self::markdown_to_plain_text(&content);
+                let server = self.effective_bark_server();
+
+                self.send_to_bark(&server, device_key, title, &body).await
+            }
+        }
     }
 }
 

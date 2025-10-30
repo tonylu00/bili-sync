@@ -693,7 +693,10 @@ pub struct SysInfo {
 // 推送配置响应
 #[derive(Serialize, ToSchema)]
 pub struct NotificationConfigResponse {
+    pub notification_method: String,
     pub serverchan_key: Option<String>,
+    pub bark_server: String,
+    pub bark_device_key: Option<String>,
     pub enable_scan_notifications: bool,
     pub notification_min_videos: usize,
     pub notification_timeout: u64,
@@ -713,6 +716,7 @@ pub struct NotificationStatusResponse {
     pub configured: bool,
     pub enabled: bool,
     pub last_notification_time: Option<String>,
+    pub method: String,
 }
 
 // 风控验证配置响应

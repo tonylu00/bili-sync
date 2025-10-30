@@ -4495,7 +4495,10 @@ pub async fn get_config() -> Result<ApiResponse<crate::api::response::ConfigResp
         },
         // 推送通知配置
         notification: crate::api::response::NotificationConfigResponse {
+            notification_method: config.notification.method.as_str().to_string(),
             serverchan_key: config.notification.serverchan_key.clone(),
+            bark_server: config.notification.bark_server.clone(),
+            bark_device_key: config.notification.bark_device_key.clone(),
             enable_scan_notifications: config.notification.enable_scan_notifications,
             notification_min_videos: config.notification.notification_min_videos,
             notification_timeout: config.notification.notification_timeout,
@@ -10551,13 +10554,24 @@ pub async fn test_notification_handler(
         ));
     }
 
-    if config.serverchan_key.is_none() {
-        return Ok(ApiResponse::bad_request(
-            crate::api::response::TestNotificationResponse {
-                success: false,
-                message: "未配置Server酱密钥".to_string(),
-            },
-        ));
+    match config.method {
+        crate::config::NotificationMethod::Serverchan if config.serverchan_key.is_none() => {
+            return Ok(ApiResponse::bad_request(
+                crate::api::response::TestNotificationResponse {
+                    success: false,
+                    message: "未配置Server酱 SendKey".to_string(),
+                },
+            ));
+        }
+        crate::config::NotificationMethod::Bark if config.bark_device_key.is_none() => {
+            return Ok(ApiResponse::bad_request(
+                crate::api::response::TestNotificationResponse {
+                    success: false,
+                    message: "未配置 Bark Device Key".to_string(),
+                },
+            ));
+        }
+        _ => {}
     }
 
     let client = crate::utils::notification::NotificationClient::new(config);
@@ -10594,7 +10608,10 @@ pub async fn get_notification_config() -> Result<ApiResponse<crate::api::respons
     let config = crate::config::reload_config().notification;
 
     Ok(ApiResponse::ok(crate::api::response::NotificationConfigResponse {
+        notification_method: config.method.as_str().to_string(),
         serverchan_key: config.serverchan_key,
+        bark_server: config.bark_server,
+        bark_device_key: config.bark_device_key,
         enable_scan_notifications: config.enable_scan_notifications,
         notification_min_videos: config.notification_min_videos,
         notification_timeout: config.notification_timeout,
@@ -10627,11 +10644,38 @@ pub async fn update_notification_config(
     let mut updated = false;
 
     // 更新配置字段
+    if let Some(ref method) = request.notification_method {
+        let parsed = method
+            .parse::<crate::config::NotificationMethod>()
+            .map_err(|e| ApiError::from(anyhow!(e)))?;
+        notification_config.method = parsed;
+        updated = true;
+    }
+
     if let Some(ref key) = request.serverchan_key {
         if key.trim().is_empty() {
             notification_config.serverchan_key = None;
         } else {
             notification_config.serverchan_key = Some(key.trim().to_string());
+        }
+        updated = true;
+    }
+
+    if let Some(ref server) = request.bark_server {
+        let trimmed = server.trim();
+        notification_config.bark_server = if trimmed.is_empty() {
+            crate::config::DEFAULT_BARK_SERVER.to_string()
+        } else {
+            trimmed.trim_end_matches('/').to_string()
+        };
+        updated = true;
+    }
+
+    if let Some(ref device_key) = request.bark_device_key {
+        if device_key.trim().is_empty() {
+            notification_config.bark_device_key = None;
+        } else {
+            notification_config.bark_device_key = Some(device_key.trim().to_string());
         }
         updated = true;
     }
@@ -10667,6 +10711,10 @@ pub async fn update_notification_config(
 
     // 如果有更新，保存整个notification对象
     if updated {
+        if let Err(err) = notification_config.validate() {
+            return Err(ApiError::from(anyhow!(err)));
+        }
+
         config_manager
             .update_config_item(
                 "notification",
@@ -10705,10 +10753,24 @@ pub async fn get_notification_status() -> Result<ApiResponse<crate::api::respons
     let config = crate::config::with_config(|bundle| bundle.config.notification.clone());
 
     // 这里可以从数据库或缓存中获取推送统计信息
+    let configured = match config.method {
+        crate::config::NotificationMethod::Serverchan => config
+            .serverchan_key
+            .as_deref()
+            .map(|value| !value.trim().is_empty())
+            .unwrap_or(false),
+        crate::config::NotificationMethod::Bark => config
+            .bark_device_key
+            .as_deref()
+            .map(|value| !value.trim().is_empty())
+            .unwrap_or(false),
+    };
+
     let status = crate::api::response::NotificationStatusResponse {
-        configured: config.serverchan_key.is_some(),
+        configured,
         enabled: config.enable_scan_notifications,
         last_notification_time: None, // TODO: 从存储中获取
+        method: config.method.as_str().to_string(),
     };
 
     Ok(ApiResponse::ok(status))

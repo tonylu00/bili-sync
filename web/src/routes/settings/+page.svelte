@@ -232,6 +232,9 @@
 	let notificationEnabled = false;
 	let serverchanKey = '';
 	let notificationMinVideos = 1;
+	let notificationMethod: 'serverchan' | 'bark' = 'serverchan';
+	let barkServer = 'https://api.day.app';
+	let barkDeviceKey = '';
 	let notificationSaving = false;
 	let notificationStatus: {
 		configured: boolean;
@@ -239,7 +242,14 @@
 		last_notification_time: string | null;
 		total_notifications_sent: number;
 		last_error: string | null;
+		method: string;
 	} | null = null;
+	let statusNotificationMethod: 'serverchan' | 'bark' = 'serverchan';
+	let statusMethodLabel = 'Server酱';
+	let selectedMethodLabel = 'Server酱';
+
+	$: statusMethodLabel = statusNotificationMethod === 'bark' ? 'Bark' : 'Server酱';
+	$: selectedMethodLabel = notificationMethod === 'bark' ? 'Bark' : 'Server酱';
 
 	// 显示帮助信息的状态（在文件命名抽屉中使用）
 	let showHelp = false;
@@ -863,6 +873,11 @@
 			if (response.data) {
 				notificationStatus = response.data;
 				notificationEnabled = response.data.enabled;
+				const method = response.data.method?.toLowerCase();
+				if (method === 'serverchan' || method === 'bark') {
+					statusNotificationMethod = method;
+					notificationMethod = method;
+				}
 				// min_videos 需要从配置中获取，状态API不返回这个值
 				console.log('notificationStatus:', notificationStatus);
 			}
@@ -876,13 +891,20 @@
 		notificationSaving = true;
 		try {
 			const config: Record<string, unknown> = {
+				notification_method: notificationMethod,
 				enable_scan_notifications: notificationEnabled,
-				notification_min_videos: notificationMinVideos
+				notification_min_videos: Number(notificationMinVideos) || 1
 			};
 
-			// 只有输入了新密钥时才更新
-			if (serverchanKey.trim()) {
+			const trimmedBarkServer = barkServer.trim();
+			config.bark_server = trimmedBarkServer;
+
+			if (notificationMethod === 'serverchan') {
 				config.serverchan_key = serverchanKey.trim();
+				config.bark_device_key = '';
+			} else {
+				config.bark_device_key = barkDeviceKey.trim();
+				config.serverchan_key = '';
 			}
 
 			const response = await api.updateNotificationConfig(config);
@@ -942,9 +964,21 @@
 				// 不覆盖密钥，只加载其他配置
 				notificationEnabled = response.data.enable_scan_notifications;
 				notificationMinVideos = response.data.notification_min_videos;
+				const method = response.data.notification_method?.toLowerCase();
+				if (method === 'serverchan' || method === 'bark') {
+					notificationMethod = method;
+					if (!notificationStatus) {
+						statusNotificationMethod = method;
+					}
+				}
+				if (response.data.bark_server) {
+					barkServer = response.data.bark_server;
+				}
 				console.log('加载的配置值:', {
 					enabled: notificationEnabled,
-					minVideos: notificationMinVideos
+					minVideos: notificationMinVideos,
+					method: notificationMethod,
+					barkServer
 				});
 			}
 		} catch (error) {
@@ -3307,13 +3341,17 @@
 									{#if notificationStatus.configured}
 										<Badge variant="default" class="bg-green-500">已配置</Badge>
 										<span class="text-sm text-green-700 dark:text-green-400"
-											>Server酱已配置，可以接收推送通知</span
+											>{statusMethodLabel}已配置，可以接收推送通知</span
 										>
 									{:else}
 										<Badge variant="secondary">未配置</Badge>
-										<span class="text-sm text-amber-700 dark:text-amber-400"
-											>请配置Server酱密钥以启用推送功能</span
-										>
+										<span class="text-sm text-amber-700 dark:text-amber-400">
+											{#if statusNotificationMethod === 'bark'}
+												请配置 Bark Device Key 以启用推送功能
+											{:else}
+												请配置 Server酱 SendKey 以启用推送功能
+											{/if}
+										</span>
 									{/if}
 								</div>
 							</div>
@@ -3336,48 +3374,119 @@
 								</Label>
 							</div>
 							<p class="text-muted-foreground text-sm">
-								当扫描完成且有新视频时，通过Server酱发送推送通知到您的微信
+								当扫描完成且有新视频时，通过{notificationMethod === 'bark'
+									? 'Bark 推送到您的 iOS 设备'
+									: 'Server酱发送推送通知到您的微信'}
 							</p>
 						</div>
 
-						<!-- Server酱配置 -->
-						<div class="space-y-4">
-							<h3 class="text-base font-semibold">Server酱配置</h3>
-
+						<!-- 推送服务选择 -->
+						<div class="space-y-3">
+							<h3 class="text-base font-semibold">推送服务</h3>
 							<div class="space-y-2">
-								<Label for="serverchan-key">Server酱 SendKey</Label>
-								<Input
-									id="serverchan-key"
-									type="password"
-									bind:value={serverchanKey}
-									placeholder={notificationStatus?.configured
-										? '已配置（留空保持不变）'
-										: '请输入Server酱密钥'}
-								/>
-								<p class="text-muted-foreground text-sm">
-									从 <a
-										href="https://sct.ftqq.com/"
-										target="_blank"
-										class="text-primary hover:underline">sct.ftqq.com</a
-									> 获取您的SendKey
-								</p>
+								<Label for="notification-method">选择推送渠道</Label>
+								<select
+									id="notification-method"
+									class="w-full rounded-md border border-input bg-background px-3 py-2 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+									bind:value={notificationMethod}
+								>
+									<option value="serverchan">Server酱（微信推送）</option>
+									<option value="bark">Bark（iOS 推送）</option>
+								</select>
 							</div>
-
-							<div class="space-y-2">
-								<Label for="min-videos">最小视频数阈值</Label>
-								<Input
-									id="min-videos"
-									type="number"
-									bind:value={notificationMinVideos}
-									min="1"
-									max="100"
-									placeholder="1"
-								/>
-								<p class="text-muted-foreground text-sm">
-									只有新增视频数量达到此阈值时才会发送推送通知
-								</p>
-							</div>
+							<p class="text-muted-foreground text-sm">
+								当前选择：{selectedMethodLabel}
+							</p>
 						</div>
+
+						{#if notificationMethod === 'serverchan'}
+							<!-- Server酱配置 -->
+							<div class="space-y-4">
+								<h3 class="text-base font-semibold">Server酱配置</h3>
+
+								<div class="space-y-2">
+									<Label for="serverchan-key">Server酱 SendKey</Label>
+									<Input
+										id="serverchan-key"
+										type="password"
+										bind:value={serverchanKey}
+										placeholder={notificationStatus?.configured && statusNotificationMethod === 'serverchan'
+											? '已配置（留空保持不变）'
+											: '请输入Server酱密钥'}
+									/>
+									<p class="text-muted-foreground text-sm">
+										从 <a
+											href="https://sct.ftqq.com/"
+											target="_blank"
+											class="text-primary hover:underline">sct.ftqq.com</a
+										> 获取您的SendKey
+									</p>
+								</div>
+
+								<div class="space-y-2">
+									<Label for="min-videos">最小视频数阈值</Label>
+									<Input
+										id="min-videos"
+										type="number"
+										bind:value={notificationMinVideos}
+										min="1"
+										max="100"
+										placeholder="1"
+									/>
+									<p class="text-muted-foreground text-sm">
+										只有新增视频数量达到此阈值时才会发送推送通知
+									</p>
+								</div>
+							</div>
+						{:else}
+							<!-- Bark 配置 -->
+							<div class="space-y-4">
+								<h3 class="text-base font-semibold">Bark 配置</h3>
+
+								<div class="space-y-2">
+									<Label for="bark-device-key">Bark Device Key</Label>
+									<Input
+										id="bark-device-key"
+										type="password"
+										bind:value={barkDeviceKey}
+										placeholder={statusNotificationMethod === 'bark' && notificationStatus?.configured
+											? '已配置（留空保持不变）'
+											: '请输入 Bark Device Key'}
+									/>
+									<p class="text-muted-foreground text-sm">
+										在 Bark 应用的「设备」页面获取您的 Device Key
+									</p>
+								</div>
+
+								<div class="space-y-2">
+									<Label for="bark-server">Bark 服务器地址</Label>
+									<Input
+										id="bark-server"
+										type="text"
+										bind:value={barkServer}
+										placeholder="https://api.day.app"
+									/>
+									<p class="text-muted-foreground text-sm">
+										默认使用官方服务 <code>https://api.day.app</code>，如使用自建服务请填写完整地址
+									</p>
+								</div>
+
+								<div class="space-y-2">
+									<Label for="min-videos">最小视频数阈值</Label>
+									<Input
+										id="min-videos"
+										type="number"
+										bind:value={notificationMinVideos}
+										min="1"
+										max="100"
+										placeholder="1"
+									/>
+									<p class="text-muted-foreground text-sm">
+										只有新增视频数量达到此阈值时才会发送推送通知
+									</p>
+								</div>
+							</div>
+						{/if}
 
 						<!-- 测试推送 -->
 						{#if notificationStatus?.configured}
@@ -3399,21 +3508,43 @@
 							class="rounded-lg border border-gray-200 bg-gray-50 p-4 dark:border-gray-700 dark:bg-gray-900/50"
 						>
 							<h4 class="mb-3 font-medium text-gray-800 dark:text-gray-200">使用说明</h4>
-							<ol
-								class="list-inside list-decimal space-y-2 text-sm text-gray-600 dark:text-gray-400"
-							>
-								<li>
-									访问 <a
-										href="https://sct.ftqq.com/"
-										target="_blank"
-										class="text-primary hover:underline">Server酱官网</a
-									> 注册账号
-								</li>
-								<li>登录后在"SendKey"页面获取您的密钥</li>
-								<li>将密钥填入上方输入框并保存</li>
-								<li>使用测试按钮验证推送是否正常</li>
-								<li>扫描完成后，如果有新视频将自动推送到您的微信</li>
-							</ol>
+							{#if notificationMethod === 'serverchan'}
+								<ol
+									class="list-inside list-decimal space-y-2 text-sm text-gray-600 dark:text-gray-400"
+								>
+									<li>
+										访问 <a
+											href="https://sct.ftqq.com/"
+											target="_blank"
+											class="text-primary hover:underline">Server酱官网</a
+										> 注册账号
+									</li>
+									<li>登录后在"SendKey"页面获取您的密钥</li>
+									<li>将密钥填入上方输入框并保存</li>
+									<li>使用测试按钮验证推送是否正常</li>
+									<li>扫描完成后，如果有新视频将自动推送到您的微信</li>
+								</ol>
+							{:else}
+								<ol
+									class="list-inside list-decimal space-y-2 text-sm text-gray-600 dark:text-gray-400"
+								>
+									<li>
+										在 iOS 设备上安装 <a
+											href="https://apps.apple.com/app/id1403753865"
+											target="_blank"
+											class="text-primary hover:underline">Bark</a> 并完成初始设置
+									</li>
+									<li>
+										参阅 <a
+											href="https://bark.day.app/#/en-us/tutorial"
+											target="_blank"
+											class="text-primary hover:underline">官方教程</a> 获取 Device Key 或自建服务器地址
+									</li>
+									<li>将 Device Key 和服务器地址填入上方输入框并保存</li>
+									<li>使用测试按钮验证推送是否正常</li>
+									<li>扫描完成后，如果有新视频将自动推送到您的设备</li>
+								</ol>
+							{/if}
 						</div>
 
 						<!-- 推送内容示例 -->
