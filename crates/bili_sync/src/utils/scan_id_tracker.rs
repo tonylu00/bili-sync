@@ -111,7 +111,7 @@ pub enum SourceType {
 
 /// 将视频源按新旧分组，并支持断点续传
 pub fn group_sources_by_new_old(
-    sources: Vec<VideoSourceWithId>,
+    sources: &[VideoSourceWithId],
     last_scanned_ids: &LastScannedIds,
 ) -> (Vec<VideoSourceWithId>, Vec<VideoSourceWithId>) {
     let mut new_sources = Vec::new();
@@ -131,7 +131,7 @@ pub fn group_sources_by_new_old(
 
         // 如果没有记录（首次运行）或ID大于最大ID，则为新源
         if max_id.is_none() || source.id > max_id.unwrap() {
-            new_sources.push(source);
+            new_sources.push(source.clone());
         } else {
             // 旧源：检查是否有断点需要恢复
             let has_checkpoint = match source.source_type {
@@ -156,7 +156,7 @@ pub fn group_sources_by_new_old(
                         source.id, source.source_type
                     );
                 }
-                old_sources.push(source);
+                old_sources.push(source.clone());
             } else {
                 // 已处理过的源，跳过
                 debug!("跳过已处理的源 (ID: {}, 类型: {:?})", source.id, source.source_type);

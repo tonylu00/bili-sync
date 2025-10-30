@@ -345,7 +345,38 @@ pub async fn video_downloader(connection: Arc<DatabaseConnection>) {
             };
 
             // 将视频源按新旧分组
-            let (new_sources, old_sources) = group_sources_by_new_old(video_sources, &last_scanned_ids);
+            let (mut new_sources, mut old_sources) =
+                group_sources_by_new_old(&video_sources, &last_scanned_ids);
+
+            // 兜底逻辑：如果分组后没有待扫描的源但仍然存在启用源，则重置处理断点并重新分组
+            if new_sources.is_empty() && old_sources.is_empty() && !video_sources.is_empty() {
+                warn!("所有启用的视频源当前都被视为已处理，尝试重置扫描断点以避免卡住");
+                let original_last_scanned_ids = last_scanned_ids.clone();
+                last_scanned_ids.reset_all_processed_ids();
+
+                match update_last_scanned_ids(&optimized_connection, &last_scanned_ids).await {
+                    Ok(_) => {
+                        let (regroup_new, regroup_old) =
+                            group_sources_by_new_old(&video_sources, &last_scanned_ids);
+                        new_sources = regroup_new;
+                        old_sources = regroup_old;
+
+                        let regroup_total = new_sources.len() + old_sources.len();
+                        if regroup_total == 0 {
+                            warn!("重置扫描断点后仍未找到可扫描的视频源，本轮将保持空扫描");
+                        } else {
+                            info!(
+                                "重置扫描断点后重新纳入 {} 个视频源，将重新开始扫描",
+                                regroup_total
+                            );
+                        }
+                    }
+                    Err(e) => {
+                        warn!("重置扫描断点失败，保持当前扫描状态: {:#}", e);
+                        last_scanned_ids = original_last_scanned_ids;
+                    }
+                }
+            }
 
             if !new_sources.is_empty() {
                 info!("检测到 {} 个新添加的视频源，将优先扫描这些新源", new_sources.len());
