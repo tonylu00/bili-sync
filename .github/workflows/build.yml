@@ -2,7 +2,7 @@ name: Build bili-sync
 
 on:
   push:
-    branches: [ main, master ]
+    branches: [ main, master, feat*, fix* ]
     tags: [ 'v*' ]
   pull_request:
     branches: [ main, master ]
