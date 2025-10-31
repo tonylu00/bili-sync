@@ -4499,6 +4499,9 @@ pub async fn get_config() -> Result<ApiResponse<crate::api::response::ConfigResp
             serverchan_key: config.notification.serverchan_key.clone(),
             bark_server: config.notification.bark_server.clone(),
             bark_device_key: config.notification.bark_device_key.clone(),
+            bark_device_keys: config.notification.bark_device_keys.clone(),
+            bark_defaults: crate::api::response::BarkDefaultsResponse::from(&config.notification.bark_defaults),
+            events: crate::api::response::NotificationEventsResponse::from(&config.notification.events),
             enable_scan_notifications: config.notification.enable_scan_notifications,
             notification_min_videos: config.notification.notification_min_videos,
             notification_timeout: config.notification.notification_timeout,
@@ -10612,6 +10615,9 @@ pub async fn get_notification_config() -> Result<ApiResponse<crate::api::respons
         serverchan_key: config.serverchan_key,
         bark_server: config.bark_server,
         bark_device_key: config.bark_device_key,
+        bark_device_keys: config.bark_device_keys.clone(),
+        bark_defaults: crate::api::response::BarkDefaultsResponse::from(&config.bark_defaults),
+        events: crate::api::response::NotificationEventsResponse::from(&config.events),
         enable_scan_notifications: config.enable_scan_notifications,
         notification_min_videos: config.notification_min_videos,
         notification_timeout: config.notification_timeout,
@@ -10678,6 +10684,96 @@ pub async fn update_notification_config(
             notification_config.bark_device_key = Some(device_key.trim().to_string());
         }
         updated = true;
+    }
+
+    if let Some(ref device_keys) = request.bark_device_keys {
+        let cleaned: Vec<String> = device_keys
+            .iter()
+            .map(|value| value.trim().to_string())
+            .filter(|value| !value.is_empty())
+            .collect();
+        notification_config.bark_device_keys = cleaned;
+        updated = true;
+    }
+
+    if let Some(ref defaults) = request.bark_defaults {
+        let mut touched = false;
+
+        let mut assign_string = |target: &mut Option<String>, source: &Option<String>| {
+            if let Some(value) = source {
+                let trimmed = value.trim();
+                if trimmed.is_empty() {
+                    *target = None;
+                } else {
+                    *target = Some(trimmed.to_string());
+                }
+                touched = true;
+            }
+        };
+
+        assign_string(&mut notification_config.bark_defaults.subtitle, &defaults.subtitle);
+        assign_string(&mut notification_config.bark_defaults.sound, &defaults.sound);
+        assign_string(&mut notification_config.bark_defaults.icon, &defaults.icon);
+        assign_string(&mut notification_config.bark_defaults.group, &defaults.group);
+        assign_string(&mut notification_config.bark_defaults.url, &defaults.url);
+        assign_string(&mut notification_config.bark_defaults.level, &defaults.level);
+        assign_string(&mut notification_config.bark_defaults.copy, &defaults.copy);
+        assign_string(&mut notification_config.bark_defaults.action, &defaults.action);
+        assign_string(&mut notification_config.bark_defaults.ciphertext, &defaults.ciphertext);
+        assign_string(&mut notification_config.bark_defaults.id, &defaults.id);
+
+        if let Some(volume) = defaults.volume {
+            notification_config.bark_defaults.volume = Some(volume);
+            touched = true;
+        }
+
+        if let Some(badge) = defaults.badge {
+            notification_config.bark_defaults.badge = Some(badge);
+            touched = true;
+        }
+
+        if let Some(call) = defaults.call {
+            notification_config.bark_defaults.call = Some(call);
+            touched = true;
+        }
+
+        if let Some(auto_copy) = defaults.auto_copy {
+            notification_config.bark_defaults.auto_copy = Some(auto_copy);
+            touched = true;
+        }
+
+        if let Some(is_archive) = defaults.is_archive {
+            notification_config.bark_defaults.is_archive = Some(is_archive);
+            touched = true;
+        }
+
+        if let Some(delete) = defaults.delete {
+            notification_config.bark_defaults.delete = Some(delete);
+            touched = true;
+        }
+
+        if touched {
+            updated = true;
+        }
+    }
+
+    if let Some(ref events) = request.events {
+        if let Some(flag) = events.scan_summary {
+            notification_config.events.scan_summary = flag;
+            updated = true;
+        }
+        if let Some(flag) = events.source_updates {
+            notification_config.events.source_updates = flag;
+            updated = true;
+        }
+        if let Some(flag) = events.download_failures {
+            notification_config.events.download_failures = flag;
+            updated = true;
+        }
+        if let Some(flag) = events.risk_control {
+            notification_config.events.risk_control = flag;
+            updated = true;
+        }
     }
 
     if let Some(enabled) = request.enable_scan_notifications {
@@ -10759,11 +10855,15 @@ pub async fn get_notification_status() -> Result<ApiResponse<crate::api::respons
             .as_deref()
             .map(|value| !value.trim().is_empty())
             .unwrap_or(false),
-        crate::config::NotificationMethod::Bark => config
-            .bark_device_key
-            .as_deref()
-            .map(|value| !value.trim().is_empty())
-            .unwrap_or(false),
+        crate::config::NotificationMethod::Bark => {
+            let single = config
+                .bark_device_key
+                .as_deref()
+                .map(|value| !value.trim().is_empty())
+                .unwrap_or(false);
+            let multi = config.bark_device_keys.iter().any(|value| !value.trim().is_empty());
+            single || multi
+        }
     };
 
     let status = crate::api::response::NotificationStatusResponse {

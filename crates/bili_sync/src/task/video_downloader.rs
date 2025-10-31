@@ -5,13 +5,14 @@ use anyhow::Result;
 use sea_orm::{ColumnTrait, DatabaseConnection, EntityTrait, PaginatorTrait, QueryFilter};
 use tracing::{debug, error, info, warn};
 
-use crate::adapter::Args;
+use crate::adapter::{Args, VideoSource};
 use crate::bilibili::{self, BiliClient, CollectionItem, CollectionType};
 use crate::config::Config;
 use crate::initialization;
 use crate::task::TASK_CONTROLLER;
 use crate::unified_downloader::UnifiedDownloader;
 use crate::utils::file_logger;
+use crate::utils::notification::{DownloadFailureNotification, RiskControlNotification};
 use crate::utils::scan_collector::ScanCollector;
 use crate::utils::scan_id_tracker::{
     get_last_scanned_ids, group_sources_by_new_old, update_last_scanned_ids, LastScannedIds, MaxIdRecorder, SourceType,
@@ -597,14 +598,60 @@ pub async fn video_downloader(connection: Arc<DatabaseConnection>) {
                             }
                         }
 
+                        let (source_type_display, source_name_display) = match crate::adapter::video_source_from(
+                            args,
+                            path,
+                            &bili_client,
+                            &optimized_connection,
+                            None,
+                        )
+                        .await
+                        {
+                            Ok((video_source, _)) => {
+                                (video_source.source_type_display(), video_source.source_name_display())
+                            }
+                            Err(fetch_err) => {
+                                warn!(
+                                    "获取视频源信息失败，无法提供完整通知上下文 (源ID: {}): {}",
+                                    source.id, fetch_err
+                                );
+                                (format!("{:?}", source.source_type), format!("ID {}", source.id))
+                            }
+                        };
+
                         if is_risk_control {
                             error!("检测到风控，停止所有后续视频源的扫描");
                             info!("触发风控的源(ID: {})未完成处理，下次扫描将重新处理该源", source.id);
+
+                            if let Err(err) =
+                                crate::utils::notification::send_risk_control_notification(RiskControlNotification {
+                                    source_type: Some(source_type_display.clone()),
+                                    source_name: Some(source_name_display.clone()),
+                                    message: format!("处理 {} 时触发风控: {:#}", source_name_display, e),
+                                })
+                                .await
+                            {
+                                warn!("发送风控通知失败: {}", err);
+                            }
+
                             is_interrupted = true;
                             break; // 跳出循环，停止处理剩余的视频源
                         }
 
                         error!("处理过程遇到错误：{:#}", e);
+
+                        if let Err(err) = crate::utils::notification::send_download_failure_notification(
+                            DownloadFailureNotification {
+                                source_type: source_type_display,
+                                source_name: source_name_display,
+                                error: format!("{:#}", e),
+                                video_title: None,
+                            },
+                        )
+                        .await
+                        {
+                            warn!("发送下载失败通知失败: {}", err);
+                        }
                     }
                 }
             }

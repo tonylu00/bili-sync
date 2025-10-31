@@ -7,6 +7,8 @@ pub mod format_arg;
 pub mod model;
 pub mod nfo;
 pub mod notification;
+mod notification_bark;
+mod notification_serverchan;
 pub mod scan_collector;
 pub mod scan_id_tracker;
 pub mod signal;

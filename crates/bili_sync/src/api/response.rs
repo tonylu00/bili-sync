@@ -690,6 +690,68 @@ pub struct SysInfo {
     pub available_disk: u64,
 }
 
+#[derive(Serialize, ToSchema)]
+pub struct BarkDefaultsResponse {
+    pub subtitle: Option<String>,
+    pub sound: Option<String>,
+    pub icon: Option<String>,
+    pub group: Option<String>,
+    pub url: Option<String>,
+    pub level: Option<String>,
+    pub volume: Option<u8>,
+    pub badge: Option<u32>,
+    pub call: Option<bool>,
+    pub auto_copy: Option<bool>,
+    pub copy: Option<String>,
+    pub is_archive: Option<bool>,
+    pub action: Option<String>,
+    pub ciphertext: Option<String>,
+    pub id: Option<String>,
+    pub delete: Option<bool>,
+}
+
+impl From<&crate::config::BarkDefaults> for BarkDefaultsResponse {
+    fn from(value: &crate::config::BarkDefaults) -> Self {
+        Self {
+            subtitle: value.subtitle.clone(),
+            sound: value.sound.clone(),
+            icon: value.icon.clone(),
+            group: value.group.clone(),
+            url: value.url.clone(),
+            level: value.level.clone(),
+            volume: value.volume,
+            badge: value.badge,
+            call: value.call,
+            auto_copy: value.auto_copy,
+            copy: value.copy.clone(),
+            is_archive: value.is_archive,
+            action: value.action.clone(),
+            ciphertext: value.ciphertext.clone(),
+            id: value.id.clone(),
+            delete: value.delete,
+        }
+    }
+}
+
+#[derive(Serialize, ToSchema)]
+pub struct NotificationEventsResponse {
+    pub scan_summary: bool,
+    pub source_updates: bool,
+    pub download_failures: bool,
+    pub risk_control: bool,
+}
+
+impl From<&crate::config::NotificationEventsConfig> for NotificationEventsResponse {
+    fn from(value: &crate::config::NotificationEventsConfig) -> Self {
+        Self {
+            scan_summary: value.scan_summary,
+            source_updates: value.source_updates,
+            download_failures: value.download_failures,
+            risk_control: value.risk_control,
+        }
+    }
+}
+
 // 推送配置响应
 #[derive(Serialize, ToSchema)]
 pub struct NotificationConfigResponse {
@@ -697,6 +759,9 @@ pub struct NotificationConfigResponse {
     pub serverchan_key: Option<String>,
     pub bark_server: String,
     pub bark_device_key: Option<String>,
+    pub bark_device_keys: Vec<String>,
+    pub bark_defaults: BarkDefaultsResponse,
+    pub events: NotificationEventsResponse,
     pub enable_scan_notifications: bool,
     pub notification_min_videos: usize,
     pub notification_timeout: u64,

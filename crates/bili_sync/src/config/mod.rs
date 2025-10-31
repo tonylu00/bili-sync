@@ -295,6 +295,73 @@ fn default_bark_server() -> String {
     DEFAULT_BARK_SERVER.to_string()
 }
 
+#[derive(Serialize, Deserialize, Debug, Clone, Default)]
+pub struct BarkDefaults {
+    #[serde(default)]
+    pub subtitle: Option<String>,
+    #[serde(default)]
+    pub sound: Option<String>,
+    #[serde(default)]
+    pub icon: Option<String>,
+    #[serde(default)]
+    pub group: Option<String>,
+    #[serde(default)]
+    pub url: Option<String>,
+    #[serde(default)]
+    pub level: Option<String>,
+    #[serde(default)]
+    pub volume: Option<u8>,
+    #[serde(default)]
+    pub badge: Option<u32>,
+    #[serde(default)]
+    pub call: Option<bool>,
+    #[serde(default)]
+    pub auto_copy: Option<bool>,
+    #[serde(default)]
+    pub copy: Option<String>,
+    #[serde(default)]
+    pub is_archive: Option<bool>,
+    #[serde(default)]
+    pub action: Option<String>,
+    #[serde(default)]
+    pub ciphertext: Option<String>,
+    #[serde(default)]
+    pub id: Option<String>,
+    #[serde(default)]
+    pub delete: Option<bool>,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct NotificationEventsConfig {
+    #[serde(default = "default_event_scan_summary")]
+    pub scan_summary: bool,
+    #[serde(default)]
+    pub source_updates: bool,
+    #[serde(default)]
+    pub download_failures: bool,
+    #[serde(default = "default_event_risk_control")]
+    pub risk_control: bool,
+}
+
+impl Default for NotificationEventsConfig {
+    fn default() -> Self {
+        Self {
+            scan_summary: default_event_scan_summary(),
+            source_updates: false,
+            download_failures: false,
+            risk_control: default_event_risk_control(),
+        }
+    }
+}
+
+fn default_event_scan_summary() -> bool {
+    true
+}
+
+fn default_event_risk_control() -> bool {
+    true
+}
+
 // 推送通知配置结构体
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct NotificationConfig {
@@ -306,6 +373,12 @@ pub struct NotificationConfig {
     pub bark_server: String,
     #[serde(default)]
     pub bark_device_key: Option<String>,
+    #[serde(default)]
+    pub bark_device_keys: Vec<String>,
+    #[serde(default)]
+    pub bark_defaults: BarkDefaults,
+    #[serde(default)]
+    pub events: NotificationEventsConfig,
     #[serde(default)]
     pub enable_scan_notifications: bool,
     #[serde(default = "default_notification_min_videos")]
@@ -335,6 +408,9 @@ impl Default for NotificationConfig {
             serverchan_key: None,
             bark_server: default_bark_server(),
             bark_device_key: None,
+            bark_device_keys: Vec::new(),
+            bark_defaults: BarkDefaults::default(),
+            events: NotificationEventsConfig::default(),
             enable_scan_notifications: false,
             notification_min_videos: default_notification_min_videos(),
             notification_timeout: default_notification_timeout(),
@@ -360,17 +436,30 @@ impl NotificationConfig {
                     }
                 }
                 NotificationMethod::Bark => {
-                    if self
+                    let has_single = self
                         .bark_device_key
                         .as_deref()
                         .map(str::trim)
                         .filter(|v| !v.is_empty())
-                        .is_none()
-                    {
+                        .is_some();
+                    let has_multi = self.bark_device_keys.iter().any(|v| !v.trim().is_empty());
+                    if !has_single && !has_multi {
                         return Err("启用推送通知时必须配置 Bark Device Key".to_string());
                     }
                     if self.bark_server.trim().is_empty() {
                         return Err("启用推送通知时必须配置 Bark 服务器地址".to_string());
+                    }
+                    if let Some(volume) = self.bark_defaults.volume {
+                        if volume > 10 {
+                            return Err("Bark 通知音量必须在0-10之间".to_string());
+                        }
+                    }
+                    if let Some(level) = self.bark_defaults.level.as_ref() {
+                        let normalized = level.trim().to_ascii_lowercase().replace('-', "").replace('_', "");
+                        let valid = matches!(normalized.as_str(), "active" | "timesensitive" | "passive" | "critical");
+                        if !valid {
+                            return Err(format!("不支持的 Bark 推送级别: {}", level));
+                        }
                     }
                 }
             }

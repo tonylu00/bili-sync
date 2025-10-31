@@ -225,10 +225,41 @@ pub struct UpdateNotificationConfigRequest {
     pub serverchan_key: Option<String>,
     pub bark_server: Option<String>,
     pub bark_device_key: Option<String>,
+    pub bark_device_keys: Option<Vec<String>>,
+    pub bark_defaults: Option<BarkDefaultsRequest>,
+    pub events: Option<NotificationEventsRequest>,
     pub enable_scan_notifications: Option<bool>,
     pub notification_min_videos: Option<usize>,
     pub notification_timeout: Option<u64>,
     pub notification_retry_count: Option<u8>,
+}
+
+#[derive(Deserialize, ToSchema, Default, Clone)]
+pub struct BarkDefaultsRequest {
+    pub subtitle: Option<String>,
+    pub sound: Option<String>,
+    pub icon: Option<String>,
+    pub group: Option<String>,
+    pub url: Option<String>,
+    pub level: Option<String>,
+    pub volume: Option<u8>,
+    pub badge: Option<u32>,
+    pub call: Option<bool>,
+    pub auto_copy: Option<bool>,
+    pub copy: Option<String>,
+    pub is_archive: Option<bool>,
+    pub action: Option<String>,
+    pub ciphertext: Option<String>,
+    pub id: Option<String>,
+    pub delete: Option<bool>,
+}
+
+#[derive(Deserialize, ToSchema, Default, Clone)]
+pub struct NotificationEventsRequest {
+    pub scan_summary: Option<bool>,
+    pub source_updates: Option<bool>,
+    pub download_failures: Option<bool>,
+    pub risk_control: Option<bool>,
 }
 
 // 测试推送请求（可选消息内容）
