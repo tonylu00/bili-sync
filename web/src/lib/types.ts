@@ -247,6 +247,7 @@ export interface ConfigResponse {
 	auto_backoff_max_multiplier?: number;
 	// 扫描已删除视频设置
 	scan_deleted_videos?: boolean;
+	ffmpeg_timeout_seconds?: number;
 	// aria2监控配置
 	enable_aria2_health_check?: boolean;
 	enable_aria2_auto_restart?: boolean;
@@ -337,6 +338,7 @@ export interface UpdateConfigRequest {
 	auto_backoff_max_multiplier?: number;
 	// 扫描已删除视频设置
 	scan_deleted_videos?: boolean;
+	ffmpeg_timeout_seconds?: number;
 	// aria2监控配置
 	enable_aria2_health_check?: boolean;
 	enable_aria2_auto_restart?: boolean;

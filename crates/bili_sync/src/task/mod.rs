@@ -119,6 +119,8 @@ pub struct UpdateConfigTask {
     pub bangumi_use_season_structure: Option<bool>,
     // UP主头像保存路径
     pub upper_path: Option<String>,
+    // FFmpeg 合并超时时间
+    pub ffmpeg_timeout_seconds: Option<u64>,
     pub task_id: String, // 唯一任务ID，用于追踪
 }
 
@@ -1446,6 +1448,7 @@ impl ConfigTaskQueue {
                 bangumi_use_season_structure: task.bangumi_use_season_structure,
                 // UP主头像保存路径
                 upper_path: task.upper_path.clone(),
+                ffmpeg_timeout_seconds: task.ffmpeg_timeout_seconds,
                 // 风控验证配置，任务队列中不使用
                 risk_control_enabled: None,
                 risk_control_mode: None,

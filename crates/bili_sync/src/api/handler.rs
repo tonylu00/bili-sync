@@ -4468,6 +4468,7 @@ pub async fn get_config() -> Result<ApiResponse<crate::api::response::ConfigResp
         source_delay_seconds: config.submission_risk_control.source_delay_seconds,
         submission_source_delay_seconds: config.submission_risk_control.submission_source_delay_seconds,
         scan_deleted_videos: config.scan_deleted_videos,
+        ffmpeg_timeout_seconds: config.ffmpeg_timeout_seconds,
         // aria2监控配置
         enable_aria2_health_check: config.enable_aria2_health_check,
         enable_aria2_auto_restart: config.enable_aria2_auto_restart,
@@ -4612,6 +4613,7 @@ pub async fn update_config(
             bangumi_use_season_structure: params.bangumi_use_season_structure,
             // UP主头像保存路径
             upper_path: params.upper_path.clone(),
+            ffmpeg_timeout_seconds: params.ffmpeg_timeout_seconds,
             task_id: task_id.clone(),
         };
 
@@ -4716,6 +4718,16 @@ pub async fn update_config_internal(
         if interval > 0 && interval != config.interval {
             config.interval = interval;
             updated_fields.push("interval");
+        }
+    }
+
+    if let Some(ffmpeg_timeout) = params.ffmpeg_timeout_seconds {
+        if ffmpeg_timeout < 5 || ffmpeg_timeout > 3600 {
+            return Err(anyhow!("FFmpeg 合并超时时间必须在5-3600秒之间").into());
+        }
+        if ffmpeg_timeout != config.ffmpeg_timeout_seconds {
+            config.ffmpeg_timeout_seconds = ffmpeg_timeout;
+            updated_fields.push("ffmpeg_timeout_seconds");
         }
     }
 

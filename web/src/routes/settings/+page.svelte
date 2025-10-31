@@ -133,6 +133,7 @@
 	let collectionFolderMode = 'unified';
 	let timeFormat = '%Y-%m-%d';
 	let interval = 1200;
+	let ffmpegTimeoutSeconds = 60;
 	let nfoTimeType = 'favtime';
 	let bindAddress = '0.0.0.0:12345';
 	let parallelDownloadEnabled = false;
@@ -528,6 +529,7 @@
 			collectionFolderMode = config.collection_folder_mode || 'separate';
 			timeFormat = config.time_format || '';
 			interval = config.interval || 1200;
+			ffmpegTimeoutSeconds = config.ffmpeg_timeout_seconds ?? 60;
 			nfoTimeType = config.nfo_time_type || 'favtime';
 			bindAddress = config.bind_address || '0.0.0.0:12345';
 			parallelDownloadEnabled = config.parallel_download_enabled || false;
@@ -774,6 +776,7 @@
 				collection_folder_mode: collectionFolderMode,
 				time_format: timeFormat,
 				interval: interval,
+				ffmpeg_timeout_seconds: ffmpegTimeoutSeconds,
 				nfo_time_type: nfoTimeType,
 				bind_address: bindAddress,
 				parallel_download_enabled: parallelDownloadEnabled,
@@ -3365,6 +3368,20 @@
 									placeholder="1200"
 								/>
 								<p class="text-muted-foreground text-sm">每次扫描下载的时间间隔</p>
+							</div>
+
+							<div class="space-y-2">
+								<Label for="ffmpeg-timeout">FFmpeg 合并超时（秒）</Label>
+								<Input
+									id="ffmpeg-timeout"
+									type="number"
+									min="5"
+									max="3600"
+									bind:value={ffmpegTimeoutSeconds}
+								/>
+								<p class="text-muted-foreground text-sm">
+									超出该时长的合并任务会强制终止，避免 FFmpeg 卡死
+								</p>
 							</div>
 
 							<div class="space-y-2">

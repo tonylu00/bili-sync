@@ -1,11 +1,14 @@
 use core::str;
 use std::path::Path;
+use std::process::Stdio;
+use std::time::Duration;
 
 use anyhow::{bail, ensure, Context, Result};
 use futures::TryStreamExt;
 use reqwest::Method;
 use tokio::fs::{self, File};
-use tokio::io::AsyncWriteExt;
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio::time::timeout;
 use tokio_util::io::StreamReader;
 use tracing::{error, warn};
 
@@ -149,10 +152,81 @@ impl Downloader {
             &output_path_str,
         ];
 
-        let output = tokio::process::Command::new("ffmpeg").args(args).output().await?;
+        let ffmpeg_timeout_seconds = crate::config::with_config(|bundle| bundle.config.ffmpeg_timeout_seconds);
+        let ffmpeg_timeout_seconds = if ffmpeg_timeout_seconds == 0 {
+            60
+        } else {
+            ffmpeg_timeout_seconds
+        };
+        let timeout_duration = Duration::from_secs(ffmpeg_timeout_seconds);
 
-        if !output.status.success() {
-            let stderr = str::from_utf8(&output.stderr).unwrap_or("unknown");
+        let mut command = tokio::process::Command::new("ffmpeg");
+        command
+            .args(args)
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::piped())
+            .kill_on_drop(true);
+
+        let mut child: tokio::process::Child = command
+            .spawn()
+            .with_context(|| format!("启动FFmpeg进程失败: {}", output_path.display()))?;
+
+        let stderr_pipe = child.stderr.take();
+        let stderr_handle = tokio::spawn(async move {
+            let mut buffer = Vec::new();
+            if let Some(mut stderr) = stderr_pipe {
+                let _ = stderr.read_to_end(&mut buffer).await;
+            }
+            buffer
+        });
+
+        let status = match timeout(timeout_duration, child.wait()).await {
+            Ok(wait_result) => wait_result?,
+            Err(_) => {
+                warn!(
+                    "FFmpeg 合并已执行超过 {} 秒，正在强制终止: {}",
+                    ffmpeg_timeout_seconds,
+                    output_path.display()
+                );
+                if let Err(kill_err) = child.start_kill() {
+                    error!("终止FFmpeg进程失败: {:#}", kill_err);
+                }
+                let _ = child.wait().await;
+
+                let stderr_bytes = match stderr_handle.await {
+                    Ok(buf) => buf,
+                    Err(join_err) => {
+                        error!("读取FFmpeg输出失败: {:#}", join_err);
+                        Vec::new()
+                    }
+                };
+                let stderr_trimmed = String::from_utf8_lossy(&stderr_bytes).trim().to_string();
+                if stderr_trimmed.is_empty() {
+                    bail!(
+                        "ffmpeg merge timed out after {} seconds and was forcibly terminated",
+                        ffmpeg_timeout_seconds
+                    );
+                } else {
+                    bail!(
+                        "ffmpeg merge timed out after {} seconds and was forcibly terminated: {}",
+                        ffmpeg_timeout_seconds,
+                        stderr_trimmed
+                    );
+                }
+            }
+        };
+
+        let stderr_bytes = match stderr_handle.await {
+            Ok(buf) => buf,
+            Err(join_err) => {
+                error!("读取FFmpeg输出失败: {:#}", join_err);
+                Vec::new()
+            }
+        };
+
+        if !status.success() {
+            let stderr = str::from_utf8(&stderr_bytes).unwrap_or("unknown");
             error!("FFmpeg错误: {}", stderr);
             bail!("ffmpeg error: {}", stderr);
         }

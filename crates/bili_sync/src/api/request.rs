@@ -168,6 +168,7 @@ pub struct UpdateConfigRequest {
     pub submission_source_delay_seconds: Option<u64>,
     // 系统配置
     pub scan_deleted_videos: Option<bool>,
+    pub ffmpeg_timeout_seconds: Option<u64>,
     // aria2监控配置
     pub enable_aria2_health_check: Option<bool>,
     pub enable_aria2_auto_restart: Option<bool>,

@@ -141,6 +141,10 @@ fn default_collection_folder_mode() -> Cow<'static, str> {
     Cow::Borrowed("unified") // 默认为统一模式
 }
 
+fn default_ffmpeg_timeout_seconds() -> u64 {
+    60
+}
+
 #[derive(Serialize, Deserialize)]
 pub struct Config {
     #[serde(default = "default_auth_token")]
@@ -207,6 +211,9 @@ pub struct Config {
     // 番剧是否使用Season文件夹结构（同时启用系列名标准化）
     #[serde(default = "default_bangumi_use_season_structure")]
     pub bangumi_use_season_structure: bool,
+    // FFmpeg 合并超时时间（秒）
+    #[serde(default = "default_ffmpeg_timeout_seconds")]
+    pub ffmpeg_timeout_seconds: u64,
     // 推送通知配置
     #[serde(default)]
     pub notification: NotificationConfig,
@@ -645,6 +652,7 @@ impl Clone for Config {
             multi_page_use_season_structure: self.multi_page_use_season_structure,
             collection_use_season_structure: self.collection_use_season_structure,
             bangumi_use_season_structure: self.bangumi_use_season_structure,
+            ffmpeg_timeout_seconds: self.ffmpeg_timeout_seconds,
             notification: self.notification.clone(),
             enable_startup_data_fix: self.enable_startup_data_fix,
             enable_cid_population: self.enable_cid_population,
@@ -685,6 +693,7 @@ impl Default for Config {
             multi_page_use_season_structure: default_multi_page_use_season_structure(),
             collection_use_season_structure: default_collection_use_season_structure(),
             bangumi_use_season_structure: default_bangumi_use_season_structure(),
+            ffmpeg_timeout_seconds: default_ffmpeg_timeout_seconds(),
             notification: NotificationConfig::default(),
             enable_startup_data_fix: false, // 默认关闭，减少不必要的日志
             enable_cid_population: false,   // 默认关闭，减少不必要的日志
@@ -751,6 +760,10 @@ impl Config {
         if self.folder_structure.is_empty() {
             ok = false;
             error!("未设置 folder_structure 模板");
+        }
+        if self.ffmpeg_timeout_seconds == 0 {
+            ok = false;
+            error!("FFmpeg 合并超时时间必须大于 0 秒");
         }
         let credential = self.credential.load();
         match credential.as_deref() {

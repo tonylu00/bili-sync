@@ -297,6 +297,7 @@ pub struct ConfigResponse {
     pub submission_source_delay_seconds: u64,
     // 系统设置
     pub scan_deleted_videos: bool,
+    pub ffmpeg_timeout_seconds: u64,
     // aria2监控配置
     pub enable_aria2_health_check: bool,
     pub enable_aria2_auto_restart: bool,
