@@ -654,6 +654,16 @@ pub async fn video_downloader(connection: Arc<DatabaseConnection>) {
                         }
                     }
                 }
+
+                match crate::task::process_priority_tasks_if_ready(optimized_connection.clone()).await {
+                    Ok(processed) if processed > 0 => {
+                        debug!("在扫描过程中额外处理了 {} 个优先任务", processed);
+                    }
+                    Ok(_) => {}
+                    Err(e) => {
+                        error!("扫描过程中处理优先任务失败: {:#}", e);
+                    }
+                }
             }
 
             // 标记扫描结束

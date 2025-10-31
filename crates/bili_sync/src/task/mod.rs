@@ -1319,46 +1319,46 @@ impl ConfigTaskQueue {
         self.set_processing(true);
         let mut processed_count = 0u32;
 
-        let update_count = self.update_queue_length().await;
-        let reload_count = self.reload_queue_length().await;
+        let mut update_count = self.update_queue_length().await;
+        let mut reload_count = self.reload_queue_length().await;
 
-        // 检查数据库中是否有待处理的配置任务
-        let db_update_count = self.get_pending_update_tasks_count(&db).await.unwrap_or(0);
-        let db_reload_count = self.get_pending_reload_tasks_count(&db).await.unwrap_or(0);
+        if update_count == 0 && reload_count == 0 {
+            let db_update_count = self.get_pending_update_tasks_count(&db).await.unwrap_or(0);
+            let db_reload_count = self.get_pending_reload_tasks_count(&db).await.unwrap_or(0);
 
-        // 如果内存队列为空但数据库中有待处理任务，则先恢复
-        if update_count == 0 && reload_count == 0 && (db_update_count > 0 || db_reload_count > 0) {
+            if db_update_count == 0 && db_reload_count == 0 {
+                self.set_processing(false);
+                return Ok(0);
+            }
+
             info!(
                 "检测到数据库中有 {} 个更新配置任务和 {} 个重载配置任务，开始恢复到内存队列",
                 db_update_count, db_reload_count
             );
 
-            if let Ok(recovered) = self.recover_config_tasks_from_db(&db).await {
-                if recovered > 0 {
+            match self.recover_config_tasks_from_db(&db).await {
+                Ok(recovered) if recovered > 0 => {
                     info!("成功恢复 {} 个配置任务，重新获取队列长度", recovered);
-                    // 重新获取内存队列长度
-                    let new_update_count = self.update_queue_length().await;
-                    let new_reload_count = self.reload_queue_length().await;
+                    update_count = self.update_queue_length().await;
+                    reload_count = self.reload_queue_length().await;
 
-                    if new_update_count == 0 && new_reload_count == 0 {
+                    if update_count == 0 && reload_count == 0 {
                         warn!("恢复任务后内存队列仍为空，可能存在数据不一致问题");
                         self.set_processing(false);
                         return Ok(0);
                     }
-                } else {
+                }
+                Ok(_) => {
                     debug!("没有成功恢复任何配置任务");
                     self.set_processing(false);
                     return Ok(0);
                 }
-            } else {
-                error!("恢复配置任务失败");
-                self.set_processing(false);
-                return Ok(0);
+                Err(e) => {
+                    error!("恢复配置任务失败: {:#}", e);
+                    self.set_processing(false);
+                    return Ok(0);
+                }
             }
-        } else if update_count == 0 && reload_count == 0 {
-            // 内存队列和数据库都没有待处理任务
-            self.set_processing(false);
-            return Ok(0);
         }
 
         // 重新获取最新的队列长度用于日志
@@ -1754,6 +1754,39 @@ pub async fn enqueue_video_delete_task(task: DeleteVideoTask, connection: &Datab
 /// 处理所有视频删除任务的便捷函数
 pub async fn process_video_delete_tasks(db: Arc<DatabaseConnection>) -> Result<u32, anyhow::Error> {
     VIDEO_DELETE_TASK_QUEUE.process_all_tasks(db).await
+}
+
+/// 在扫描过程中按需处理中优先级较高的任务队列
+pub async fn process_priority_tasks_if_ready(db: Arc<DatabaseConnection>) -> Result<u32, anyhow::Error> {
+    let delete_len = DELETE_TASK_QUEUE.queue_length().await;
+    let video_delete_len = VIDEO_DELETE_TASK_QUEUE.queue_length().await;
+    let add_len = ADD_TASK_QUEUE.queue_length().await;
+    let update_len = CONFIG_TASK_QUEUE.update_queue_length().await;
+    let reload_len = CONFIG_TASK_QUEUE.reload_queue_length().await;
+
+    if delete_len == 0 && video_delete_len == 0 && add_len == 0 && update_len == 0 && reload_len == 0 {
+        return Ok(0);
+    }
+
+    let mut processed = 0u32;
+
+    if delete_len > 0 {
+        processed += process_delete_tasks(db.clone()).await?;
+    }
+
+    if video_delete_len > 0 {
+        processed += process_video_delete_tasks(db.clone()).await?;
+    }
+
+    if add_len > 0 {
+        processed += process_add_tasks(db.clone()).await?;
+    }
+
+    if update_len > 0 || reload_len > 0 {
+        processed += process_config_tasks(db.clone()).await?;
+    }
+
+    Ok(processed)
 }
 
 /// 从数据库恢复待处理的任务到内存队列中
