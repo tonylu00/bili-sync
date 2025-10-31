@@ -779,3 +779,61 @@ export interface TaskStatus {
 	last_finish?: string;
 	next_run?: string;
 }
+
+// 推送通知事件配置
+export interface NotificationEventsConfig {
+	scan_summary: boolean;
+	source_updates: boolean;
+	download_failures: boolean;
+	risk_control: boolean;
+}
+
+// Bark 默认推送参数
+export interface BarkDefaultsConfig {
+	subtitle?: string;
+	sound?: string;
+	icon?: string;
+	group?: string;
+	url?: string;
+	level?: string;
+	volume?: number | null;
+	badge?: number | null;
+	call?: boolean | null;
+	auto_copy?: boolean | null;
+	copy?: string;
+	is_archive?: boolean | null;
+	action?: string;
+	ciphertext?: string;
+	id?: string;
+	delete?: boolean | null;
+}
+
+// 推送通知配置响应
+export interface NotificationConfigResponse {
+	notification_method: string;
+	enable_scan_notifications: boolean;
+	serverchan_key?: string;
+	bark_server?: string;
+	bark_device_key?: string;
+	bark_device_keys?: string[];
+	notification_min_videos: number;
+	notification_timeout: number;
+	notification_retry_count: number;
+	events?: NotificationEventsConfig;
+	bark_defaults?: BarkDefaultsConfig;
+}
+
+// 更新推送通知配置请求
+export interface UpdateNotificationConfigRequest {
+	notification_method?: string;
+	enable_scan_notifications?: boolean;
+	serverchan_key?: string;
+	bark_server?: string;
+	bark_device_key?: string;
+	bark_device_keys?: string[];
+	notification_min_videos?: number;
+	notification_timeout?: number;
+	notification_retry_count?: number;
+	events?: NotificationEventsConfig;
+	bark_defaults?: BarkDefaultsConfig;
+}

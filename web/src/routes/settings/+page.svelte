@@ -229,12 +229,84 @@
 	let bangumiUseSeasonStructure = false;
 
 	// 推送通知配置
+	type TriState = 'default' | 'true' | 'false';
+	type NotificationEventsForm = {
+		scan_summary: boolean;
+		source_updates: boolean;
+		download_failures: boolean;
+		risk_control: boolean;
+	};
+
+	interface BarkDefaultsForm {
+		subtitle: string;
+		sound: string;
+		icon: string;
+		group: string;
+		url: string;
+		level: string;
+		volume: string;
+		badge: string;
+		call: TriState;
+		autoCopy: TriState;
+		copy: string;
+		isArchive: TriState;
+		action: string;
+		ciphertext: string;
+		id: string;
+		delete: TriState;
+	}
+
+	const barkLevelOptions = [
+		{ value: '', label: '跟随 Bark 默认 (active)' },
+		{ value: 'active', label: 'active - 立即提醒' },
+		{ value: 'timeSensitive', label: 'timeSensitive - 专注模式仍提醒' },
+		{ value: 'passive', label: 'passive - 静默推送' },
+		{ value: 'critical', label: 'critical - 静音模式也响铃' }
+	];
+
+	const triStateOptions: { value: TriState; label: string }[] = [
+		{ value: 'default', label: '跟随 Bark 应用设置' },
+		{ value: 'true', label: '启用' },
+		{ value: 'false', label: '禁用' }
+	];
+
+	const toTriState = (value: boolean | null | undefined): TriState =>
+		value === undefined || value === null ? 'default' : value ? 'true' : 'false';
+
+	const defaultNotificationEvents: NotificationEventsForm = {
+		scan_summary: true,
+		source_updates: false,
+		download_failures: false,
+		risk_control: true
+	};
 	let notificationEnabled = false;
 	let serverchanKey = '';
 	let notificationMinVideos = 1;
+	let notificationTimeout = 10;
+	let notificationRetryCount = 3;
+	let notificationEvents: NotificationEventsForm = { ...defaultNotificationEvents };
 	let notificationMethod: 'serverchan' | 'bark' = 'serverchan';
 	let barkServer = 'https://api.day.app';
 	let barkDeviceKey = '';
+	let barkDeviceKeysText = '';
+	let barkDefaultsForm: BarkDefaultsForm = {
+		subtitle: '',
+		sound: '',
+		icon: '',
+		group: '',
+		url: '',
+		level: '',
+		volume: '',
+		badge: '',
+		call: 'default',
+		autoCopy: 'default',
+		copy: '',
+		isArchive: 'default',
+		action: '',
+		ciphertext: '',
+		id: '',
+		delete: 'default'
+	};
 	let notificationSaving = false;
 	let notificationStatus: {
 		configured: boolean;
@@ -890,14 +962,28 @@
 	async function saveNotificationConfig() {
 		notificationSaving = true;
 		try {
+			const normalizedMinVideos = Math.min(Math.max(Number(notificationMinVideos) || 1, 1), 100);
+			notificationMinVideos = normalizedMinVideos;
+			const normalizedTimeout = Math.min(Math.max(Number(notificationTimeout) || 10, 5), 60);
+			notificationTimeout = normalizedTimeout;
+			const normalizedRetryCount = Math.min(Math.max(Number(notificationRetryCount) || 1, 1), 5);
+			notificationRetryCount = normalizedRetryCount;
+
 			const config: Record<string, unknown> = {
 				notification_method: notificationMethod,
 				enable_scan_notifications: notificationEnabled,
-				notification_min_videos: Number(notificationMinVideos) || 1
+				notification_min_videos: normalizedMinVideos,
+				notification_timeout: normalizedTimeout,
+				notification_retry_count: normalizedRetryCount,
+				events: {
+					scan_summary: notificationEvents.scan_summary,
+					source_updates: notificationEvents.source_updates,
+					download_failures: notificationEvents.download_failures,
+					risk_control: notificationEvents.risk_control
+				}
 			};
 
-			const trimmedBarkServer = barkServer.trim();
-			config.bark_server = trimmedBarkServer;
+			config.bark_server = barkServer.trim();
 
 			if (notificationMethod === 'serverchan') {
 				config.serverchan_key = serverchanKey.trim();
@@ -906,6 +992,62 @@
 				config.bark_device_key = barkDeviceKey.trim();
 				config.serverchan_key = '';
 			}
+
+			const extraDeviceKeys = barkDeviceKeysText
+				.split('\n')
+				.map((value) => value.trim())
+				.filter((value) => value.length > 0);
+			config.bark_device_keys = extraDeviceKeys;
+
+			const trimString = (value: string) => value.trim();
+			const fromTriState = (value: TriState): boolean | null =>
+				value === 'default' ? null : value === 'true';
+			const barkDefaultsPayload: Record<string, unknown> = {
+				subtitle: trimString(barkDefaultsForm.subtitle),
+				sound: trimString(barkDefaultsForm.sound),
+				icon: trimString(barkDefaultsForm.icon),
+				group: trimString(barkDefaultsForm.group),
+				url: trimString(barkDefaultsForm.url),
+				level: trimString(barkDefaultsForm.level),
+				copy: trimString(barkDefaultsForm.copy),
+				action: trimString(barkDefaultsForm.action),
+				ciphertext: trimString(barkDefaultsForm.ciphertext),
+				id: trimString(barkDefaultsForm.id)
+			};
+
+			const volumeValue = barkDefaultsForm.volume.trim();
+			if (volumeValue === '') {
+				barkDefaultsPayload.volume = null;
+			} else {
+				const parsedVolume = Number(volumeValue);
+				if (Number.isFinite(parsedVolume)) {
+					const clampedVolume = Math.min(Math.max(parsedVolume, 0), 10);
+					barkDefaultsPayload.volume = clampedVolume;
+					barkDefaultsForm.volume = String(clampedVolume);
+				} else {
+					barkDefaultsPayload.volume = null;
+				}
+			}
+
+			const badgeValue = barkDefaultsForm.badge.trim();
+			if (badgeValue === '') {
+				barkDefaultsPayload.badge = null;
+			} else {
+				const parsedBadge = Number(badgeValue);
+				if (Number.isFinite(parsedBadge)) {
+					barkDefaultsPayload.badge = parsedBadge;
+					barkDefaultsForm.badge = String(parsedBadge);
+				} else {
+					barkDefaultsPayload.badge = null;
+				}
+			}
+
+			barkDefaultsPayload.call = fromTriState(barkDefaultsForm.call);
+			barkDefaultsPayload.auto_copy = fromTriState(barkDefaultsForm.autoCopy);
+			barkDefaultsPayload.is_archive = fromTriState(barkDefaultsForm.isArchive);
+			barkDefaultsPayload.delete = fromTriState(barkDefaultsForm.delete);
+
+			config.bark_defaults = barkDefaultsPayload;
 
 			const response = await api.updateNotificationConfig(config);
 			// 检查响应状态码，后端返回 {status_code: 200, data: "推送配置更新成功"}
@@ -964,6 +1106,23 @@
 				// 不覆盖密钥，只加载其他配置
 				notificationEnabled = response.data.enable_scan_notifications;
 				notificationMinVideos = response.data.notification_min_videos;
+				notificationTimeout = response.data.notification_timeout;
+				notificationRetryCount = response.data.notification_retry_count;
+				if (response.data.events) {
+					notificationEvents = {
+						scan_summary:
+							response.data.events.scan_summary ?? defaultNotificationEvents.scan_summary,
+						source_updates:
+							response.data.events.source_updates ?? defaultNotificationEvents.source_updates,
+						download_failures:
+							response.data.events.download_failures ??
+							defaultNotificationEvents.download_failures,
+						risk_control:
+							response.data.events.risk_control ?? defaultNotificationEvents.risk_control
+					};
+				} else {
+					notificationEvents = { ...defaultNotificationEvents };
+				}
 				const method = response.data.notification_method?.toLowerCase();
 				if (method === 'serverchan' || method === 'bark') {
 					notificationMethod = method;
@@ -974,11 +1133,40 @@
 				if (response.data.bark_server) {
 					barkServer = response.data.bark_server;
 				}
+				barkDeviceKeysText = (response.data.bark_device_keys ?? []).join('\n');
+				const defaults = response.data.bark_defaults ?? {};
+				barkDefaultsForm = {
+					subtitle: defaults.subtitle ?? '',
+					sound: defaults.sound ?? '',
+					icon: defaults.icon ?? '',
+					group: defaults.group ?? '',
+					url: defaults.url ?? '',
+					level: defaults.level ?? '',
+					volume:
+						defaults.volume !== undefined && defaults.volume !== null
+							? String(defaults.volume)
+							: '',
+					badge:
+						defaults.badge !== undefined && defaults.badge !== null
+							? String(defaults.badge)
+							: '',
+					call: toTriState(defaults.call),
+					autoCopy: toTriState(defaults.auto_copy),
+					copy: defaults.copy ?? '',
+					isArchive: toTriState(defaults.is_archive),
+					action: defaults.action ?? '',
+					ciphertext: defaults.ciphertext ?? '',
+					id: defaults.id ?? '',
+					delete: toTriState(defaults.delete)
+				};
 				console.log('加载的配置值:', {
 					enabled: notificationEnabled,
 					minVideos: notificationMinVideos,
 					method: notificationMethod,
-					barkServer
+					barkServer,
+					notificationTimeout,
+					notificationRetryCount,
+					notificationEvents
 				});
 			}
 		} catch (error) {
@@ -3399,6 +3587,98 @@
 							</p>
 						</div>
 
+						<!-- 推送条件与重试配置 -->
+						<div class="space-y-3">
+							<h3 class="text-base font-semibold">推送条件</h3>
+							<div class="grid gap-4 md:grid-cols-3">
+								<div class="space-y-2">
+									<Label for="notification-min-videos">最小视频数阈值</Label>
+									<Input
+										id="notification-min-videos"
+										type="number"
+										min="1"
+										max="100"
+										bind:value={notificationMinVideos}
+									/>
+									<p class="text-muted-foreground text-xs">
+										新增视频数量达到该阈值才会发送推送
+									</p>
+								</div>
+								<div class="space-y-2">
+									<Label for="notification-timeout">推送超时时间 (秒)</Label>
+									<Input
+										id="notification-timeout"
+										type="number"
+										min="5"
+										max="60"
+										bind:value={notificationTimeout}
+									/>
+									<p class="text-muted-foreground text-xs">
+										网络请求超时会自动重试
+									</p>
+								</div>
+								<div class="space-y-2">
+									<Label for="notification-retry">最大重试次数</Label>
+									<Input
+										id="notification-retry"
+										type="number"
+										min="1"
+										max="5"
+										bind:value={notificationRetryCount}
+									/>
+									<p class="text-muted-foreground text-xs">
+										失败后会按间隔重试，避免临时网络波动
+									</p>
+								</div>
+							</div>
+						</div>
+
+						<!-- 通知事件选择 -->
+						<div class="space-y-3">
+							<h3 class="text-base font-semibold">通知事件</h3>
+							<p class="text-muted-foreground text-sm">
+								选择需要推送的场景，可自定义风控提醒、下载失败等事件
+							</p>
+							<div class="grid gap-3 md:grid-cols-2">
+								<label class="flex items-start space-x-2 text-sm">
+									<input
+										type="checkbox"
+										class="mt-1 h-4 w-4 rounded border-gray-300 text-primary focus:ring-primary"
+										bind:checked={notificationEvents.scan_summary}
+										disabled={!notificationEnabled}
+									/>
+									<span>扫描摘要（推荐开启）</span>
+								</label>
+								<label class="flex items-start space-x-2 text-sm">
+									<input
+										type="checkbox"
+										class="mt-1 h-4 w-4 rounded border-gray-300 text-primary focus:ring-primary"
+										bind:checked={notificationEvents.source_updates}
+										disabled={!notificationEnabled}
+									/>
+									<span>单个视频源有新内容</span>
+								</label>
+								<label class="flex items-start space-x-2 text-sm">
+									<input
+										type="checkbox"
+										class="mt-1 h-4 w-4 rounded border-gray-300 text-primary focus:ring-primary"
+										bind:checked={notificationEvents.download_failures}
+										disabled={!notificationEnabled}
+									/>
+									<span>视频下载失败或重试次数耗尽</span>
+								</label>
+								<label class="flex items-start space-x-2 text-sm">
+									<input
+										type="checkbox"
+										class="mt-1 h-4 w-4 rounded border-gray-300 text-primary focus:ring-primary"
+										bind:checked={notificationEvents.risk_control}
+										disabled={!notificationEnabled}
+									/>
+									<span>遇到风控验证或账号受限</span>
+								</label>
+							</div>
+						</div>
+
 						{#if notificationMethod === 'serverchan'}
 							<!-- Server酱配置 -->
 							<div class="space-y-4">
@@ -3420,21 +3700,6 @@
 											target="_blank"
 											class="text-primary hover:underline">sct.ftqq.com</a
 										> 获取您的SendKey
-									</p>
-								</div>
-
-								<div class="space-y-2">
-									<Label for="min-videos">最小视频数阈值</Label>
-									<Input
-										id="min-videos"
-										type="number"
-										bind:value={notificationMinVideos}
-										min="1"
-										max="100"
-										placeholder="1"
-									/>
-									<p class="text-muted-foreground text-sm">
-										只有新增视频数量达到此阈值时才会发送推送通知
 									</p>
 								</div>
 							</div>
@@ -3472,19 +3737,136 @@
 								</div>
 
 								<div class="space-y-2">
-									<Label for="min-videos">最小视频数阈值</Label>
-									<Input
-										id="min-videos"
-										type="number"
-										bind:value={notificationMinVideos}
-										min="1"
-										max="100"
-										placeholder="1"
-									/>
+									<Label for="bark-device-keys">额外设备 Key（每行一个，可选）</Label>
+									<textarea
+										id="bark-device-keys"
+										class="w-full rounded-md border border-input bg-background px-3 py-2 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+										rows="3"
+										bind:value={barkDeviceKeysText}
+										placeholder="支持多个设备推送时，每行填写一个 Device Key"
+									></textarea>
 									<p class="text-muted-foreground text-sm">
-										只有新增视频数量达到此阈值时才会发送推送通知
+										可同时推送到多台设备，主 Device Key 可保持为空使用上方输入框
 									</p>
 								</div>
+
+								<details class="rounded-md border border-dashed border-purple-200 bg-purple-50/60 p-4 dark:border-purple-900 dark:bg-purple-950/30">
+									<summary class="cursor-pointer text-sm font-medium text-purple-700 dark:text-purple-300">
+										Bark 高级推送选项（可选）
+									</summary>
+									<div class="mt-4 space-y-4 text-sm">
+										<p class="text-muted-foreground">
+											以下设置会作为默认值附加到每条 Bark 推送，可用于自定义铃声、分组、点击动作等。
+											留空代表使用 Bark 应用内的默认行为。
+										</p>
+										<div class="grid gap-4 md:grid-cols-2">
+											<div class="space-y-2">
+												<Label for="bark-subtitle">推送副标题</Label>
+												<Input id="bark-subtitle" bind:value={barkDefaultsForm.subtitle} />
+											</div>
+											<div class="space-y-2">
+												<Label for="bark-sound">自定义铃声</Label>
+												<Input id="bark-sound" bind:value={barkDefaultsForm.sound} placeholder="如: minuet" />
+											</div>
+											<div class="space-y-2">
+												<Label for="bark-icon">自定义图标 URL</Label>
+												<Input id="bark-icon" bind:value={barkDefaultsForm.icon} placeholder="https://..." />
+											</div>
+											<div class="space-y-2">
+												<Label for="bark-group">通知分组</Label>
+												<Input id="bark-group" bind:value={barkDefaultsForm.group} />
+											</div>
+											<div class="space-y-2">
+												<Label for="bark-url">点击跳转链接</Label>
+												<Input id="bark-url" bind:value={barkDefaultsForm.url} placeholder="https://..." />
+											</div>
+											<div class="space-y-2">
+												<Label for="bark-level">通知级别</Label>
+												<select
+													id="bark-level"
+													class="w-full rounded-md border border-input bg-background px-3 py-2 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+													bind:value={barkDefaultsForm.level}
+												>
+													{#each barkLevelOptions as option}
+														<option value={option.value}>{option.label}</option>
+													{/each}
+												</select>
+											</div>
+											<div class="space-y-2">
+												<Label for="bark-volume">重要警告音量 (0-10)</Label>
+												<Input id="bark-volume" type="number" min="0" max="10" bind:value={barkDefaultsForm.volume} />
+											</div>
+											<div class="space-y-2">
+												<Label for="bark-badge">应用角标</Label>
+												<Input id="bark-badge" type="number" min="0" bind:value={barkDefaultsForm.badge} />
+											</div>
+											<div class="space-y-2">
+												<Label for="bark-call">重复铃声</Label>
+												<select
+													id="bark-call"
+													class="w-full rounded-md border border-input bg-background px-3 py-2 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+													bind:value={barkDefaultsForm.call}
+												>
+													{#each triStateOptions as option}
+														<option value={option.value}>{option.label}</option>
+													{/each}
+												</select>
+											</div>
+											<div class="space-y-2">
+												<Label for="bark-auto-copy">自动复制内容</Label>
+												<select
+													id="bark-auto-copy"
+													class="w-full rounded-md border border-input bg-background px-3 py-2 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+													bind:value={barkDefaultsForm.autoCopy}
+												>
+													{#each triStateOptions as option}
+														<option value={option.value}>{option.label}</option>
+													{/each}
+												</select>
+											</div>
+											<div class="space-y-2">
+												<Label for="bark-copy">自定义复制内容</Label>
+												<Input id="bark-copy" bind:value={barkDefaultsForm.copy} placeholder="填写后长按通知复制该内容" />
+											</div>
+											<div class="space-y-2">
+												<Label for="bark-is-archive">保存到历史</Label>
+												<select
+													id="bark-is-archive"
+													class="w-full rounded-md border border-input bg-background px-3 py-2 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+													bind:value={barkDefaultsForm.isArchive}
+												>
+													{#each triStateOptions as option}
+														<option value={option.value}>{option.label}</option>
+													{/each}
+												</select>
+											</div>
+											<div class="space-y-2">
+												<Label for="bark-action">点击行为</Label>
+												<Input id="bark-action" bind:value={barkDefaultsForm.action} placeholder="none / openUrl / ..." />
+											</div>
+											<div class="space-y-2">
+												<Label for="bark-ciphertext">加密内容密文</Label>
+												<Input id="bark-ciphertext" bind:value={barkDefaultsForm.ciphertext} />
+											</div>
+											<div class="space-y-2">
+												<Label for="bark-id">通知 ID（用于覆盖）</Label>
+												<Input id="bark-id" bind:value={barkDefaultsForm.id} />
+											</div>
+											<div class="space-y-2">
+												<Label for="bark-delete">删除历史通知</Label>
+												<select
+													id="bark-delete"
+													class="w-full rounded-md border border-input bg-background px-3 py-2 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+													bind:value={barkDefaultsForm.delete}
+												>
+													{#each triStateOptions as option}
+														<option value={option.value}>{option.label}</option>
+													{/each}
+												</select>
+											</div>
+										</div>
+									</div>
+								</details>
 							</div>
 						{/if}
 

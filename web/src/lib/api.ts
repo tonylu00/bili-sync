@@ -39,7 +39,9 @@ import type {
 	SysInfo,
 	TaskStatus,
 	BangumiSeasonsResponse,
-	VideoBvidResponse
+	VideoBvidResponse,
+	NotificationConfigResponse,
+	UpdateNotificationConfigRequest
 } from './types';
 import { ErrorType } from './types';
 import { wsManager } from './ws';
@@ -589,42 +591,15 @@ class ApiClient {
 	 * 获取推送通知配置
 	 */
 	async getNotificationConfig(): Promise<
-		ApiResponse<{
-			notification_method: string;
-			enable_scan_notifications: boolean;
-			serverchan_key?: string;
-			bark_server: string;
-			bark_device_key?: string;
-			notification_min_videos: number;
-			notification_timeout: number;
-			notification_retry_count: number;
-		}>
+		ApiResponse<NotificationConfigResponse>
 	> {
-		return this.get<{
-			notification_method: string;
-			enable_scan_notifications: boolean;
-			serverchan_key?: string;
-			bark_server: string;
-			bark_device_key?: string;
-			notification_min_videos: number;
-			notification_timeout: number;
-			notification_retry_count: number;
-		}>('/config/notification');
+		return this.get<NotificationConfigResponse>('/config/notification');
 	}
 
 	/**
 	 * 更新推送通知配置
 	 */
-	async updateNotificationConfig(config: {
-		notification_method?: string;
-		enable_scan_notifications?: boolean;
-		serverchan_key?: string;
-		bark_server?: string;
-		bark_device_key?: string;
-		notification_min_videos?: number;
-		notification_timeout?: number;
-		notification_retry_count?: number;
-	}): Promise<
+	async updateNotificationConfig(config: UpdateNotificationConfigRequest): Promise<
 		ApiResponse<{
 			success: boolean;
 			message: string;
@@ -881,11 +856,8 @@ export const api = {
 	/**
 	 * 更新推送通知配置
 	 */
-	updateNotificationConfig: (config: {
-		enable_scan_notifications?: boolean;
-		serverchan_key?: string;
-		notification_min_videos?: number;
-	}) => apiClient.updateNotificationConfig(config),
+	updateNotificationConfig: (config: UpdateNotificationConfigRequest) =>
+		apiClient.updateNotificationConfig(config),
 
 	/**
 	 * 测试推送通知
