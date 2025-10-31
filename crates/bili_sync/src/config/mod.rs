@@ -349,12 +349,24 @@ impl NotificationConfig {
         if self.enable_scan_notifications {
             match self.method {
                 NotificationMethod::Serverchan => {
-                    if self.serverchan_key.as_deref().map(str::trim).filter(|v| !v.is_empty()).is_none() {
+                    if self
+                        .serverchan_key
+                        .as_deref()
+                        .map(str::trim)
+                        .filter(|v| !v.is_empty())
+                        .is_none()
+                    {
                         return Err("启用推送通知时必须配置Server酱 SendKey".to_string());
                     }
                 }
                 NotificationMethod::Bark => {
-                    if self.bark_device_key.as_deref().map(str::trim).filter(|v| !v.is_empty()).is_none() {
+                    if self
+                        .bark_device_key
+                        .as_deref()
+                        .map(str::trim)
+                        .filter(|v| !v.is_empty())
+                        .is_none()
+                    {
                         return Err("启用推送通知时必须配置 Bark Device Key".to_string());
                     }
                     if self.bark_server.trim().is_empty() {

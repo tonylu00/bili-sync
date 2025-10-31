@@ -378,7 +378,7 @@ impl NotificationClient {
         }
 
         // 最终清理整个内容，确保没有问题字符
-    let clean_content = Self::sanitize_text(&content);
+        let clean_content = Self::sanitize_text(&content);
 
         // 确保内容不超过限制
         let final_content = if clean_content.len() > MAX_CONTENT_LENGTH {
@@ -473,7 +473,8 @@ impl NotificationClient {
                 }
 
                 let title = "Bili Sync 测试推送";
-                let content = "这是一条测试推送消息，如果您收到此消息，说明 Bark 推送配置正确。\n\n🎉 推送功能工作正常！";
+                let content =
+                    "这是一条测试推送消息，如果您收到此消息，说明 Bark 推送配置正确。\n\n🎉 推送功能工作正常！";
                 let body = Self::markdown_to_plain_text(content);
                 let server = self.effective_bark_server();
 

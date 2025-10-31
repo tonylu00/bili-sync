@@ -138,10 +138,26 @@ impl Default for FilterOption {
     }
 }
 
+#[derive(Debug, Clone, PartialEq, PartialOrd)]
+pub struct FlvSegment {
+    pub order: usize,
+    pub urls: Vec<String>,
+    pub length: Option<u64>,
+    pub size: Option<u64>,
+}
+
+impl FlvSegment {
+    fn primary_urls(&self) -> Vec<&str> {
+        self.urls.iter().map(String::as_str).collect()
+    }
+}
+
 // 上游项目中的五种流类型，不过目测应该只有 Flv、DashVideo、DashAudio 三种会被用到
 #[derive(Debug, PartialEq, PartialOrd)]
 pub enum Stream {
-    Flv(String),
+    Flv {
+        segments: Vec<FlvSegment>,
+    },
     Html5Mp4(String),
     EpisodeTryMp4(String),
     DashVideo {
@@ -161,7 +177,11 @@ pub enum Stream {
 impl Stream {
     pub fn urls(&self) -> Vec<&str> {
         match self {
-            Self::Flv(url) | Self::Html5Mp4(url) | Self::EpisodeTryMp4(url) => vec![url],
+            Self::Flv { segments } => segments
+                .first()
+                .map(|segment| segment.primary_urls())
+                .unwrap_or_default(),
+            Self::Html5Mp4(url) | Self::EpisodeTryMp4(url) => vec![url],
             Self::DashVideo { url, backup_url, .. } | Self::DashAudio { url, backup_url, .. } => {
                 let mut urls = std::iter::once(url.as_str())
                     .chain(backup_url.iter().map(|s| s.as_str()))
@@ -203,7 +223,13 @@ impl PageAnalyzer {
     }
 
     fn is_flv_stream(&self) -> bool {
-        self.info.get("durl").is_some() && self.info["format"].as_str().is_some_and(|f| f.starts_with("flv"))
+        let has_durl = self.info.get("durl").is_some();
+        let format_contains_flv = self.info["format"].as_str().map(|value| {
+            let lower = value.to_ascii_lowercase();
+            lower.contains("flv")
+        });
+
+        has_durl && format_contains_flv.unwrap_or(false)
     }
 
     fn is_html5_mp4_stream(&self) -> bool {
@@ -218,15 +244,74 @@ impl PageAnalyzer {
             && self.info["is_html5"].as_bool().is_none_or(|b| !b)
     }
 
+    fn build_flv_stream(&self) -> Result<Stream> {
+        let durl_segments = self
+            .info
+            .get("durl")
+            .and_then(|value| value.as_array())
+            .context("invalid flv stream: missing durl array")?;
+
+        if durl_segments.is_empty() {
+            bail!("invalid flv stream: empty durl array");
+        }
+
+        let mut segments = Vec::with_capacity(durl_segments.len());
+
+        for (idx, segment) in durl_segments.iter().enumerate() {
+            let primary_url = segment
+                .get("url")
+                .and_then(|v| v.as_str())
+                .context("invalid flv stream: missing segment url")?;
+
+            let mut urls = Vec::with_capacity(
+                1 + segment
+                    .get("backup_url")
+                    .and_then(|v| v.as_array())
+                    .map(|arr| arr.len())
+                    .unwrap_or(0),
+            );
+            urls.push(primary_url.to_string());
+
+            if let Some(backup_urls) = segment.get("backup_url").and_then(|v| v.as_array()) {
+                for backup in backup_urls.iter().filter_map(|v| v.as_str()) {
+                    if backup.is_empty() {
+                        continue;
+                    }
+                    if urls.iter().all(|existing| existing != backup) {
+                        urls.push(backup.to_string());
+                    }
+                }
+            }
+
+            let order = segment
+                .get("order")
+                .and_then(|v| v.as_u64())
+                .map(|v| v as usize)
+                .unwrap_or(idx + 1);
+
+            segments.push(FlvSegment {
+                order,
+                urls,
+                length: segment.get("length").and_then(|v| v.as_u64()),
+                size: segment.get("size").and_then(|v| v.as_u64()),
+            });
+        }
+
+        segments.sort_by_key(|segment| segment.order);
+
+        tracing::debug!(
+            "解析到FLV流，共{}个分段，最长时长: {:?}",
+            segments.len(),
+            segments.iter().filter_map(|seg| seg.length).max()
+        );
+
+        Ok(Stream::Flv { segments })
+    }
+
     /// 获取所有的视频、音频流，并根据条件筛选
     fn streams(&mut self, filter_option: &FilterOption) -> Result<Vec<Stream>> {
         if self.is_flv_stream() {
-            return Ok(vec![Stream::Flv(
-                self.info["durl"][0]["url"]
-                    .as_str()
-                    .context("invalid flv stream")?
-                    .to_string(),
-            )]);
+            return Ok(vec![self.build_flv_stream()?]);
         }
         if self.is_html5_mp4_stream() {
             return Ok(vec![Stream::Html5Mp4(
@@ -275,6 +360,25 @@ impl PageAnalyzer {
             filter_option.codecs
         );
         tracing::debug!("=== 开始筛选 ===");
+
+        let has_durl_segments = self
+            .info
+            .get("durl")
+            .and_then(|value| value.as_array())
+            .map(|arr| !arr.is_empty())
+            .unwrap_or(false);
+
+        let dash_video_missing_or_empty = self
+            .info
+            .pointer("/dash/video")
+            .and_then(|value| value.as_array())
+            .map(|arr| arr.is_empty())
+            .unwrap_or(true);
+
+        if has_durl_segments && dash_video_missing_or_empty {
+            tracing::debug!("dash视频流缺失，使用durl提供的FLV流");
+            return Ok(vec![self.build_flv_stream()?]);
+        }
 
         let mut streams: Vec<Stream> = Vec::new();
         let mut filtered_count = 0;
@@ -471,13 +575,19 @@ impl PageAnalyzer {
     }
 
     pub fn best_stream(&mut self, filter_option: &FilterOption) -> Result<BestStream> {
-        let streams = self.streams(filter_option)?;
+        let mut streams = self.streams(filter_option)?;
         if self.is_flv_stream() || self.is_html5_mp4_stream() || self.is_episode_try_mp4_stream() {
             // 按照 streams 中的假设，符合这三种情况的流只有一个，直接取
             return Ok(BestStream::Mixed(
                 streams.into_iter().next().context("no stream found")?,
             ));
         }
+
+        if let Some(idx) = streams.iter().position(|s| matches!(s, Stream::Flv { .. })) {
+            let flv_stream = streams.swap_remove(idx);
+            return Ok(BestStream::Mixed(flv_stream));
+        }
+
         let (videos, audios): (Vec<Stream>, Vec<Stream>) =
             streams.into_iter().partition(|s| matches!(s, Stream::DashVideo { .. }));
 

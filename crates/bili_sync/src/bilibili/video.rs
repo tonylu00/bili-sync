@@ -173,12 +173,10 @@ fn assess_durl_only(data: &serde_json::Value, top_level_message: Option<&str>) -
 
     let mut reasons = Vec::new();
 
-    let mut single_segment_short = false;
     if let Some(durl_segments) = data["durl"].as_array() {
         if durl_segments.len() == 1 {
             if let Some(length_ms) = durl_segments[0]["length"].as_u64() {
                 if length_ms > 0 && length_ms <= DURL_SINGLE_SEGMENT_THRESHOLD_MS {
-                    single_segment_short = true;
                     reasons.push(format!(
                         "single segment length {}ms <= {}ms",
                         length_ms, DURL_SINGLE_SEGMENT_THRESHOLD_MS
@@ -188,17 +186,18 @@ fn assess_durl_only(data: &serde_json::Value, top_level_message: Option<&str>) -
         }
     }
 
-    if is_short && !keyword_reasons.is_empty() {
+    if is_short {
         reasons.push(format!(
             "timelength {}ms <= {}ms",
             timelength, DURL_TRIAL_TIMELENGTH_THRESHOLD_MS
         ));
-        reasons.extend(keyword_reasons.clone());
-    } else if !keyword_reasons.is_empty() {
+    }
+
+    if !keyword_reasons.is_empty() {
         reasons.extend(keyword_reasons.clone());
     }
 
-    let treat_as_trial = (is_short && !keyword_reasons.is_empty()) || single_segment_short;
+    let treat_as_trial = !keyword_reasons.is_empty();
 
     DurlOnlyAssessment {
         treat_as_trial,

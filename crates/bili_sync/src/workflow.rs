@@ -11,6 +11,7 @@ use sea_orm::entity::prelude::*;
 use sea_orm::ActiveValue::Set;
 use sea_orm::{DatabaseBackend, Statement, TransactionTrait};
 use tokio::fs;
+use tokio::io::AsyncWriteExt;
 use tokio::sync::Semaphore;
 use tokio_util::sync::CancellationToken;
 use tracing::{debug, error, info, warn};
@@ -24,7 +25,7 @@ lazy_static::lazy_static! {
 
 use crate::adapter::{video_source_from, Args, VideoSource, VideoSourceEnum};
 use crate::bilibili::{
-    BestStream, BiliClient, BiliError, Dimension, PageInfo, Stream as VideoStream, Video, VideoInfo,
+    BestStream, BiliClient, BiliError, Dimension, FlvSegment, PageInfo, Stream as VideoStream, Video, VideoInfo,
 };
 use crate::config::ARGS;
 use crate::error::{DownloadAbortError, ExecutionStatus, ProcessPageError};
@@ -3026,6 +3027,111 @@ async fn download_stream(downloader: &UnifiedDownloader, urls: &[&str], path: &P
     }
 }
 
+async fn download_flv_stream(
+    downloader: &UnifiedDownloader,
+    mut segments: Vec<FlvSegment>,
+    path: &Path,
+) -> Result<u64> {
+    if segments.is_empty() {
+        bail!("FLV流分段为空");
+    }
+
+    if segments.len() == 1 {
+        let segment = segments.pop().unwrap();
+        let urls: Vec<&str> = segment.urls.iter().map(|u| u.as_str()).collect();
+        return download_stream(downloader, &urls, path).await;
+    }
+
+    segments.sort_by_key(|segment| segment.order);
+    let segment_count = segments.len();
+    debug!("检测到 {} 个FLV分段，将顺序下载并合并", segment_count);
+
+    let mut part_paths = Vec::with_capacity(segment_count);
+    let mut total_downloaded = 0u64;
+
+    for (idx, segment) in segments.into_iter().enumerate() {
+        let mut part_path = path.to_path_buf();
+        part_path.set_extension(format!("part{:03}", idx + 1));
+
+        let urls: Vec<&str> = segment.urls.iter().map(|u| u.as_str()).collect();
+
+        debug!(
+            "下载FLV分段 {}/{} (order={}), 备选URL数量: {}",
+            idx + 1,
+            segment_count,
+            segment.order,
+            urls.len()
+        );
+
+        match download_stream(downloader, &urls, &part_path).await {
+            Ok(size) => {
+                total_downloaded += size;
+                part_paths.push(part_path);
+            }
+            Err(err) => {
+                for cleanup_path in part_paths.iter().chain(std::iter::once(&part_path)) {
+                    if let Err(clean_err) = fs::remove_file(cleanup_path).await {
+                        debug!("清理FLV分段临时文件失败: {} ({})", cleanup_path.display(), clean_err);
+                    }
+                }
+                return Err(err);
+            }
+        }
+    }
+
+    let mut output_file = tokio::fs::File::create(path)
+        .await
+        .with_context(|| format!("无法创建输出文件: {}", path.display()))?;
+
+    for part_path in &part_paths {
+        let mut part_file = tokio::fs::File::open(part_path)
+            .await
+            .with_context(|| format!("无法打开FLV分段文件: {}", part_path.display()))?;
+
+        let copy_result = tokio::io::copy(&mut part_file, &mut output_file).await;
+        if let Err(copy_err) = copy_result {
+            drop(part_file);
+            drop(output_file);
+
+            let err = anyhow!("合并FLV分段失败: {} ({})", part_path.display(), copy_err);
+
+            for cleanup_path in &part_paths {
+                if let Err(clean_err) = fs::remove_file(cleanup_path).await {
+                    debug!("清理FLV分段临时文件失败: {} ({})", cleanup_path.display(), clean_err);
+                }
+            }
+            let _ = fs::remove_file(path).await;
+            return Err(err);
+        }
+    }
+
+    if let Err(err) = output_file.flush().await {
+        drop(output_file);
+
+        let err = anyhow!("刷新合并后的文件失败: {} ({})", path.display(), err);
+
+        for cleanup_path in &part_paths {
+            let _ = fs::remove_file(cleanup_path).await;
+        }
+        let _ = fs::remove_file(path).await;
+
+        return Err(err);
+    }
+
+    for part_path in part_paths {
+        if let Err(e) = fs::remove_file(&part_path).await {
+            debug!("删除FLV分段临时文件失败: {} ({})", part_path.display(), e);
+        }
+    }
+
+    let final_size = tokio::fs::metadata(path)
+        .await
+        .map(|meta| meta.len())
+        .unwrap_or(total_downloaded);
+
+    Ok(final_size)
+}
+
 pub async fn fetch_page_video(
     should_run: bool,
     bili_client: &BiliClient,
@@ -3175,10 +3281,13 @@ pub async fn fetch_page_video(
     debug!("=== 流选择结束 ===");
 
     let total_bytes = match best_stream_result {
-        BestStream::Mixed(mix_stream) => {
-            let urls = mix_stream.urls();
-            download_stream(downloader, &urls, page_path).await?
-        }
+        BestStream::Mixed(mix_stream) => match mix_stream {
+            VideoStream::Flv { segments } => download_flv_stream(downloader, segments, page_path).await?,
+            other => {
+                let urls = other.urls();
+                download_stream(downloader, &urls, page_path).await?
+            }
+        },
         BestStream::VideoAudio {
             video: video_stream,
             audio: None,
@@ -4442,7 +4551,7 @@ pub async fn auto_reset_risk_control_failures(connection: &DatabaseConnection) -
     let txn = connection.begin().await?;
 
     // 重置视频失败、进行中和未完成状态
-    for (id, name, download_status) in all_videos {
+    for (id, _name, download_status) in all_videos {
         let mut video_status = VideoStatus::from(download_status);
         let mut video_resetted = false;
 
@@ -4470,12 +4579,11 @@ pub async fn auto_reset_risk_control_failures(connection: &DatabaseConnection) -
             .await?;
 
             resetted_videos += 1;
-            debug!("重置视频「{}」的未完成任务状态", name);
         }
     }
 
     // 重置页面失败、进行中和未完成状态
-    for (id, name, download_status) in all_pages {
+    for (id, _name, download_status) in all_pages {
         let mut page_status = PageStatus::from(download_status);
         let mut page_resetted = false;
 
@@ -4503,11 +4611,15 @@ pub async fn auto_reset_risk_control_failures(connection: &DatabaseConnection) -
             .await?;
 
             resetted_pages += 1;
-            debug!("重置页面「{}」的未完成任务状态", name);
         }
     }
 
     txn.commit().await?;
+
+    debug!(
+        "风控自动重置统计: 视频 {} 个，页面 {} 个",
+        resetted_videos, resetted_pages
+    );
 
     if resetted_videos > 0 || resetted_pages > 0 {
         info!(

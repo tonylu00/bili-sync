@@ -345,8 +345,7 @@ pub async fn video_downloader(connection: Arc<DatabaseConnection>) {
             };
 
             // 将视频源按新旧分组
-            let (mut new_sources, mut old_sources) =
-                group_sources_by_new_old(&video_sources, &last_scanned_ids);
+            let (mut new_sources, mut old_sources) = group_sources_by_new_old(&video_sources, &last_scanned_ids);
 
             // 兜底逻辑：如果分组后没有待扫描的源但仍然存在启用源，则重置处理断点并重新分组
             if new_sources.is_empty() && old_sources.is_empty() && !video_sources.is_empty() {
@@ -356,8 +355,7 @@ pub async fn video_downloader(connection: Arc<DatabaseConnection>) {
 
                 match update_last_scanned_ids(&optimized_connection, &last_scanned_ids).await {
                     Ok(_) => {
-                        let (regroup_new, regroup_old) =
-                            group_sources_by_new_old(&video_sources, &last_scanned_ids);
+                        let (regroup_new, regroup_old) = group_sources_by_new_old(&video_sources, &last_scanned_ids);
                         new_sources = regroup_new;
                         old_sources = regroup_old;
 
@@ -365,10 +363,7 @@ pub async fn video_downloader(connection: Arc<DatabaseConnection>) {
                         if regroup_total == 0 {
                             warn!("重置扫描断点后仍未找到可扫描的视频源，本轮将保持空扫描");
                         } else {
-                            info!(
-                                "重置扫描断点后重新纳入 {} 个视频源，将重新开始扫描",
-                                regroup_total
-                            );
+                            info!("重置扫描断点后重新纳入 {} 个视频源，将重新开始扫描", regroup_total);
                         }
                     }
                     Err(e) => {
