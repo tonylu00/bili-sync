@@ -296,6 +296,18 @@ pub struct ResetSpecificTasksRequest {
     pub bangumi: Option<i32>,
 }
 
+// 批量设置任务状态请求
+#[derive(Deserialize, ToSchema)]
+pub struct SetSpecificTasksStatusRequest {
+    pub task_indexes: Vec<usize>, // 要更新的任务索引列表 (0-4)
+    pub status_value: u32,        // 要设置的状态值 (0-7)
+    pub collection: Option<i32>,
+    pub favorite: Option<i32>,
+    pub submission: Option<i32>,
+    pub watch_later: Option<i32>,
+    pub bangumi: Option<i32>,
+}
+
 // 配置管理相关请求结构体
 
 // 更新单个配置项请求

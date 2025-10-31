@@ -41,7 +41,8 @@ import type {
 	BangumiSeasonsResponse,
 	VideoBvidResponse,
 	NotificationConfigResponse,
-	UpdateNotificationConfigRequest
+	UpdateNotificationConfigRequest,
+	SetSpecificTasksStatusResponse
 } from './types';
 import { ErrorType } from './types';
 import { wsManager } from './ws';
@@ -270,6 +271,34 @@ class ApiClient {
 			...params
 		};
 		return this.post<ResetAllVideosResponse>('/videos/reset-specific-tasks', requestBody);
+	}
+
+	/**
+	 * 批量设置任务状态
+	 * @param taskIndexes 要更新的任务索引列表
+	 * @param statusValue 要设置的状态值
+	 * @param params 筛选参数
+	 */
+	async setSpecificTasksStatus(
+		taskIndexes: number[],
+		statusValue: number,
+		params?: {
+			collection?: number;
+			favorite?: number;
+			submission?: number;
+			bangumi?: number;
+			watch_later?: number;
+		}
+	): Promise<ApiResponse<SetSpecificTasksStatusResponse>> {
+		const requestBody = {
+			task_indexes: taskIndexes,
+			status_value: statusValue,
+			...params
+		};
+		return this.post<SetSpecificTasksStatusResponse>(
+			'/videos/set-specific-tasks-status',
+			requestBody
+		);
 	}
 
 	/**
@@ -686,6 +715,21 @@ export const api = {
 		},
 		force?: boolean
 	) => apiClient.resetSpecificTasks(taskIndexes, params, force),
+
+	/**
+	 * 批量设置任务状态
+	 */
+	setSpecificTasksStatus: (
+		taskIndexes: number[],
+		statusValue: number,
+		params?: {
+			collection?: number;
+			favorite?: number;
+			submission?: number;
+			bangumi?: number;
+			watch_later?: number;
+		}
+	) => apiClient.setSpecificTasksStatus(taskIndexes, statusValue, params),
 
 	/**
 	 * 设置认证 token

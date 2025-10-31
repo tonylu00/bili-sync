@@ -98,6 +98,13 @@ export interface ResetAllVideosResponse {
 	resetted_pages_count: number;
 }
 
+export interface SetSpecificTasksStatusResponse {
+	updated: boolean;
+	updated_videos_count: number;
+	updated_pages_count: number;
+	status_value: number;
+}
+
 // 错误类型枚举
 export enum ErrorType {
 	Network = 'Network',

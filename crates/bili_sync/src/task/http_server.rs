@@ -60,6 +60,7 @@ use crate::api::handler::{
     reset_video_source_path,
     resume_scanning_endpoint,
     search_bilibili,
+    set_specific_tasks_status,
     setup_auth_token,
     test_notification_handler,
     test_risk_control_handler,
@@ -160,6 +161,7 @@ pub async fn http_server(_database_connection: Arc<DatabaseConnection>) -> Resul
         .route("/api/videos/{id}/update-status", post(update_video_status))
         .route("/api/videos/reset-all", post(reset_all_videos))
         .route("/api/videos/reset-specific-tasks", post(reset_specific_tasks))
+    .route("/api/videos/set-specific-tasks-status", post(set_specific_tasks_status))
         .route("/api/dashboard", get(get_dashboard_data))
         .route("/api/reload-config", post(reload_config))
         .route("/api/config", get(get_config))

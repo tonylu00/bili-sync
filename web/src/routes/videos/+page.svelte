@@ -10,6 +10,7 @@
 	import RotateCcwIcon from '@lucide/svelte/icons/rotate-ccw';
 	import FilterIcon from '@lucide/svelte/icons/filter';
 	import TrashIcon from '@lucide/svelte/icons/trash-2';
+	import CheckCircleIcon from '@lucide/svelte/icons/check-circle';
 	import { Badge } from '$lib/components/ui/badge/index.js';
 	import { setBreadcrumb } from '$lib/stores/breadcrumb';
 	import { toast } from 'svelte-sonner';
@@ -30,6 +31,14 @@
 	import type { SortBy, SortOrder } from '$lib/types';
 
 	const pageSize = 20;
+	const STATUS_OPTIONS = [
+		{ label: '未开始', value: 0 },
+		{ label: '失败1次', value: 1 },
+		{ label: '失败2次', value: 2 },
+		{ label: '失败3次', value: 3 },
+		{ label: '失败4次', value: 4 },
+		{ label: '已完成', value: 7 }
+	];
 
 	let videosData: VideosResponse | null = null;
 	let videoSources: VideoSourcesResponse | null = null;
@@ -48,6 +57,17 @@
 	let resetTaskInfo = false;
 	let resetTaskDanmaku = false;
 	let resetTaskSubtitle = false;
+
+	// 批量状态设置选项
+	let setStatusDialogOpen = false;
+	let settingStatus = false;
+	let selectedStatusValue = '7';
+	let setStatusAllTasks = true;
+	let setStatusTaskPages = false;
+	let setStatusTaskVideo = false;
+	let setStatusTaskInfo = false;
+	let setStatusTaskDanmaku = false;
+	let setStatusTaskSubtitle = false;
 
 	// 筛选状态
 	let showFilters = false;
@@ -273,6 +293,97 @@
 		} finally {
 			resettingAll = false;
 			resetAllDialogOpen = false;
+		}
+	}
+
+	function handleSetStatusAllTasksChange() {
+		if (setStatusAllTasks) {
+			setStatusTaskPages = false;
+			setStatusTaskVideo = false;
+			setStatusTaskInfo = false;
+			setStatusTaskDanmaku = false;
+			setStatusTaskSubtitle = false;
+		}
+	}
+
+	function handleSetStatusSpecificChange() {
+		if (
+			setStatusTaskPages ||
+			setStatusTaskVideo ||
+			setStatusTaskInfo ||
+			setStatusTaskDanmaku ||
+			setStatusTaskSubtitle
+		) {
+			setStatusAllTasks = false;
+		}
+	}
+
+	async function handleSetTasksStatus() {
+		const statusValue = Number(selectedStatusValue);
+		if (Number.isNaN(statusValue)) {
+			toast.error('请选择有效的目标状态');
+			return;
+		}
+
+		const taskIndexes: number[] = [];
+		if (setStatusAllTasks) {
+			taskIndexes.push(0, 1, 2, 3, 4);
+		} else {
+			if (setStatusTaskPages) taskIndexes.push(0);
+			if (setStatusTaskVideo) taskIndexes.push(1);
+			if (setStatusTaskInfo) taskIndexes.push(2);
+			if (setStatusTaskDanmaku) taskIndexes.push(3);
+			if (setStatusTaskSubtitle) taskIndexes.push(4);
+		}
+
+		const uniqueTaskIndexes = [...new Set(taskIndexes)];
+		if (uniqueTaskIndexes.length === 0) {
+			toast.error('请至少选择一个要设置的任务');
+			return;
+		}
+
+		settingStatus = true;
+		try {
+			const { videoSource } = $appStateStore;
+			const filterParams = videoSource
+				? {
+						[videoSource.type]: parseInt(videoSource.id)
+				  }
+				: undefined;
+			const result = await api.setSpecificTasksStatus(uniqueTaskIndexes, statusValue, filterParams);
+			const data = result.data;
+
+			if (data.updated) {
+				toast.success('状态更新成功', {
+					description: `已更新 ${data.updated_videos_count} 个视频和 ${data.updated_pages_count} 个分页`
+				});
+				const {
+					query,
+					currentPage,
+					videoSource: currentVideoSource,
+					showFailedOnly,
+					sortBy,
+					sortOrder
+				} = $appStateStore;
+				await loadVideos(
+					query,
+					currentPage,
+					currentVideoSource,
+					showFailedOnly,
+					sortBy,
+					sortOrder
+				);
+			} else {
+				toast.info('没有需要更新的任务');
+			}
+		} catch (error) {
+			console.error('批量设置状态失败:', error);
+			toast.error('批量设置状态失败', {
+				description: (error as ApiError).message
+			});
+		} finally {
+			settingStatus = false;
+			setStatusDialogOpen = false;
 		}
 	}
 
@@ -508,6 +619,28 @@
 				<RotateCcwIcon class="mr-2 h-4 w-4 {resettingAll ? 'animate-spin' : ''}" />
 				<span class="xs:inline hidden">批量重置</span>
 				<span class="xs:hidden">重置</span>
+			</Button>
+
+			<!-- 批量设置状态按钮 -->
+			<Button
+				variant="outline"
+				size="sm"
+				class="col-span-2 w-full sm:col-span-1 sm:w-auto"
+				onclick={() => {
+					setStatusDialogOpen = true;
+					setStatusAllTasks = true;
+					setStatusTaskPages = false;
+					setStatusTaskVideo = false;
+					setStatusTaskInfo = false;
+					setStatusTaskDanmaku = false;
+					setStatusTaskSubtitle = false;
+					selectedStatusValue = '7';
+				}}
+				disabled={settingStatus || loading}
+			>
+				<CheckCircleIcon class="mr-2 h-4 w-4" />
+				<span class="xs:inline hidden">批量设置状态</span>
+				<span class="xs:hidden">设置状态</span>
 			</Button>
 
 			<!-- 批量删除模式按钮 -->
@@ -832,6 +965,139 @@
 		</AlertDialog.Footer>
 	</AlertDialog.Content>
 </AlertDialog.Root>
+
+	<!-- 批量设置状态对话框 -->
+	<AlertDialog.Root bind:open={setStatusDialogOpen}>
+		<AlertDialog.Content>
+			<AlertDialog.Header>
+				<AlertDialog.Title>批量设置任务状态</AlertDialog.Title>
+				<AlertDialog.Description>
+					{#if selectedSourceType && selectedSourceId && videoSources}
+						{@const sourceConfig = Object.values(VIDEO_SOURCES).find(
+							(config) => config.type === selectedSourceType
+						)}
+						{@const sources = videoSources[selectedSourceType]}
+						{@const currentSource = sources?.find((s) => s.id.toString() === selectedSourceId)}
+						{#if sourceConfig && currentSource}
+							将把所选任务设置为指定状态，作用范围：视频源「{currentSource.name}」。
+						{:else}
+							将把所选任务设置为指定状态（作用于当前筛选结果）。
+						{/if}
+					{:else}
+						将把所选任务设置为指定状态，作用范围：全部视频。
+					{/if}
+				</AlertDialog.Description>
+			</AlertDialog.Header>
+			<div class="space-y-4 py-4">
+				<!-- 状态值选择 -->
+				<div class="space-y-2">
+					<div class="text-sm font-medium">选择目标状态：</div>
+					<select
+						class="border-input bg-background ring-offset-background focus:ring-ring h-9 w-full rounded-md border px-3 py-1 text-sm focus:ring-2 focus:ring-offset-2 focus:outline-none"
+						bind:value={selectedStatusValue}
+					>
+						{#each STATUS_OPTIONS as option (option.value)}
+							<option value={option.value}>{option.label}</option>
+						{/each}
+					</select>
+					<p class="text-muted-foreground text-xs">
+						状态值会同步应用到所选任务对应的视频状态与分页状态。
+					</p>
+				</div>
+
+				<!-- 任务类型选择 -->
+				<div class="space-y-3">
+					<div class="text-sm font-medium">选择要更新的任务类型：</div>
+
+					<label class="flex items-center gap-2">
+						<input
+							type="checkbox"
+							bind:checked={setStatusAllTasks}
+							onchange={handleSetStatusAllTasksChange}
+							class="rounded border-gray-300"
+						/>
+						<span class="text-sm font-medium">更新所有任务类型</span>
+					</label>
+
+					<div class="ml-4 space-y-2">
+						<div class="text-muted-foreground text-sm">或选择特定任务：</div>
+
+						<label class="flex items-center gap-2">
+							<input
+								type="checkbox"
+								bind:checked={setStatusTaskPages}
+								onchange={handleSetStatusSpecificChange}
+								disabled={setStatusAllTasks}
+								class="rounded border-gray-300"
+							/>
+							<span class="text-sm">更新视频封面</span>
+						</label>
+
+						<label class="flex items-center gap-2">
+							<input
+								type="checkbox"
+								bind:checked={setStatusTaskVideo}
+								onchange={handleSetStatusSpecificChange}
+								disabled={setStatusAllTasks}
+								class="rounded border-gray-300"
+							/>
+							<span class="text-sm">更新视频内容</span>
+						</label>
+
+						<label class="flex items-center gap-2">
+							<input
+								type="checkbox"
+								bind:checked={setStatusTaskInfo}
+								onchange={handleSetStatusSpecificChange}
+								disabled={setStatusAllTasks}
+								class="rounded border-gray-300"
+							/>
+							<span class="text-sm">更新视频信息</span>
+						</label>
+
+						<label class="flex items-center gap-2">
+							<input
+								type="checkbox"
+								bind:checked={setStatusTaskDanmaku}
+								onchange={handleSetStatusSpecificChange}
+								disabled={setStatusAllTasks}
+								class="rounded border-gray-300"
+							/>
+							<span class="text-sm">更新视频弹幕</span>
+						</label>
+
+						<label class="flex items-center gap-2">
+							<input
+								type="checkbox"
+								bind:checked={setStatusTaskSubtitle}
+								onchange={handleSetStatusSpecificChange}
+								disabled={setStatusAllTasks}
+								class="rounded border-gray-300"
+							/>
+							<span class="text-sm">更新视频字幕</span>
+						</label>
+					</div>
+
+					<div class="mt-4 rounded-lg border border-blue-200 bg-blue-50 p-3 dark:border-blue-800 dark:bg-blue-950/20">
+						<div class="text-sm text-blue-800 dark:text-blue-200">
+							<strong>说明：</strong>
+							<ul class="mt-1 list-inside list-disc">
+								<li>状态值 0 表示未开始，7 表示已完成，其余数值代表失败次数</li>
+								<li>所选任务会同步更新对应的视频任务与分P任务</li>
+								<li>更新后系统会自动同步任务状态，无需手动刷新</li>
+							</ul>
+						</div>
+					</div>
+				</div>
+			</div>
+			<AlertDialog.Footer>
+				<AlertDialog.Cancel disabled={settingStatus}>取消</AlertDialog.Cancel>
+				<AlertDialog.Action onclick={handleSetTasksStatus} disabled={settingStatus}>
+					{settingStatus ? '设置中...' : '确认设置'}
+				</AlertDialog.Action>
+			</AlertDialog.Footer>
+		</AlertDialog.Content>
+	</AlertDialog.Root>
 
 <!-- 批量删除确认对话框 -->
 <AlertDialog.Root bind:open={batchDeleteDialogOpen}>

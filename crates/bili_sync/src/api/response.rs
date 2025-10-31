@@ -59,6 +59,14 @@ pub struct ResetAllVideosResponse {
 }
 
 #[derive(Serialize, ToSchema)]
+pub struct SetSpecificTasksStatusResponse {
+    pub updated: bool,
+    pub updated_videos_count: usize,
+    pub updated_pages_count: usize,
+    pub status_value: u32,
+}
+
+#[derive(Serialize, ToSchema)]
 pub struct AddVideoSourceResponse {
     pub success: bool,
     pub source_id: i32,

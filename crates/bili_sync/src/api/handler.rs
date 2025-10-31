@@ -25,17 +25,18 @@ use crate::api::auth::OpenAPIAuth;
 use crate::api::error::InnerApiError;
 use crate::api::request::{
     AddVideoSourceRequest, BatchUpdateConfigRequest, ConfigHistoryRequest, QRGenerateRequest, QRPollRequest,
-    ResetSpecificTasksRequest, ResetVideoSourcePathRequest, SetupAuthTokenRequest, SubmissionVideosRequest,
-    UpdateConfigItemRequest, UpdateConfigRequest, UpdateCredentialRequest, UpdateVideoStatusRequest, VideosRequest,
+    ResetSpecificTasksRequest, ResetVideoSourcePathRequest, SetSpecificTasksStatusRequest, SetupAuthTokenRequest,
+    SubmissionVideosRequest, UpdateConfigItemRequest, UpdateConfigRequest, UpdateCredentialRequest,
+    UpdateVideoStatusRequest, VideosRequest,
 };
 use crate::api::response::{
     AddVideoSourceResponse, BangumiSeasonInfo, BangumiSourceListResponse, BangumiSourceOption, ConfigChangeInfo,
     ConfigHistoryResponse, ConfigItemResponse, ConfigReloadResponse, ConfigResponse, ConfigValidationResponse,
     DashBoardResponse, DeleteVideoResponse, DeleteVideoSourceResponse, HotReloadStatusResponse,
     InitialSetupCheckResponse, MonitoringStatus, PageInfo, QRGenerateResponse, QRPollResponse, QRUserInfo,
-    ResetAllVideosResponse, ResetVideoResponse, ResetVideoSourcePathResponse, SetupAuthTokenResponse,
-    SubmissionVideosResponse, UpdateConfigResponse, UpdateCredentialResponse, UpdateVideoStatusResponse, VideoInfo,
-    VideoResponse, VideoSource, VideoSourcesResponse, VideosResponse,
+    ResetAllVideosResponse, ResetVideoResponse, ResetVideoSourcePathResponse, SetSpecificTasksStatusResponse,
+    SetupAuthTokenResponse, SubmissionVideosResponse, UpdateConfigResponse, UpdateCredentialResponse,
+    UpdateVideoStatusResponse, VideoInfo, VideoResponse, VideoSource, VideoSourcesResponse, VideosResponse,
 };
 use crate::api::wrapper::{ApiError, ApiResponse};
 use crate::utils::status::{PageStatus, VideoStatus};
@@ -153,7 +154,7 @@ mod rename_tests {
 
 #[derive(OpenApi)]
 #[openapi(
-    paths(get_video_sources, get_videos, get_video, reset_video, reset_all_videos, reset_specific_tasks, update_video_status, add_video_source, update_video_source_enabled, update_video_source_scan_deleted, reset_video_source_path, delete_video_source, reload_config, get_config, update_config, get_bangumi_seasons, search_bilibili, get_user_favorites, get_user_collections, get_user_followings, get_subscribed_collections, get_submission_videos, get_logs, get_queue_status, proxy_image, get_config_item, get_config_history, validate_config, get_hot_reload_status, check_initial_setup, setup_auth_token, update_credential, generate_qr_code, poll_qr_status, get_current_user, clear_credential, pause_scanning_endpoint, resume_scanning_endpoint, get_task_control_status, get_video_play_info, proxy_video_stream, validate_favorite, get_user_favorites_by_uid, test_notification_handler, get_notification_config, update_notification_config, get_notification_status, test_risk_control_handler),
+    paths(get_video_sources, get_videos, get_video, reset_video, reset_all_videos, reset_specific_tasks, set_specific_tasks_status, update_video_status, add_video_source, update_video_source_enabled, update_video_source_scan_deleted, reset_video_source_path, delete_video_source, reload_config, get_config, update_config, get_bangumi_seasons, search_bilibili, get_user_favorites, get_user_collections, get_user_followings, get_subscribed_collections, get_submission_videos, get_logs, get_queue_status, proxy_image, get_config_item, get_config_history, validate_config, get_hot_reload_status, check_initial_setup, setup_auth_token, update_credential, generate_qr_code, poll_qr_status, get_current_user, clear_credential, pause_scanning_endpoint, resume_scanning_endpoint, get_task_control_status, get_video_play_info, proxy_video_stream, validate_favorite, get_user_favorites_by_uid, test_notification_handler, get_notification_config, update_notification_config, get_notification_status, test_risk_control_handler),
     modifiers(&OpenAPIAuth),
     security(
         ("Token" = []),
@@ -1353,6 +1354,222 @@ pub async fn reset_specific_tasks(
         resetted,
         resetted_videos_count: resetted_videos_info.len(),
         resetted_pages_count: resetted_pages_info.len(),
+    }))
+}
+
+/// 批量设置特定任务的状态值
+#[utoipa::path(
+    post,
+    path = "/api/videos/set-specific-tasks-status",
+    request_body = SetSpecificTasksStatusRequest,
+    responses((status = 200, body = ApiResponse<SetSpecificTasksStatusResponse>),)
+)]
+pub async fn set_specific_tasks_status(
+    Extension(db): Extension<Arc<DatabaseConnection>>,
+    axum::Json(request): axum::Json<SetSpecificTasksStatusRequest>,
+) -> Result<ApiResponse<SetSpecificTasksStatusResponse>, ApiError> {
+    use std::collections::HashSet;
+
+    if request.task_indexes.is_empty() {
+        return Err(InnerApiError::BadRequest("至少需要选择一个任务".to_string()).into());
+    }
+
+    for &index in &request.task_indexes {
+        if index > 4 {
+            return Err(InnerApiError::BadRequest(format!("无效的任务索引: {}", index)).into());
+        }
+    }
+
+    if request.status_value >= 0b1000 {
+        return Err(InnerApiError::BadRequest(format!("无效的状态值: {}，应小于 8", request.status_value)).into());
+    }
+
+    let SetSpecificTasksStatusRequest {
+        task_indexes,
+        status_value,
+        collection,
+        favorite,
+        submission,
+        watch_later,
+        bangumi,
+    } = request;
+
+    let mut video_query = video::Entity::find();
+
+    let scan_deleted = crate::config::with_config(|bundle| bundle.config.scan_deleted_videos);
+    if !scan_deleted {
+        video_query = video_query.filter(video::Column::Deleted.eq(0));
+    }
+
+    if let Some(id) = bangumi {
+        video_query = video_query.filter(video::Column::SourceId.eq(id).and(video::Column::SourceType.eq(1)));
+    } else {
+        for (field, column) in [
+            (collection, video::Column::CollectionId),
+            (favorite, video::Column::FavoriteId),
+            (submission, video::Column::SubmissionId),
+            (watch_later, video::Column::WatchLaterId),
+        ] {
+            if let Some(id) = field {
+                video_query = video_query.filter(column.eq(id));
+            }
+        }
+    }
+
+    let (all_videos, all_pages) = tokio::try_join!(
+        video_query
+            .select_only()
+            .columns([
+                video::Column::Id,
+                video::Column::Name,
+                video::Column::UpperName,
+                video::Column::Path,
+                video::Column::Category,
+                video::Column::DownloadStatus,
+                video::Column::Cover,
+            ])
+            .into_tuple::<(i32, String, String, String, i32, u32, String)>()
+            .all(db.as_ref()),
+        page::Entity::find()
+            .inner_join(video::Entity)
+            .filter({
+                let mut page_query_filter = Condition::all();
+
+                if !scan_deleted {
+                    page_query_filter = page_query_filter.add(video::Column::Deleted.eq(0));
+                }
+
+                if let Some(id) = bangumi {
+                    page_query_filter =
+                        page_query_filter.add(video::Column::SourceId.eq(id).and(video::Column::SourceType.eq(1)));
+                } else {
+                    for (field, column) in [
+                        (collection, video::Column::CollectionId),
+                        (favorite, video::Column::FavoriteId),
+                        (submission, video::Column::SubmissionId),
+                        (watch_later, video::Column::WatchLaterId),
+                    ] {
+                        if let Some(id) = field {
+                            page_query_filter = page_query_filter.add(column.eq(id));
+                        }
+                    }
+                }
+
+                page_query_filter
+            })
+            .select_only()
+            .columns([
+                page::Column::Id,
+                page::Column::Pid,
+                page::Column::Name,
+                page::Column::DownloadStatus,
+                page::Column::VideoId,
+            ])
+            .into_tuple::<(i32, i32, String, u32, i32)>()
+            .all(db.as_ref())
+    )?;
+
+    let updated_pages_info_with_video = all_pages
+        .into_iter()
+        .filter_map(|(id, pid, name, download_status, video_id)| {
+            let mut page_status = PageStatus::from(download_status);
+            let mut page_updated = false;
+
+            for &task_index in &task_indexes {
+                if task_index < 5 && page_status.get(task_index) != status_value {
+                    page_status.set(task_index, status_value);
+                    page_updated = true;
+                }
+            }
+
+            if page_updated {
+                let page_info = PageInfo::from((id, pid, name, page_status.into()));
+                Some((page_info, video_id))
+            } else {
+                None
+            }
+        })
+        .collect::<Vec<_>>();
+
+    let video_ids_with_updated_pages: HashSet<i32> = updated_pages_info_with_video
+        .iter()
+        .map(|(_, video_id)| *video_id)
+        .collect();
+
+    let updated_pages_info: Vec<PageInfo> = updated_pages_info_with_video
+        .into_iter()
+        .map(|(page_info, _)| page_info)
+        .collect();
+
+    let all_videos_info: Vec<VideoInfo> = all_videos.into_iter().map(VideoInfo::from).collect();
+
+    let mut updated_videos_info = Vec::new();
+
+    for mut video_info in all_videos_info {
+        let mut video_status = VideoStatus::from(video_info.download_status);
+        let mut video_updated = false;
+
+        for &task_index in &task_indexes {
+            if task_index < 5 && video_status.get(task_index) != status_value {
+                video_status.set(task_index, status_value);
+                video_updated = true;
+            }
+        }
+
+        if video_ids_with_updated_pages.contains(&video_info.id) && video_status.get(4) != status_value {
+            // 与已有行为保持一致：当分页状态被修改时，同步更新分P下载任务
+            video_status.set(4, status_value);
+            video_updated = true;
+        }
+
+        if video_updated {
+            video_info.download_status = video_status.into();
+            updated_videos_info.push(video_info);
+        }
+    }
+
+    let updated = !(updated_videos_info.is_empty() && updated_pages_info.is_empty());
+
+    if updated {
+        let txn = db.begin().await?;
+
+        if !updated_videos_info.is_empty() {
+            for video in &updated_videos_info {
+                video::Entity::update(video::ActiveModel {
+                    id: sea_orm::ActiveValue::Unchanged(video.id),
+                    download_status: sea_orm::Set(VideoStatus::from(video.download_status).into()),
+                    auto_download: sea_orm::Set(true),
+                    ..Default::default()
+                })
+                .exec(&txn)
+                .await?;
+            }
+        }
+
+        if !updated_pages_info.is_empty() {
+            for page in &updated_pages_info {
+                page::Entity::update(page::ActiveModel {
+                    id: sea_orm::ActiveValue::Unchanged(page.id),
+                    download_status: sea_orm::Set(PageStatus::from(page.download_status).into()),
+                    ..Default::default()
+                })
+                .exec(&txn)
+                .await?;
+            }
+        }
+
+        txn.commit().await?;
+    }
+
+    if updated {
+        crate::task::resume_scanning();
+    }
+
+    Ok(ApiResponse::ok(SetSpecificTasksStatusResponse {
+        updated,
+        updated_videos_count: updated_videos_info.len(),
+        updated_pages_count: updated_pages_info.len(),
+        status_value,
     }))
 }
 
