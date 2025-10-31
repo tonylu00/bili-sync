@@ -10907,12 +10907,20 @@ pub async fn update_notification_config(
     }
 
     if let Some(ref device_key) = request.bark_device_key {
-        if device_key.trim().is_empty() {
-            notification_config.bark_device_key = None;
+        let trimmed = device_key.trim();
+        if trimmed.is_empty() {
+            debug!("忽略空的 Bark Device Key 更新，请保留现有配置");
+        } else if notification_config
+            .bark_device_key
+            .as_deref()
+            .map(|existing| existing == trimmed)
+            .unwrap_or(false)
+        {
+            debug!("Bark Device Key 未发生变化，跳过更新");
         } else {
-            notification_config.bark_device_key = Some(device_key.trim().to_string());
+            notification_config.bark_device_key = Some(trimmed.to_string());
+            updated = true;
         }
-        updated = true;
     }
 
     if let Some(ref device_keys) = request.bark_device_keys {
