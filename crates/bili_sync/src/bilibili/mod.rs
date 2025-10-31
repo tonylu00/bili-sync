@@ -96,6 +96,7 @@ pub enum VideoInfo {
         ctime: DateTime<Utc>,
         #[serde(rename = "pubdate", with = "ts_seconds")]
         pubtime: DateTime<Utc>,
+        #[serde(default)]
         pages: Vec<PageInfo>,
         state: i32,
         show_title: Option<String>,
