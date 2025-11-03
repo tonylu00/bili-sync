@@ -90,12 +90,23 @@ impl Client {
             header::REFERER,
             header::HeaderValue::from_static("https://www.bilibili.com"),
         );
+        // Tighten connection pooling so we recover quickly after transient network failures.
+        let client_builder = reqwest::Client::builder()
+            .default_headers(headers)
+            .gzip(true)
+            .connect_timeout(Duration::from_secs(10))
+            .read_timeout(Duration::from_secs(10))
+            .pool_idle_timeout(Some(Duration::from_secs(30)))
+            .pool_max_idle_per_host(16)
+            .tcp_keepalive(Some(Duration::from_secs(60)))
+            .tcp_keepalive_interval(Some(Duration::from_secs(30)))
+            .http2_adaptive_window(true)
+            .http2_keep_alive_interval(Some(Duration::from_secs(30)))
+            .http2_keep_alive_timeout(Duration::from_secs(10))
+            .http2_keep_alive_while_idle(true);
+
         Self(
-            reqwest::Client::builder()
-                .default_headers(headers)
-                .gzip(true)
-                .connect_timeout(std::time::Duration::from_secs(10))
-                .read_timeout(std::time::Duration::from_secs(10))
+            client_builder
                 .build()
                 .expect("failed to build reqwest client"),
         )
