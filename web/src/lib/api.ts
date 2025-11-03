@@ -690,6 +690,11 @@ export const api = {
 	getVideos: (params?: VideosRequest) => apiClient.getVideos(params),
 
 	/**
+	 * 获取已删除的视频列表
+	 */
+	getDeletedVideos: (params?: VideosRequest) => apiClient.getDeletedVideos(params),
+
+	/**
 	 * 获取单个视频详情
 	 */
 	getVideo: (id: number) => apiClient.getVideo(id),
@@ -717,6 +722,11 @@ export const api = {
 	 * 删除视频（软删除）
 	 */
 	deleteVideo: (id: number) => apiClient.deleteVideo(id),
+
+	/**
+	 * 恢复已删除的视频
+	 */
+	restoreVideo: (id: number) => apiClient.restoreVideo(id),
 
 	/**
 	 * 选择性重置特定任务
