@@ -252,26 +252,26 @@
       {/if}
       <div class="flex flex-wrap gap-2">
         {#if selectionMode}
-          <Button size="sm" variant="outline" on:click={selectAllCurrentPage} disabled={!recycleData || recycleData.videos.length === 0}>
+          <Button size="sm" variant="outline" onclick={selectAllCurrentPage} disabled={!recycleData || recycleData.videos.length === 0}>
             <CheckIcon class="mr-1 h-4 w-4" />
             全选当前页
           </Button>
-          <Button size="sm" variant="outline" on:click={clearSelection} disabled={selectedCount === 0}>
+          <Button size="sm" variant="outline" onclick={clearSelection} disabled={selectedCount === 0}>
             <XIcon class="mr-1 h-4 w-4" />
             清除选择
           </Button>
-          <Button size="sm" on:click={openBatchRestoreDialog} disabled={selectedCount === 0}>
+          <Button size="sm" onclick={openBatchRestoreDialog} disabled={selectedCount === 0}>
             <Undo2Icon class="mr-1 h-4 w-4" />
             批量恢复 ({selectedCount})
           </Button>
-          <Button size="sm" variant="ghost" on:click={toggleSelectionMode}>
+          <Button size="sm" variant="ghost" onclick={toggleSelectionMode}>
             退出批量
           </Button>
         {:else}
           <Button
             size="sm"
             variant="outline"
-            on:click={toggleSelectionMode}
+            onclick={toggleSelectionMode}
             disabled={!recycleData || recycleData.videos.length === 0}
           >
             批量勾选
@@ -299,7 +299,7 @@
             onSelectionChange={(id, isSelected) => handleSelectionChange(id, isSelected)}
           />
           <div class="flex justify-end">
-            <Button size="sm" variant="outline" on:click={() => openRestoreDialog(video)}>
+            <Button size="sm" variant="outline" onclick={() => openRestoreDialog(video)}>
               <Undo2Icon class="mr-1 h-4 w-4" />
               恢复视频
             </Button>
@@ -345,7 +345,7 @@
     </AlertDialog.Header>
     <AlertDialog.Footer>
       <AlertDialog.Cancel>取消</AlertDialog.Cancel>
-      <Button on:click={handleRestore} disabled={restoring}>
+      <Button onclick={handleRestore} disabled={restoring}>
         {restoring ? '恢复中…' : restoreMode === 'single' ? '恢复' : '批量恢复'}
       </Button>
     </AlertDialog.Footer>
