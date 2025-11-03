@@ -37,6 +37,7 @@ use crate::api::response::{
     ResetAllVideosResponse, ResetVideoResponse, ResetVideoSourcePathResponse, SetSpecificTasksStatusResponse,
     SetupAuthTokenResponse, SubmissionVideosResponse, UpdateConfigResponse, UpdateCredentialResponse,
     UpdateVideoStatusResponse, VideoInfo, VideoResponse, VideoSource, VideoSourcesResponse, VideosResponse,
+    RestoreVideoResponse,
 };
 use crate::api::wrapper::{ApiError, ApiResponse};
 use crate::utils::status::{PageStatus, VideoStatus};
@@ -154,7 +155,7 @@ mod rename_tests {
 
 #[derive(OpenApi)]
 #[openapi(
-    paths(get_video_sources, get_videos, get_video, reset_video, reset_all_videos, reset_specific_tasks, set_specific_tasks_status, update_video_status, add_video_source, update_video_source_enabled, update_video_source_scan_deleted, reset_video_source_path, delete_video_source, reload_config, get_config, update_config, get_bangumi_seasons, search_bilibili, get_user_favorites, get_user_collections, get_user_followings, get_subscribed_collections, get_submission_videos, get_logs, get_queue_status, proxy_image, get_config_item, get_config_history, validate_config, get_hot_reload_status, check_initial_setup, setup_auth_token, update_credential, generate_qr_code, poll_qr_status, get_current_user, clear_credential, pause_scanning_endpoint, resume_scanning_endpoint, get_task_control_status, get_video_play_info, proxy_video_stream, validate_favorite, get_user_favorites_by_uid, test_notification_handler, get_notification_config, update_notification_config, get_notification_status, test_risk_control_handler),
+    paths(get_video_sources, get_videos, get_deleted_videos, get_video, reset_video, restore_video, reset_all_videos, reset_specific_tasks, set_specific_tasks_status, update_video_status, add_video_source, update_video_source_enabled, update_video_source_scan_deleted, reset_video_source_path, delete_video_source, reload_config, get_config, update_config, get_bangumi_seasons, search_bilibili, get_user_favorites, get_user_collections, get_user_followings, get_subscribed_collections, get_submission_videos, get_logs, get_queue_status, proxy_image, get_config_item, get_config_history, validate_config, get_hot_reload_status, check_initial_setup, setup_auth_token, update_credential, generate_qr_code, poll_qr_status, get_current_user, clear_credential, pause_scanning_endpoint, resume_scanning_endpoint, get_task_control_status, get_video_play_info, proxy_video_stream, validate_favorite, get_user_favorites_by_uid, test_notification_handler, get_notification_config, update_notification_config, get_notification_status, test_risk_control_handler),
     modifiers(&OpenAPIAuth),
     security(
         ("Token" = []),
@@ -675,6 +676,185 @@ pub async fn get_videos(
                             if let Some(title) = fetch_and_cache_season_title(season_id_str).await {
                                 videos[i].bangumi_title = Some(title);
                             }
+                        }
+                    }
+                }
+            }
+
+            videos
+        },
+        total_count,
+    }))
+}
+
+/// 列出已标记删除的视频，用于回收站页面
+#[utoipa::path(
+    get,
+    path = "/api/videos/deleted",
+    params(
+        VideosRequest,
+    ),
+    responses(
+        (status = 200, body = ApiResponse<VideosResponse>),
+    )
+)]
+pub async fn get_deleted_videos(
+    Extension(db): Extension<Arc<DatabaseConnection>>,
+    Query(params): Query<VideosRequest>,
+) -> Result<ApiResponse<VideosResponse>, ApiError> {
+    let mut query = video::Entity::find().filter(video::Column::Deleted.eq(1));
+
+    if let Some(id) = params.bangumi {
+        query = query.filter(video::Column::SourceId.eq(id).and(video::Column::SourceType.eq(1)));
+    } else {
+        for (field, column) in [
+            (params.collection, video::Column::CollectionId),
+            (params.favorite, video::Column::FavoriteId),
+            (params.submission, video::Column::SubmissionId),
+            (params.watch_later, video::Column::WatchLaterId),
+        ] {
+            if let Some(id) = field {
+                query = query.filter(column.eq(id));
+            }
+        }
+    }
+
+    if let Some(query_word) = params.query {
+        query = query.filter(
+            video::Column::Name
+                .contains(&query_word)
+                .or(video::Column::Path.contains(&query_word)),
+        );
+    }
+
+    if params.show_failed_only.unwrap_or(false) {
+        use sea_orm::sea_query::Expr;
+
+        let mut conditions = Vec::new();
+        for offset in 0..5 {
+            let shift = offset * 3;
+            conditions.push(Expr::cust(format!(
+                "((download_status >> {}) & 7) BETWEEN 1 AND 6",
+                shift
+            )));
+        }
+
+        let mut final_condition = conditions[0].clone();
+        for condition in conditions.into_iter().skip(1) {
+            final_condition = final_condition.or(condition);
+        }
+
+        query = query.filter(final_condition);
+    }
+
+    let total_count = query.clone().count(db.as_ref()).await?;
+    let (page, page_size) = if let (Some(page), Some(page_size)) = (params.page, params.page_size) {
+        (page, page_size)
+    } else {
+        (1, 10)
+    };
+
+    let sort_by = params.sort_by.as_deref().unwrap_or("id");
+    let sort_order = params.sort_order.as_deref().unwrap_or("desc");
+
+    query = match sort_by {
+        "name" => {
+            if sort_order == "asc" {
+                query.order_by_asc(video::Column::Name)
+            } else {
+                query.order_by_desc(video::Column::Name)
+            }
+        }
+        "upper_name" => {
+            if sort_order == "asc" {
+                query.order_by_asc(video::Column::UpperName)
+            } else {
+                query.order_by_desc(video::Column::UpperName)
+            }
+        }
+        "created_at" | "updated_at" => {
+            if sort_order == "asc" {
+                query.order_by_asc(video::Column::CreatedAt)
+            } else {
+                query.order_by_desc(video::Column::CreatedAt)
+            }
+        }
+        _ => {
+            if sort_order == "asc" {
+                query.order_by_asc(video::Column::Id)
+            } else {
+                query.order_by_desc(video::Column::Id)
+            }
+        }
+    };
+
+    Ok(ApiResponse::ok(VideosResponse {
+        videos: {
+            type RawVideoTuple = (
+                i32,
+                String,
+                String,
+                String,
+                i32,
+                u32,
+                String,
+                Option<String>,
+                Option<i32>,
+            );
+            let raw_videos: Vec<RawVideoTuple> = query
+                .select_only()
+                .columns([
+                    video::Column::Id,
+                    video::Column::Name,
+                    video::Column::UpperName,
+                    video::Column::Path,
+                    video::Column::Category,
+                    video::Column::DownloadStatus,
+                    video::Column::Cover,
+                    video::Column::SeasonId,
+                    video::Column::SourceType,
+                ])
+                .into_tuple::<(
+                    i32,
+                    String,
+                    String,
+                    String,
+                    i32,
+                    u32,
+                    String,
+                    Option<String>,
+                    Option<i32>,
+                )>()
+                .paginate(db.as_ref(), page_size)
+                .fetch_page(page)
+                .await?;
+
+            let mut videos: Vec<VideoInfo> = raw_videos
+                .iter()
+                .map(
+                    |(id, name, upper_name, path, category, download_status, cover, _season_id, _source_type)| {
+                        VideoInfo::from((
+                            *id,
+                            name.clone(),
+                            upper_name.clone(),
+                            path.clone(),
+                            *category,
+                            *download_status,
+                            cover.clone(),
+                        ))
+                    },
+                )
+                .collect();
+
+            for (i, (_id, _name, _upper_name, _path, _category, _download_status, _cover, season_id, source_type)) in
+                raw_videos.iter().enumerate()
+            {
+                if *source_type == Some(1) && season_id.is_some() {
+                    if let Some(ref season_id_str) = season_id {
+                        if let Some(title) = get_cached_season_title(season_id_str).await {
+                            videos[i].bangumi_title = Some(title);
+                        } else if let Some(title) = fetch_and_cache_season_title(season_id_str).await {
+                            videos[i].bangumi_title = Some(title);
                         }
                     }
                 }
@@ -2783,6 +2963,27 @@ pub async fn delete_video(
     }
 }
 
+/// 恢复已删除的视频
+#[utoipa::path(
+    post,
+    path = "/api/videos/{id}/restore",
+    params(
+        ("id" = i32, description = "视频ID"),
+    ),
+    responses(
+        (status = 200, body = ApiResponse<RestoreVideoResponse>),
+    )
+)]
+pub async fn restore_video(
+    Extension(db): Extension<Arc<DatabaseConnection>>,
+    Path(id): Path<i32>,
+) -> Result<ApiResponse<RestoreVideoResponse>, ApiError> {
+    match restore_video_internal(db, id).await {
+        Ok(response) => Ok(ApiResponse::ok(response)),
+        Err(e) => Err(e),
+    }
+}
+
 /// 内部删除视频函数（用于队列处理和直接调用）
 pub async fn delete_video_internal(db: Arc<DatabaseConnection>, video_id: i32) -> Result<(), ApiError> {
     use bili_sync_entity::video;
@@ -2843,6 +3044,59 @@ pub async fn delete_video_internal(db: Arc<DatabaseConnection>, video_id: i32) -
     info!("视频已成功删除: ID={}, 名称={}", video_id, video.name);
 
     Ok(())
+}
+
+/// 内部恢复视频函数，重置下载状态并清理旧的分页记录
+pub async fn restore_video_internal(
+    db: Arc<DatabaseConnection>,
+    video_id: i32,
+) -> Result<RestoreVideoResponse, ApiError> {
+    use bili_sync_entity::{page, video};
+    use sea_orm::*;
+
+    let txn = db.begin().await?;
+
+    let video_model = video::Entity::find_by_id(video_id).one(&txn).await?;
+
+    let video_model = match video_model {
+        Some(v) => v,
+        None => return Err(crate::api::error::InnerApiError::NotFound(video_id).into()),
+    };
+
+    if video_model.deleted == 0 {
+        return Err(crate::api::error::InnerApiError::BadRequest("视频未被标记为删除".to_string()).into());
+    }
+
+    page::Entity::delete_many()
+        .filter(page::Column::VideoId.eq(video_id))
+        .exec(&txn)
+        .await?;
+
+    let update_model = video::ActiveModel {
+        id: Unchanged(video_id),
+        deleted: Set(0),
+        download_status: Set(0),
+        path: Set(String::new()),
+        single_page: Set(None),
+        valid: Set(true),
+        auto_download: Set(true),
+        ..Default::default()
+    };
+
+    update_model.update(&txn).await?;
+
+    txn.commit().await?;
+
+    info!(
+        "视频已恢复: ID={}, 名称={}, 已重置下载状态并清空历史分页",
+        video_id, video_model.name
+    );
+
+    Ok(RestoreVideoResponse {
+        success: true,
+        video_id,
+        message: "视频已恢复，将在下次扫描时重新下载".to_string(),
+    })
 }
 
 /// 根据page表精确删除视频文件

@@ -194,6 +194,12 @@ export interface DeleteVideoResponse {
 	message: string;
 }
 
+export interface RestoreVideoResponse {
+	success: boolean;
+	video_id: number;
+	message: string;
+}
+
 // 配置响应类型
 export interface ConfigResponse {
 	video_name: string;

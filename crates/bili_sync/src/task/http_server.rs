@@ -44,6 +44,7 @@ use crate::api::handler::{
     get_user_favorites_by_uid,
     get_user_followings,
     get_video,
+    get_deleted_videos,
     get_video_bvid,
     get_video_play_info,
     get_video_sources,
@@ -57,6 +58,7 @@ use crate::api::handler::{
     reset_all_videos,
     reset_specific_tasks,
     reset_video,
+    restore_video,
     reset_video_source_path,
     resume_scanning_endpoint,
     search_bilibili,
@@ -155,9 +157,11 @@ pub async fn http_server(_database_connection: Arc<DatabaseConnection>) -> Resul
         )
         .route("/api/video-sources/{source_type}/{id}", delete(delete_video_source))
         .route("/api/videos", get(get_videos))
+        .route("/api/videos/deleted", get(get_deleted_videos))
         .route("/api/videos/{id}", get(get_video))
         .route("/api/videos/{id}", delete(delete_video))
         .route("/api/videos/{id}/reset", post(reset_video))
+        .route("/api/videos/{id}/restore", post(restore_video))
         .route("/api/videos/{id}/update-status", post(update_video_status))
         .route("/api/videos/reset-all", post(reset_all_videos))
         .route("/api/videos/reset-specific-tasks", post(reset_specific_tasks))

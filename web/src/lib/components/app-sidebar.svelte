@@ -6,7 +6,8 @@
 		Video,
 		Database,
 		Settings,
-		ScrollText
+		ScrollText,
+		Recycle
 	} from '@lucide/svelte';
 	import * as Sidebar from '$lib/components/ui/sidebar/index.js';
 	import { useSidebar } from '$lib/components/ui/sidebar/context.svelte.js';
@@ -113,6 +114,19 @@
 								<div class="flex flex-1 items-center gap-3">
 									<Video class="text-muted-foreground h-4 w-4" />
 									<span class="text-sm">视频</span>
+								</div>
+							</button>
+						</Sidebar.MenuButton>
+					</Sidebar.MenuItem>
+					<Sidebar.MenuItem>
+						<Sidebar.MenuButton>
+							<button
+								class="hover:bg-accent/50 text-foreground flex w-full cursor-pointer items-center rounded-lg px-3 py-2.5 font-medium transition-all duration-200"
+								on:click={() => handleNavClick('/recycle')}
+							>
+								<div class="flex flex-1 items-center gap-3">
+									<Recycle class="text-muted-foreground h-4 w-4" />
+									<span class="text-sm">视频回收站</span>
 								</div>
 							</button>
 						</Sidebar.MenuButton>

@@ -110,6 +110,13 @@ pub struct DeleteVideoResponse {
 }
 
 #[derive(Serialize, ToSchema)]
+pub struct RestoreVideoResponse {
+    pub success: bool,
+    pub video_id: i32,
+    pub message: String,
+}
+
+#[derive(Serialize, ToSchema)]
 pub struct UpdateVideoSourceEnabledResponse {
     pub success: bool,
     pub source_id: i32,

@@ -42,7 +42,8 @@ import type {
 	VideoBvidResponse,
 	NotificationConfigResponse,
 	UpdateNotificationConfigRequest,
-	SetSpecificTasksStatusResponse
+	SetSpecificTasksStatusResponse,
+	RestoreVideoResponse
 } from './types';
 import { ErrorType } from './types';
 import { wsManager } from './ws';
@@ -192,6 +193,14 @@ class ApiClient {
 	}
 
 	/**
+	 * 获取已删除视频列表
+	 * @param params 查询参数
+	 */
+	async getDeletedVideos(params?: VideosRequest): Promise<ApiResponse<VideosResponse>> {
+		return this.get<VideosResponse>('/videos/deleted', params);
+	}
+
+	/**
 	 * 获取单个视频详情
 	 * @param id 视频 ID
 	 */
@@ -246,6 +255,14 @@ class ApiClient {
 	 */
 	async deleteVideo(id: number): Promise<ApiResponse<DeleteVideoResponse>> {
 		return this.delete<DeleteVideoResponse>(`/videos/${id}`);
+	}
+
+	/**
+	 * 恢复已删除的视频
+	 * @param id 视频 ID
+	 */
+	async restoreVideo(id: number): Promise<ApiResponse<RestoreVideoResponse>> {
+		return this.post<RestoreVideoResponse>(`/videos/${id}/restore`);
 	}
 
 	/**
