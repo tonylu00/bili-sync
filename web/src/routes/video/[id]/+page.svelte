@@ -167,16 +167,15 @@
 	// 打开B站页面
 	async function openBilibiliPage() {
 		try {
-			const videoId = getPlayVideoId();
-			const result = await api.getVideoPlayInfo(videoId);
-			const bilibiliUrl = result.data.bilibili_url;
+			const targetVideoId = videoData?.video.id ?? getPlayVideoId();
+			const result = await api.getVideoBvid(targetVideoId);
+			const { bilibili_url: bilibiliUrl, bvid } = result.data;
 
 			if (bilibiliUrl) {
 				console.log('获取到B站链接:', bilibiliUrl);
 				window.open(bilibiliUrl, '_blank');
-			} else if (result.data.video_bvid) {
-				// 如果没有bilibili_url但有bvid，手动构建链接
-				const manualUrl = `https://www.bilibili.com/video/${result.data.video_bvid}`;
+			} else if (bvid) {
+				const manualUrl = `https://www.bilibili.com/video/${bvid}`;
 				console.log('手动构建B站链接:', manualUrl);
 				window.open(manualUrl, '_blank');
 			} else {

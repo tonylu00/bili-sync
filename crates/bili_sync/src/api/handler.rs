@@ -34,10 +34,10 @@ use crate::api::response::{
     ConfigHistoryResponse, ConfigItemResponse, ConfigReloadResponse, ConfigResponse, ConfigValidationResponse,
     DashBoardResponse, DeleteVideoResponse, DeleteVideoSourceResponse, HotReloadStatusResponse,
     InitialSetupCheckResponse, MonitoringStatus, PageInfo, QRGenerateResponse, QRPollResponse, QRUserInfo,
-    ResetAllVideosResponse, ResetVideoResponse, ResetVideoSourcePathResponse, SetSpecificTasksStatusResponse,
-    SetupAuthTokenResponse, SubmissionVideosResponse, UpdateConfigResponse, UpdateCredentialResponse,
-    UpdateVideoStatusResponse, VideoInfo, VideoResponse, VideoSource, VideoSourcesResponse, VideosResponse,
-    RestoreVideoResponse,
+    ResetAllVideosResponse, ResetVideoResponse, ResetVideoSourcePathResponse, RestoreVideoResponse,
+    SetSpecificTasksStatusResponse, SetupAuthTokenResponse, SubmissionVideosResponse, UpdateConfigResponse,
+    UpdateCredentialResponse, UpdateVideoStatusResponse, VideoInfo, VideoResponse, VideoSource, VideoSourcesResponse,
+    VideosResponse,
 };
 use crate::api::wrapper::{ApiError, ApiResponse};
 use crate::utils::status::{PageStatus, VideoStatus};
@@ -9207,23 +9207,117 @@ struct VideoPlayInfo {
     ep_id: Option<String>,
 }
 
+async fn resolve_video_from_page(page_record: &page::Model, db: &DatabaseConnection) -> Result<video::Model> {
+    use sea_orm::{ColumnTrait, EntityTrait, QueryFilter, QueryOrder};
+
+    if let Some(video_record) = video::Entity::find_by_id(page_record.video_id)
+        .one(db)
+        .await
+        .context("查询页面关联的视频记录失败")?
+    {
+        return Ok(video_record);
+    }
+
+    warn!(
+        "page(id={}) 引用的 video_id={} 不存在，开始尝试使用备用策略恢复",
+        page_record.id, page_record.video_id
+    );
+
+    if page_record.video_id < 0 {
+        if let Some(video_record) = video::Entity::find_by_id(-page_record.video_id)
+            .one(db)
+            .await
+            .context("通过负值video_id查询视频记录失败")?
+        {
+            info!(
+                "通过负值 video_id 成功恢复 page(id={}) 的视频关联 -> video_id={}",
+                page_record.id, video_record.id
+            );
+            return Ok(video_record);
+        }
+    }
+
+    if let Some(video_record) = video::Entity::find()
+        .filter(video::Column::Cid.eq(page_record.cid))
+        .order_by_desc(video::Column::Id)
+        .one(db)
+        .await
+        .context("通过CID查询视频记录失败")?
+    {
+        info!(
+            "通过 CID 匹配成功恢复 page(id={}) 的视频关联 -> video_id={}",
+            page_record.id, video_record.id
+        );
+        return Ok(video_record);
+    }
+
+    if let Some((_, Some(video_record))) = page::Entity::find()
+        .filter(page::Column::Cid.eq(page_record.cid))
+        .filter(page::Column::VideoId.gt(0))
+        .order_by_desc(page::Column::Id)
+        .find_also_related(video::Entity)
+        .one(db)
+        .await
+        .context("通过同CID页面关联视频失败")?
+    {
+        info!(
+            "通过同CID的其他page成功恢复 page(id={}) 的视频关联 -> video_id={}",
+            page_record.id, video_record.id
+        );
+        return Ok(video_record);
+    }
+
+    Err(anyhow!(
+        "分页记录存在但无法找到关联的视频 (page_id={}, video_id={})",
+        page_record.id,
+        page_record.video_id
+    ))
+}
+
 async fn find_video_info(video_id: &str, db: &DatabaseConnection) -> Result<VideoPlayInfo> {
     use crate::bilibili::bvid_to_aid;
-    use sea_orm::{ColumnTrait, EntityTrait, QueryFilter};
+    use sea_orm::{ColumnTrait, EntityTrait, QueryFilter, QueryOrder, QuerySelect};
 
-    // 首先尝试作为分页ID查找
-    if let Ok(page_id) = video_id.parse::<i32>() {
+    let numeric_id = video_id.parse::<i32>().ok();
+    let mut video_by_numeric: Option<video::Model> = None;
+
+    if let Some(id) = numeric_id {
+        video_by_numeric = video::Entity::find_by_id(id)
+            .one(db)
+            .await
+            .context("查询视频记录失败")?;
+    }
+
+    if let Some(page_id) = numeric_id {
         if let Some(page_record) = page::Entity::find_by_id(page_id)
             .one(db)
             .await
             .context("查询分页记录失败")?
         {
-            // 通过分页查找对应的视频
-            if let Some(video_record) = video::Entity::find_by_id(page_record.video_id)
-                .one(db)
-                .await
-                .context("查询视频记录失败")?
-            {
+            let video_record = resolve_video_from_page(&page_record, db).await?;
+            let mut should_use_page = true;
+
+            if let Some(ref video_by_id) = video_by_numeric {
+                if video_record.id != video_by_id.id {
+                    let has_pages_for_video = page::Entity::find()
+                        .filter(page::Column::VideoId.eq(video_by_id.id))
+                        .limit(1)
+                        .one(db)
+                        .await
+                        .context("查询视频分页失败")?;
+                    if has_pages_for_video.is_none() {
+                        should_use_page = false;
+                        debug!(
+                            "检测到page与video ID不一致且视频无分页，优先使用视频ID: page_id={}, page_video_id={}, video_id={}",
+                            page_record.id,
+                            page_record.video_id,
+                            video_by_id.id
+                        );
+                    }
+                }
+            }
+
+            if should_use_page {
                 return Ok(VideoPlayInfo {
                     bvid: video_record.bvid.clone(),
                     aid: bvid_to_aid(&video_record.bvid).to_string(),
@@ -9236,14 +9330,9 @@ async fn find_video_info(video_id: &str, db: &DatabaseConnection) -> Result<Vide
         }
     }
 
-    // 尝试解析为视频ID
-    let video_model = if let Ok(id) = video_id.parse::<i32>() {
-        video::Entity::find_by_id(id)
-            .one(db)
-            .await
-            .context("查询视频记录失败")?
+    let video_model = if let Some(video_record) = video_by_numeric {
+        Some(video_record)
     } else {
-        // 按BVID查找
         video::Entity::find()
             .filter(video::Column::Bvid.eq(video_id))
             .one(db)
@@ -9253,19 +9342,29 @@ async fn find_video_info(video_id: &str, db: &DatabaseConnection) -> Result<Vide
 
     let video = video_model.ok_or_else(|| anyhow::anyhow!("视频记录不存在: {}", video_id))?;
 
-    // 获取第一个分页的cid
+    let default_title = video.name.clone();
+
     let first_page = page::Entity::find()
         .filter(page::Column::VideoId.eq(video.id))
+        .order_by_asc(page::Column::Pid)
         .one(db)
         .await
-        .context("查询视频分页失败")?
-        .ok_or_else(|| anyhow::anyhow!("视频没有分页信息"))?;
+        .context("查询视频分页失败")?;
+
+    let (cid_string, title) = if let Some(page) = first_page {
+        (page.cid.to_string(), format!("{} - {}", video.name, page.name))
+    } else if let Some(cid_value) = video.cid {
+        (cid_value.to_string(), default_title)
+    } else {
+        warn!("视频(id={}) 没有可用的分页记录和cid信息，使用占位CID=0", video.id);
+        ("0".to_string(), default_title)
+    };
 
     Ok(VideoPlayInfo {
         bvid: video.bvid.clone(),
         aid: bvid_to_aid(&video.bvid).to_string(),
-        cid: first_page.cid.to_string(),
-        title: video.name,
+        cid: cid_string,
+        title,
         source_type: video.source_type,
         ep_id: video.ep_id,
     })

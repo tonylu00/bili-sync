@@ -105,11 +105,7 @@ impl Client {
             .http2_keep_alive_timeout(Duration::from_secs(10))
             .http2_keep_alive_while_idle(true);
 
-        Self(
-            client_builder
-                .build()
-                .expect("failed to build reqwest client"),
-        )
+        Self(client_builder.build().expect("failed to build reqwest client"))
     }
 
     // a wrapper of reqwest::Client::request to add credential to the request
