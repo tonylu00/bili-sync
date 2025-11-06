@@ -2984,6 +2984,31 @@ pub async fn fetch_page_poster(
         ensure_parent_dir_for_file(&fanart_path).await?;
         fs::copy(&poster_path, &fanart_path).await?;
     }
+    if single_page {
+        if let Some(folder_path) = poster_path.parent() {
+            if let Some(folder_name_os) = folder_path.file_name() {
+                let folder_name = folder_name_os.to_string_lossy();
+                if !folder_name.is_empty() {
+                    let folder_thumb_path = folder_path.join(format!("{}-thumb.jpg", folder_name));
+                    if folder_thumb_path != poster_path {
+                        if let Err(copy_err) = fs::copy(&poster_path, &folder_thumb_path).await {
+                            warn!(
+                                "复制单P视频封面失败: {} -> {}, 错误: {:#}",
+                                poster_path.display(),
+                                folder_thumb_path.display(),
+                                copy_err
+                            );
+                        } else {
+                            debug!(
+                                "已为单P视频创建与文件夹同名的封面: {}",
+                                folder_thumb_path.display()
+                            );
+                        }
+                    }
+                }
+            }
+        }
+    }
     Ok(ExecutionStatus::Succeeded)
 }
 
@@ -3657,6 +3682,30 @@ pub async fn fetch_upper_face(
         _ = token.cancelled() => return Ok(ExecutionStatus::Skipped),
         res = downloader.fetch_with_fallback(&urls, &upper_face_path) => res,
     }?;
+
+    if let Some(folder_path) = upper_face_path.parent() {
+        if let Some(folder_name_os) = folder_path.file_name() {
+            if let Some(folder_name) = folder_name_os.to_str() {
+                let ext = upper_face_path
+                    .extension()
+                    .and_then(|ext| ext.to_str())
+                    .unwrap_or("jpg");
+                let folder_cover_path = folder_path.join(format!("{}.{}", folder_name, ext));
+                if folder_cover_path != upper_face_path {
+                    if let Err(copy_err) = fs::copy(&upper_face_path, &folder_cover_path).await {
+                        warn!(
+                            "复制UP主封面失败: {} -> {}, 错误: {:#}",
+                            upper_face_path.display(),
+                            folder_cover_path.display(),
+                            copy_err
+                        );
+                    } else {
+                        debug!("已为UP主目录创建同名封面: {}", folder_cover_path.display());
+                    }
+                }
+            }
+        }
+    }
     Ok(ExecutionStatus::Succeeded)
 }
 
