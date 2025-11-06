@@ -40,6 +40,12 @@ export interface VideoSource {
 	season_id?: string; // 番剧season_id
 	media_id?: string; // 番剧media_id
 	selected_seasons?: string[];
+	include_keywords?: string[];
+	exclude_keywords?: string[];
+	min_duration_seconds?: number;
+	max_duration_seconds?: number;
+	min_page_duration_seconds?: number;
+	max_page_duration_seconds?: number;
 }
 
 // 视频来源响应类型
@@ -172,6 +178,12 @@ export interface AddVideoSourceRequest {
 	selected_seasons?: string[];
 	selected_videos?: string[];
 	merge_to_source_id?: number;
+	min_duration_seconds?: number;
+	max_duration_seconds?: number;
+	min_page_duration_seconds?: number;
+	max_page_duration_seconds?: number;
+	include_keywords?: string[];
+	exclude_keywords?: string[];
 }
 
 // 添加视频源响应类型

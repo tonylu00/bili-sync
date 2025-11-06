@@ -53,6 +53,15 @@ pub struct AddVideoSourceRequest {
     pub cover: Option<String>,
     // 合并到现有番剧源的ID，仅当source_type为"bangumi"时有效
     pub merge_to_source_id: Option<i32>,
+    // 视频总时长过滤（秒）
+    pub min_duration_seconds: Option<i32>,
+    pub max_duration_seconds: Option<i32>,
+    // 单个分P时长过滤（秒）
+    pub min_page_duration_seconds: Option<i32>,
+    pub max_page_duration_seconds: Option<i32>,
+    // 视频标题关键词过滤
+    pub include_keywords: Option<Vec<String>>,
+    pub exclude_keywords: Option<Vec<String>>,
 }
 
 // 删除视频源的请求结构体

@@ -14,6 +14,7 @@ use tracing::{debug, info, warn};
 
 use crate::adapter::{VideoSource, VideoSourceEnum, _ActiveModel};
 use crate::bilibili::{BiliClient, Submission, VideoInfo};
+use crate::utils::keyword_filter::deserialize_keywords;
 
 impl VideoSource for submission::Model {
     fn filter_expr(&self) -> SimpleExpr {
@@ -177,6 +178,13 @@ impl VideoSource for submission::Model {
     fn source_name_display(&self) -> String {
         self.upper_name.clone()
     }
+    fn include_keywords(&self) -> Option<Vec<String>> {
+        deserialize_keywords(&self.include_keywords)
+    }
+
+    fn exclude_keywords(&self) -> Option<Vec<String>> {
+        deserialize_keywords(&self.exclude_keywords)
+    }
 }
 
 #[allow(dead_code)]
@@ -222,6 +230,7 @@ pub async fn init_submission_sources(
                         enabled: Set(true),
                         scan_deleted_videos: Set(false),
                         selected_videos: Set(None),
+                        ..Default::default()
                     };
 
                     // 插入数据库
@@ -245,6 +254,7 @@ pub async fn init_submission_sources(
                         enabled: Set(true),
                         scan_deleted_videos: Set(false),
                         selected_videos: Set(None),
+                        ..Default::default()
                     };
 
                     let result = submission::Entity::insert(model)

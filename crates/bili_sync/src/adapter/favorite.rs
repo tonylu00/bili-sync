@@ -14,6 +14,7 @@ use sea_orm::{DatabaseConnection, Unchanged};
 
 use crate::adapter::{VideoSource, VideoSourceEnum, _ActiveModel};
 use crate::bilibili::{BiliClient, FavoriteList, VideoInfo};
+use crate::utils::keyword_filter::deserialize_keywords;
 
 impl VideoSource for favorite::Model {
     fn filter_expr(&self) -> SimpleExpr {
@@ -83,6 +84,14 @@ impl VideoSource for favorite::Model {
     fn source_name_display(&self) -> String {
         self.name.clone()
     }
+
+    fn include_keywords(&self) -> Option<Vec<String>> {
+        deserialize_keywords(&self.include_keywords)
+    }
+
+    fn exclude_keywords(&self) -> Option<Vec<String>> {
+        deserialize_keywords(&self.exclude_keywords)
+    }
 }
 
 #[allow(dead_code)]
@@ -119,6 +128,7 @@ pub async fn init_favorite_sources(
                         latest_row_at: Set("1970-01-01 00:00:00".to_string()),
                         enabled: Set(true),
                         scan_deleted_videos: Set(false),
+                        ..Default::default()
                     };
 
                     let result = favorite::Entity::insert(model)
@@ -143,6 +153,7 @@ pub async fn init_favorite_sources(
                         latest_row_at: Set("1970-01-01 00:00:00".to_string()),
                         enabled: Set(true),
                         scan_deleted_videos: Set(false),
+                        ..Default::default()
                     };
 
                     let result = favorite::Entity::insert(model)

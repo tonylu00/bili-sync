@@ -12,6 +12,7 @@ use sea_orm::{DatabaseConnection, Unchanged};
 
 use crate::adapter::{VideoSource, VideoSourceEnum, _ActiveModel};
 use crate::bilibili::{BiliClient, VideoInfo, WatchLater};
+use crate::utils::keyword_filter::deserialize_keywords;
 
 impl VideoSource for watch_later::Model {
     fn filter_expr(&self) -> SimpleExpr {
@@ -81,6 +82,14 @@ impl VideoSource for watch_later::Model {
 
     fn source_name_display(&self) -> String {
         "稍后再看".to_string()
+    }
+
+    fn include_keywords(&self) -> Option<Vec<String>> {
+        deserialize_keywords(&self.include_keywords)
+    }
+
+    fn exclude_keywords(&self) -> Option<Vec<String>> {
+        deserialize_keywords(&self.exclude_keywords)
     }
 }
 

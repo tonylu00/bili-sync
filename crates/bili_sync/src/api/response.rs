@@ -183,6 +183,18 @@ pub struct VideoSource {
     pub media_id: Option<String>,  // 番剧media_id
     #[serde(skip_serializing_if = "Option::is_none")]
     pub selected_seasons: Option<Vec<String>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub include_keywords: Option<Vec<String>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub exclude_keywords: Option<Vec<String>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub min_duration_seconds: Option<i32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub max_duration_seconds: Option<i32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub min_page_duration_seconds: Option<i32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub max_page_duration_seconds: Option<i32>,
 }
 
 #[derive(Serialize, ToSchema)]

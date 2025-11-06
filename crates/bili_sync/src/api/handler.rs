@@ -6,6 +6,7 @@ use axum::extract::{Extension, Path, Query};
 use chrono::Datelike;
 
 use crate::http::headers::{create_api_headers, create_image_headers};
+use crate::utils::keyword_filter::{deserialize_keywords, serialize_keywords};
 use crate::utils::time_format::{now_standard_string, to_standard_string};
 use bili_sync_entity::{collection, favorite, page, submission, video, video_source, watch_later};
 use bili_sync_migration::Expr;
@@ -185,287 +186,153 @@ pub async fn get_video_sources(
 ) -> Result<ApiResponse<VideoSourcesResponse>, ApiError> {
     // 获取各类视频源
     let collection_sources = collection::Entity::find()
-        .select_only()
-        .columns([
-            collection::Column::Id,
-            collection::Column::Name,
-            collection::Column::Enabled,
-            collection::Column::Path,
-            collection::Column::ScanDeletedVideos,
-            collection::Column::SId,
-            collection::Column::MId,
-        ])
-        .column_as(Expr::value(None::<i64>), "f_id")
-        .column_as(Expr::value(None::<i64>), "upper_id")
-        .column_as(Expr::value(None::<String>), "season_id")
-        .column_as(Expr::value(None::<String>), "media_id")
-        .into_tuple::<(
-            i32,
-            String,
-            bool,
-            String,
-            bool,
-            i64,
-            i64,
-            Option<i64>,
-            Option<i64>,
-            Option<String>,
-            Option<String>,
-        )>()
         .all(db.as_ref())
         .await?
         .into_iter()
-        .map(
-            |(id, name, enabled, path, scan_deleted_videos, s_id, m_id, f_id, upper_id, season_id, media_id)| {
-                VideoSource {
-                    id,
-                    name,
-                    enabled,
-                    path,
-                    scan_deleted_videos,
-                    f_id,
-                    s_id: Some(s_id),
-                    m_id: Some(m_id),
-                    upper_id,
-                    season_id,
-                    media_id,
-                    selected_seasons: None,
-                }
-            },
-        )
+        .map(|model| VideoSource {
+            id: model.id,
+            name: model.name,
+            enabled: model.enabled,
+            path: model.path,
+            scan_deleted_videos: model.scan_deleted_videos,
+            f_id: None,
+            s_id: Some(model.s_id),
+            m_id: Some(model.m_id),
+            upper_id: None,
+            season_id: None,
+            media_id: None,
+            selected_seasons: None,
+            include_keywords: deserialize_keywords(&model.include_keywords),
+            exclude_keywords: deserialize_keywords(&model.exclude_keywords),
+            min_duration_seconds: model.min_duration_seconds,
+            max_duration_seconds: model.max_duration_seconds,
+            min_page_duration_seconds: model.min_page_duration_seconds,
+            max_page_duration_seconds: model.max_page_duration_seconds,
+        })
         .collect();
 
     let favorite_sources = favorite::Entity::find()
-        .select_only()
-        .columns([
-            favorite::Column::Id,
-            favorite::Column::Name,
-            favorite::Column::Enabled,
-            favorite::Column::Path,
-            favorite::Column::ScanDeletedVideos,
-            favorite::Column::FId,
-        ])
-        .column_as(Expr::value(None::<i64>), "s_id")
-        .column_as(Expr::value(None::<i64>), "m_id")
-        .column_as(Expr::value(None::<i64>), "upper_id")
-        .column_as(Expr::value(None::<String>), "season_id")
-        .column_as(Expr::value(None::<String>), "media_id")
-        .into_tuple::<(
-            i32,
-            String,
-            bool,
-            String,
-            bool,
-            i64,
-            Option<i64>,
-            Option<i64>,
-            Option<i64>,
-            Option<String>,
-            Option<String>,
-        )>()
         .all(db.as_ref())
         .await?
         .into_iter()
-        .map(
-            |(id, name, enabled, path, scan_deleted_videos, f_id, s_id, m_id, upper_id, season_id, media_id)| {
-                VideoSource {
-                    id,
-                    name,
-                    enabled,
-                    path,
-                    scan_deleted_videos,
-                    f_id: Some(f_id),
-                    s_id,
-                    m_id,
-                    upper_id,
-                    season_id,
-                    media_id,
-                    selected_seasons: None,
-                }
-            },
-        )
+        .map(|model| VideoSource {
+            id: model.id,
+            name: model.name,
+            enabled: model.enabled,
+            path: model.path,
+            scan_deleted_videos: model.scan_deleted_videos,
+            f_id: Some(model.f_id),
+            s_id: None,
+            m_id: None,
+            upper_id: None,
+            season_id: None,
+            media_id: None,
+            selected_seasons: None,
+            include_keywords: deserialize_keywords(&model.include_keywords),
+            exclude_keywords: deserialize_keywords(&model.exclude_keywords),
+            min_duration_seconds: model.min_duration_seconds,
+            max_duration_seconds: model.max_duration_seconds,
+            min_page_duration_seconds: model.min_page_duration_seconds,
+            max_page_duration_seconds: model.max_page_duration_seconds,
+        })
         .collect();
 
     let submission_sources = submission::Entity::find()
-        .select_only()
-        .columns([
-            submission::Column::Id,
-            submission::Column::Enabled,
-            submission::Column::Path,
-            submission::Column::ScanDeletedVideos,
-            submission::Column::UpperId,
-        ])
-        .column_as(submission::Column::UpperName, "name")
-        .column_as(Expr::value(None::<i64>), "f_id")
-        .column_as(Expr::value(None::<i64>), "s_id")
-        .column_as(Expr::value(None::<i64>), "m_id")
-        .column_as(Expr::value(None::<String>), "season_id")
-        .column_as(Expr::value(None::<String>), "media_id")
-        .into_tuple::<(
-            i32,
-            bool,
-            String,
-            bool,
-            i64,
-            String,
-            Option<i64>,
-            Option<i64>,
-            Option<i64>,
-            Option<String>,
-            Option<String>,
-        )>()
         .all(db.as_ref())
         .await?
         .into_iter()
-        .map(
-            |(id, enabled, path, scan_deleted_videos, upper_id, name, f_id, s_id, m_id, season_id, media_id)| {
-                VideoSource {
-                    id,
-                    name,
-                    enabled,
-                    path,
-                    scan_deleted_videos,
-                    f_id,
-                    s_id,
-                    m_id,
-                    upper_id: Some(upper_id),
-                    season_id,
-                    media_id,
-                    selected_seasons: None,
-                }
-            },
-        )
+        .map(|model| VideoSource {
+            id: model.id,
+            name: model.upper_name,
+            enabled: model.enabled,
+            path: model.path,
+            scan_deleted_videos: model.scan_deleted_videos,
+            f_id: None,
+            s_id: None,
+            m_id: None,
+            upper_id: Some(model.upper_id),
+            season_id: None,
+            media_id: None,
+            selected_seasons: None,
+            include_keywords: deserialize_keywords(&model.include_keywords),
+            exclude_keywords: deserialize_keywords(&model.exclude_keywords),
+            min_duration_seconds: model.min_duration_seconds,
+            max_duration_seconds: model.max_duration_seconds,
+            min_page_duration_seconds: model.min_page_duration_seconds,
+            max_page_duration_seconds: model.max_page_duration_seconds,
+        })
         .collect();
 
     let watch_later_sources = watch_later::Entity::find()
-        .select_only()
-        .columns([
-            watch_later::Column::Id,
-            watch_later::Column::Enabled,
-            watch_later::Column::Path,
-            watch_later::Column::ScanDeletedVideos,
-        ])
-        .column_as(Expr::value("稍后再看"), "name")
-        .column_as(Expr::value(None::<i64>), "f_id")
-        .column_as(Expr::value(None::<i64>), "s_id")
-        .column_as(Expr::value(None::<i64>), "m_id")
-        .column_as(Expr::value(None::<i64>), "upper_id")
-        .column_as(Expr::value(None::<String>), "season_id")
-        .column_as(Expr::value(None::<String>), "media_id")
-        .into_tuple::<(
-            i32,
-            bool,
-            String,
-            bool,
-            String,
-            Option<i64>,
-            Option<i64>,
-            Option<i64>,
-            Option<i64>,
-            Option<String>,
-            Option<String>,
-        )>()
         .all(db.as_ref())
         .await?
         .into_iter()
-        .map(
-            |(id, enabled, path, scan_deleted_videos, name, f_id, s_id, m_id, upper_id, season_id, media_id)| {
-                VideoSource {
-                    id,
-                    name,
-                    enabled,
-                    path,
-                    scan_deleted_videos,
-                    f_id,
-                    s_id,
-                    m_id,
-                    upper_id,
-                    season_id,
-                    media_id,
-                    selected_seasons: None,
-                }
-            },
-        )
+        .map(|model| VideoSource {
+            id: model.id,
+            name: "稍后再看".to_string(),
+            enabled: model.enabled,
+            path: model.path,
+            scan_deleted_videos: model.scan_deleted_videos,
+            f_id: None,
+            s_id: None,
+            m_id: None,
+            upper_id: None,
+            season_id: None,
+            media_id: None,
+            selected_seasons: None,
+            include_keywords: deserialize_keywords(&model.include_keywords),
+            exclude_keywords: deserialize_keywords(&model.exclude_keywords),
+            min_duration_seconds: model.min_duration_seconds,
+            max_duration_seconds: model.max_duration_seconds,
+            min_page_duration_seconds: model.min_page_duration_seconds,
+            max_page_duration_seconds: model.max_page_duration_seconds,
+        })
         .collect();
 
     // 确保bangumi_sources是一个数组，即使为空
     let bangumi_sources = video_source::Entity::find()
         .filter(video_source::Column::Type.eq(1))
-        .select_only()
-        .columns([
-            video_source::Column::Id,
-            video_source::Column::Name,
-            video_source::Column::Enabled,
-            video_source::Column::Path,
-            video_source::Column::ScanDeletedVideos,
-            video_source::Column::SeasonId,
-            video_source::Column::MediaId,
-            video_source::Column::SelectedSeasons,
-        ])
-        .column_as(Expr::value(None::<i64>), "f_id")
-        .column_as(Expr::value(None::<i64>), "s_id")
-        .column_as(Expr::value(None::<i64>), "m_id")
-        .column_as(Expr::value(None::<i64>), "upper_id")
-        .into_tuple::<(
-            i32,
-            String,
-            bool,
-            String,
-            bool,
-            Option<String>,
-            Option<String>,
-            Option<String>,
-            Option<i64>,
-            Option<i64>,
-            Option<i64>,
-            Option<i64>,
-        )>()
         .all(db.as_ref())
         .await?
         .into_iter()
-        .map(
-            |(
-                id,
-                name,
-                enabled,
-                path,
-                scan_deleted_videos,
-                season_id,
-                media_id,
-                selected_seasons_json,
-                f_id,
-                s_id,
-                m_id,
-                upper_id,
-            )| {
-                let selected_seasons =
-                    selected_seasons_json
-                        .as_ref()
-                        .and_then(|json| match serde_json::from_str::<Vec<String>>(json) {
-                            Ok(seasons) if !seasons.is_empty() => Some(seasons),
-                            Ok(_) => None,
-                            Err(err) => {
-                                warn!("Failed to parse selected_seasons for bangumi source {}: {}", id, err);
-                                None
-                            }
-                        });
+        .map(|model| {
+            let selected_seasons =
+                model
+                    .selected_seasons
+                    .as_ref()
+                    .and_then(|json| match serde_json::from_str::<Vec<String>>(json) {
+                        Ok(seasons) if !seasons.is_empty() => Some(seasons),
+                        Ok(_) => None,
+                        Err(err) => {
+                            warn!(
+                                "Failed to parse selected_seasons for bangumi source {}: {}",
+                                model.id, err
+                            );
+                            None
+                        }
+                    });
 
-                VideoSource {
-                    id,
-                    name,
-                    enabled,
-                    path,
-                    scan_deleted_videos,
-                    f_id,
-                    s_id,
-                    m_id,
-                    upper_id,
-                    season_id,
-                    media_id,
-                    selected_seasons,
-                }
-            },
-        )
+            VideoSource {
+                id: model.id,
+                name: model.name,
+                enabled: model.enabled,
+                path: model.path,
+                scan_deleted_videos: model.scan_deleted_videos,
+                f_id: None,
+                s_id: None,
+                m_id: None,
+                upper_id: None,
+                season_id: model.season_id,
+                media_id: model.media_id,
+                selected_seasons,
+                include_keywords: deserialize_keywords(&model.include_keywords),
+                exclude_keywords: deserialize_keywords(&model.exclude_keywords),
+                min_duration_seconds: model.min_duration_seconds,
+                max_duration_seconds: model.max_duration_seconds,
+                min_page_duration_seconds: model.min_page_duration_seconds,
+                max_page_duration_seconds: model.max_page_duration_seconds,
+            }
+        })
         .collect();
 
     // 返回响应，确保每个分类都是一个数组
@@ -2053,6 +1920,12 @@ pub async fn add_video_source(
             ep_id: params.ep_id.clone(),
             download_all_seasons: params.download_all_seasons,
             selected_seasons: params.selected_seasons.clone(),
+            min_duration_seconds: params.min_duration_seconds,
+            max_duration_seconds: params.max_duration_seconds,
+            min_page_duration_seconds: params.min_page_duration_seconds,
+            max_page_duration_seconds: params.max_page_duration_seconds,
+            include_keywords: params.include_keywords.clone(),
+            exclude_keywords: params.exclude_keywords.clone(),
             task_id: task_id.clone(),
         };
 
@@ -2086,6 +1959,8 @@ pub async fn add_video_source_internal(
     // 使用主数据库连接
 
     let txn = db.begin().await?;
+    let include_keywords_json = serialize_keywords(&params.include_keywords)?;
+    let exclude_keywords_json = serialize_keywords(&params.exclude_keywords)?;
 
     let result = match params.source_type.as_str() {
         "collection" => {
@@ -2179,6 +2054,12 @@ pub async fn add_video_source_internal(
                 enabled: sea_orm::Set(true),
                 scan_deleted_videos: sea_orm::Set(false),
                 cover: sea_orm::Set(cover_url),
+                include_keywords: sea_orm::Set(include_keywords_json.clone()),
+                exclude_keywords: sea_orm::Set(exclude_keywords_json.clone()),
+                min_duration_seconds: sea_orm::Set(params.min_duration_seconds),
+                max_duration_seconds: sea_orm::Set(params.max_duration_seconds),
+                min_page_duration_seconds: sea_orm::Set(params.min_page_duration_seconds),
+                max_page_duration_seconds: sea_orm::Set(params.max_page_duration_seconds),
             };
 
             let insert_result = collection::Entity::insert(collection).exec(&txn).await?;
@@ -2221,6 +2102,12 @@ pub async fn add_video_source_internal(
                 latest_row_at: sea_orm::Set("1970-01-01 00:00:00".to_string()),
                 enabled: sea_orm::Set(true),
                 scan_deleted_videos: sea_orm::Set(false),
+                include_keywords: sea_orm::Set(include_keywords_json.clone()),
+                exclude_keywords: sea_orm::Set(exclude_keywords_json.clone()),
+                min_duration_seconds: sea_orm::Set(params.min_duration_seconds),
+                max_duration_seconds: sea_orm::Set(params.max_duration_seconds),
+                min_page_duration_seconds: sea_orm::Set(params.min_page_duration_seconds),
+                max_page_duration_seconds: sea_orm::Set(params.max_page_duration_seconds),
             };
 
             let insert_result = favorite::Entity::insert(favorite).exec(&txn).await?;
@@ -2268,6 +2155,12 @@ pub async fn add_video_source_internal(
                         .selected_videos
                         .map(|videos| serde_json::to_string(&videos).unwrap_or_default()),
                 ),
+                include_keywords: sea_orm::Set(include_keywords_json.clone()),
+                exclude_keywords: sea_orm::Set(exclude_keywords_json.clone()),
+                min_duration_seconds: sea_orm::Set(params.min_duration_seconds),
+                max_duration_seconds: sea_orm::Set(params.max_duration_seconds),
+                min_page_duration_seconds: sea_orm::Set(params.min_page_duration_seconds),
+                max_page_duration_seconds: sea_orm::Set(params.max_page_duration_seconds),
             };
 
             let insert_result = submission::Entity::insert(submission).exec(&txn).await?;
@@ -2554,6 +2447,12 @@ pub async fn add_video_source_internal(
                     ep_id: sea_orm::Set(params.ep_id),
                     download_all_seasons: sea_orm::Set(Some(download_all_seasons)),
                     selected_seasons: sea_orm::Set(selected_seasons_json),
+                    include_keywords: sea_orm::Set(include_keywords_json.clone()),
+                    exclude_keywords: sea_orm::Set(exclude_keywords_json.clone()),
+                    min_duration_seconds: sea_orm::Set(params.min_duration_seconds),
+                    max_duration_seconds: sea_orm::Set(params.max_duration_seconds),
+                    min_page_duration_seconds: sea_orm::Set(params.min_page_duration_seconds),
+                    max_page_duration_seconds: sea_orm::Set(params.max_page_duration_seconds),
                     ..Default::default()
                 };
 
@@ -2606,6 +2505,12 @@ pub async fn add_video_source_internal(
                 latest_row_at: sea_orm::Set(crate::utils::time_format::now_standard_string()),
                 enabled: sea_orm::Set(true),
                 scan_deleted_videos: sea_orm::Set(false),
+                include_keywords: sea_orm::Set(include_keywords_json.clone()),
+                exclude_keywords: sea_orm::Set(exclude_keywords_json.clone()),
+                min_duration_seconds: sea_orm::Set(params.min_duration_seconds),
+                max_duration_seconds: sea_orm::Set(params.max_duration_seconds),
+                min_page_duration_seconds: sea_orm::Set(params.min_page_duration_seconds),
+                max_page_duration_seconds: sea_orm::Set(params.max_page_duration_seconds),
             };
 
             let insert_result = watch_later::Entity::insert(watch_later).exec(&txn).await?;

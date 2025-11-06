@@ -34,6 +34,7 @@ use crate::adapter::favorite::favorite_from;
 use crate::adapter::submission::submission_from;
 use crate::adapter::watch_later::watch_later_from;
 use crate::bilibili::{BiliClient, CollectionItem, VideoInfo};
+use crate::utils::keyword_filter::deserialize_keywords;
 
 #[enum_dispatch]
 pub enum VideoSourceEnum {
@@ -108,6 +109,16 @@ pub trait VideoSource {
 
     /// 获取视频源的显示名称
     fn source_name_display(&self) -> String;
+
+    /// 返回包含过滤关键词列表
+    fn include_keywords(&self) -> Option<Vec<String>> {
+        None
+    }
+
+    /// 返回排除过滤关键词列表
+    fn exclude_keywords(&self) -> Option<Vec<String>> {
+        None
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -237,6 +248,8 @@ pub async fn bangumi_from<'a>(
             page_name_template: model.page_name_template,
             selected_seasons,
             scan_deleted_videos: model.scan_deleted_videos,
+            include_keywords: deserialize_keywords(&model.include_keywords),
+            exclude_keywords: deserialize_keywords(&model.exclude_keywords),
         }
     } else {
         // 如果数据库中不存在，使用默认值并发出警告
@@ -260,6 +273,8 @@ pub async fn bangumi_from<'a>(
             page_name_template: None,
             selected_seasons: None,
             scan_deleted_videos: false,
+            include_keywords: None,
+            exclude_keywords: None,
         }
     };
 

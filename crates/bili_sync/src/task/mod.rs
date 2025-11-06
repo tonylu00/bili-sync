@@ -47,6 +47,12 @@ pub struct AddVideoSourceTask {
     pub ep_id: Option<String>,
     pub download_all_seasons: Option<bool>,
     pub selected_seasons: Option<Vec<String>>,
+    pub min_duration_seconds: Option<i32>,
+    pub max_duration_seconds: Option<i32>,
+    pub min_page_duration_seconds: Option<i32>,
+    pub max_page_duration_seconds: Option<i32>,
+    pub include_keywords: Option<Vec<String>>,
+    pub exclude_keywords: Option<Vec<String>>,
     pub task_id: String, // 唯一任务ID，用于追踪
 }
 
@@ -992,6 +998,12 @@ impl AddTaskQueue {
                 selected_videos: None,    // 任务队列中暂时不支持选择性视频
                 cover: None,              // 任务队列中暂时不支持封面，等前端传递
                 merge_to_source_id: None, // 任务队列中暂时不支持合并功能
+                min_duration_seconds: task.min_duration_seconds,
+                max_duration_seconds: task.max_duration_seconds,
+                min_page_duration_seconds: task.min_page_duration_seconds,
+                max_page_duration_seconds: task.max_page_duration_seconds,
+                include_keywords: task.include_keywords.clone(),
+                exclude_keywords: task.exclude_keywords.clone(),
             };
 
             match add_video_source_internal(db.clone(), request).await {

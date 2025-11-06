@@ -33,6 +33,12 @@ pub struct Model {
     pub scan_deleted_videos: bool,
     pub cached_episodes: Option<String>,
     pub cache_updated_at: Option<String>,
+    pub include_keywords: Option<String>,
+    pub exclude_keywords: Option<String>,
+    pub min_duration_seconds: Option<i32>,
+    pub max_duration_seconds: Option<i32>,
+    pub min_page_duration_seconds: Option<i32>,
+    pub max_page_duration_seconds: Option<i32>,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]

@@ -30,6 +30,8 @@ pub struct BangumiSource {
     pub page_name_template: Option<String>,
     pub selected_seasons: Option<Vec<String>>,
     pub scan_deleted_videos: bool,
+    pub include_keywords: Option<Vec<String>>,
+    pub exclude_keywords: Option<Vec<String>>,
 }
 
 impl BangumiSource {
@@ -483,5 +485,13 @@ impl VideoSource for BangumiSource {
 
     fn source_name_display(&self) -> String {
         self.name.clone()
+    }
+
+    fn include_keywords(&self) -> Option<Vec<String>> {
+        self.include_keywords.clone()
+    }
+
+    fn exclude_keywords(&self) -> Option<Vec<String>> {
+        self.exclude_keywords.clone()
     }
 }

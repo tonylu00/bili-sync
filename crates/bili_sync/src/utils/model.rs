@@ -8,6 +8,7 @@ use tracing::{debug, info};
 
 use crate::adapter::{VideoSource, VideoSourceEnum};
 use crate::bilibili::{PageInfo, VideoInfo};
+use crate::utils::keyword_filter::matches_keyword_filters;
 use crate::utils::status::STATUS_COMPLETED;
 
 /// 从 VideoInfo 中提取 BVID
@@ -19,6 +20,18 @@ fn extract_bvid(video_info: &VideoInfo) -> String {
         VideoInfo::WatchLater { bvid, .. } => bvid.clone(),
         VideoInfo::Collection { bvid, .. } => bvid.clone(),
         VideoInfo::Bangumi { bvid, .. } => bvid.clone(),
+    }
+}
+
+/// 从 VideoInfo 中提取原始标题
+fn extract_title(video_info: &VideoInfo) -> &str {
+    match video_info {
+        VideoInfo::Submission { title, .. }
+        | VideoInfo::Detail { title, .. }
+        | VideoInfo::Favorite { title, .. }
+        | VideoInfo::WatchLater { title, .. }
+        | VideoInfo::Collection { title, .. }
+        | VideoInfo::Bangumi { title, .. } => title.as_str(),
     }
 }
 
@@ -211,9 +224,23 @@ pub async fn create_videos(
     // 检查是否启用了扫描已删除视频
     let scan_deleted = video_source.scan_deleted_videos();
 
+    // 计算关键词过滤匹配列表（全部转换为小写以便匹配）
+    let include_keywords = video_source
+        .include_keywords()
+        .map(|list| list.into_iter().map(|kw| kw.to_lowercase()).collect::<Vec<_>>());
+    let exclude_keywords = video_source
+        .exclude_keywords()
+        .map(|list| list.into_iter().map(|kw| kw.to_lowercase()).collect::<Vec<_>>());
+
     if scan_deleted {
         // 启用扫描已删除视频：需要特别处理已删除的视频
         for video_info in final_videos_info {
+            let title = extract_title(&video_info);
+            if !matches_keyword_filters(title, include_keywords.as_deref(), exclude_keywords.as_deref()) {
+                debug!("关键词过滤未通过(已删除扫描模式)：title={}", title);
+                continue;
+            }
+
             // 选择性下载逻辑：针对 submission 类型视频源 - 需要在 into_simple_model() 之前获取信息
             let should_store_video = if let Some(selected_videos) = video_source.get_selected_videos() {
                 // 获取创建时间来判断是否为新投稿
@@ -450,6 +477,12 @@ pub async fn create_videos(
     } else {
         // 未启用扫描已删除视频：使用原有逻辑，但增加 share_copy 更新检查
         for video_info in final_videos_info {
+            let title = extract_title(&video_info);
+            if !matches_keyword_filters(title, include_keywords.as_deref(), exclude_keywords.as_deref()) {
+                debug!("关键词过滤未通过(常规模式)：title={}", title);
+                continue;
+            }
+
             // 选择性下载逻辑：针对 submission 类型视频源 - 需要在 into_simple_model() 之前获取信息
             let should_store_video = if let Some(selected_videos) = video_source.get_selected_videos() {
                 // 获取创建时间来判断是否为新投稿

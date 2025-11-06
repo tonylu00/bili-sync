@@ -383,7 +383,19 @@ impl NFO<'_> {
                         }
                     } else {
                         // 备选：使用UP主信息作为创作者
-                        let actor_info = Self::get_actor_info(movie.upper_id, movie.upper_name, config);
+                        let trimmed_upper = movie.upper_name.trim();
+                        let actor_info = if movie.upper_id > 0 && !trimmed_upper.is_empty() {
+                            Some((movie.upper_id.to_string(), trimmed_upper.to_string()))
+                        } else {
+                            Self::get_actor_info(movie.upper_id, movie.upper_name, config).map(|(name, role)| {
+                                if movie.upper_id <= 0 && !name.trim().is_empty() {
+                                    (name.clone(), name)
+                                } else {
+                                    (name, role)
+                                }
+                            })
+                        };
+
                         if let Some((actor_name, role_name)) = actor_info {
                             writer
                                 .create_element("actor")
@@ -717,7 +729,19 @@ impl NFO<'_> {
                         }
                     } else {
                         // 备选：使用UP主信息作为创作者
-                        let actor_info = Self::get_actor_info(tvshow.upper_id, tvshow.upper_name, config);
+                        let trimmed_upper = tvshow.upper_name.trim();
+                        let actor_info = if tvshow.upper_id > 0 && !trimmed_upper.is_empty() {
+                            Some((tvshow.upper_id.to_string(), trimmed_upper.to_string()))
+                        } else {
+                            Self::get_actor_info(tvshow.upper_id, tvshow.upper_name, config).map(|(name, role)| {
+                                if tvshow.upper_id <= 0 && !name.trim().is_empty() {
+                                    (name.clone(), name)
+                                } else {
+                                    (name, role)
+                                }
+                            })
+                        };
+
                         if let Some((actor_name, role_name)) = actor_info {
                             writer
                                 .create_element("actor")
@@ -799,6 +823,8 @@ impl NFO<'_> {
     }
 
     async fn write_upper_nfo(mut writer: Writer<&mut BufWriter<&mut Vec<u8>>>, upper: Upper) -> Result<()> {
+        // upper_name is currently unused but retained for potential future metadata enrichment
+        let _ = &upper.upper_name;
         writer
             .create_element("person")
             .write_inner_content_async::<_, _, Error>(|writer| async move {
@@ -814,17 +840,10 @@ impl NFO<'_> {
                     .await?;
                 writer
                     .create_element("title")
-                    .write_text_content_async(BytesText::new(&upper.upper_name))
+                    .write_text_content_async(BytesText::new(&upper.upper_id))
                     .await?;
                 writer
                     .create_element("sorttitle")
-                    .write_text_content_async(BytesText::new(&upper.upper_name))
-                    .await?;
-                // 记录UP主的UID作为唯一标识
-                writer
-                    .create_element("uniqueid")
-                    .with_attribute(("type", "bilibili_uid"))
-                    .with_attribute(("default", "true"))
                     .write_text_content_async(BytesText::new(&upper.upper_id))
                     .await?;
                 Ok(writer)
@@ -1478,11 +1497,6 @@ impl NFO<'_> {
     fn get_actor_info(upper_id: i64, upper_name: &str, config: &NFOConfig) -> Option<(String, String)> {
         let trimmed_name = upper_name.trim();
 
-        // 期望表现：
-        // - 演员 name 使用 UP 主昵称；
-        // - 角色 role 固定为 "UP主"；
-        // - 当昵称为空时按策略处理（占位/默认/跳过）。
-
         if upper_id > 0 {
             // 有效 UID 情况：优先使用昵称，缺省按策略补齐
             let actor_name = if !trimmed_name.is_empty() {
@@ -1702,6 +1716,12 @@ impl<'a> From<&'a video::Model> for TVShow<'a> {
             None
         };
 
+        let estimated_total_seasons = if NFO::is_bangumi_video(video.category) {
+            NFO::calculate_total_seasons_from_title(nfo_title)
+        } else {
+            1
+        };
+
         Self {
             name: nfo_title,
             original_title: &video.name,
@@ -1720,11 +1740,11 @@ impl<'a> From<&'a video::Model> for TVShow<'a> {
             country: None,              // 使用默认值（中国）
             studio: None,               // 使用默认值（哔哩哔哩）
             status: Some("Continuing"), // 默认持续播出状态
-            total_seasons: None,        // 不生成totalseasons，让Jellyfin自动发现
-            total_episodes: None,       // 从分页数量推断
-            duration: None,             // video模型中没有duration字段
-            view_count: None,           // video模型中没有view_count字段
-            like_count: None,           // video模型中没有like_count字段
+            total_seasons: Some(estimated_total_seasons),
+            total_episodes: None, // 从分页数量推断
+            duration: None,       // video模型中没有duration字段
+            view_count: None,     // video模型中没有view_count字段
+            like_count: None,     // video模型中没有like_count字段
             category: video.category,
             tagline,
             set: set_name,
@@ -1857,6 +1877,14 @@ impl<'a> TVShow<'a> {
             season_info.rating.map(|r| format!("{:.1}分", r))
         };
 
+        let total_seasons = season_info.total_seasons.or_else(|| {
+            if NFO::is_bangumi_video(video.category) {
+                Some(NFO::calculate_total_seasons_from_title(&season_info.title))
+            } else {
+                Some(1)
+            }
+        });
+
         Self {
             name: nfo_title,
             original_title: season_info.alias.as_deref().unwrap_or(&season_info.title),
@@ -1872,7 +1900,7 @@ impl<'a> TVShow<'a> {
             country,
             studio: None, // 可以从制作公司获取，但API中暂无此字段
             status,
-            total_seasons: None, // 不生成totalseasons，让Jellyfin自动发现
+            total_seasons,
             total_episodes: season_info.total_episodes,
             duration: None, // 单集平均时长，需要计算
             view_count: season_info.total_views,
