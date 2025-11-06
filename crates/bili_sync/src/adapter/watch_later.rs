@@ -91,6 +91,22 @@ impl VideoSource for watch_later::Model {
     fn exclude_keywords(&self) -> Option<Vec<String>> {
         deserialize_keywords(&self.exclude_keywords)
     }
+
+    fn min_duration_seconds(&self) -> Option<i32> {
+        self.min_duration_seconds
+    }
+
+    fn max_duration_seconds(&self) -> Option<i32> {
+        self.max_duration_seconds
+    }
+
+    fn min_page_duration_seconds(&self) -> Option<i32> {
+        self.min_page_duration_seconds
+    }
+
+    fn max_page_duration_seconds(&self) -> Option<i32> {
+        self.max_page_duration_seconds
+    }
 }
 
 // 稍后观看源的初始化现在通过Web API完成，不再需要这个函数

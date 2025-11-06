@@ -199,6 +199,14 @@
 	let submissionVideos: SubmissionVideoInfo[] = [];
 	let selectedSubmissionVideos: Set<string> = new Set();
 	let submissionLoading = false;
+
+	// 过滤设置
+	let minDurationSecondsInput = '';
+	let maxDurationSecondsInput = '';
+	let minPageDurationSecondsInput = '';
+	let maxPageDurationSecondsInput = '';
+	let includeKeywordsInput = '';
+	let excludeKeywordsInput = '';
 	let submissionError: string | null = null;
 	let submissionTotalCount = 0;
 	let submissionSearchQuery = '';
@@ -457,6 +465,107 @@
 			placeholder.className = `placeholder ${widthClass} ${heightClass} bg-muted rounded flex items-center justify-center text-xs text-muted-foreground`;
 			placeholder.textContent = '无图片';
 			parent.appendChild(placeholder);
+		}
+	}
+
+	function parseOptionalInteger(value: string, label: string): number | null | undefined {
+		const trimmed = value.trim();
+		if (!trimmed) {
+			return null;
+		}
+		if (!/^\d+$/.test(trimmed)) {
+			toast.error(`${label}必须是非负整数`);
+			return undefined;
+		}
+		return Number.parseInt(trimmed, 10);
+	}
+
+	function parseKeywordInput(raw: string): string[] {
+		return raw
+			.split(/[\n,，,;；]+/)
+			.map((kw) => kw.trim())
+			.filter((kw) => kw.length > 0);
+	}
+
+	function resolveFilterParams(): Partial<AddVideoSourceRequest> | null {
+		const result: Partial<AddVideoSourceRequest> = {};
+
+		const minDurationValue = parseOptionalInteger(minDurationSecondsInput, '视频总时长下限');
+		if (minDurationValue === undefined) {
+			return null;
+		}
+		const maxDurationValue = parseOptionalInteger(maxDurationSecondsInput, '视频总时长上限');
+		if (maxDurationValue === undefined) {
+			return null;
+		}
+		if (minDurationValue !== null && maxDurationValue !== null && minDurationValue > maxDurationValue) {
+			toast.error('视频总时长范围无效', { description: '下限不能大于上限' });
+			return null;
+		}
+		if (minDurationValue !== null) {
+			result.min_duration_seconds = minDurationValue;
+		}
+		if (maxDurationValue !== null) {
+			result.max_duration_seconds = maxDurationValue;
+		}
+
+		const minPageDurationValue = parseOptionalInteger(minPageDurationSecondsInput, '分P时长下限');
+		if (minPageDurationValue === undefined) {
+			return null;
+		}
+		const maxPageDurationValue = parseOptionalInteger(maxPageDurationSecondsInput, '分P时长上限');
+		if (maxPageDurationValue === undefined) {
+			return null;
+		}
+		if (
+			minPageDurationValue !== null &&
+			maxPageDurationValue !== null &&
+			minPageDurationValue > maxPageDurationValue
+		) {
+			toast.error('分P时长范围无效', { description: '下限不能大于上限' });
+			return null;
+		}
+		if (minPageDurationValue !== null) {
+			result.min_page_duration_seconds = minPageDurationValue;
+		}
+		if (maxPageDurationValue !== null) {
+			result.max_page_duration_seconds = maxPageDurationValue;
+		}
+
+		const includeKeywords = parseKeywordInput(includeKeywordsInput);
+		if (includeKeywords.length > 0) {
+			result.include_keywords = Array.from(new Set(includeKeywords));
+		}
+
+		const excludeKeywords = parseKeywordInput(excludeKeywordsInput);
+		if (excludeKeywords.length > 0) {
+			result.exclude_keywords = Array.from(new Set(excludeKeywords));
+		}
+
+		return result;
+	}
+
+	function applyFilterParams(
+		target: AddVideoSourceRequest,
+		filterParams: Partial<AddVideoSourceRequest>
+	) {
+		if (filterParams.min_duration_seconds !== undefined) {
+			target.min_duration_seconds = filterParams.min_duration_seconds;
+		}
+		if (filterParams.max_duration_seconds !== undefined) {
+			target.max_duration_seconds = filterParams.max_duration_seconds;
+		}
+		if (filterParams.min_page_duration_seconds !== undefined) {
+			target.min_page_duration_seconds = filterParams.min_page_duration_seconds;
+		}
+		if (filterParams.max_page_duration_seconds !== undefined) {
+			target.max_page_duration_seconds = filterParams.max_page_duration_seconds;
+		}
+		if (filterParams.include_keywords) {
+			target.include_keywords = [...filterParams.include_keywords];
+		}
+		if (filterParams.exclude_keywords) {
+			target.exclude_keywords = [...filterParams.exclude_keywords];
 		}
 	}
 

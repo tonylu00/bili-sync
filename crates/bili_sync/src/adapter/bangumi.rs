@@ -32,6 +32,10 @@ pub struct BangumiSource {
     pub scan_deleted_videos: bool,
     pub include_keywords: Option<Vec<String>>,
     pub exclude_keywords: Option<Vec<String>>,
+    pub min_duration_seconds: Option<i32>,
+    pub max_duration_seconds: Option<i32>,
+    pub min_page_duration_seconds: Option<i32>,
+    pub max_page_duration_seconds: Option<i32>,
 }
 
 impl BangumiSource {
@@ -493,5 +497,21 @@ impl VideoSource for BangumiSource {
 
     fn exclude_keywords(&self) -> Option<Vec<String>> {
         self.exclude_keywords.clone()
+    }
+
+    fn min_duration_seconds(&self) -> Option<i32> {
+        self.min_duration_seconds
+    }
+
+    fn max_duration_seconds(&self) -> Option<i32> {
+        self.max_duration_seconds
+    }
+
+    fn min_page_duration_seconds(&self) -> Option<i32> {
+        self.min_page_duration_seconds
+    }
+
+    fn max_page_duration_seconds(&self) -> Option<i32> {
+        self.max_page_duration_seconds
     }
 }

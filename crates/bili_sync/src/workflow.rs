@@ -40,6 +40,72 @@ use crate::utils::nfo::NFO;
 use crate::utils::notification::NewVideoInfo;
 use crate::utils::status::{PageStatus, VideoStatus, STATUS_OK};
 
+#[derive(Clone, Copy, Debug, Default)]
+struct DurationConstraints {
+    min_total: Option<i32>,
+    max_total: Option<i32>,
+    min_page: Option<i32>,
+    max_page: Option<i32>,
+}
+
+impl DurationConstraints {
+    fn from_source(source: &VideoSourceEnum) -> Self {
+        Self {
+            min_total: source.min_duration_seconds(),
+            max_total: source.max_duration_seconds(),
+            min_page: source.min_page_duration_seconds(),
+            max_page: source.max_page_duration_seconds(),
+        }
+    }
+
+    fn allows_page(&self, duration: u32) -> bool {
+        let duration = duration as i64;
+        if let Some(min) = self.min_page {
+            if duration < min as i64 {
+                return false;
+            }
+        }
+        if let Some(max) = self.max_page {
+            if duration > max as i64 {
+                return false;
+            }
+        }
+        true
+    }
+
+    fn allows_total(&self, total_duration: i64) -> bool {
+        if let Some(min) = self.min_total {
+            if total_duration < min as i64 {
+                return false;
+            }
+        }
+        if let Some(max) = self.max_total {
+            if total_duration > max as i64 {
+                return false;
+            }
+        }
+        true
+    }
+
+    fn has_page_constraints(&self) -> bool {
+        self.min_page.is_some() || self.max_page.is_some()
+    }
+
+    fn has_total_constraints(&self) -> bool {
+        self.min_total.is_some() || self.max_total.is_some()
+    }
+
+    fn is_active(&self) -> bool {
+        self.has_page_constraints() || self.has_total_constraints()
+    }
+}
+
+impl From<&VideoSourceEnum> for DurationConstraints {
+    fn from(value: &VideoSourceEnum) -> Self {
+        Self::from_source(value)
+    }
+}
+
 // 新增：番剧季信息结构体
 #[derive(Debug, Clone)]
 pub struct SeasonInfo {
@@ -604,6 +670,7 @@ pub async fn fetch_video_details(
         return Ok(());
     }
     video_source.log_fetch_video_start();
+    let duration_constraints = DurationConstraints::from(video_source);
     let videos_model = filter_unfilled_videos(video_source.filter_expr(), connection).await?;
 
     // 分离出番剧和普通视频
@@ -709,6 +776,25 @@ pub async fn fetch_video_details(
                     error!("番剧 {} 缺少EP ID，无法获取详细信息", &video_model.name);
                     (-1, 1440)
                 };
+
+                if !duration_constraints.allows_page(duration as u32)
+                    || !duration_constraints.allows_total(duration as i64)
+                {
+                    info!(
+                        "番剧 {} 单集时长 {} 秒不满足过滤条件，将标记为不自动下载",
+                        video_model.name,
+                        duration
+                    );
+                    let mut video_active_model: bili_sync_entity::video::ActiveModel = video_model.into();
+                    video_source.set_relation_id(&mut video_active_model);
+                    video_active_model.single_page = Set(Some(true));
+                    video_active_model.auto_download = Set(false);
+                    video_active_model.tags = Set(Some(serde_json::Value::Array(vec![])));
+                    video_active_model.cid = Set(None);
+                    video_active_model.save(&txn).await?;
+                    txn.commit().await?;
+                    continue;
+                }
 
                 let page_info = PageInfo {
                     cid: actual_cid,
@@ -832,11 +918,78 @@ pub async fn fetch_video_details(
                                 );
                             }
 
-                            let pages = std::mem::take(pages);
-                            let pages_len = pages.len();
+                            let constraints = DurationConstraints::from(video_source);
+                            let original_pages = std::mem::take(pages);
+                            let mut filtered_pages = Vec::with_capacity(original_pages.len());
+                            let mut skipped_pages = Vec::new();
+                            for page in original_pages {
+                                if constraints.allows_page(page.duration) {
+                                    filtered_pages.push(page);
+                                } else {
+                                    skipped_pages.push(page);
+                                }
+                            }
+
+                            if !skipped_pages.is_empty() {
+                                info!(
+                                    "视频 {} 有 {} 个分P未满足时长过滤，将跳过这些分P",
+                                    video_model.bvid,
+                                    skipped_pages.len()
+                                );
+                            }
+
+                            let pages_len = filtered_pages.len();
+                            let total_duration: i64 = filtered_pages.iter().map(|p| p.duration as i64).sum();
+
+                            if pages_len == 0 {
+                                info!(
+                                    "视频 {} 的所有分P均未满足时长过滤，将标记为不自动下载",
+                                    video_model.bvid
+                                );
+                                let txn = connection.begin().await?;
+                                let mut video_active_model = view_info.into_detail_model(video_model.clone());
+                                video_source.set_relation_id(&mut video_active_model);
+                                video_active_model.single_page = Set(Some(true));
+                                video_active_model.tags = Set(Some(serde_json::to_value(tags)?));
+                                video_active_model.auto_download = Set(false);
+                                video_active_model.cid = Set(None);
+                                video_active_model.save(&txn).await?;
+                                txn.commit().await?;
+                                return Ok(());
+                            }
+
+                            if constraints.has_total_constraints() && !constraints.allows_total(total_duration) {
+                                info!(
+                                    "视频 {} 总时长 {} 秒不满足过滤条件，将标记为不自动下载",
+                                    video_model.bvid,
+                                    total_duration
+                                );
+                                let txn = connection.begin().await?;
+                                let mut video_active_model = view_info.into_detail_model(video_model.clone());
+                                video_source.set_relation_id(&mut video_active_model);
+                                video_active_model.single_page = Set(Some(pages_len == 1));
+                                video_active_model.tags = Set(Some(serde_json::to_value(tags)?));
+                                video_active_model.auto_download = Set(false);
+                                video_active_model.cid = Set(filtered_pages.first().map(|p| p.cid));
+                                video_active_model.save(&txn).await?;
+                                txn.commit().await?;
+                                return Ok(());
+                            }
 
                             // 提取第一个page的cid用于更新video表
-                            let first_page_cid = pages.first().map(|p| p.cid);
+                            let first_page_cid = filtered_pages.first().map(|p| p.cid);
+                            let mut video_model_mut = video_model.clone();
+
+                            if constraints.has_page_constraints() && !skipped_pages.is_empty() {
+                                debug!(
+                                    "视频 {} 经过时长过滤后剩余 {} 个分P (原始 {} 个)",
+                                    video_model.bvid,
+                                    pages_len,
+                                    pages_len + skipped_pages.len()
+                                );
+                            }
+
+                            let pages = filtered_pages;
 
                             // 调试日志：检查staff信息
                             if let Some(staff_list) = staff {
@@ -852,7 +1005,6 @@ pub async fn fetch_video_details(
                             }
 
                             // 检查是否为合作视频，支持submission和收藏夹来源
-                            let mut video_model_mut = video_model.clone();
                             let mut collaboration_video_updated = false;
                             if let Some(staff_list) = staff {
                                 debug!("视频 {} 有staff信息，成员数量: {}", video_model.bvid, staff_list.len());
@@ -1298,7 +1450,7 @@ pub async fn download_video_pages(
     bili_client: &BiliClient,
     video_source: &VideoSourceEnum,
     video_model: video::Model,
-    pages: Vec<page::Model>,
+    mut pages: Vec<page::Model>,
     connection: &DatabaseConnection,
     semaphore: &Semaphore,
     downloader: &UnifiedDownloader,
@@ -1426,6 +1578,53 @@ pub async fn download_video_pages(
     } else {
         final_video_model
     };
+
+    let constraints = DurationConstraints::from(video_source);
+    if constraints.has_page_constraints() {
+        let original_count = pages.len();
+        pages.retain(|page| constraints.allows_page(page.duration));
+        let removed = original_count.saturating_sub(pages.len());
+        if removed > 0 {
+            info!(
+                "视频 {} 有 {} 个分P在下载阶段被时长过滤",
+                final_video_model.bvid,
+                removed
+            );
+        }
+    }
+
+    let total_duration: i64 = pages.iter().map(|page| page.duration as i64).sum();
+
+    if pages.is_empty() {
+        info!(
+            "视频 {} 在下载阶段因无符合条件的分P被跳过，并标记为不自动下载",
+            final_video_model.bvid
+        );
+        video::Entity::update(video::ActiveModel {
+            id: sea_orm::ActiveValue::Unchanged(final_video_model.id),
+            auto_download: Set(false),
+            ..Default::default()
+        })
+        .exec(connection)
+        .await?;
+        return Ok(final_video_model.into());
+    }
+
+    if constraints.has_total_constraints() && !constraints.allows_total(total_duration) {
+        info!(
+            "视频 {} 总时长 {} 秒不满足过滤条件，在下载阶段被跳过",
+            final_video_model.bvid,
+            total_duration
+        );
+        video::Entity::update(video::ActiveModel {
+            id: sea_orm::ActiveValue::Unchanged(final_video_model.id),
+            auto_download: Set(false),
+            ..Default::default()
+        })
+        .exec(connection)
+        .await?;
+        return Ok(final_video_model.into());
+    }
 
     // 为番剧获取API数据用于NFO生成
     let season_info = if is_bangumi && video_model.season_id.is_some() {
@@ -4518,6 +4717,7 @@ async fn process_bangumi_video(
     video_source: &VideoSourceEnum,
 ) -> Result<()> {
     let txn = connection.begin().await?;
+    let constraints = DurationConstraints::from(video_source);
 
     let (actual_cid, duration) = if let Some(ep_id) = &video_model.ep_id {
         match episodes_map.get(ep_id) {
@@ -4534,6 +4734,23 @@ async fn process_bangumi_video(
         error!("番剧 {} 缺少EP ID", video_model.name);
         (-1, 1440)
     };
+
+    if !constraints.allows_page(duration) || !constraints.allows_total(duration as i64) {
+        info!(
+            "番剧 {} 单集时长 {} 秒不满足过滤条件，将标记为不自动下载",
+            video_model.name,
+            duration
+        );
+        let mut video_active_model: bili_sync_entity::video::ActiveModel = video_model.into();
+        video_source.set_relation_id(&mut video_active_model);
+        video_active_model.single_page = Set(Some(true));
+        video_active_model.auto_download = Set(false);
+        video_active_model.tags = Set(Some(serde_json::Value::Array(vec![])));
+        video_active_model.cid = Set(None);
+        video_active_model.save(&txn).await?;
+        txn.commit().await?;
+        return Ok(());
+    }
 
     let page_info = PageInfo {
         cid: actual_cid,

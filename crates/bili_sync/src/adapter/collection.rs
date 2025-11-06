@@ -101,6 +101,22 @@ impl VideoSource for collection::Model {
     fn exclude_keywords(&self) -> Option<Vec<String>> {
         deserialize_keywords(&self.exclude_keywords)
     }
+
+    fn min_duration_seconds(&self) -> Option<i32> {
+        self.min_duration_seconds
+    }
+
+    fn max_duration_seconds(&self) -> Option<i32> {
+        self.max_duration_seconds
+    }
+
+    fn min_page_duration_seconds(&self) -> Option<i32> {
+        self.min_page_duration_seconds
+    }
+
+    fn max_page_duration_seconds(&self) -> Option<i32> {
+        self.max_page_duration_seconds
+    }
 }
 
 // 修改初始化合集源的方法中的类型转换问题

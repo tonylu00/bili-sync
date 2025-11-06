@@ -119,6 +119,26 @@ pub trait VideoSource {
     fn exclude_keywords(&self) -> Option<Vec<String>> {
         None
     }
+
+    /// 返回视频总时长下限（秒）
+    fn min_duration_seconds(&self) -> Option<i32> {
+        None
+    }
+
+    /// 返回视频总时长上限（秒）
+    fn max_duration_seconds(&self) -> Option<i32> {
+        None
+    }
+
+    /// 返回分页时长下限（秒）
+    fn min_page_duration_seconds(&self) -> Option<i32> {
+        None
+    }
+
+    /// 返回分页时长上限（秒）
+    fn max_page_duration_seconds(&self) -> Option<i32> {
+        None
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -250,6 +270,10 @@ pub async fn bangumi_from<'a>(
             scan_deleted_videos: model.scan_deleted_videos,
             include_keywords: deserialize_keywords(&model.include_keywords),
             exclude_keywords: deserialize_keywords(&model.exclude_keywords),
+            min_duration_seconds: model.min_duration_seconds,
+            max_duration_seconds: model.max_duration_seconds,
+            min_page_duration_seconds: model.min_page_duration_seconds,
+            max_page_duration_seconds: model.max_page_duration_seconds,
         }
     } else {
         // 如果数据库中不存在，使用默认值并发出警告
@@ -275,6 +299,10 @@ pub async fn bangumi_from<'a>(
             scan_deleted_videos: false,
             include_keywords: None,
             exclude_keywords: None,
+            min_duration_seconds: None,
+            max_duration_seconds: None,
+            min_page_duration_seconds: None,
+            max_page_duration_seconds: None,
         }
     };
 
