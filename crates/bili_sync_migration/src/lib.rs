@@ -13,6 +13,7 @@ mod m20250520_000001_add_download_all_seasons;
 mod m20250525_000001_add_bangumi_templates;
 mod m20250525_000002_add_season_number;
 mod m20250525_000003_add_selected_seasons;
+mod m20250525_000004_add_page_name_template;
 mod m20250531_000001_fix_fid_type;
 mod m20250601_000001_fix_compatibility;
 mod m20250613_000001_add_performance_indexes;
@@ -51,6 +52,7 @@ impl MigratorTrait for Migrator {
             Box::new(m20250525_000001_add_bangumi_templates::Migration),
             Box::new(m20250525_000002_add_season_number::Migration),
             Box::new(m20250525_000003_add_selected_seasons::Migration),
+            Box::new(m20250525_000004_add_page_name_template::Migration),
             Box::new(m20250531_000001_fix_fid_type::Migration),
             Box::new(m20250601_000001_fix_compatibility::Migration),
             Box::new(m20250613_000001_add_performance_indexes::Migration),

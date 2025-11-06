@@ -2999,10 +2999,7 @@ pub async fn fetch_page_poster(
                                 copy_err
                             );
                         } else {
-                            debug!(
-                                "已为单P视频创建与文件夹同名的封面: {}",
-                                folder_thumb_path.display()
-                            );
+                            debug!("已为单P视频创建与文件夹同名的封面: {}", folder_thumb_path.display());
                         }
                     }
                 }

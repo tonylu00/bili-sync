@@ -3,283 +3,83 @@ use sea_orm_migration::prelude::*;
 #[derive(DeriveMigrationName)]
 pub struct Migration;
 
+const MIN_DURATION_COMMENT: &str = "允许的最小视频时长，单位秒";
+const MAX_DURATION_COMMENT: &str = "允许的最大视频时长，单位秒";
+const MIN_PAGE_DURATION_COMMENT: &str = "允许的最小分P时长，单位秒";
+const MAX_PAGE_DURATION_COMMENT: &str = "允许的最大分P时长，单位秒";
+
 #[async_trait::async_trait]
 impl MigrationTrait for Migration {
     async fn up(&self, manager: &SchemaManager) -> Result<(), DbErr> {
-        // 为 collection 表添加时长过滤字段
-        manager
-            .alter_table(
-                Table::alter()
-                    .table(Collection::Table)
-                    .add_column(
-                        ColumnDef::new(Collection::MinDurationSeconds)
-                            .integer()
-                            .null()
-                            .comment("允许的最小视频时长，单位秒"),
-                    )
-                    .add_column(
-                        ColumnDef::new(Collection::MaxDurationSeconds)
-                            .integer()
-                            .null()
-                            .comment("允许的最大视频时长，单位秒"),
-                    )
-                    .add_column(
-                        ColumnDef::new(Collection::MinPageDurationSeconds)
-                            .integer()
-                            .null()
-                            .comment("允许的最小分P时长，单位秒"),
-                    )
-                    .add_column(
-                        ColumnDef::new(Collection::MaxPageDurationSeconds)
-                            .integer()
-                            .null()
-                            .comment("允许的最大分P时长，单位秒"),
-                    )
-                    .to_owned(),
-            )
-            .await?;
-
-        // 为 favorite 表添加时长过滤字段
-        manager
-            .alter_table(
-                Table::alter()
-                    .table(Favorite::Table)
-                    .add_column(
-                        ColumnDef::new(Favorite::MinDurationSeconds)
-                            .integer()
-                            .null()
-                            .comment("允许的最小视频时长，单位秒"),
-                    )
-                    .add_column(
-                        ColumnDef::new(Favorite::MaxDurationSeconds)
-                            .integer()
-                            .null()
-                            .comment("允许的最大视频时长，单位秒"),
-                    )
-                    .add_column(
-                        ColumnDef::new(Favorite::MinPageDurationSeconds)
-                            .integer()
-                            .null()
-                            .comment("允许的最小分P时长，单位秒"),
-                    )
-                    .add_column(
-                        ColumnDef::new(Favorite::MaxPageDurationSeconds)
-                            .integer()
-                            .null()
-                            .comment("允许的最大分P时长，单位秒"),
-                    )
-                    .to_owned(),
-            )
-            .await?;
-
-        // 为 submission 表添加时长过滤字段
-        manager
-            .alter_table(
-                Table::alter()
-                    .table(Submission::Table)
-                    .add_column(
-                        ColumnDef::new(Submission::MinDurationSeconds)
-                            .integer()
-                            .null()
-                            .comment("允许的最小视频时长，单位秒"),
-                    )
-                    .add_column(
-                        ColumnDef::new(Submission::MaxDurationSeconds)
-                            .integer()
-                            .null()
-                            .comment("允许的最大视频时长，单位秒"),
-                    )
-                    .add_column(
-                        ColumnDef::new(Submission::MinPageDurationSeconds)
-                            .integer()
-                            .null()
-                            .comment("允许的最小分P时长，单位秒"),
-                    )
-                    .add_column(
-                        ColumnDef::new(Submission::MaxPageDurationSeconds)
-                            .integer()
-                            .null()
-                            .comment("允许的最大分P时长，单位秒"),
-                    )
-                    .to_owned(),
-            )
-            .await?;
-
-        // 为 watch_later 表添加时长过滤字段
-        manager
-            .alter_table(
-                Table::alter()
-                    .table(WatchLater::Table)
-                    .add_column(
-                        ColumnDef::new(WatchLater::MinDurationSeconds)
-                            .integer()
-                            .null()
-                            .comment("允许的最小视频时长，单位秒"),
-                    )
-                    .add_column(
-                        ColumnDef::new(WatchLater::MaxDurationSeconds)
-                            .integer()
-                            .null()
-                            .comment("允许的最大视频时长，单位秒"),
-                    )
-                    .add_column(
-                        ColumnDef::new(WatchLater::MinPageDurationSeconds)
-                            .integer()
-                            .null()
-                            .comment("允许的最小分P时长，单位秒"),
-                    )
-                    .add_column(
-                        ColumnDef::new(WatchLater::MaxPageDurationSeconds)
-                            .integer()
-                            .null()
-                            .comment("允许的最大分P时长，单位秒"),
-                    )
-                    .to_owned(),
-            )
-            .await?;
-
-        // 为 video_source 表添加时长过滤字段
-        manager
-            .alter_table(
-                Table::alter()
-                    .table(VideoSource::Table)
-                    .add_column(
-                        ColumnDef::new(VideoSource::MinDurationSeconds)
-                            .integer()
-                            .null()
-                            .comment("允许的最小视频时长，单位秒"),
-                    )
-                    .add_column(
-                        ColumnDef::new(VideoSource::MaxDurationSeconds)
-                            .integer()
-                            .null()
-                            .comment("允许的最大视频时长，单位秒"),
-                    )
-                    .add_column(
-                        ColumnDef::new(VideoSource::MinPageDurationSeconds)
-                            .integer()
-                            .null()
-                            .comment("允许的最小分P时长，单位秒"),
-                    )
-                    .add_column(
-                        ColumnDef::new(VideoSource::MaxPageDurationSeconds)
-                            .integer()
-                            .null()
-                            .comment("允许的最大分P时长，单位秒"),
-                    )
-                    .to_owned(),
-            )
-            .await?;
+        for table in ["collection", "favorite", "submission", "watch_later", "video_source"] {
+            add_duration_filters(manager, table).await?;
+        }
 
         Ok(())
     }
 
     async fn down(&self, manager: &SchemaManager) -> Result<(), DbErr> {
-        manager
-            .alter_table(
-                Table::alter()
-                    .table(Collection::Table)
-                    .drop_column(Collection::MinDurationSeconds)
-                    .drop_column(Collection::MaxDurationSeconds)
-                    .drop_column(Collection::MinPageDurationSeconds)
-                    .drop_column(Collection::MaxPageDurationSeconds)
-                    .to_owned(),
-            )
-            .await?;
-
-        manager
-            .alter_table(
-                Table::alter()
-                    .table(Favorite::Table)
-                    .drop_column(Favorite::MinDurationSeconds)
-                    .drop_column(Favorite::MaxDurationSeconds)
-                    .drop_column(Favorite::MinPageDurationSeconds)
-                    .drop_column(Favorite::MaxPageDurationSeconds)
-                    .to_owned(),
-            )
-            .await?;
-
-        manager
-            .alter_table(
-                Table::alter()
-                    .table(Submission::Table)
-                    .drop_column(Submission::MinDurationSeconds)
-                    .drop_column(Submission::MaxDurationSeconds)
-                    .drop_column(Submission::MinPageDurationSeconds)
-                    .drop_column(Submission::MaxPageDurationSeconds)
-                    .to_owned(),
-            )
-            .await?;
-
-        manager
-            .alter_table(
-                Table::alter()
-                    .table(WatchLater::Table)
-                    .drop_column(WatchLater::MinDurationSeconds)
-                    .drop_column(WatchLater::MaxDurationSeconds)
-                    .drop_column(WatchLater::MinPageDurationSeconds)
-                    .drop_column(WatchLater::MaxPageDurationSeconds)
-                    .to_owned(),
-            )
-            .await?;
-
-        manager
-            .alter_table(
-                Table::alter()
-                    .table(VideoSource::Table)
-                    .drop_column(VideoSource::MinDurationSeconds)
-                    .drop_column(VideoSource::MaxDurationSeconds)
-                    .drop_column(VideoSource::MinPageDurationSeconds)
-                    .drop_column(VideoSource::MaxPageDurationSeconds)
-                    .to_owned(),
-            )
-            .await?;
+        for table in ["collection", "favorite", "submission", "watch_later", "video_source"] {
+            drop_duration_filters(manager, table).await?;
+        }
 
         Ok(())
     }
 }
 
-#[derive(DeriveIden)]
-enum Collection {
-    Table,
-    MinDurationSeconds,
-    MaxDurationSeconds,
-    MinPageDurationSeconds,
-    MaxPageDurationSeconds,
+async fn add_duration_filters(manager: &SchemaManager<'_>, table: &str) -> Result<(), DbErr> {
+    add_integer_column(manager, table, "min_duration_seconds", MIN_DURATION_COMMENT).await?;
+    add_integer_column(manager, table, "max_duration_seconds", MAX_DURATION_COMMENT).await?;
+    add_integer_column(manager, table, "min_page_duration_seconds", MIN_PAGE_DURATION_COMMENT).await?;
+    add_integer_column(manager, table, "max_page_duration_seconds", MAX_PAGE_DURATION_COMMENT).await?;
+
+    Ok(())
 }
 
-#[derive(DeriveIden)]
-enum Favorite {
-    Table,
-    MinDurationSeconds,
-    MaxDurationSeconds,
-    MinPageDurationSeconds,
-    MaxPageDurationSeconds,
+async fn drop_duration_filters(manager: &SchemaManager<'_>, table: &str) -> Result<(), DbErr> {
+    drop_column_if_exists(manager, table, "min_duration_seconds").await?;
+    drop_column_if_exists(manager, table, "max_duration_seconds").await?;
+    drop_column_if_exists(manager, table, "min_page_duration_seconds").await?;
+    drop_column_if_exists(manager, table, "max_page_duration_seconds").await?;
+
+    Ok(())
 }
 
-#[derive(DeriveIden)]
-enum Submission {
-    Table,
-    MinDurationSeconds,
-    MaxDurationSeconds,
-    MinPageDurationSeconds,
-    MaxPageDurationSeconds,
+async fn add_integer_column(
+    manager: &SchemaManager<'_>,
+    table: &str,
+    column: &str,
+    comment: &'static str,
+) -> Result<(), DbErr> {
+    if manager.has_column(table, column).await? {
+        return Ok(());
+    }
+
+    manager
+        .alter_table(
+            Table::alter()
+                .table(Alias::new(table))
+                .add_column(ColumnDef::new(Alias::new(column)).integer().null().comment(comment))
+                .to_owned(),
+        )
+        .await?;
+
+    Ok(())
 }
 
-#[derive(DeriveIden)]
-enum WatchLater {
-    Table,
-    MinDurationSeconds,
-    MaxDurationSeconds,
-    MinPageDurationSeconds,
-    MaxPageDurationSeconds,
-}
+async fn drop_column_if_exists(manager: &SchemaManager<'_>, table: &str, column: &str) -> Result<(), DbErr> {
+    if !manager.has_column(table, column).await? {
+        return Ok(());
+    }
 
-#[derive(DeriveIden)]
-enum VideoSource {
-    Table,
-    MinDurationSeconds,
-    MaxDurationSeconds,
-    MinPageDurationSeconds,
-    MaxPageDurationSeconds,
+    manager
+        .alter_table(
+            Table::alter()
+                .table(Alias::new(table))
+                .drop_column(Alias::new(column))
+                .to_owned(),
+        )
+        .await?;
+
+    Ok(())
 }
