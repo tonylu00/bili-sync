@@ -140,6 +140,7 @@ impl Downloader {
 
         // 构建FFmpeg命令
         let args = [
+            "-hwaccel none",
             "-i",
             &video_path_str,
             "-i",
