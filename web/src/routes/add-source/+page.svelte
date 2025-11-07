@@ -225,6 +225,15 @@
 	const LOAD_MORE_SIZE = 200; // 每次加载更多200个视频
 	const PAGE_DELAY = 500; // 页面间延迟500ms
 
+	$: hasActiveFilters = !!(
+		minDurationSecondsInput.trim() ||
+		maxDurationSecondsInput.trim() ||
+		minPageDurationSecondsInput.trim() ||
+		maxPageDurationSecondsInput.trim() ||
+		includeKeywordsInput.trim() ||
+		excludeKeywordsInput.trim()
+	);
+
 	// 滚动容器引用
 	let submissionScrollContainer: HTMLElement;
 
@@ -569,6 +578,15 @@
 		}
 	}
 
+	function resetFilterInputs() {
+		minDurationSecondsInput = '';
+		maxDurationSecondsInput = '';
+		minPageDurationSecondsInput = '';
+		maxPageDurationSecondsInput = '';
+		includeKeywordsInput = '';
+		excludeKeywordsInput = '';
+	}
+
 	async function handleSubmit() {
 		// 验证表单
 		if (sourceType !== 'watch_later' && !sourceId) {
@@ -600,6 +618,11 @@
 				});
 				return;
 			}
+		}
+
+		const filterParams = resolveFilterParams();
+		if (filterParams === null) {
+			return;
 		}
 
 		loading = true;
@@ -639,6 +662,10 @@
 				}
 			}
 
+			if (filterParams && Object.keys(filterParams).length > 0) {
+				applyFilterParams(params, filterParams);
+			}
+
 			const result = await api.addVideoSource(params);
 
 			if (result.data.success) {
@@ -662,6 +689,7 @@
 				selectedUpName = '';
 				mergeToSourceId = null;
 				existingBangumiSources = [];
+				resetFilterInputs();
 				// 跳转到视频源管理页面
 				goto('/video-sources');
 			} else {
@@ -1805,6 +1833,12 @@
 			});
 			return;
 		}
+
+		const filterParams = resolveFilterParams();
+		if (filterParams === null) {
+			return;
+		}
+
 		batchAdding = true;
 		batchProgress = { current: 0, total: batchSelectedItems.size };
 
@@ -1850,6 +1884,10 @@
 
 					if (item.data.cover) {
 						params.cover = item.data.cover;
+					}
+
+					if (filterParams && Object.keys(filterParams).length > 0) {
+						applyFilterParams(params, filterParams);
 					}
 
 					const result = await api.addVideoSource(params);
@@ -2407,6 +2445,90 @@
 									</div>
 								{/if}
 							{/if}
+						</div>
+
+						<!-- 下载过滤设置 -->
+						<div class="space-y-3 rounded-lg border border-dashed border-slate-200 p-4 dark:border-slate-700">
+							<div class="flex items-center justify-between">
+								<span class="text-sm font-medium text-foreground">下载过滤设置</span>
+								<Button
+									type="button"
+									variant="outline"
+									size="sm"
+									onclick={() => resetFilterInputs()}
+									disabled={!hasActiveFilters}
+								>
+									重置
+								</Button>
+							</div>
+							<p class="text-muted-foreground text-xs">
+								可选设置：限制视频总时长、单个分P时长，并对标题关键词进行包含或排除过滤。
+							</p>
+							<div class="grid gap-3 md:grid-cols-2">
+								<div class="space-y-2">
+									<Label for="min-duration">视频总时长下限（秒）</Label>
+									<Input
+										id="min-duration"
+										bind:value={minDurationSecondsInput}
+										placeholder="例如 300"
+										inputmode="numeric"
+									/>
+								</div>
+								<div class="space-y-2">
+									<Label for="max-duration">视频总时长上限（秒）</Label>
+									<Input
+										id="max-duration"
+										bind:value={maxDurationSecondsInput}
+										placeholder="例如 5400"
+										inputmode="numeric"
+									/>
+								</div>
+							</div>
+							<div class="grid gap-3 md:grid-cols-2">
+								<div class="space-y-2">
+									<Label for="min-page-duration">单分P时长下限（秒）</Label>
+									<Input
+										id="min-page-duration"
+										bind:value={minPageDurationSecondsInput}
+										placeholder="例如 60"
+										inputmode="numeric"
+									/>
+								</div>
+								<div class="space-y-2">
+									<Label for="max-page-duration">单分P时长上限（秒）</Label>
+									<Input
+										id="max-page-duration"
+										bind:value={maxPageDurationSecondsInput}
+										placeholder="例如 1800"
+										inputmode="numeric"
+									/>
+								</div>
+							</div>
+							<div class="grid gap-3 md:grid-cols-2">
+								<div class="space-y-2">
+									<Label for="include-keywords">包含关键词</Label>
+									<textarea
+										id="include-keywords"
+										bind:value={includeKeywordsInput}
+										placeholder="多个关键词用逗号、分号或换行分隔"
+										rows="3"
+										class="border-input bg-background ring-offset-background w-full rounded-md border px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+									></textarea>
+								</div>
+								<div class="space-y-2">
+									<Label for="exclude-keywords">排除关键词</Label>
+									<textarea
+										id="exclude-keywords"
+										bind:value={excludeKeywordsInput}
+										placeholder="多个关键词用逗号、分号或换行分隔"
+										rows="3"
+										class="border-input bg-background ring-offset-background w-full rounded-md border px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+									></textarea>
+								</div>
+							</div>
+							<p class="text-muted-foreground text-xs">
+								关键词匹配视频标题（含分P标题），支持中文或英文的逗号、分号以及换行分隔多个关键词。
+							</p>
 						</div>
 
 						<!-- 提交按钮 -->
