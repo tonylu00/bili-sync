@@ -5015,7 +5015,7 @@ pub async fn get_config() -> Result<ApiResponse<crate::api::response::ConfigResp
         bangumi_folder_name: config.bangumi_folder_name.to_string(),
         collection_folder_mode: config.collection_folder_mode.to_string(),
         time_format: config.time_format.clone(),
-        interval: config.interval,
+        interval: config.interval.clone(),
         nfo_time_type: nfo_time_type.to_string(),
         parallel_download_enabled: config.concurrent_limit.parallel_download.enabled,
         parallel_download_threads: config.concurrent_limit.parallel_download.threads,
@@ -5313,7 +5313,10 @@ pub async fn update_config_internal(
     }
 
     if let Some(interval) = params.interval {
-        if interval > 0 && interval != config.interval {
+        if interval != config.interval {
+            if let Err(e) = interval.validate() {
+                return Err(e.into());
+            }
             config.interval = interval;
             updated_fields.push("interval");
         }
@@ -6002,7 +6005,7 @@ pub async fn update_config_internal(
                 }
                 "interval" => {
                     manager
-                        .update_config_item("interval", serde_json::to_value(config.interval)?)
+                        .update_config_item("interval", serde_json::to_value(&config.interval)?)
                         .await
                 }
                 "ffmpeg_timeout_seconds" => {
@@ -6247,6 +6250,15 @@ pub async fn update_config_internal(
         warn!("重新加载配置包失败: {}", e);
         // 回退到传统的重新加载方式
         crate::config::reload_config();
+    }
+
+    if updated_fields.contains(&"interval") {
+        if let Err(e) = crate::task::DownloadTaskManager::get()
+            .reschedule(config.interval.clone())
+            .await
+        {
+            warn!("更新下载调度配置失败: {:#}", e);
+        }
     }
 
     // 如果更新了命名相关的配置，重命名已下载的文件

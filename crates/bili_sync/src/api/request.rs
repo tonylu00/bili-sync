@@ -1,3 +1,4 @@
+use crate::config::Trigger;
 use serde::Deserialize;
 use utoipa::IntoParams;
 use utoipa::ToSchema;
@@ -134,7 +135,7 @@ pub struct UpdateConfigRequest {
     // 时间格式
     pub time_format: Option<String>,
     // 扫描间隔（秒）
-    pub interval: Option<u64>,
+    pub interval: Option<Trigger>,
     // NFO时间类型
     pub nfo_time_type: Option<String>,
     // 多线程下载配置

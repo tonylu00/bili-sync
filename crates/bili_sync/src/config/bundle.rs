@@ -160,8 +160,8 @@ impl ConfigBundle {
     }
 
     #[allow(dead_code)]
-    pub fn get_interval(&self) -> u64 {
-        self.config.interval
+    pub fn get_interval(&self) -> &crate::config::Trigger {
+        &self.config.interval
     }
 
     /// 渲染模板的便捷方法（使用path_safe_render确保分隔符正确处理）

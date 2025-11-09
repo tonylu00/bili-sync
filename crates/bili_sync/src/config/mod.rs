@@ -21,7 +21,7 @@ pub use crate::config::global::{
 };
 use crate::config::item::ConcurrentLimit;
 pub use crate::config::item::{
-    EmptyUpperStrategy, NFOConfig, NFOTimeType, PathSafeTemplate, RateLimit, SubmissionRiskControlConfig,
+    EmptyUpperStrategy, NFOConfig, NFOTimeType, PathSafeTemplate, RateLimit, SubmissionRiskControlConfig, Trigger,
 };
 pub use crate::config::manager::ConfigManager;
 
@@ -104,8 +104,8 @@ fn default_page_name() -> Cow<'static, str> {
     Cow::Borrowed("{{pubtime}}-{{bvid}}-{{truncate title 20}}")
 }
 
-fn default_interval() -> u64 {
-    1200
+fn default_interval() -> Trigger {
+    Trigger::default()
 }
 
 fn default_upper_path() -> PathBuf {
@@ -172,7 +172,7 @@ pub struct Config {
     #[serde(default = "default_collection_folder_mode")]
     pub collection_folder_mode: Cow<'static, str>,
     #[serde(default = "default_interval")]
-    pub interval: u64,
+    pub interval: Trigger,
     #[serde(default = "default_upper_path")]
     pub upper_path: PathBuf,
     #[serde(default)]
@@ -635,7 +635,7 @@ impl Clone for Config {
             folder_structure: self.folder_structure.clone(),
             bangumi_folder_name: self.bangumi_folder_name.clone(),
             collection_folder_mode: self.collection_folder_mode.clone(),
-            interval: self.interval,
+            interval: self.interval.clone(),
             upper_path: self.upper_path.clone(),
             nfo_time_type: self.nfo_time_type.clone(),
             nfo_config: self.nfo_config.clone(),
@@ -676,7 +676,7 @@ impl Default for Config {
             folder_structure: Cow::Borrowed("Season {{season_pad}}"),
             bangumi_folder_name: Cow::Borrowed("{{series_title}}"),
             collection_folder_mode: Cow::Borrowed("unified"),
-            interval: 1200,
+            interval: Trigger::default(),
             upper_path: CONFIG_DIR.join("upper_face"),
             nfo_time_type: NFOTimeType::FavTime,
             nfo_config: NFOConfig::default(),
@@ -788,6 +788,11 @@ impl Config {
         if !(self.concurrent_limit.video > 0 && self.concurrent_limit.page > 0) {
             ok = false;
             error!("video 和 page 允许的并发数必须大于 0");
+        }
+
+        if let Err(e) = self.interval.validate() {
+            ok = false;
+            error!("调度配置无效: {e}");
         }
 
         if critical_error {

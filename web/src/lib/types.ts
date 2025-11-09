@@ -11,6 +11,9 @@ export type SortBy = 'id' | 'name' | 'upper_name' | 'created_at';
 // 排序顺序枚举
 export type SortOrder = 'asc' | 'desc';
 
+// 定时任务触发配置：秒数或 Cron 表达式
+export type Trigger = number | string;
+
 // 请求参数类型
 export interface VideosRequest {
 	collection?: number;
@@ -222,7 +225,7 @@ export interface ConfigResponse {
 	bangumi_folder_name?: string;
 	collection_folder_mode?: string;
 	time_format: string;
-	interval: number;
+	interval: Trigger;
 	nfo_time_type: string;
 	parallel_download_enabled: boolean;
 	parallel_download_threads: number;
@@ -313,7 +316,7 @@ export interface UpdateConfigRequest {
 	bangumi_folder_name?: string;
 	collection_folder_mode?: string;
 	time_format?: string;
-	interval?: number;
+	interval?: Trigger;
 	nfo_time_type?: string;
 	parallel_download_enabled?: boolean;
 	parallel_download_threads?: number;

@@ -1,9 +1,54 @@
 use std::path::PathBuf;
+use std::str::FromStr;
 
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
+use utoipa::ToSchema;
 
 use crate::utils::filenamify::filenamify;
+
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq, ToSchema)]
+#[serde(untagged)]
+pub enum Trigger {
+    Interval(u64),
+    Cron(String),
+}
+
+impl Trigger {
+    pub fn validate(&self) -> Result<()> {
+        match self {
+            Trigger::Interval(secs) => {
+                if *secs == 0 {
+                    anyhow::bail!("下载任务执行间隔时间必须大于 0 秒");
+                }
+                Ok(())
+            }
+            Trigger::Cron(expr) => {
+                let expression = expr.trim();
+
+                if expression.is_empty() {
+                    anyhow::bail!("Cron 表达式不能为空");
+                }
+                croner::Cron::from_str(expression)
+                    .map(|_| ())
+                    .map_err(|e| anyhow::anyhow!("无效的 Cron 表达式: {e}"))
+            }
+        }
+    }
+
+    pub fn as_interval(&self) -> Option<u64> {
+        match self {
+            Trigger::Interval(secs) => Some(*secs),
+            Trigger::Cron(_) => None,
+        }
+    }
+}
+
+impl Default for Trigger {
+    fn default() -> Self {
+        Trigger::Interval(1200)
+    }
+}
 
 /// 稍后再看的配置
 #[allow(dead_code)]

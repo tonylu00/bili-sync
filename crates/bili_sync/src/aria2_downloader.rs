@@ -153,7 +153,7 @@ impl Aria2Downloader {
             tokio::spawn(async move {
                 // 获取用户配置
                 let config = crate::config::with_config(|bundle| bundle.config.clone());
-                let scan_interval = config.interval;
+                let scan_interval = config.interval.as_interval().unwrap_or(1200);
                 let enable_auto_restart = config.enable_aria2_auto_restart;
                 let check_interval = config.aria2_health_check_interval;
 

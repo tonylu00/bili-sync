@@ -1873,10 +1873,7 @@ pub async fn download_video_pages(
     // 使用UP主昵称作为文件夹名，并使用首字进行分类
     let upper_name = crate::utils::filenamify::filenamify(&final_video_model.upper_name);
     let first_char = upper_name.chars().next().context("upper_name is empty")?.to_string();
-    let base_upper_path = &current_config
-        .upper_path
-        .join(&first_char)
-        .join(&upper_name);
+    let base_upper_path = &current_config.upper_path.join(&first_char).join(&upper_name);
     let is_single_page = final_video_model.single_page.context("single_page is null")?;
 
     // 为多P视频生成基于视频名称的文件名
@@ -2246,7 +2243,10 @@ pub async fn download_video_pages(
             // 依赖数据库状态决定是否下载季度级图片（不检查文件存在性，以支持重置状态后重新下载）
             let should_download_season_images = separate_status[0];
 
-            info!("准备下载季度级图片到: {:?}, {:?}, {:?}, {:?} 和 {:?}", poster_path, fanart_path, season_poster_path, folder_path, generic_poster_path);
+            info!(
+                "准备下载季度级图片到: {:?}, {:?}, {:?}, {:?} 和 {:?}",
+                poster_path, fanart_path, season_poster_path, folder_path, generic_poster_path
+            );
 
             // 季度级图片：thumb使用横版封面，fanart使用竖版封面
             let season_info_ref = season_info.as_ref().unwrap();
@@ -2323,18 +2323,32 @@ pub async fn download_video_pages(
             );
 
             // 返回综合结果
-            Some(match (thumb_result, fanart_result, poster_result, folder_result, generic_poster_result) {
-                // 只要都是Ok且至少有一个Succeeded，就算成功
-                (Ok(ExecutionStatus::Succeeded), _, _, _, _)
-                | (_, Ok(ExecutionStatus::Succeeded), _, _, _)
-                | (_, _, Ok(ExecutionStatus::Succeeded), _, _)
-                | (_, _, _, Ok(ExecutionStatus::Succeeded), _)
-                | (_, _, _, _, Ok(ExecutionStatus::Succeeded)) => ExecutionStatus::Succeeded,
-                // 都是Ok但都是Skipped
-                (Ok(ExecutionStatus::Skipped), Ok(ExecutionStatus::Skipped), Ok(ExecutionStatus::Skipped), Ok(ExecutionStatus::Skipped), Ok(ExecutionStatus::Skipped)) => ExecutionStatus::Skipped,
-                // 有任何错误才报Failed
-                _ => ExecutionStatus::Failed(anyhow::anyhow!("Season级别图片下载失败")),
-            })
+            Some(
+                match (
+                    thumb_result,
+                    fanart_result,
+                    poster_result,
+                    folder_result,
+                    generic_poster_result,
+                ) {
+                    // 只要都是Ok且至少有一个Succeeded，就算成功
+                    (Ok(ExecutionStatus::Succeeded), _, _, _, _)
+                    | (_, Ok(ExecutionStatus::Succeeded), _, _, _)
+                    | (_, _, Ok(ExecutionStatus::Succeeded), _, _)
+                    | (_, _, _, Ok(ExecutionStatus::Succeeded), _)
+                    | (_, _, _, _, Ok(ExecutionStatus::Succeeded)) => ExecutionStatus::Succeeded,
+                    // 都是Ok但都是Skipped
+                    (
+                        Ok(ExecutionStatus::Skipped),
+                        Ok(ExecutionStatus::Skipped),
+                        Ok(ExecutionStatus::Skipped),
+                        Ok(ExecutionStatus::Skipped),
+                        Ok(ExecutionStatus::Skipped),
+                    ) => ExecutionStatus::Skipped,
+                    // 有任何错误才报Failed
+                    _ => ExecutionStatus::Failed(anyhow::anyhow!("Season级别图片下载失败")),
+                },
+            )
         } else {
             Some(ExecutionStatus::Skipped)
         }
@@ -2600,7 +2614,7 @@ pub async fn download_video_pages(
     let extra_results = [
         Ok(season_nfo_result.unwrap_or(ExecutionStatus::Skipped)),
         Ok(season_images_result.unwrap_or(ExecutionStatus::Skipped)),
-        res_2, // 番剧/多P/合集根目录 poster.jpg 的结果（Emby兼容）
+        res_2,      // 番剧/多P/合集根目录 poster.jpg 的结果（Emby兼容）
         res_folder, // 番剧/多P/合集根目录 folder.jpg 的结果（Emby优先识别）
     ]
     .into_iter()

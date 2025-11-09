@@ -53,12 +53,12 @@ impl BangumiNameExtractor {
                     let base_name_prefix = captures.get(1).map_or("", |m| m.as_str()).trim();
                     let season_str = captures.get(2).map_or("1", |m| m.as_str());
                     let base_name_suffix = captures.get(3).map_or("", |m| m.as_str()).trim();
-                    
+
                     // 合并前缀和后缀，中间用空格连接（如果后缀不为空），并清理括号前的空格
                     let base_name = if !base_name_suffix.is_empty() {
                         format!("{} {}", base_name_prefix, base_name_suffix)
                             .replace(" （", "（")  // 去除全角括号前的空格
-                            .replace(" (", "(")   // 去除半角括号前的空格
+                            .replace(" (", "(") // 去除半角括号前的空格
                     } else {
                         base_name_prefix.to_string()
                     };

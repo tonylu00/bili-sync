@@ -2,6 +2,8 @@ use std::sync::{Arc, LazyLock};
 
 use serde::Serialize;
 
+use crate::task::{DownloadTaskManager, TaskStatus as SchedulerTaskStatus};
+
 pub static TASK_STATUS_NOTIFIER: LazyLock<TaskStatusNotifier> = LazyLock::new(TaskStatusNotifier::new);
 
 #[derive(Serialize, Clone, Default)]
@@ -39,20 +41,33 @@ impl TaskStatusNotifier {
         let last_run = last_status.last_run;
         drop(last_status);
 
-        // 从配置中获取实际的扫描间隔
-        let config = crate::config::reload_config();
-        let interval_seconds = config.interval as i64;
+        // 优先使用调度器中的下一轮执行时间
+        let next_run = DownloadTaskManager::get()
+            .status_snapshot()
+            .map(|status| status.next_run)
+            .flatten();
 
         let now = chrono::Local::now();
         let _ = self.tx.send(Arc::new(TaskStatus {
             is_running: false,
             last_run,
             last_finish: Some(now),
-            next_run: now.checked_add_signed(chrono::Duration::seconds(interval_seconds)),
+            next_run,
         }));
     }
 
     pub fn subscribe(&self) -> tokio::sync::watch::Receiver<Arc<TaskStatus>> {
         self.rx.clone()
+    }
+}
+
+impl TaskStatusNotifier {
+    pub fn update_from_scheduler(&self, status: &SchedulerTaskStatus) {
+        let _ = self.tx.send(Arc::new(TaskStatus {
+            is_running: status.is_running,
+            last_run: status.last_run,
+            last_finish: status.last_finish,
+            next_run: status.next_run,
+        }));
     }
 }

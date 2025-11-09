@@ -4,9 +4,13 @@ pub mod video_downloader;
 pub use http_server::http_server;
 pub use video_downloader::video_downloader;
 
+use crate::config::Trigger;
 use crate::utils::time_format::now_standard_string;
 use anyhow::Result;
-use bili_sync_entity::task_queue::{self, Entity as TaskQueueEntity, TaskStatus, TaskType};
+use arc_swap::ArcSwapOption;
+use bili_sync_entity::task_queue::{self, Entity as TaskQueueEntity, TaskStatus as QueueTaskStatus, TaskType};
+use chrono::{DateTime, Local};
+use parking_lot::RwLock;
 use sea_orm::{
     ActiveModelTrait, ColumnTrait, DatabaseConnection, EntityTrait, PaginatorTrait, QueryFilter, QueryOrder, Set,
 };
@@ -14,9 +18,12 @@ use serde::{Deserialize, Serialize};
 use std::collections::{HashSet, VecDeque};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
+use std::time::Duration;
 use tokio::sync::Mutex;
+use tokio_cron_scheduler::{Job, JobScheduler};
 use tokio_util::sync::CancellationToken;
-use tracing::{debug, error, info};
+use tracing::{debug, error, info, warn};
+use uuid::Uuid;
 
 /// 删除视频源任务结构体
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -67,7 +74,7 @@ pub struct UpdateConfigTask {
     pub bangumi_folder_name: Option<String>,
     pub collection_folder_mode: Option<String>,
     pub time_format: Option<String>,
-    pub interval: Option<u64>,
+    pub interval: Option<crate::config::Trigger>,
     pub nfo_time_type: Option<String>,
     pub parallel_download_enabled: Option<bool>,
     pub parallel_download_threads: Option<usize>,
@@ -159,7 +166,7 @@ impl DeleteTaskQueue {
         let active_model = task_queue::ActiveModel {
             task_type: Set(TaskType::DeleteVideoSource),
             task_data: Set(task_data),
-            status: Set(TaskStatus::Pending),
+            status: Set(QueueTaskStatus::Pending),
             retry_count: Set(0),
             created_at: Set(now_standard_string()),
             updated_at: Set(now_standard_string()),
@@ -200,12 +207,12 @@ impl DeleteTaskQueue {
         if let Some(db_task) = TaskQueueEntity::find()
             .filter(task_queue::Column::TaskType.eq(TaskType::DeleteVideoSource))
             .filter(task_queue::Column::TaskData.eq(&task_data))
-            .filter(task_queue::Column::Status.eq(TaskStatus::Pending))
+            .filter(task_queue::Column::Status.eq(QueueTaskStatus::Pending))
             .one(connection)
             .await?
         {
             let mut active_model: task_queue::ActiveModel = db_task.into();
-            active_model.status = Set(TaskStatus::Completed);
+            active_model.status = Set(QueueTaskStatus::Completed);
             active_model.updated_at = Set(now_standard_string());
             active_model.update(connection).await?;
         }
@@ -223,13 +230,13 @@ impl DeleteTaskQueue {
         if let Some(db_task) = TaskQueueEntity::find()
             .filter(task_queue::Column::TaskType.eq(TaskType::DeleteVideoSource))
             .filter(task_queue::Column::TaskData.eq(&task_data))
-            .filter(task_queue::Column::Status.eq(TaskStatus::Pending))
+            .filter(task_queue::Column::Status.eq(QueueTaskStatus::Pending))
             .one(connection)
             .await?
         {
             let retry_count = db_task.retry_count;
             let mut active_model: task_queue::ActiveModel = db_task.into();
-            active_model.status = Set(TaskStatus::Failed);
+            active_model.status = Set(QueueTaskStatus::Failed);
             active_model.retry_count = Set(retry_count + 1);
             active_model.updated_at = Set(now_standard_string());
             active_model.update(connection).await?;
@@ -341,7 +348,7 @@ impl VideoDeleteTaskQueue {
     pub async fn has_pending_delete_task(&self, video_id: i32, connection: &DatabaseConnection) -> Result<bool> {
         let count = TaskQueueEntity::find()
             .filter(task_queue::Column::TaskType.eq(TaskType::DeleteVideo))
-            .filter(task_queue::Column::Status.eq(TaskStatus::Pending))
+            .filter(task_queue::Column::Status.eq(QueueTaskStatus::Pending))
             .count(connection)
             .await?;
 
@@ -352,7 +359,7 @@ impl VideoDeleteTaskQueue {
         // 检查待处理任务中是否包含该视频ID
         let pending_tasks = TaskQueueEntity::find()
             .filter(task_queue::Column::TaskType.eq(TaskType::DeleteVideo))
-            .filter(task_queue::Column::Status.eq(TaskStatus::Pending))
+            .filter(task_queue::Column::Status.eq(QueueTaskStatus::Pending))
             .all(connection)
             .await?;
 
@@ -380,7 +387,7 @@ impl VideoDeleteTaskQueue {
         let active_model = task_queue::ActiveModel {
             task_type: Set(TaskType::DeleteVideo),
             task_data: Set(task_data),
-            status: Set(TaskStatus::Pending),
+            status: Set(QueueTaskStatus::Pending),
             retry_count: Set(0),
             created_at: Set(now_standard_string()),
             updated_at: Set(now_standard_string()),
@@ -416,12 +423,12 @@ impl VideoDeleteTaskQueue {
         if let Some(db_task) = TaskQueueEntity::find()
             .filter(task_queue::Column::TaskType.eq(TaskType::DeleteVideo))
             .filter(task_queue::Column::TaskData.eq(&task_data))
-            .filter(task_queue::Column::Status.eq(TaskStatus::Pending))
+            .filter(task_queue::Column::Status.eq(QueueTaskStatus::Pending))
             .one(connection)
             .await?
         {
             let mut active_model: task_queue::ActiveModel = db_task.into();
-            active_model.status = Set(TaskStatus::Completed);
+            active_model.status = Set(QueueTaskStatus::Completed);
             active_model.updated_at = Set(now_standard_string());
             active_model.update(connection).await?;
         }
@@ -437,13 +444,13 @@ impl VideoDeleteTaskQueue {
         if let Some(db_task) = TaskQueueEntity::find()
             .filter(task_queue::Column::TaskType.eq(TaskType::DeleteVideo))
             .filter(task_queue::Column::TaskData.eq(&task_data))
-            .filter(task_queue::Column::Status.eq(TaskStatus::Pending))
+            .filter(task_queue::Column::Status.eq(QueueTaskStatus::Pending))
             .one(connection)
             .await?
         {
             let retry_count = db_task.retry_count;
             let mut active_model: task_queue::ActiveModel = db_task.into();
-            active_model.status = Set(TaskStatus::Failed);
+            active_model.status = Set(QueueTaskStatus::Failed);
             active_model.retry_count = Set(retry_count + 1);
             active_model.updated_at = Set(now_standard_string());
             active_model.update(connection).await?;
@@ -872,7 +879,7 @@ impl AddTaskQueue {
         let active_model = task_queue::ActiveModel {
             task_type: Set(TaskType::AddVideoSource),
             task_data: Set(task_data),
-            status: Set(TaskStatus::Pending),
+            status: Set(QueueTaskStatus::Pending),
             retry_count: Set(0),
             created_at: Set(now_standard_string()),
             updated_at: Set(now_standard_string()),
@@ -909,12 +916,12 @@ impl AddTaskQueue {
         if let Some(db_task) = TaskQueueEntity::find()
             .filter(task_queue::Column::TaskType.eq(TaskType::AddVideoSource))
             .filter(task_queue::Column::TaskData.eq(&task_data))
-            .filter(task_queue::Column::Status.eq(TaskStatus::Pending))
+            .filter(task_queue::Column::Status.eq(QueueTaskStatus::Pending))
             .one(connection)
             .await?
         {
             let mut active_model: task_queue::ActiveModel = db_task.into();
-            active_model.status = Set(TaskStatus::Completed);
+            active_model.status = Set(QueueTaskStatus::Completed);
             active_model.updated_at = Set(now_standard_string());
             active_model.update(connection).await?;
         }
@@ -930,13 +937,13 @@ impl AddTaskQueue {
         if let Some(db_task) = TaskQueueEntity::find()
             .filter(task_queue::Column::TaskType.eq(TaskType::AddVideoSource))
             .filter(task_queue::Column::TaskData.eq(&task_data))
-            .filter(task_queue::Column::Status.eq(TaskStatus::Pending))
+            .filter(task_queue::Column::Status.eq(QueueTaskStatus::Pending))
             .one(connection)
             .await?
         {
             let retry_count = db_task.retry_count;
             let mut active_model: task_queue::ActiveModel = db_task.into();
-            active_model.status = Set(TaskStatus::Failed);
+            active_model.status = Set(QueueTaskStatus::Failed);
             active_model.retry_count = Set(retry_count + 1);
             active_model.updated_at = Set(now_standard_string());
             active_model.update(connection).await?;
@@ -1067,7 +1074,7 @@ impl ConfigTaskQueue {
         let active_model = task_queue::ActiveModel {
             task_type: Set(TaskType::UpdateConfig),
             task_data: Set(task_data),
-            status: Set(TaskStatus::Pending),
+            status: Set(QueueTaskStatus::Pending),
             retry_count: Set(0),
             created_at: Set(now_standard_string()),
             updated_at: Set(now_standard_string()),
@@ -1095,7 +1102,7 @@ impl ConfigTaskQueue {
         let active_model = task_queue::ActiveModel {
             task_type: Set(TaskType::ReloadConfig),
             task_data: Set(task_data),
-            status: Set(TaskStatus::Pending),
+            status: Set(QueueTaskStatus::Pending),
             retry_count: Set(0),
             created_at: Set(now_standard_string()),
             updated_at: Set(now_standard_string()),
@@ -1140,12 +1147,12 @@ impl ConfigTaskQueue {
         if let Some(db_task) = TaskQueueEntity::find()
             .filter(task_queue::Column::TaskType.eq(TaskType::UpdateConfig))
             .filter(task_queue::Column::TaskData.eq(&task_data))
-            .filter(task_queue::Column::Status.eq(TaskStatus::Pending))
+            .filter(task_queue::Column::Status.eq(QueueTaskStatus::Pending))
             .one(connection)
             .await?
         {
             let mut active_model: task_queue::ActiveModel = db_task.into();
-            active_model.status = Set(TaskStatus::Completed);
+            active_model.status = Set(QueueTaskStatus::Completed);
             active_model.updated_at = Set(now_standard_string());
             active_model.update(connection).await?;
         }
@@ -1165,13 +1172,13 @@ impl ConfigTaskQueue {
         if let Some(db_task) = TaskQueueEntity::find()
             .filter(task_queue::Column::TaskType.eq(TaskType::UpdateConfig))
             .filter(task_queue::Column::TaskData.eq(&task_data))
-            .filter(task_queue::Column::Status.eq(TaskStatus::Pending))
+            .filter(task_queue::Column::Status.eq(QueueTaskStatus::Pending))
             .one(connection)
             .await?
         {
             let retry_count = db_task.retry_count;
             let mut active_model: task_queue::ActiveModel = db_task.into();
-            active_model.status = Set(TaskStatus::Failed);
+            active_model.status = Set(QueueTaskStatus::Failed);
             active_model.retry_count = Set(retry_count + 1);
             active_model.updated_at = Set(now_standard_string());
             active_model.update(connection).await?;
@@ -1192,12 +1199,12 @@ impl ConfigTaskQueue {
         if let Some(db_task) = TaskQueueEntity::find()
             .filter(task_queue::Column::TaskType.eq(TaskType::ReloadConfig))
             .filter(task_queue::Column::TaskData.eq(&task_data))
-            .filter(task_queue::Column::Status.eq(TaskStatus::Pending))
+            .filter(task_queue::Column::Status.eq(QueueTaskStatus::Pending))
             .one(connection)
             .await?
         {
             let mut active_model: task_queue::ActiveModel = db_task.into();
-            active_model.status = Set(TaskStatus::Completed);
+            active_model.status = Set(QueueTaskStatus::Completed);
             active_model.updated_at = Set(now_standard_string());
             active_model.update(connection).await?;
         }
@@ -1217,13 +1224,13 @@ impl ConfigTaskQueue {
         if let Some(db_task) = TaskQueueEntity::find()
             .filter(task_queue::Column::TaskType.eq(TaskType::ReloadConfig))
             .filter(task_queue::Column::TaskData.eq(&task_data))
-            .filter(task_queue::Column::Status.eq(TaskStatus::Pending))
+            .filter(task_queue::Column::Status.eq(QueueTaskStatus::Pending))
             .one(connection)
             .await?
         {
             let retry_count = db_task.retry_count;
             let mut active_model: task_queue::ActiveModel = db_task.into();
-            active_model.status = Set(TaskStatus::Failed);
+            active_model.status = Set(QueueTaskStatus::Failed);
             active_model.retry_count = Set(retry_count + 1);
             active_model.updated_at = Set(now_standard_string());
             active_model.update(connection).await?;
@@ -1258,7 +1265,7 @@ impl ConfigTaskQueue {
     pub async fn get_pending_update_tasks_count(&self, connection: &DatabaseConnection) -> Result<u64, anyhow::Error> {
         let count = TaskQueueEntity::find()
             .filter(task_queue::Column::TaskType.eq(TaskType::UpdateConfig))
-            .filter(task_queue::Column::Status.eq(TaskStatus::Pending))
+            .filter(task_queue::Column::Status.eq(QueueTaskStatus::Pending))
             .count(connection)
             .await?;
         Ok(count)
@@ -1268,7 +1275,7 @@ impl ConfigTaskQueue {
     pub async fn get_pending_reload_tasks_count(&self, connection: &DatabaseConnection) -> Result<u64, anyhow::Error> {
         let count = TaskQueueEntity::find()
             .filter(task_queue::Column::TaskType.eq(TaskType::ReloadConfig))
-            .filter(task_queue::Column::Status.eq(TaskStatus::Pending))
+            .filter(task_queue::Column::Status.eq(QueueTaskStatus::Pending))
             .count(connection)
             .await?;
         Ok(count)
@@ -1278,7 +1285,7 @@ impl ConfigTaskQueue {
     pub async fn recover_config_tasks_from_db(&self, connection: &DatabaseConnection) -> Result<u32, anyhow::Error> {
         // 查询所有待处理的配置任务
         let pending_tasks = TaskQueueEntity::find()
-            .filter(task_queue::Column::Status.eq(TaskStatus::Pending))
+            .filter(task_queue::Column::Status.eq(QueueTaskStatus::Pending))
             .filter(task_queue::Column::TaskType.is_in([TaskType::UpdateConfig, TaskType::ReloadConfig]))
             .order_by_asc(task_queue::Column::CreatedAt)
             .all(connection)
@@ -1396,7 +1403,7 @@ impl ConfigTaskQueue {
                 bangumi_folder_name: task.bangumi_folder_name.clone(),
                 collection_folder_mode: task.collection_folder_mode.clone(),
                 time_format: task.time_format.clone(),
-                interval: task.interval,
+                interval: task.interval.clone(),
                 nfo_time_type: task.nfo_time_type.clone(),
                 parallel_download_enabled: task.parallel_download_enabled,
                 parallel_download_threads: task.parallel_download_threads,
@@ -1688,6 +1695,262 @@ impl Default for TaskController {
     }
 }
 
+#[derive(Debug, Clone, Default)]
+pub struct TaskStatus {
+    pub is_running: bool,
+    pub last_run: Option<DateTime<Local>>,
+    pub last_finish: Option<DateTime<Local>>,
+    pub next_run: Option<DateTime<Local>>,
+}
+
+pub struct DownloadTaskManager {
+    scheduler: Mutex<Option<Arc<JobScheduler>>>,
+    job_id: Mutex<Option<Uuid>>,
+    status: RwLock<TaskStatus>,
+    connection: ArcSwapOption<DatabaseConnection>,
+    bili_client: ArcSwapOption<crate::bilibili::BiliClient>,
+}
+
+impl DownloadTaskManager {
+    pub fn get() -> &'static Self {
+        static INSTANCE: once_cell::sync::Lazy<DownloadTaskManager> =
+            once_cell::sync::Lazy::new(|| DownloadTaskManager {
+                scheduler: Mutex::new(None),
+                job_id: Mutex::new(None),
+                status: RwLock::new(TaskStatus::default()),
+                connection: ArcSwapOption::empty(),
+                bili_client: ArcSwapOption::empty(),
+            });
+
+        &INSTANCE
+    }
+
+    pub fn status_snapshot(&self) -> Option<TaskStatus> {
+        Some(self.status.read().clone())
+    }
+
+    pub async fn initialize(&self, connection: Arc<DatabaseConnection>) -> anyhow::Result<()> {
+        self.connection.store(Some(connection.clone()));
+
+        if self.bili_client.load_full().is_none() {
+            self.bili_client
+                .store(Some(Arc::new(crate::bilibili::BiliClient::new(String::new()))));
+        }
+
+        let scheduler = self.ensure_scheduler().await?;
+        let bili_client = self
+            .bili_client
+            .load_full()
+            .expect("Bili client should exist after initialization");
+
+        let trigger = crate::config::reload_config().interval.clone();
+        self.schedule_job(scheduler, connection, bili_client, trigger).await
+    }
+
+    pub async fn reschedule(&self, trigger: Trigger) -> anyhow::Result<()> {
+        let scheduler = self.ensure_scheduler().await?;
+        let connection = self
+            .connection
+            .load_full()
+            .ok_or_else(|| anyhow::anyhow!("下载任务管理器尚未初始化数据库连接"))?;
+        let bili_client = if let Some(client) = self.bili_client.load_full() {
+            client
+        } else {
+            let client = Arc::new(crate::bilibili::BiliClient::new(String::new()));
+            self.bili_client.store(Some(client.clone()));
+            client
+        };
+
+        self.schedule_job(scheduler, connection, bili_client, trigger).await
+    }
+
+    async fn ensure_scheduler(&self) -> anyhow::Result<Arc<JobScheduler>> {
+        let mut guard = self.scheduler.lock().await;
+        if let Some(scheduler) = guard.as_ref() {
+            return Ok(scheduler.clone());
+        }
+
+        let scheduler = Arc::new(
+            JobScheduler::new()
+                .await
+                .map_err(|e| anyhow::anyhow!("初始化下载调度器失败: {:#}", e))?,
+        );
+        *guard = Some(scheduler.clone());
+        Ok(scheduler)
+    }
+
+    async fn schedule_job(
+        &self,
+        scheduler: Arc<JobScheduler>,
+        connection: Arc<DatabaseConnection>,
+        bili_client: Arc<crate::bilibili::BiliClient>,
+        trigger: Trigger,
+    ) -> anyhow::Result<()> {
+        if let Some(existing) = self.job_id.lock().await.take() {
+            let scheduler_handle = scheduler.as_ref().clone();
+            if let Err(e) = scheduler_handle.remove(&existing).await {
+                warn!("移除旧的下载调度任务失败: {:#}", e);
+            }
+        }
+
+        let trigger_for_log = trigger.clone();
+        let job_connection = connection.clone();
+        let job_client = bili_client.clone();
+
+        let job = match trigger {
+            Trigger::Interval(seconds) => {
+                if seconds == 0 {
+                    anyhow::bail!("下载任务执行间隔时间必须大于 0 秒");
+                }
+
+                Job::new_repeated(Duration::from_secs(seconds), move |job_id, _| {
+                    let manager = DownloadTaskManager::get();
+                    let connection = job_connection.clone();
+                    let bili_client = job_client.clone();
+
+                    tokio::spawn(async move {
+                        manager.mark_started();
+                        crate::utils::task_notifier::TASK_STATUS_NOTIFIER.set_running();
+
+                        let handle = tokio::runtime::Handle::current();
+                        let cycle = tokio::task::spawn_blocking(move || {
+                            handle.block_on(video_downloader::run_download_cycle(connection, bili_client))
+                        })
+                        .await;
+
+                        match cycle {
+                            Ok(Ok(())) => {}
+                            Ok(Err(e)) => {
+                                error!("执行下载任务失败: {:#}", e);
+                            }
+                            Err(e) => {
+                                error!("执行下载任务失败: {:#}", e);
+                            }
+                        }
+
+                        if let Err(e) = manager.mark_finished(job_id).await {
+                            warn!("更新下载任务状态失败: {:#}", e);
+                        }
+
+                        crate::utils::task_notifier::TASK_STATUS_NOTIFIER.set_finished();
+                    });
+                })?
+            }
+            Trigger::Cron(expr) => {
+                let schedule = expr.trim().to_string();
+
+                Job::new(schedule.clone(), move |job_id, _| {
+                    let manager = DownloadTaskManager::get();
+                    let connection = job_connection.clone();
+                    let bili_client = job_client.clone();
+
+                    tokio::spawn(async move {
+                        manager.mark_started();
+                        crate::utils::task_notifier::TASK_STATUS_NOTIFIER.set_running();
+
+                        let handle = tokio::runtime::Handle::current();
+                        let cycle = tokio::task::spawn_blocking(move || {
+                            handle.block_on(video_downloader::run_download_cycle(connection, bili_client))
+                        })
+                        .await;
+
+                        match cycle {
+                            Ok(Ok(())) => {}
+                            Ok(Err(e)) => {
+                                error!("执行下载任务失败: {:#}", e);
+                            }
+                            Err(e) => {
+                                error!("执行下载任务失败: {:#}", e);
+                            }
+                        }
+
+                        if let Err(e) = manager.mark_finished(job_id).await {
+                            warn!("更新下载任务状态失败: {:#}", e);
+                        }
+
+                        crate::utils::task_notifier::TASK_STATUS_NOTIFIER.set_finished();
+                    });
+                })?
+            }
+        };
+
+        let job_id = scheduler
+            .add(job)
+            .await
+            .map_err(|e| anyhow::anyhow!("添加下载调度任务失败: {:#}", e))?;
+
+        {
+            let mut job_guard = self.job_id.lock().await;
+            *job_guard = Some(job_id);
+        }
+
+        match trigger_for_log {
+            Trigger::Interval(seconds) => {
+                info!("下载任务调度已更新：每 {} 秒执行一次", seconds);
+            }
+            Trigger::Cron(expr) => {
+                info!("下载任务调度已更新：Cron 表达式 {}", expr.trim());
+            }
+        }
+
+        let mut scheduler_handle = scheduler.as_ref().clone();
+        let next_run = scheduler_handle
+            .next_tick_for_job(job_id)
+            .await
+            .map_err(|e| anyhow::anyhow!("获取下载任务下一次执行时间失败: {:#}", e))?
+            .map(|dt| dt.with_timezone(&Local));
+
+        {
+            let mut status = self.status.write();
+            status.next_run = next_run;
+        }
+
+        if !scheduler.inited().await {
+            scheduler
+                .start()
+                .await
+                .map_err(|e| anyhow::anyhow!("启动下载任务调度器失败: {:#}", e))?;
+        }
+
+        Ok(())
+    }
+
+    fn mark_started(&self) {
+        let mut status = self.status.write();
+        status.is_running = true;
+        status.last_run = Some(Local::now());
+        status.next_run = None;
+    }
+
+    async fn mark_finished(&self, job_id: Uuid) -> anyhow::Result<()> {
+        let scheduler = {
+            let guard = self.scheduler.lock().await;
+            guard.as_ref().cloned()
+        };
+
+        let Some(scheduler) = scheduler else {
+            anyhow::bail!("下载任务调度器尚未初始化");
+        };
+
+        let mut scheduler_handle = scheduler.as_ref().clone();
+        let next_run = scheduler_handle
+            .next_tick_for_job(job_id)
+            .await
+            .map_err(|e| anyhow::anyhow!("获取下载任务下一次执行时间失败: {:#}", e))?
+            .map(|dt| dt.with_timezone(&Local));
+
+        let mut status = self.status.write();
+        status.is_running = false;
+        status.last_finish = Some(Local::now());
+        if status.last_run.is_none() {
+            status.last_run = status.last_finish;
+        }
+        status.next_run = next_run;
+
+        Ok(())
+    }
+}
+
 /// 全局任务控制器实例
 pub static TASK_CONTROLLER: once_cell::sync::Lazy<Arc<TaskController>> =
     once_cell::sync::Lazy::new(|| Arc::new(TaskController::new()));
@@ -1807,7 +2070,7 @@ pub async fn recover_pending_tasks(connection: &DatabaseConnection) -> Result<()
 
     // 查询所有待处理状态的任务
     let pending_tasks = TaskQueueEntity::find()
-        .filter(task_queue::Column::Status.eq(TaskStatus::Pending))
+        .filter(task_queue::Column::Status.eq(QueueTaskStatus::Pending))
         .order_by_asc(task_queue::Column::CreatedAt) // 按创建时间排序
         .all(connection)
         .await?;

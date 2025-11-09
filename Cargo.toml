@@ -19,6 +19,7 @@ bili_sync_migration = { path = "crates/bili_sync_migration" }
 # walkdir = "2.4.0" # 已移除：未使用
 
 anyhow = { version = "1.0.98", features = ["backtrace"] }
+croner = "3.0.1"
 arc-swap = { version = "1.7.1", features = ["serde"] }
 assert_matches = "1.5.0"
 async-std = { version = "1.13.1", features = ["attributes", "tokio1"] } # 仅在 migration 中使用
@@ -76,6 +77,7 @@ thiserror = "2.0.12"
 tokio = { version = "1.45.0", features = ["full"] }
 tokio-stream = { version = "0.1.16", features = ["sync"] }
 tokio-util = { version = "0.7.15", features = ["io", "rt"] }
+tokio-cron-scheduler = "0.15.1"
 tokio-tungstenite = "0.24.0"
 # toml = "0.8.22" # 已移除：配置已迁移到数据库
 # toml_edit = "0.22.22" # 已移除：配置已迁移到数据库

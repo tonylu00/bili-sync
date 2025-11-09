@@ -2,7 +2,10 @@ use sea_orm::FromQueryResult;
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 
-use crate::utils::status::{PageStatus, VideoStatus};
+use crate::{
+    config::Trigger,
+    utils::status::{PageStatus, VideoStatus},
+};
 
 #[derive(Debug, Serialize, ToSchema, Default)]
 pub struct VideoSourcesResponse {
@@ -292,7 +295,7 @@ pub struct ConfigResponse {
     pub bangumi_folder_name: String,
     pub collection_folder_mode: String,
     pub time_format: String,
-    pub interval: u64,
+    pub interval: Trigger,
     pub nfo_time_type: String,
     // 多线程下载配置
     pub parallel_download_enabled: bool,
