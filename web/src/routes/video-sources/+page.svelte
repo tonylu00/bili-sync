@@ -6,11 +6,17 @@
 	import { setBreadcrumb } from '$lib/stores/breadcrumb';
 	import { toast } from 'svelte-sonner';
 	import api from '$lib/api';
-	import type { ApiError } from '$lib/types';
+	import type {
+		ApiError,
+		UpdateVideoSourceFiltersRequest,
+		VideoSource,
+		VideoSourceFilterSettings
+	} from '$lib/types';
 	import { VIDEO_SOURCES } from '$lib/consts';
 	import { videoSourceStore, setVideoSources } from '$lib/stores/video-source';
 	import DeleteVideoSourceDialog from '$lib/components/delete-video-source-dialog.svelte';
 	import ResetPathDialog from '$lib/components/reset-path-dialog.svelte';
+	import EditVideoFiltersDialog from '$lib/components/edit-video-filters-dialog.svelte';
 
 	// 图标导入
 	import PlusIcon from '@lucide/svelte/icons/plus';
@@ -20,6 +26,7 @@
 	import RotateCcwIcon from '@lucide/svelte/icons/rotate-ccw';
 	import ChevronDownIcon from '@lucide/svelte/icons/chevron-down';
 	import ChevronRightIcon from '@lucide/svelte/icons/chevron-right';
+	import FilterIcon from '@lucide/svelte/icons/filter';
 	import { goto } from '$app/navigation';
 
 	let loading = false;
@@ -49,6 +56,27 @@
 		id: 0,
 		name: '',
 		currentPath: ''
+	};
+
+	// 编辑过滤规则对话框状态
+	let showEditFiltersDialog = false;
+	let editFiltersSourceInfo: {
+		type: string;
+		id: number;
+		name: string;
+		filters: VideoSourceFilterSettings;
+	} = {
+		type: '',
+		id: 0,
+		name: '',
+		filters: {
+			min_duration_seconds: null,
+			max_duration_seconds: null,
+			min_page_duration_seconds: null,
+			max_page_duration_seconds: null,
+			include_keywords: [],
+			exclude_keywords: []
+		}
 	};
 
 	async function loadVideoSources() {
@@ -111,6 +139,23 @@
 			currentPath: currentPath
 		};
 		showResetPathDialog = true;
+	}
+
+	function handleEditFilters(sourceType: string, source: VideoSource) {
+		editFiltersSourceInfo = {
+			type: sourceType,
+			id: source.id,
+			name: source.name,
+			filters: {
+				min_duration_seconds: source.min_duration_seconds ?? null,
+				max_duration_seconds: source.max_duration_seconds ?? null,
+				min_page_duration_seconds: source.min_page_duration_seconds ?? null,
+				max_page_duration_seconds: source.max_page_duration_seconds ?? null,
+				include_keywords: source.include_keywords ? [...source.include_keywords] : [],
+				exclude_keywords: source.exclude_keywords ? [...source.exclude_keywords] : []
+			}
+		};
+		showEditFiltersDialog = true;
 	}
 
 	// 切换扫描已删除视频设置
@@ -202,6 +247,43 @@
 	// 取消路径重设
 	function handleCancelResetPath() {
 		showResetPathDialog = false;
+	}
+
+	async function handleConfirmEditFilters(
+		event: CustomEvent<UpdateVideoSourceFiltersRequest>
+	) {
+		const payload = event.detail;
+		showEditFiltersDialog = false;
+		try {
+			const result = await api.updateVideoSourceFilters(
+				editFiltersSourceInfo.type,
+				editFiltersSourceInfo.id,
+				payload
+			);
+			if (result.data.success) {
+				toast.success('过滤规则已更新', {
+					description: result.data.message
+				});
+				await loadVideoSources();
+			} else {
+				toast.error('更新过滤规则失败', {
+					description: result.data.message
+				});
+				showEditFiltersDialog = true;
+			}
+		} catch (error) {
+			console.error('更新过滤规则失败:', error);
+			const apiError = error as ApiError;
+			toast.error('更新过滤规则失败', {
+				description:
+					apiError?.message || (error instanceof Error ? error.message : '请稍后重试')
+			});
+			showEditFiltersDialog = true;
+		}
+	}
+
+	function handleCancelEditFilters() {
+		showEditFiltersDialog = false;
 	}
 
 	// 切换折叠状态
@@ -352,6 +434,17 @@
 													/>
 												</Button>
 
+												<!-- 编辑过滤规则 -->
+												<Button
+													size="sm"
+													variant="ghost"
+													onclick={() => handleEditFilters(sourceConfig.type, source)}
+													title="编辑过滤规则"
+													class="h-8 w-8 p-0"
+												>
+													<FilterIcon class="h-4 w-4 text-purple-500" />
+												</Button>
+
 												<!-- 重设路径 -->
 												<Button
 													size="sm"
@@ -445,4 +538,14 @@
 	currentPath={resetPathSourceInfo.currentPath}
 	on:confirm={handleConfirmResetPath}
 	on:cancel={handleCancelResetPath}
+/>
+
+<!-- 过滤规则编辑对话框 -->
+<EditVideoFiltersDialog
+	bind:isOpen={showEditFiltersDialog}
+	sourceName={editFiltersSourceInfo.name}
+	sourceType={editFiltersSourceInfo.type}
+	currentFilters={editFiltersSourceInfo.filters}
+	on:confirm={handleConfirmEditFilters}
+	on:cancel={handleCancelEditFilters}
 />

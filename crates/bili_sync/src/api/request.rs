@@ -103,6 +103,17 @@ fn default_clean_empty_folders() -> bool {
     true
 }
 
+// 更新视频源过滤规则请求结构体
+#[derive(Debug, Deserialize, ToSchema)]
+pub struct UpdateVideoSourceFiltersRequest {
+    pub min_duration_seconds: Option<i32>,
+    pub max_duration_seconds: Option<i32>,
+    pub min_page_duration_seconds: Option<i32>,
+    pub max_page_duration_seconds: Option<i32>,
+    pub include_keywords: Option<Vec<String>>,
+    pub exclude_keywords: Option<Vec<String>>,
+}
+
 // 更新配置的请求结构体
 #[derive(Deserialize, IntoParams, ToSchema)]
 pub struct UpdateConfigRequest {

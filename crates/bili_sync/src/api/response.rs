@@ -147,6 +147,27 @@ pub struct ResetVideoSourcePathResponse {
     pub message: String,
 }
 
+#[derive(Serialize, ToSchema, Default, Debug, Clone)]
+pub struct VideoSourceFilters {
+    pub min_duration_seconds: Option<i32>,
+    pub max_duration_seconds: Option<i32>,
+    pub min_page_duration_seconds: Option<i32>,
+    pub max_page_duration_seconds: Option<i32>,
+    #[serde(default)]
+    pub include_keywords: Vec<String>,
+    #[serde(default)]
+    pub exclude_keywords: Vec<String>,
+}
+
+#[derive(Serialize, ToSchema, Debug, Clone)]
+pub struct UpdateVideoSourceFiltersResponse {
+    pub success: bool,
+    pub source_id: i32,
+    pub source_type: String,
+    pub filters: VideoSourceFilters,
+    pub message: String,
+}
+
 /// 番剧源简化信息（用于合并选择）
 #[derive(Serialize, ToSchema, Debug)]
 pub struct BangumiSourceOption {

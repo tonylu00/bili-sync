@@ -782,8 +782,7 @@ pub async fn fetch_video_details(
                 {
                     info!(
                         "番剧 {} 单集时长 {} 秒不满足过滤条件，将标记为不自动下载",
-                        video_model.name,
-                        duration
+                        video_model.name, duration
                     );
                     let mut video_active_model: bili_sync_entity::video::ActiveModel = video_model.into();
                     video_source.set_relation_id(&mut video_active_model);
@@ -961,8 +960,7 @@ pub async fn fetch_video_details(
                             if constraints.has_total_constraints() && !constraints.allows_total(total_duration) {
                                 info!(
                                     "视频 {} 总时长 {} 秒不满足过滤条件，将标记为不自动下载",
-                                    video_model.bvid,
-                                    total_duration
+                                    video_model.bvid, total_duration
                                 );
                                 let txn = connection.begin().await?;
                                 let mut video_active_model = view_info.into_detail_model(video_model.clone());
@@ -1587,8 +1585,7 @@ pub async fn download_video_pages(
         if removed > 0 {
             info!(
                 "视频 {} 有 {} 个分P在下载阶段被时长过滤",
-                final_video_model.bvid,
-                removed
+                final_video_model.bvid, removed
             );
         }
     }
@@ -1613,8 +1610,7 @@ pub async fn download_video_pages(
     if constraints.has_total_constraints() && !constraints.allows_total(total_duration) {
         info!(
             "视频 {} 总时长 {} 秒不满足过滤条件，在下载阶段被跳过",
-            final_video_model.bvid,
-            total_duration
+            final_video_model.bvid, total_duration
         );
         video::Entity::update(video::ActiveModel {
             id: sea_orm::ActiveValue::Unchanged(final_video_model.id),
@@ -4738,8 +4734,7 @@ async fn process_bangumi_video(
     if !constraints.allows_page(duration) || !constraints.allows_total(duration as i64) {
         info!(
             "番剧 {} 单集时长 {} 秒不满足过滤条件，将标记为不自动下载",
-            video_model.name,
-            duration
+            video_model.name, duration
         );
         let mut video_active_model: bili_sync_entity::video::ActiveModel = video_model.into();
         video_source.set_relation_id(&mut video_active_model);

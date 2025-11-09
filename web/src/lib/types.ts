@@ -638,6 +638,35 @@ export interface ResetVideoSourcePathResponse {
 	message: string;
 }
 
+// 更新视频源过滤规则请求类型
+export interface UpdateVideoSourceFiltersRequest {
+	min_duration_seconds?: number | null;
+	max_duration_seconds?: number | null;
+	min_page_duration_seconds?: number | null;
+	max_page_duration_seconds?: number | null;
+	include_keywords?: string[] | null;
+	exclude_keywords?: string[] | null;
+}
+
+// 视频源过滤规则配置
+export interface VideoSourceFilterSettings {
+	min_duration_seconds: number | null;
+	max_duration_seconds: number | null;
+	min_page_duration_seconds: number | null;
+	max_page_duration_seconds: number | null;
+	include_keywords: string[];
+	exclude_keywords: string[];
+}
+
+// 更新视频源过滤规则响应类型
+export interface UpdateVideoSourceFiltersResponse {
+	success: boolean;
+	source_id: number;
+	source_type: string;
+	filters: VideoSourceFilterSettings;
+	message: string;
+}
+
 // 更新凭证请求类型
 export interface UpdateCredentialRequest {
 	sessdata: string;

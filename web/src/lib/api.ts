@@ -26,6 +26,8 @@ import type {
 	UpdateVideoSourceEnabledResponse,
 	ResetVideoSourcePathRequest,
 	ResetVideoSourcePathResponse,
+	UpdateVideoSourceFiltersRequest,
+	UpdateVideoSourceFiltersResponse,
 	UpdateCredentialRequest,
 	UpdateCredentialResponse,
 	InitialSetupCheckResponse,
@@ -391,6 +393,23 @@ class ApiClient {
 	): Promise<ApiResponse<ResetVideoSourcePathResponse>> {
 		return this.post<ResetVideoSourcePathResponse>(
 			`/video-sources/${sourceType}/${id}/reset-path`,
+			params
+		);
+	}
+
+	/**
+	 * 更新视频源过滤规则
+	 * @param sourceType 视频源类型
+	 * @param id 视频源ID
+	 * @param params 过滤规则参数
+	 */
+	async updateVideoSourceFilters(
+		sourceType: string,
+		id: number,
+		params: UpdateVideoSourceFiltersRequest
+	): Promise<ApiResponse<UpdateVideoSourceFiltersResponse>> {
+		return this.put<UpdateVideoSourceFiltersResponse>(
+			`/video-sources/${sourceType}/${id}/filters`,
 			params
 		);
 	}
@@ -858,6 +877,15 @@ export const api = {
 	 */
 	resetVideoSourcePath: (sourceType: string, id: number, params: ResetVideoSourcePathRequest) =>
 		apiClient.resetVideoSourcePath(sourceType, id, params),
+
+	/**
+	 * 更新视频源过滤规则
+	 */
+	updateVideoSourceFilters: (
+		sourceType: string,
+		id: number,
+		params: UpdateVideoSourceFiltersRequest
+	) => apiClient.updateVideoSourceFilters(sourceType, id, params),
 
 	/**
 	 * 检查是否需要初始设置

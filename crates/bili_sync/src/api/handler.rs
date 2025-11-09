@@ -16,7 +16,7 @@ use sea_orm::{
     QueryFilter, QueryOrder, QuerySelect, Set, TransactionTrait, Unchanged,
 };
 use serde::{Deserialize, Serialize};
-use std::collections::VecDeque;
+use std::collections::{HashSet, VecDeque};
 use std::sync::Mutex;
 use tokio::sync::broadcast;
 use tracing::{debug, error, info, warn};
@@ -28,7 +28,7 @@ use crate::api::request::{
     AddVideoSourceRequest, BatchUpdateConfigRequest, ConfigHistoryRequest, QRGenerateRequest, QRPollRequest,
     ResetSpecificTasksRequest, ResetVideoSourcePathRequest, SetSpecificTasksStatusRequest, SetupAuthTokenRequest,
     SubmissionVideosRequest, UpdateConfigItemRequest, UpdateConfigRequest, UpdateCredentialRequest,
-    UpdateVideoStatusRequest, VideosRequest,
+    UpdateVideoSourceFiltersRequest, UpdateVideoStatusRequest, VideosRequest,
 };
 use crate::api::response::{
     AddVideoSourceResponse, BangumiSeasonInfo, BangumiSourceListResponse, BangumiSourceOption, ConfigChangeInfo,
@@ -37,8 +37,8 @@ use crate::api::response::{
     InitialSetupCheckResponse, MonitoringStatus, PageInfo, QRGenerateResponse, QRPollResponse, QRUserInfo,
     ResetAllVideosResponse, ResetVideoResponse, ResetVideoSourcePathResponse, RestoreVideoResponse,
     SetSpecificTasksStatusResponse, SetupAuthTokenResponse, SubmissionVideosResponse, UpdateConfigResponse,
-    UpdateCredentialResponse, UpdateVideoStatusResponse, VideoInfo, VideoResponse, VideoSource, VideoSourcesResponse,
-    VideosResponse,
+    UpdateCredentialResponse, UpdateVideoSourceFiltersResponse, UpdateVideoStatusResponse, VideoInfo, VideoResponse,
+    VideoSource, VideoSourceFilters, VideoSourcesResponse, VideosResponse,
 };
 use crate::api::wrapper::{ApiError, ApiResponse};
 use crate::utils::status::{PageStatus, VideoStatus};
@@ -156,7 +156,7 @@ mod rename_tests {
 
 #[derive(OpenApi)]
 #[openapi(
-    paths(get_video_sources, get_videos, get_deleted_videos, get_video, reset_video, restore_video, reset_all_videos, reset_specific_tasks, set_specific_tasks_status, update_video_status, add_video_source, update_video_source_enabled, update_video_source_scan_deleted, reset_video_source_path, delete_video_source, reload_config, get_config, update_config, get_bangumi_seasons, search_bilibili, get_user_favorites, get_user_collections, get_user_followings, get_subscribed_collections, get_submission_videos, get_logs, get_queue_status, proxy_image, get_config_item, get_config_history, validate_config, get_hot_reload_status, check_initial_setup, setup_auth_token, update_credential, generate_qr_code, poll_qr_status, get_current_user, clear_credential, pause_scanning_endpoint, resume_scanning_endpoint, get_task_control_status, get_video_play_info, proxy_video_stream, validate_favorite, get_user_favorites_by_uid, test_notification_handler, get_notification_config, update_notification_config, get_notification_status, test_risk_control_handler),
+    paths(get_video_sources, get_videos, get_deleted_videos, get_video, reset_video, restore_video, reset_all_videos, reset_specific_tasks, set_specific_tasks_status, update_video_status, add_video_source, update_video_source_enabled, update_video_source_scan_deleted, update_video_source_filters, reset_video_source_path, delete_video_source, reload_config, get_config, update_config, get_bangumi_seasons, search_bilibili, get_user_favorites, get_user_collections, get_user_followings, get_subscribed_collections, get_submission_videos, get_logs, get_queue_status, proxy_image, get_config_item, get_config_history, validate_config, get_hot_reload_status, check_initial_setup, setup_auth_token, update_credential, generate_qr_code, poll_qr_status, get_current_user, clear_credential, pause_scanning_endpoint, resume_scanning_endpoint, get_task_control_status, get_video_play_info, proxy_video_stream, validate_favorite, get_user_favorites_by_uid, test_notification_handler, get_notification_config, update_notification_config, get_notification_status, test_risk_control_handler),
     modifiers(&OpenAPIAuth),
     security(
         ("Token" = []),
@@ -4064,6 +4064,228 @@ pub async fn update_video_source_scan_deleted_internal(
 
     txn.commit().await?;
     Ok(result)
+}
+
+fn ensure_non_negative(value: Option<i32>, label: &str) -> Result<(), ApiError> {
+    if let Some(v) = value {
+        if v < 0 {
+            return Err(anyhow!("{}必须是非负整数", label).into());
+        }
+    }
+    Ok(())
+}
+
+fn normalize_keyword_list(list: Option<Vec<String>>) -> Option<Vec<String>> {
+    let mut seen = HashSet::new();
+    let mut normalized = Vec::new();
+
+    if let Some(items) = list {
+        for kw in items {
+            let lowered = kw.trim().to_lowercase();
+            if !lowered.is_empty() && seen.insert(lowered.clone()) {
+                normalized.push(lowered);
+            }
+        }
+    }
+
+    if normalized.is_empty() {
+        None
+    } else {
+        Some(normalized)
+    }
+}
+
+/// 更新视频源过滤规则
+#[utoipa::path(
+    put,
+    path = "/api/video-sources/{source_type}/{id}/filters",
+    params(
+        ("source_type" = String, Path, description = "视频源类型"),
+        ("id" = i32, Path, description = "视频源ID"),
+    ),
+    request_body = crate::api::request::UpdateVideoSourceFiltersRequest,
+    responses(
+        (status = 200, body = ApiResponse<crate::api::response::UpdateVideoSourceFiltersResponse>),
+    )
+)]
+pub async fn update_video_source_filters(
+    Extension(db): Extension<Arc<DatabaseConnection>>,
+    Path((source_type, id)): Path<(String, i32)>,
+    axum::Json(params): axum::Json<crate::api::request::UpdateVideoSourceFiltersRequest>,
+) -> Result<ApiResponse<crate::api::response::UpdateVideoSourceFiltersResponse>, ApiError> {
+    update_video_source_filters_internal(db, source_type, id, params)
+        .await
+        .map(ApiResponse::ok)
+}
+
+/// 内部更新视频源过滤规则函数
+pub async fn update_video_source_filters_internal(
+    db: Arc<DatabaseConnection>,
+    source_type: String,
+    id: i32,
+    params: UpdateVideoSourceFiltersRequest,
+) -> Result<UpdateVideoSourceFiltersResponse, ApiError> {
+    let UpdateVideoSourceFiltersRequest {
+        min_duration_seconds,
+        max_duration_seconds,
+        min_page_duration_seconds,
+        max_page_duration_seconds,
+        include_keywords,
+        exclude_keywords,
+    } = params;
+
+    ensure_non_negative(min_duration_seconds, "视频总时长下限")?;
+    ensure_non_negative(max_duration_seconds, "视频总时长上限")?;
+    ensure_non_negative(min_page_duration_seconds, "分P时长下限")?;
+    ensure_non_negative(max_page_duration_seconds, "分P时长上限")?;
+
+    if let (Some(min), Some(max)) = (min_duration_seconds, max_duration_seconds) {
+        if min > max {
+            return Err(anyhow!("视频总时长下限不能大于上限").into());
+        }
+    }
+
+    if let (Some(min), Some(max)) = (min_page_duration_seconds, max_page_duration_seconds) {
+        if min > max {
+            return Err(anyhow!("分P时长下限不能大于上限").into());
+        }
+    }
+
+    let include_keywords_normalized = normalize_keyword_list(include_keywords);
+    let exclude_keywords_normalized = normalize_keyword_list(exclude_keywords);
+
+    let include_keywords_json = serialize_keywords(&include_keywords_normalized)?;
+    let exclude_keywords_json = serialize_keywords(&exclude_keywords_normalized)?;
+
+    let txn = db.begin().await?;
+
+    let (display_name, canonical_type) = match source_type.as_str() {
+        "collection" => {
+            let model = collection::Entity::find_by_id(id)
+                .one(&txn)
+                .await?
+                .ok_or_else(|| anyhow!("未找到指定的合集"))?;
+
+            collection::Entity::update(collection::ActiveModel {
+                id: sea_orm::ActiveValue::Unchanged(id),
+                include_keywords: sea_orm::Set(include_keywords_json.clone()),
+                exclude_keywords: sea_orm::Set(exclude_keywords_json.clone()),
+                min_duration_seconds: sea_orm::Set(min_duration_seconds),
+                max_duration_seconds: sea_orm::Set(max_duration_seconds),
+                min_page_duration_seconds: sea_orm::Set(min_page_duration_seconds),
+                max_page_duration_seconds: sea_orm::Set(max_page_duration_seconds),
+                ..Default::default()
+            })
+            .exec(&txn)
+            .await?;
+
+            (model.name, "collection".to_string())
+        }
+        "favorite" => {
+            let model = favorite::Entity::find_by_id(id)
+                .one(&txn)
+                .await?
+                .ok_or_else(|| anyhow!("未找到指定的收藏夹"))?;
+
+            favorite::Entity::update(favorite::ActiveModel {
+                id: sea_orm::ActiveValue::Unchanged(id),
+                include_keywords: sea_orm::Set(include_keywords_json.clone()),
+                exclude_keywords: sea_orm::Set(exclude_keywords_json.clone()),
+                min_duration_seconds: sea_orm::Set(min_duration_seconds),
+                max_duration_seconds: sea_orm::Set(max_duration_seconds),
+                min_page_duration_seconds: sea_orm::Set(min_page_duration_seconds),
+                max_page_duration_seconds: sea_orm::Set(max_page_duration_seconds),
+                ..Default::default()
+            })
+            .exec(&txn)
+            .await?;
+
+            (model.name, "favorite".to_string())
+        }
+        "submission" => {
+            let model = submission::Entity::find_by_id(id)
+                .one(&txn)
+                .await?
+                .ok_or_else(|| anyhow!("未找到指定的UP主投稿"))?;
+
+            submission::Entity::update(submission::ActiveModel {
+                id: sea_orm::ActiveValue::Unchanged(id),
+                include_keywords: sea_orm::Set(include_keywords_json.clone()),
+                exclude_keywords: sea_orm::Set(exclude_keywords_json.clone()),
+                min_duration_seconds: sea_orm::Set(min_duration_seconds),
+                max_duration_seconds: sea_orm::Set(max_duration_seconds),
+                min_page_duration_seconds: sea_orm::Set(min_page_duration_seconds),
+                max_page_duration_seconds: sea_orm::Set(max_page_duration_seconds),
+                ..Default::default()
+            })
+            .exec(&txn)
+            .await?;
+
+            (model.upper_name, "submission".to_string())
+        }
+        "watch_later" => {
+            let _model = watch_later::Entity::find_by_id(id)
+                .one(&txn)
+                .await?
+                .ok_or_else(|| anyhow!("未找到指定的稍后观看"))?;
+
+            watch_later::Entity::update(watch_later::ActiveModel {
+                id: sea_orm::ActiveValue::Unchanged(id),
+                include_keywords: sea_orm::Set(include_keywords_json.clone()),
+                exclude_keywords: sea_orm::Set(exclude_keywords_json.clone()),
+                min_duration_seconds: sea_orm::Set(min_duration_seconds),
+                max_duration_seconds: sea_orm::Set(max_duration_seconds),
+                min_page_duration_seconds: sea_orm::Set(min_page_duration_seconds),
+                max_page_duration_seconds: sea_orm::Set(max_page_duration_seconds),
+                ..Default::default()
+            })
+            .exec(&txn)
+            .await?;
+
+            ("稍后再看".to_string(), "watch_later".to_string())
+        }
+        "bangumi" => {
+            let model = video_source::Entity::find_by_id(id)
+                .one(&txn)
+                .await?
+                .ok_or_else(|| anyhow!("未找到指定的番剧"))?;
+
+            video_source::Entity::update(video_source::ActiveModel {
+                id: sea_orm::ActiveValue::Unchanged(id),
+                include_keywords: sea_orm::Set(include_keywords_json.clone()),
+                exclude_keywords: sea_orm::Set(exclude_keywords_json.clone()),
+                min_duration_seconds: sea_orm::Set(min_duration_seconds),
+                max_duration_seconds: sea_orm::Set(max_duration_seconds),
+                min_page_duration_seconds: sea_orm::Set(min_page_duration_seconds),
+                max_page_duration_seconds: sea_orm::Set(max_page_duration_seconds),
+                ..Default::default()
+            })
+            .exec(&txn)
+            .await?;
+
+            (model.name, "bangumi".to_string())
+        }
+        _ => return Err(anyhow!("不支持的视频源类型: {}", source_type).into()),
+    };
+
+    txn.commit().await?;
+
+    let response = UpdateVideoSourceFiltersResponse {
+        success: true,
+        source_id: id,
+        source_type: canonical_type,
+        filters: VideoSourceFilters {
+            min_duration_seconds,
+            max_duration_seconds,
+            min_page_duration_seconds,
+            max_page_duration_seconds,
+            include_keywords: include_keywords_normalized.unwrap_or_default(),
+            exclude_keywords: exclude_keywords_normalized.unwrap_or_default(),
+        },
+        message: format!("{} 的过滤规则已更新", display_name),
+    };
+
+    Ok(response)
 }
 
 /// 删除视频（软删除）

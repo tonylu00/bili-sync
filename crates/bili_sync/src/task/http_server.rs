@@ -71,6 +71,7 @@ use crate::api::handler::{
     update_credential,
     update_notification_config,
     update_video_source_enabled,
+    update_video_source_filters,
     update_video_source_scan_deleted,
     update_video_status,
     validate_config,
@@ -150,6 +151,10 @@ pub async fn http_server(_database_connection: Arc<DatabaseConnection>) -> Resul
         .route(
             "/api/video-sources/{source_type}/{id}/scan-deleted",
             put(update_video_source_scan_deleted),
+        )
+        .route(
+            "/api/video-sources/{source_type}/{id}/filters",
+            put(update_video_source_filters),
         )
         .route(
             "/api/video-sources/{source_type}/{id}/reset-path",
