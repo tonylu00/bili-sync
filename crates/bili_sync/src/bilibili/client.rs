@@ -94,6 +94,7 @@ impl Client {
         let client_builder = reqwest::Client::builder()
             .default_headers(headers)
             .gzip(true)
+            .referer(false)  // 禁用自动Referer策略，使用我们自己设置的Referer头
             .connect_timeout(Duration::from_secs(10))
             .read_timeout(Duration::from_secs(10))
             .pool_idle_timeout(Some(Duration::from_secs(30)))

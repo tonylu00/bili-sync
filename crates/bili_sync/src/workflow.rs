@@ -1869,12 +1869,14 @@ pub async fn download_video_pages(
 
     // 延迟创建季度文件夹，只在实际需要写入文件时创建
 
-    let upper_id = final_video_model.upper_id.to_string();
     let current_config = crate::config::reload_config();
+    // 使用UP主昵称作为文件夹名，并使用首字进行分类
+    let upper_name = crate::utils::filenamify::filenamify(&final_video_model.upper_name);
+    let first_char = upper_name.chars().next().context("upper_name is empty")?.to_string();
     let base_upper_path = &current_config
         .upper_path
-        .join(upper_id.chars().next().context("upper_id is empty")?.to_string())
-        .join(upper_id);
+        .join(&first_char)
+        .join(&upper_name);
     let is_single_page = final_video_model.single_page.context("single_page is null")?;
 
     // 为多P视频生成基于视频名称的文件名
@@ -2234,16 +2236,17 @@ pub async fn download_video_pages(
             let poster_path = series_root.join(format!("Season{:02}-thumb.jpg", season_number));
             let fanart_path = series_root.join(format!("Season{:02}-fanart.jpg", season_number));
 
-            // 定义所有三个Season级别文件路径
+            // 定义所有Season级别文件路径
             let season_poster_path = series_root.join(format!("Season{:02}-poster.jpg", season_number));
+
+            // Emby兼容性：添加folder.jpg和poster.jpg
+            let folder_path = series_root.join("folder.jpg");
+            let generic_poster_path = series_root.join("poster.jpg");
 
             // 依赖数据库状态决定是否下载季度级图片（不检查文件存在性，以支持重置状态后重新下载）
             let should_download_season_images = separate_status[0];
 
-            info!(
-                "准备下载季度级图片到: {:?}, {:?} 和 {:?}",
-                poster_path, fanart_path, season_poster_path
-            );
+            info!("准备下载季度级图片到: {:?}, {:?}, {:?}, {:?} 和 {:?}", poster_path, fanart_path, season_poster_path, folder_path, generic_poster_path);
 
             // 季度级图片：thumb使用横版封面，fanart使用竖版封面
             let season_info_ref = season_info.as_ref().unwrap();
@@ -2266,8 +2269,8 @@ pub async fn download_video_pages(
             debug!("  Season{:02}-thumb.jpg URL: {:?}", season_number, season_thumb_url);
             debug!("  Season{:02}-fanart.jpg URL: {:?}", season_number, season_fanart_url);
 
-            // 并行下载三个Season级别的图片文件
-            let (thumb_result, fanart_result, poster_result) = tokio::join!(
+            // 并行下载五个Season级别的图片文件
+            let (thumb_result, fanart_result, poster_result, folder_result, generic_poster_result) = tokio::join!(
                 // Season01-thumb.jpg (横版封面)
                 fetch_video_poster(
                     should_download_season_images,
@@ -2290,7 +2293,7 @@ pub async fn download_video_pages(
                     season_fanart_url, // 使用竖版封面作为fanart
                     None,              // 不使用fanart URL
                 ),
-                // Season01-poster.jpg (竖版封面，Jellyfin优先级最高)
+                // Season01-poster.jpg (竖版封面)
                 fetch_bangumi_poster(
                     should_download_season_images,
                     &video_model,
@@ -2298,19 +2301,37 @@ pub async fn download_video_pages(
                     season_poster_path,
                     token.clone(),
                     season_fanart_url, // 使用竖版封面作为主封面
+                ),
+                // folder.jpg (竖版封面，Emby优先识别)
+                fetch_bangumi_poster(
+                    should_download_season_images,
+                    &video_model,
+                    downloader,
+                    folder_path,
+                    token.clone(),
+                    season_fanart_url, // 使用竖版封面
+                ),
+                // poster.jpg (竖版封面，通用封面)
+                fetch_bangumi_poster(
+                    should_download_season_images,
+                    &video_model,
+                    downloader,
+                    generic_poster_path,
+                    token.clone(),
+                    season_fanart_url, // 使用竖版封面
                 )
             );
 
             // 返回综合结果
-            Some(match (thumb_result, fanart_result, poster_result) {
+            Some(match (thumb_result, fanart_result, poster_result, folder_result, generic_poster_result) {
                 // 只要都是Ok且至少有一个Succeeded，就算成功
-                (Ok(ExecutionStatus::Succeeded), Ok(_), Ok(_))
-                | (Ok(_), Ok(ExecutionStatus::Succeeded), Ok(_))
-                | (Ok(_), Ok(_), Ok(ExecutionStatus::Succeeded)) => ExecutionStatus::Succeeded,
+                (Ok(ExecutionStatus::Succeeded), _, _, _, _)
+                | (_, Ok(ExecutionStatus::Succeeded), _, _, _)
+                | (_, _, Ok(ExecutionStatus::Succeeded), _, _)
+                | (_, _, _, Ok(ExecutionStatus::Succeeded), _)
+                | (_, _, _, _, Ok(ExecutionStatus::Succeeded)) => ExecutionStatus::Succeeded,
                 // 都是Ok但都是Skipped
-                (Ok(ExecutionStatus::Skipped), Ok(ExecutionStatus::Skipped), Ok(ExecutionStatus::Skipped)) => {
-                    ExecutionStatus::Skipped
-                }
+                (Ok(ExecutionStatus::Skipped), Ok(ExecutionStatus::Skipped), Ok(ExecutionStatus::Skipped), Ok(ExecutionStatus::Skipped), Ok(ExecutionStatus::Skipped)) => ExecutionStatus::Skipped,
                 // 有任何错误才报Failed
                 _ => ExecutionStatus::Failed(anyhow::anyhow!("Season级别图片下载失败")),
             })
@@ -2321,7 +2342,7 @@ pub async fn download_video_pages(
         Some(ExecutionStatus::Skipped)
     };
 
-    let (res_1, res_2, res_3, res_4, res_5) = tokio::join!(
+    let (res_1, res_2, res_folder, res_3, res_4, res_5) = tokio::join!(
         // 下载视频封面（番剧和普通视频采用不同策略）
         fetch_video_poster(
             if is_bangumi {
@@ -2439,16 +2460,39 @@ pub async fn download_video_pages(
                 None
             },
         ),
-        // 下载番剧主封面 poster.jpg（仅番剧需要，用于详情页左侧显示）
+        // 下载番剧/多P/合集根目录的 poster.jpg（Emby兼容性）
         fetch_bangumi_poster(
-            is_bangumi && bangumi_folder_path.is_some() && should_download_bangumi_poster,
+            {
+                let config = crate::config::reload_config();
+                if is_bangumi && bangumi_folder_path.is_some() {
+                    // 番剧：无论是否启用Season结构都下载
+                    should_download_bangumi_poster
+                } else {
+                    // 多P视频或合集：启用Season结构时才下载根目录封面
+                    separate_status[0]
+                        && ((!is_single_page && config.multi_page_use_season_structure && season_folder.is_some())
+                            || (is_collection && config.collection_use_season_structure && season_folder.is_some()))
+                        && should_download_season_poster
+                }
+            },
             &video_model,
             downloader,
             if is_bangumi && bangumi_folder_path.is_some() {
+                // 番剧根目录的 poster.jpg
                 bangumi_folder_path.as_ref().unwrap().join("poster.jpg")
             } else {
-                // 非番剧不需要 poster.jpg，使用占位路径
-                std::path::PathBuf::from("/dev/null")
+                // 多P视频或合集根目录的 poster.jpg
+                let config = crate::config::reload_config();
+                if (!is_single_page && config.multi_page_use_season_structure && season_folder.is_some())
+                    || (is_collection && config.collection_use_season_structure && season_folder.is_some())
+                {
+                    base_path
+                        .parent()
+                        .map(|parent| parent.join("poster.jpg"))
+                        .unwrap_or_else(|| base_path.join("poster.jpg"))
+                } else {
+                    std::path::PathBuf::from("/dev/null")
+                }
             },
             token.clone(),
             // 使用竖版封面作为主封面
@@ -2458,6 +2502,58 @@ pub async fn download_video_pages(
                 debug!("番剧「{}」poster.jpg选择逻辑:", video_model.name);
                 debug!("  最终选择的poster URL: {:?}", poster_url);
                 poster_url
+            } else if let Some(ref cover_url) = collection_cover_url {
+                // 合集也使用封面URL
+                Some(cover_url.as_str())
+            } else {
+                None
+            },
+        ),
+        // 下载番剧/多P/合集根目录的 folder.jpg（Emby兼容性，优先级最高）
+        fetch_bangumi_poster(
+            {
+                let config = crate::config::reload_config();
+                if is_bangumi && bangumi_folder_path.is_some() {
+                    // 番剧：无论是否启用Season结构都下载
+                    should_download_bangumi_poster
+                } else {
+                    // 多P视频或合集：启用Season结构时才下载根目录封面
+                    separate_status[0]
+                        && ((!is_single_page && config.multi_page_use_season_structure && season_folder.is_some())
+                            || (is_collection && config.collection_use_season_structure && season_folder.is_some()))
+                        && should_download_season_poster
+                }
+            },
+            &video_model,
+            downloader,
+            if is_bangumi && bangumi_folder_path.is_some() {
+                // 番剧根目录的 folder.jpg
+                bangumi_folder_path.as_ref().unwrap().join("folder.jpg")
+            } else {
+                // 多P视频或合集根目录的 folder.jpg
+                let config = crate::config::reload_config();
+                if (!is_single_page && config.multi_page_use_season_structure && season_folder.is_some())
+                    || (is_collection && config.collection_use_season_structure && season_folder.is_some())
+                {
+                    base_path
+                        .parent()
+                        .map(|parent| parent.join("folder.jpg"))
+                        .unwrap_or_else(|| base_path.join("folder.jpg"))
+                } else {
+                    std::path::PathBuf::from("/dev/null")
+                }
+            },
+            token.clone(),
+            // 使用竖版封面作为主封面
+            if is_bangumi && season_info.is_some() {
+                let season = season_info.as_ref().unwrap();
+                let folder_url = season.cover.as_deref().filter(|s| !s.is_empty());
+                debug!("番剧「{}」folder.jpg选择逻辑:", video_model.name);
+                debug!("  最终选择的folder URL: {:?}", folder_url);
+                folder_url
+            } else if let Some(ref cover_url) = collection_cover_url {
+                // 合集也使用封面URL
+                Some(cover_url.as_str())
             } else {
                 None
             },
@@ -2500,11 +2596,12 @@ pub async fn download_video_pages(
         .collect::<Vec<_>>();
     status.update_status(&main_results);
 
-    // 额外的结果单独处理（季度NFO、季度图片和番剧主封面）
+    // 额外的结果单独处理（季度NFO、季度图片、根目录Emby兼容封面）
     let extra_results = [
         Ok(season_nfo_result.unwrap_or(ExecutionStatus::Skipped)),
         Ok(season_images_result.unwrap_or(ExecutionStatus::Skipped)),
-        res_2, // 番剧主封面 poster.jpg 的结果
+        res_2, // 番剧/多P/合集根目录 poster.jpg 的结果（Emby兼容）
+        res_folder, // 番剧/多P/合集根目录 folder.jpg 的结果（Emby优先识别）
     ]
     .into_iter()
     .map(Into::into)
@@ -2518,7 +2615,7 @@ pub async fn download_video_pages(
 
     all_results
         .iter()
-        .take(7)
+        .take(9)
         .zip([
             "封面",
             "详情",
@@ -2527,6 +2624,8 @@ pub async fn download_video_pages(
             "分页下载",
             "季度NFO",
             "季度图片",
+            "根目录poster",
+            "根目录folder",
         ])
         .for_each(|(res, task_name)| match res {
             ExecutionStatus::Skipped => debug!("处理视频「{}」{}已成功过，跳过", &video_model.name, task_name),
@@ -4088,16 +4187,24 @@ async fn get_season_title_from_api(
                         Ok(json) => {
                             // 检查API返回是否成功
                             if json["code"].as_i64().unwrap_or(-1) == 0 {
-                                // 获取季度标题
+                                // 获取季度标题并标准化空格
                                 if let Some(title) = json["result"]["title"].as_str() {
-                                    debug!("获取到季度标题: {} (尝试次数: {})", title, retry_count + 1);
+                                    // 标准化空格：将多个连续空格合并为单个空格，去除括号前的空格
+                                    let normalized_title = title
+                                        .split_whitespace()  // 分割字符串，自动去除首尾空格并处理连续空格
+                                        .collect::<Vec<_>>()
+                                        .join(" ")           // 用单个空格重新连接
+                                        .replace(" （", "（") // 去除全角括号前的空格
+                                        .replace(" (", "("); // 去除半角括号前的空格
 
-                                    // 缓存番剧标题
+                                    debug!("获取到季度标题: {} (尝试次数: {})", normalized_title, retry_count + 1);
+
+                                    // 缓存清理后的番剧标题
                                     if let Ok(mut cache) = SEASON_TITLE_CACHE.lock() {
-                                        cache.insert(season_id.to_string(), title.to_string());
+                                        cache.insert(season_id.to_string(), normalized_title.clone());
                                     }
 
-                                    return Some(title.to_string());
+                                    return Some(normalized_title);
                                 }
                             } else {
                                 warn!(

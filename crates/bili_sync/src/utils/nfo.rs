@@ -1497,6 +1497,11 @@ impl NFO<'_> {
     fn get_actor_info(upper_id: i64, upper_name: &str, config: &NFOConfig) -> Option<(String, String)> {
         let trimmed_name = upper_name.trim();
 
+        // 期望表现：
+        // - 演员 name 使用 UP 主昵称；
+        // - 角色 role 使用 UP 主ID（便于脚本根据ID管理，即使UP主改名也能统一）；
+        // - 当昵称为空时按策略处理（占位/默认/跳过）。
+
         if upper_id > 0 {
             // 有效 UID 情况：优先使用昵称，缺省按策略补齐
             let actor_name = if !trimmed_name.is_empty() {
@@ -1508,12 +1513,12 @@ impl NFO<'_> {
                     EmptyUpperStrategy::Default => config.empty_upper_default_name.clone(),
                 }
             };
-            return Some((actor_name, "UP主".to_string()));
+            return Some((actor_name, upper_id.to_string()));
         }
 
-        // 无效 UID 情况：同样使用昵称作为演员名，角色固定为 "UP主"
+        // 无效 UID 情况：同样使用昵称作为演员名，角色为"unknown"（因为没有有效ID）
         if !trimmed_name.is_empty() {
-            return Some((trimmed_name.to_string(), "UP主".to_string()));
+            return Some((trimmed_name.to_string(), "unknown".to_string()));
         }
 
         // 名称也为空，按策略处理
@@ -1521,11 +1526,11 @@ impl NFO<'_> {
             EmptyUpperStrategy::Skip => None,
             EmptyUpperStrategy::Placeholder => {
                 let name = config.empty_upper_placeholder.clone();
-                Some((name.clone(), "UP主".to_string()))
+                Some((name.clone(), "unknown".to_string()))
             }
             EmptyUpperStrategy::Default => {
                 let name = config.empty_upper_default_name.clone();
-                Some((name.clone(), "UP主".to_string()))
+                Some((name.clone(), "unknown".to_string()))
             }
         }
     }
