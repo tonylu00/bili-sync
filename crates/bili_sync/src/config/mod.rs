@@ -142,7 +142,7 @@ fn default_collection_folder_mode() -> Cow<'static, str> {
 }
 
 fn default_ffmpeg_timeout_seconds() -> u64 {
-    60
+    600
 }
 
 #[derive(Serialize, Deserialize)]

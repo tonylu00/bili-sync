@@ -6005,6 +6005,14 @@ pub async fn update_config_internal(
                         .update_config_item("interval", serde_json::to_value(config.interval)?)
                         .await
                 }
+                "ffmpeg_timeout_seconds" => {
+                    manager
+                        .update_config_item(
+                            "ffmpeg_timeout_seconds",
+                            serde_json::to_value(config.ffmpeg_timeout_seconds)?,
+                        )
+                        .await
+                }
                 "nfo_time_type" => {
                     manager
                         .update_config_item("nfo_time_type", serde_json::to_value(&config.nfo_time_type)?)

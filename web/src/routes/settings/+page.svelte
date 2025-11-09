@@ -133,7 +133,7 @@
 	let collectionFolderMode = 'unified';
 	let timeFormat = '%Y-%m-%d';
 	let interval = 1200;
-	let ffmpegTimeoutSeconds = 60;
+	let ffmpegTimeoutSeconds = 600;
 	let nfoTimeType = 'favtime';
 	let bindAddress = '0.0.0.0:12345';
 	let parallelDownloadEnabled = false;
@@ -529,7 +529,7 @@
 			collectionFolderMode = config.collection_folder_mode || 'separate';
 			timeFormat = config.time_format || '';
 			interval = config.interval || 1200;
-			ffmpegTimeoutSeconds = config.ffmpeg_timeout_seconds ?? 60;
+			ffmpegTimeoutSeconds = config.ffmpeg_timeout_seconds ?? 600;
 			nfoTimeType = config.nfo_time_type || 'favtime';
 			bindAddress = config.bind_address || '0.0.0.0:12345';
 			parallelDownloadEnabled = config.parallel_download_enabled || false;
