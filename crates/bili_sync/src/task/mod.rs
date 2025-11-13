@@ -20,7 +20,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::Mutex;
-use tokio_cron_scheduler::{Job, JobScheduler};
+use tokio_cron_scheduler::{Job, JobScheduler, JobSchedulerError};
 use tokio_util::sync::CancellationToken;
 use tracing::{debug, error, info, warn};
 use uuid::Uuid;
@@ -1905,11 +1905,10 @@ impl DownloadTaskManager {
             status.next_run = next_run;
         }
 
-        if !scheduler.inited().await {
-            scheduler
-                .start()
-                .await
-                .map_err(|e| anyhow::anyhow!("启动下载任务调度器失败: {:#}", e))?;
+        if let Err(e) = scheduler.start().await {
+            if !matches!(e, JobSchedulerError::TickError) {
+                return Err(anyhow::anyhow!("启动下载任务调度器失败: {:#}", e));
+            }
         }
 
         Ok(())
