@@ -1763,6 +1763,10 @@ impl DownloadTaskManager {
         Some(self.status.read().clone())
     }
 
+    fn is_running(&self) -> bool {
+        self.status.read().is_running
+    }
+
     pub async fn initialize(&self, connection: Arc<DatabaseConnection>) -> anyhow::Result<()> {
         self.connection.store(Some(connection.clone()));
 
@@ -1799,12 +1803,9 @@ impl DownloadTaskManager {
     }
 
     pub async fn trigger_now(&self) -> anyhow::Result<()> {
-        {
-            let status = self.status.read();
-            if status.is_running {
-                debug!("下载任务已在运行中，跳过立即触发请求");
-                return Ok(());
-            }
+        if self.is_running() {
+            debug!("下载任务已在运行中，跳过立即触发请求");
+            return Ok(());
         }
 
         let connection = self
@@ -1874,6 +1875,12 @@ impl DownloadTaskManager {
                 }
 
                 Job::new_repeated(Duration::from_secs(seconds), move |job_id, _| {
+                    let manager = DownloadTaskManager::get();
+                    if manager.is_running() {
+                        debug!("上一轮下载任务仍在执行，跳过本次调度触发");
+                        return;
+                    }
+
                     let connection = job_connection.clone();
                     let bili_client = job_client.clone();
 
@@ -1884,6 +1891,12 @@ impl DownloadTaskManager {
                 let schedule = expr.trim().to_string();
 
                 Job::new(schedule.clone(), move |job_id, _| {
+                    let manager = DownloadTaskManager::get();
+                    if manager.is_running() {
+                        debug!("上一轮下载任务仍在执行，跳过本次Cron触发");
+                        return;
+                    }
+
                     let connection = job_connection.clone();
                     let bili_client = job_client.clone();
 
