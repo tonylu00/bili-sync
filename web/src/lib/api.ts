@@ -575,6 +575,13 @@ class ApiClient {
 	}
 
 	/**
+	 * 立即执行一次扫描任务
+	 */
+	async triggerDownloadNow(): Promise<ApiResponse<TaskControlResponse>> {
+		return this.post<TaskControlResponse>('/task-control/run-now');
+	}
+
+	/**
 	 * 获取视频播放信息（在线播放用）
 	 * @param videoId 视频ID或分页ID
 	 */
@@ -916,6 +923,11 @@ export const api = {
 	 * 恢复所有扫描和下载任务
 	 */
 	resumeScanning: () => apiClient.resumeScanning(),
+
+	/**
+	 * 立即执行一次扫描任务
+	 */
+	triggerDownloadNow: () => apiClient.triggerDownloadNow(),
 
 	/**
 	 * 获取视频播放信息（在线播放用）

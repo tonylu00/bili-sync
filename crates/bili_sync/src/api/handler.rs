@@ -1170,10 +1170,11 @@ pub async fn reset_all_videos(
     }
 
     // 触发立即扫描（缩短等待）
-    crate::task::resume_scanning();
-    // 触发立即扫描（缩短等待）
     if resetted {
         crate::task::resume_scanning();
+        if let Err(e) = crate::task::trigger_download_now().await {
+            warn!("触发立即扫描失败: {:#}", e);
+        }
     }
     Ok(ApiResponse::ok(ResetAllVideosResponse {
         resetted,
@@ -1610,6 +1611,9 @@ pub async fn set_specific_tasks_status(
 
     if updated {
         crate::task::resume_scanning();
+        if let Err(e) = crate::task::trigger_download_now().await {
+            warn!("触发立即扫描失败: {:#}", e);
+        }
     }
 
     Ok(ApiResponse::ok(SetSpecificTasksStatusResponse {
@@ -1831,6 +1835,9 @@ pub async fn update_video_status(
     // 触发立即扫描（缩短等待）
     if has_video_updates || has_page_updates {
         crate::task::resume_scanning();
+        if let Err(e) = crate::task::trigger_download_now().await {
+            warn!("触发立即扫描失败: {:#}", e);
+        }
     }
     Ok(ApiResponse::ok(UpdateVideoStatusResponse {
         success: has_video_updates || has_page_updates,
@@ -6333,7 +6340,10 @@ pub async fn update_config_internal(
                 if videos_count > 0 || pages_count > 0 {
                     info!("准备触发立即扫描来处理重置的NFO任务");
                     crate::task::resume_scanning();
-                    info!("NFO任务重置完成，已成功触发立即扫描");
+                    match crate::task::trigger_download_now().await {
+                        Ok(_) => info!("NFO任务重置完成，已成功触发立即扫描"),
+                        Err(e) => warn!("触发立即扫描失败: {:#}", e),
+                    }
                 } else {
                     info!("没有NFO任务需要重置，跳过扫描触发");
                 }
@@ -9072,6 +9082,9 @@ pub async fn pause_scanning_endpoint() -> Result<ApiResponse<crate::api::respons
 )]
 pub async fn resume_scanning_endpoint() -> Result<ApiResponse<crate::api::response::TaskControlResponse>, ApiError> {
     crate::task::resume_scanning();
+    if let Err(e) = crate::task::trigger_download_now().await {
+        warn!("触发立即扫描失败: {:#}", e);
+    }
     Ok(ApiResponse::ok(crate::api::response::TaskControlResponse {
         success: true,
         message: "已恢复所有扫描和下载任务".to_string(),
@@ -9104,6 +9117,47 @@ pub async fn get_task_control_status() -> Result<ApiResponse<crate::api::respons
             "任务空闲".to_string()
         },
     }))
+}
+
+/// 立即执行一次下载和扫描任务
+#[utoipa::path(
+    post,
+    path = "/api/task-control/run-now",
+    responses(
+        (status = 200, description = "立即执行任务成功", body = crate::api::response::TaskControlResponse),
+        (status = 500, description = "内部错误")
+    )
+)]
+pub async fn trigger_download_now_endpoint() -> Result<ApiResponse<crate::api::response::TaskControlResponse>, ApiError>
+{
+    let is_paused = crate::task::TASK_CONTROLLER.is_paused();
+    let was_scanning = crate::task::is_scanning();
+
+    match crate::task::trigger_download_now().await {
+        Ok(_) => {
+            let message = if is_paused {
+                "任务当前处于暂停状态，将在恢复后继续执行".to_string()
+            } else if was_scanning || crate::task::is_scanning() {
+                "下载任务已在运行中".to_string()
+            } else {
+                "已触发一次立即扫描任务".to_string()
+            };
+
+            Ok(ApiResponse::ok(crate::api::response::TaskControlResponse {
+                success: true,
+                message,
+                is_paused,
+            }))
+        }
+        Err(e) => {
+            warn!("触发立即扫描失败: {:#}", e);
+            Ok(ApiResponse::ok(crate::api::response::TaskControlResponse {
+                success: false,
+                message: format!("触发立即扫描失败: {}", e),
+                is_paused,
+            }))
+        }
+    }
 }
 
 /// 获取视频的BVID信息（用于构建B站链接）

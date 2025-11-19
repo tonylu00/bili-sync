@@ -39,6 +39,7 @@
 	import CalendarIcon from '@lucide/svelte/icons/calendar';
 	import PauseIcon from '@lucide/svelte/icons/pause';
 	import SettingsIcon from '@lucide/svelte/icons/settings';
+	import ZapIcon from '@lucide/svelte/icons/zap';
 
 	// 认证状态
 	let isAuthenticated = false;
@@ -51,6 +52,7 @@
 	let taskControlStatus: TaskControlStatusResponse | null = null;
 	let loading = false;
 	let loadingTaskControl = false;
+	let loadingRunNow = false;
 	let unsubscribeSysInfo: (() => void) | null = null;
 	let unsubscribeTasks: (() => void) | null = null;
 
@@ -200,6 +202,34 @@
 			toast.error('恢复任务失败');
 		} finally {
 			loadingTaskControl = false;
+		}
+	}
+
+	// 立即触发一次下载任务
+	async function runDownloadCycleNow() {
+		if (loadingRunNow || loadingTaskControl) return;
+		if (taskControlStatus?.is_paused) {
+			toast.error('任务已暂停，请先恢复任务');
+			return;
+		}
+
+		loadingRunNow = true;
+		try {
+			const response = await api.triggerDownloadNow();
+			const { success, message } = response.data;
+			if (success) {
+				toast.success(message ?? '已触发立即执行');
+			} else {
+				toast.error(message ?? '立即执行失败');
+			}
+			await loadTaskControlStatus();
+		} catch (error) {
+			console.error('立即执行失败:', error);
+			toast.error('立即执行失败', {
+				description: (error as ApiError).message
+			});
+		} finally {
+			loadingRunNow = false;
 		}
 	}
 
@@ -539,27 +569,48 @@
 
 								<!-- 任务控制按钮 -->
 								{#if taskControlStatus}
-									<Button
-										size="sm"
-										variant={taskControlStatus.is_paused ? 'default' : 'destructive'}
-										onclick={taskControlStatus.is_paused ? resumeAllTasks : pauseAllTasks}
-										disabled={loadingTaskControl}
-										class="w-full"
-										title={taskControlStatus.is_paused
-											? '恢复所有下载和扫描任务'
-											: '停止所有下载和扫描任务'}
-									>
-										{#if loadingTaskControl}
-											<SettingsIcon class="mr-2 h-4 w-4 animate-spin" />
-											处理中...
-										{:else if taskControlStatus.is_paused}
-											<PlayIcon class="mr-2 h-4 w-4" />
-											恢复任务
-										{:else}
-											<PauseIcon class="mr-2 h-4 w-4" />
-											停止任务
-										{/if}
-									</Button>
+									<div class="flex flex-col gap-2">
+										<Button
+											size="sm"
+											variant={taskControlStatus.is_paused ? 'default' : 'destructive'}
+											onclick={taskControlStatus.is_paused ? resumeAllTasks : pauseAllTasks}
+											disabled={loadingTaskControl || loadingRunNow}
+											class="w-full"
+											title={taskControlStatus.is_paused
+												? '恢复所有下载和扫描任务'
+												: '停止所有下载和扫描任务'}
+										>
+											{#if loadingTaskControl}
+												<SettingsIcon class="mr-2 h-4 w-4 animate-spin" />
+												处理中...
+											{:else if taskControlStatus.is_paused}
+												<PlayIcon class="mr-2 h-4 w-4" />
+												恢复任务
+											{:else}
+												<PauseIcon class="mr-2 h-4 w-4" />
+												停止任务
+											{/if}
+										</Button>
+
+										<Button
+											size="sm"
+											variant="secondary"
+											onclick={runDownloadCycleNow}
+											disabled={loadingRunNow || loadingTaskControl || taskControlStatus.is_paused}
+											class="w-full"
+											title={taskControlStatus.is_paused
+												? '任务已暂停，请先恢复后再执行'
+												: '立即触发一次下载和扫描任务'}
+										>
+											{#if loadingRunNow}
+												<SettingsIcon class="mr-2 h-4 w-4 animate-spin" />
+												处理中...
+											{:else}
+												<ZapIcon class="mr-2 h-4 w-4" />
+												立即执行
+											{/if}
+										</Button>
+									</div>
 								{/if}
 							</div>
 						{:else}

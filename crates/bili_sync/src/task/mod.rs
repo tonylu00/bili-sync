@@ -1712,6 +1712,40 @@ pub struct DownloadTaskManager {
 }
 
 impl DownloadTaskManager {
+    fn spawn_download_cycle(
+        job_id: Option<Uuid>,
+        connection: Arc<DatabaseConnection>,
+        bili_client: Arc<crate::bilibili::BiliClient>,
+    ) {
+        tokio::spawn(async move {
+            let manager = DownloadTaskManager::get();
+            manager.mark_started();
+            crate::utils::task_notifier::TASK_STATUS_NOTIFIER.set_running();
+
+            let handle = tokio::runtime::Handle::current();
+            let cycle = tokio::task::spawn_blocking(move || {
+                handle.block_on(video_downloader::run_download_cycle(connection, bili_client))
+            })
+            .await;
+
+            match cycle {
+                Ok(Ok(())) => {}
+                Ok(Err(e)) => {
+                    error!("执行下载任务失败: {:#}", e);
+                }
+                Err(e) => {
+                    error!("执行下载任务失败: {:#}", e);
+                }
+            }
+
+            if let Err(e) = manager.mark_finished(job_id).await {
+                warn!("更新下载任务状态失败: {:#}", e);
+            }
+
+            crate::utils::task_notifier::TASK_STATUS_NOTIFIER.set_finished();
+        });
+    }
+
     pub fn get() -> &'static Self {
         static INSTANCE: once_cell::sync::Lazy<DownloadTaskManager> =
             once_cell::sync::Lazy::new(|| DownloadTaskManager {
@@ -1764,6 +1798,42 @@ impl DownloadTaskManager {
         self.schedule_job(scheduler, connection, bili_client, trigger).await
     }
 
+    pub async fn trigger_now(&self) -> anyhow::Result<()> {
+        {
+            let status = self.status.read();
+            if status.is_running {
+                debug!("下载任务已在运行中，跳过立即触发请求");
+                return Ok(());
+            }
+        }
+
+        let connection = self
+            .connection
+            .load_full()
+            .ok_or_else(|| anyhow::anyhow!("下载任务管理器尚未初始化数据库连接"))?;
+        let bili_client = if let Some(client) = self.bili_client.load_full() {
+            client
+        } else {
+            let client = Arc::new(crate::bilibili::BiliClient::new(String::new()));
+            self.bili_client.store(Some(client.clone()));
+            client
+        };
+
+        let scheduler = self.ensure_scheduler().await?;
+        if let Err(e) = scheduler.start().await {
+            if matches!(e, JobSchedulerError::StartScheduler) {
+                debug!("下载任务调度器已在运行，跳过重复启动");
+            } else {
+                return Err(anyhow::anyhow!("启动下载任务调度器失败: {:#}", e));
+            }
+        }
+
+        let job_id = self.job_id.lock().await.clone();
+        Self::spawn_download_cycle(job_id, connection, bili_client);
+
+        Ok(())
+    }
+
     async fn ensure_scheduler(&self) -> anyhow::Result<Arc<JobScheduler>> {
         let mut guard = self.scheduler.lock().await;
         if let Some(scheduler) = guard.as_ref() {
@@ -1804,72 +1874,20 @@ impl DownloadTaskManager {
                 }
 
                 Job::new_repeated(Duration::from_secs(seconds), move |job_id, _| {
-                    let manager = DownloadTaskManager::get();
                     let connection = job_connection.clone();
                     let bili_client = job_client.clone();
 
-                    tokio::spawn(async move {
-                        manager.mark_started();
-                        crate::utils::task_notifier::TASK_STATUS_NOTIFIER.set_running();
-
-                        let handle = tokio::runtime::Handle::current();
-                        let cycle = tokio::task::spawn_blocking(move || {
-                            handle.block_on(video_downloader::run_download_cycle(connection, bili_client))
-                        })
-                        .await;
-
-                        match cycle {
-                            Ok(Ok(())) => {}
-                            Ok(Err(e)) => {
-                                error!("执行下载任务失败: {:#}", e);
-                            }
-                            Err(e) => {
-                                error!("执行下载任务失败: {:#}", e);
-                            }
-                        }
-
-                        if let Err(e) = manager.mark_finished(job_id).await {
-                            warn!("更新下载任务状态失败: {:#}", e);
-                        }
-
-                        crate::utils::task_notifier::TASK_STATUS_NOTIFIER.set_finished();
-                    });
+                    DownloadTaskManager::spawn_download_cycle(Some(job_id), connection, bili_client);
                 })?
             }
             Trigger::Cron(expr) => {
                 let schedule = expr.trim().to_string();
 
                 Job::new(schedule.clone(), move |job_id, _| {
-                    let manager = DownloadTaskManager::get();
                     let connection = job_connection.clone();
                     let bili_client = job_client.clone();
 
-                    tokio::spawn(async move {
-                        manager.mark_started();
-                        crate::utils::task_notifier::TASK_STATUS_NOTIFIER.set_running();
-
-                        let handle = tokio::runtime::Handle::current();
-                        let cycle = tokio::task::spawn_blocking(move || {
-                            handle.block_on(video_downloader::run_download_cycle(connection, bili_client))
-                        })
-                        .await;
-
-                        match cycle {
-                            Ok(Ok(())) => {}
-                            Ok(Err(e)) => {
-                                error!("执行下载任务失败: {:#}", e);
-                            }
-                            Err(e) => {
-                                error!("执行下载任务失败: {:#}", e);
-                            }
-                        }
-
-                        if let Err(e) = manager.mark_finished(job_id).await {
-                            warn!("更新下载任务状态失败: {:#}", e);
-                        }
-
-                        crate::utils::task_notifier::TASK_STATUS_NOTIFIER.set_finished();
-                    });
+                    DownloadTaskManager::spawn_download_cycle(Some(job_id), connection, bili_client);
                 })?
             }
         };
@@ -1906,7 +1924,9 @@ impl DownloadTaskManager {
         }
 
         if let Err(e) = scheduler.start().await {
-            if !matches!(e, JobSchedulerError::TickError) {
+            if matches!(e, JobSchedulerError::StartScheduler) {
+                debug!("下载任务调度器已在运行，跳过重复启动");
+            } else {
                 return Err(anyhow::anyhow!("启动下载任务调度器失败: {:#}", e));
             }
         }
@@ -1921,22 +1941,28 @@ impl DownloadTaskManager {
         status.next_run = None;
     }
 
-    async fn mark_finished(&self, job_id: Uuid) -> anyhow::Result<()> {
+    async fn mark_finished(&self, job_id: Option<Uuid>) -> anyhow::Result<()> {
         let scheduler = {
             let guard = self.scheduler.lock().await;
             guard.as_ref().cloned()
         };
 
-        let Some(scheduler) = scheduler else {
-            anyhow::bail!("下载任务调度器尚未初始化");
+        let effective_job_id = match job_id {
+            Some(id) => Some(id),
+            None => self.job_id.lock().await.clone(),
         };
 
-        let mut scheduler_handle = scheduler.as_ref().clone();
-        let next_run = scheduler_handle
-            .next_tick_for_job(job_id)
-            .await
-            .map_err(|e| anyhow::anyhow!("获取下载任务下一次执行时间失败: {:#}", e))?
-            .map(|dt| dt.with_timezone(&Local));
+        let mut next_run = None;
+
+        if let Some(job_id) = effective_job_id {
+            let scheduler = scheduler.ok_or_else(|| anyhow::anyhow!("下载任务调度器尚未初始化"))?;
+            let mut scheduler_handle = scheduler.as_ref().clone();
+            next_run = scheduler_handle
+                .next_tick_for_job(job_id)
+                .await
+                .map_err(|e| anyhow::anyhow!("获取下载任务下一次执行时间失败: {:#}", e))?
+                .map(|dt| dt.with_timezone(&Local));
+        }
 
         let mut status = self.status.write();
         status.is_running = false;
@@ -1978,6 +2004,10 @@ pub async fn pause_scanning() {
 /// 恢复定时扫描任务的便捷函数
 pub fn resume_scanning() {
     TASK_CONTROLLER.resume();
+}
+
+pub async fn trigger_download_now() -> Result<()> {
+    DownloadTaskManager::get().trigger_now().await
 }
 
 /// 检查是否正在扫描的便捷函数

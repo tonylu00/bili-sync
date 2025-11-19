@@ -66,6 +66,7 @@ use crate::api::handler::{
     setup_auth_token,
     test_notification_handler,
     test_risk_control_handler,
+    trigger_download_now_endpoint,
     update_config,
     update_config_item_internal,
     update_credential,
@@ -231,6 +232,7 @@ pub async fn http_server(_database_connection: Arc<DatabaseConnection>) -> Resul
         .route("/api/task-control/status", get(get_task_control_status))
         .route("/api/task-control/pause", post(pause_scanning_endpoint))
         .route("/api/task-control/resume", post(resume_scanning_endpoint))
+    .route("/api/task-control/run-now", post(trigger_download_now_endpoint))
         // 推送通知API
         .route("/api/notification/test", post(test_notification_handler))
         .route("/api/config/notification", get(get_notification_config))
