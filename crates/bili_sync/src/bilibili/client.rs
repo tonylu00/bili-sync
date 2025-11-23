@@ -1,12 +1,15 @@
+use std::future::Future;
 use std::sync::Arc;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use anyhow::{anyhow, Context, Result};
 use arc_swap::ArcSwapOption;
-use leaky_bucket::RateLimiter;
+use axum::http;
 use reqwest::{header, Method};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use tokio::sync::{Mutex, Semaphore};
+use tokio::time::sleep;
 use tokio_util::sync::CancellationToken;
 
 use crate::bilibili::credential::WbiImg;
@@ -194,7 +197,7 @@ impl Default for Client {
 #[derive(Clone)]
 pub struct BiliClient {
     pub client: Client,
-    limiter: Option<Arc<RateLimiter>>,
+    request_queue: Arc<ApiRequestQueue>,
     #[allow(dead_code)]
     cookie: String,
     /// 缓存的gaia_vtoken，用于绕过风控
@@ -205,23 +208,10 @@ impl BiliClient {
     pub fn new(cookie: String) -> Self {
         let client = Client::new();
         let config = crate::config::reload_config();
-        let limiter = config
-            .concurrent_limit
-            .rate_limit
-            .as_ref()
-            .map(|RateLimit { limit, duration }| {
-                Arc::new(
-                    RateLimiter::builder()
-                        .initial(*limit)
-                        .refill(*limit)
-                        .max(*limit)
-                        .interval(Duration::from_millis(*duration))
-                        .build(),
-                )
-            });
+        let request_queue = Arc::new(ApiRequestQueue::new(config.concurrent_limit.rate_limit.as_ref()));
         Self {
             client,
-            limiter,
+            request_queue,
             cookie,
             gaia_vtoken: Arc::new(ArcSwapOption::empty()),
         }
@@ -237,38 +227,45 @@ impl BiliClient {
         }
     }
 
-    /// 获取一个预构建的请求，通过该方法获取请求时会检查并等待速率限制
-    pub async fn request(&self, method: Method, url: &str) -> reqwest::RequestBuilder {
-        if let Some(limiter) = &self.limiter {
-            limiter.acquire_one().await;
-        }
+    /// 获取一个预构建的请求，通过该方法获取请求时会统一由队列调度
+    pub async fn request(&self, method: Method, url: &str) -> QueuedRequestBuilder {
         let config = crate::config::reload_config();
         let credential = config.credential.load();
         let gaia_vtoken = self.get_gaia_vtoken();
-        self.client
-            .request_with_gaia_vtoken(method, url, credential.as_deref(), gaia_vtoken.as_deref())
+        let builder = self
+            .client
+            .request_with_gaia_vtoken(method, url, credential.as_deref(), gaia_vtoken.as_deref());
+        QueuedRequestBuilder::new(self.request_queue.clone(), builder)
     }
 
     /// 发送 GET 请求
     pub async fn get(&self, url: &str, token: CancellationToken) -> Result<reqwest::Response> {
-        if let Some(limiter) = &self.limiter {
-            tokio::select! {
-                biased;
-                _ = token.cancelled() => return Err(anyhow!("Request cancelled in limiter")),
-                _ = limiter.acquire_one() => {},
+        let queue = self.request_queue.clone();
+        let client = self.client.clone();
+        let token_for_request = token.clone();
+
+        let queued_future = queue.execute(|| {
+            let token = token_for_request.clone();
+            async move {
+                let config = crate::config::reload_config();
+                let credential = config.credential.load();
+                let request_builder = client.request(Method::GET, url, credential.as_deref());
+                let response = tokio::select! {
+                    biased;
+                    _ = token.cancelled() => return Err(anyhow!("Request cancelled before send")),
+                    res = request_builder.send() => res,
+                };
+                Ok::<_, anyhow::Error>(response?)
             }
-        }
-        let config = crate::config::reload_config();
-        let credential = config.credential.load();
-        let request_builder = self.client.request(Method::GET, url, credential.as_deref());
+        });
 
         let response = tokio::select! {
             biased;
-            _ = token.cancelled() => return Err(anyhow!("Request cancelled before send")),
-            res = request_builder.send() => res,
-        };
+            _ = token.cancelled() => Err(anyhow!("Request cancelled before scheduling")),
+            res = queued_future => res,
+        }?;
 
-        Ok(response?)
+        Ok(response)
     }
 
     pub async fn check_refresh(&self) -> Result<()> {
@@ -1073,5 +1070,146 @@ impl BiliClient {
         let config = crate::config::reload_config();
         let credential = config.credential.load();
         credential.as_ref().map(|cred| cred.bili_jct.clone())
+    }
+}
+
+struct ApiRequestQueue {
+    permit: Semaphore,
+    last_finished: Mutex<Option<Instant>>,
+    min_interval: Duration,
+}
+
+impl ApiRequestQueue {
+    fn new(rate_limit: Option<&RateLimit>) -> Self {
+        const DEFAULT_LIMIT: u64 = 4;
+        const DEFAULT_DURATION_MS: u64 = 250;
+
+        let (limit, duration_ms) = match rate_limit {
+            Some(rate) => (rate.limit.max(1) as u64, rate.duration.max(1)),
+            None => (DEFAULT_LIMIT, DEFAULT_DURATION_MS),
+        };
+
+        // 计算相邻请求之间的最小间隔，使用向上取整确保间隔不低于配置
+        let interval_ms = (duration_ms + limit - 1) / limit;
+
+        Self {
+            permit: Semaphore::new(1),
+            last_finished: Mutex::new(None),
+            min_interval: Duration::from_millis(interval_ms.max(1)),
+        }
+    }
+
+    async fn execute<F, Fut, T>(&self, f: F) -> T
+    where
+        F: FnOnce() -> Fut,
+        Fut: Future<Output = T>,
+    {
+        let _permit = self.permit.acquire().await.expect("API request queue semaphore closed");
+        self.wait_for_interval().await;
+        let result = f().await;
+        self.record_completion().await;
+        result
+    }
+
+    async fn wait_for_interval(&self) {
+        loop {
+            let wait_duration = {
+                let guard = self.last_finished.lock().await;
+                guard.as_ref().and_then(|last| {
+                    let elapsed = last.elapsed();
+                    if elapsed < self.min_interval {
+                        Some(self.min_interval - elapsed)
+                    } else {
+                        None
+                    }
+                })
+            };
+
+            if let Some(duration) = wait_duration {
+                sleep(duration).await;
+            } else {
+                break;
+            }
+        }
+    }
+
+    async fn record_completion(&self) {
+        let mut guard = self.last_finished.lock().await;
+        *guard = Some(Instant::now());
+    }
+}
+
+pub struct QueuedRequestBuilder {
+    queue: Arc<ApiRequestQueue>,
+    builder: Option<reqwest::RequestBuilder>,
+}
+
+impl QueuedRequestBuilder {
+    fn new(queue: Arc<ApiRequestQueue>, builder: reqwest::RequestBuilder) -> Self {
+        Self {
+            queue,
+            builder: Some(builder),
+        }
+    }
+
+    fn map_builder<F>(mut self, op: F) -> Self
+    where
+        F: FnOnce(reqwest::RequestBuilder) -> reqwest::RequestBuilder,
+    {
+        let builder = self.builder.take().expect("request builder has already been consumed");
+        self.builder = Some(op(builder));
+        self
+    }
+
+    pub fn query<T: Serialize + ?Sized>(self, query: &T) -> Self {
+        self.map_builder(|builder| builder.query(query))
+    }
+
+    pub fn header<K, V>(self, key: K, value: V) -> Self
+    where
+        header::HeaderName: TryFrom<K>,
+        <header::HeaderName as TryFrom<K>>::Error: Into<http::Error>,
+        header::HeaderValue: TryFrom<V>,
+        <header::HeaderValue as TryFrom<V>>::Error: Into<http::Error>,
+    {
+        self.map_builder(|builder| builder.header(key, value))
+    }
+
+    pub fn headers(self, headers: header::HeaderMap) -> Self {
+        self.map_builder(|builder| builder.headers(headers))
+    }
+
+    pub fn json<T: Serialize + ?Sized>(self, json: &T) -> Self {
+        self.map_builder(|builder| builder.json(json))
+    }
+
+    pub fn form<T: Serialize + ?Sized>(self, form: &T) -> Self {
+        self.map_builder(|builder| builder.form(form))
+    }
+
+    pub fn body<T: Into<reqwest::Body>>(self, body: T) -> Self {
+        self.map_builder(|builder| builder.body(body))
+    }
+
+    pub fn bearer_auth<T: std::fmt::Display>(self, token: T) -> Self {
+        self.map_builder(|builder| builder.bearer_auth(token))
+    }
+
+    pub fn basic_auth<U, P>(self, username: U, password: Option<P>) -> Self
+    where
+        U: std::fmt::Display,
+        P: std::fmt::Display,
+    {
+        self.map_builder(|builder| builder.basic_auth(username, password))
+    }
+
+    pub fn timeout(self, timeout: Duration) -> Self {
+        self.map_builder(|builder| builder.timeout(timeout))
+    }
+
+    pub async fn send(self) -> Result<reqwest::Response, reqwest::Error> {
+        let queue = self.queue.clone();
+        let builder = self.builder.expect("request builder has already been consumed");
+        queue.execute(|| async move { builder.send().await }).await
     }
 }
