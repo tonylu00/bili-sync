@@ -73,6 +73,7 @@ static LAST_PLAYURL_REQUEST: Lazy<Mutex<Option<Instant>>> = Lazy::new(|| Mutex::
 
 const DURL_TRIAL_TIMELENGTH_THRESHOLD_MS: u64 = 60_000;
 const DURL_SINGLE_SEGMENT_THRESHOLD_MS: u64 = 45_000;
+const DURL_PREVIEW_TOLERANCE_MS: u64 = 1_500;
 const PLAYURL_BASE_DELAY_MIN_MS: u64 = 150;
 const PLAYURL_BASE_DELAY_MAX_MS: u64 = 600;
 const PLAYURL_ATTEMPT_BACKOFF_STEP_MS: u64 = 80;
@@ -203,6 +204,54 @@ fn assess_durl_only(data: &serde_json::Value, top_level_message: Option<&str>) -
         treat_as_trial,
         reasons,
     }
+}
+
+#[derive(Debug, PartialEq, Eq)]
+struct SueeDurlCoverage {
+    total_ms: u64,
+    timelength_ms: u64,
+}
+
+impl SueeDurlCoverage {
+    fn is_preview(&self) -> bool {
+        self.total_ms + DURL_PREVIEW_TOLERANCE_MS < self.timelength_ms
+    }
+}
+
+fn durl_segments_total_length_ms(durl_segments: &[serde_json::Value]) -> Option<u64> {
+    let mut total = 0u64;
+    let mut has_length = false;
+
+    for segment in durl_segments {
+        if let Some(length) = segment.get("length").and_then(|v| v.as_u64()) {
+            total += length;
+            has_length = true;
+        }
+    }
+
+    has_length.then_some(total)
+}
+
+fn suee_durl_coverage(data: &serde_json::Value) -> Option<SueeDurlCoverage> {
+    if data["result"].as_str()? != "suee" {
+        return None;
+    }
+
+    let durl_segments = data["durl"].as_array()?;
+    if durl_segments.is_empty() {
+        return None;
+    }
+
+    let total_ms = durl_segments_total_length_ms(durl_segments)?;
+    let timelength_ms = data["timelength"].as_u64().unwrap_or_default();
+    if timelength_ms == 0 {
+        return None;
+    }
+
+    Some(SueeDurlCoverage {
+        total_ms,
+        timelength_ms,
+    })
 }
 
 fn classify_playurl_error(err: &anyhow::Error) -> PlayurlFailureKind {
@@ -1326,19 +1375,29 @@ impl<'a> Video<'a> {
             // 检查是否存在特定的充电专享视频标识字段
             if let Some(result) = data["result"].as_str() {
                 if result == "suee" {
-                    // "suee" 可能是试看片段的标识，结合其他字段进一步判断
-                    let has_limited_content = data["durl"].as_array().is_some_and(|v| !v.is_empty());
-                    if has_limited_content {
-                        tracing::debug!("检测到result=suee且存在durl，可能为充电专享视频的试看模式");
-                        tracing::debug!(
-                            "疑似充电专享视频data字段: {}",
-                            serde_json::to_string_pretty(data).unwrap_or_else(|_| "无法序列化".to_string())
-                        );
-                        return Err(crate::bilibili::BiliError::RequestFailed(
-                            87008,
-                            "检测到试看模式，可能为充电专享视频".to_string(),
-                        )
-                        .into());
+                    if let Some(coverage) = suee_durl_coverage(data) {
+                        if coverage.is_preview() {
+                            tracing::debug!(
+                                "检测到result=suee且durl段总时长{}ms < 视频时长{}ms，可能为充电专享视频的试看模式",
+                                coverage.total_ms,
+                                coverage.timelength_ms
+                            );
+                            tracing::debug!(
+                                "疑似充电专享视频data字段: {}",
+                                serde_json::to_string_pretty(data).unwrap_or_else(|_| "无法序列化".to_string())
+                            );
+                            return Err(crate::bilibili::BiliError::RequestFailed(
+                                87008,
+                                "检测到试看模式，可能为充电专享视频".to_string(),
+                            )
+                            .into());
+                        } else {
+                            tracing::debug!(
+                                "result=suee但durl段总时长{}ms≈视频时长{}ms，判定为正常视频流",
+                                coverage.total_ms,
+                                coverage.timelength_ms
+                            );
+                        }
                     }
                 }
             }
@@ -2246,6 +2305,37 @@ mod tests {
             classify_412_evidence(None, None),
             Playurl412Kind::WafRateLimit
         ));
+    }
+
+    #[test]
+    fn suee_durl_coverage_detects_full_length_stream() {
+        let data = json!({
+            "result": "suee",
+            "timelength": 256_703,
+            "durl": [
+                { "length": 256_703 }
+            ]
+        });
+
+        let coverage = suee_durl_coverage(&data).expect("coverage should be detected");
+        assert_eq!(coverage.total_ms, 256_703);
+        assert_eq!(coverage.timelength_ms, 256_703);
+        assert!(!coverage.is_preview());
+    }
+
+    #[test]
+    fn suee_durl_coverage_detects_preview_segments() {
+        let data = json!({
+            "result": "suee",
+            "timelength": 120_000,
+            "durl": [
+                { "length": 30_000 },
+                { "length": 25_000 }
+            ]
+        });
+
+        let coverage = suee_durl_coverage(&data).expect("coverage should be detected");
+        assert!(coverage.is_preview());
     }
 
     #[test]
