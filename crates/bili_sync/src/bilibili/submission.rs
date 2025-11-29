@@ -228,7 +228,12 @@ impl<'a> Submission<'a> {
                 let vlist = &mut videos["data"]["list"]["vlist"];
                 if vlist.as_array().is_none_or(|v| v.is_empty()) {
                     if page == 1 {
-                        Err(anyhow!("no medias found in upper {} page {}", self.display_name(), page))?;
+                        warn!(
+                            "no medias found in upper {} page {}, likely suspended or deleted",
+                            self.display_name(),
+                            page
+                        );
+                        break;
                     } else {
                         // 非第一页没有视频表示已经到达末尾
                         break;
