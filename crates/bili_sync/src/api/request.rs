@@ -142,6 +142,7 @@ pub struct UpdateConfigRequest {
     // 多线程下载配置
     pub parallel_download_enabled: Option<bool>,
     pub parallel_download_threads: Option<usize>,
+    pub aria2_binary_path: Option<String>,
     // 视频质量设置
     pub video_max_quality: Option<String>,
     pub video_min_quality: Option<String>,

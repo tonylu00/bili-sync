@@ -3,6 +3,7 @@ extern crate tracing;
 
 mod adapter;
 mod api;
+#[cfg(feature = "aria2")]
 mod aria2_downloader;
 mod auth;
 mod bilibili;

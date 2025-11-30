@@ -5026,6 +5026,12 @@ pub async fn get_config() -> Result<ApiResponse<crate::api::response::ConfigResp
         nfo_time_type: nfo_time_type.to_string(),
         parallel_download_enabled: config.concurrent_limit.parallel_download.enabled,
         parallel_download_threads: config.concurrent_limit.parallel_download.threads,
+        aria2_binary_path: config
+            .concurrent_limit
+            .parallel_download
+            .aria2_binary_path
+            .as_ref()
+            .map(|p| p.to_string_lossy().to_string()),
         // 视频质量设置
         video_max_quality: format!("{:?}", config.filter_option.video_max_quality),
         video_min_quality: format!("{:?}", config.filter_option.video_min_quality),
@@ -5168,6 +5174,7 @@ pub async fn update_config(
             nfo_time_type: params.nfo_time_type.clone(),
             parallel_download_enabled: params.parallel_download_enabled,
             parallel_download_threads: params.parallel_download_threads,
+            aria2_binary_path: params.aria2_binary_path.clone(),
             // 视频质量设置
             video_max_quality: params.video_max_quality.clone(),
             video_min_quality: params.video_min_quality.clone(),
@@ -5383,6 +5390,21 @@ pub async fn update_config_internal(
         if threads > 0 && threads != config.concurrent_limit.parallel_download.threads {
             config.concurrent_limit.parallel_download.threads = threads;
             updated_fields.push("parallel_download_threads");
+        }
+    }
+
+    if let Some(binary_path) = params.aria2_binary_path {
+        let normalized = binary_path.trim();
+        let new_value = if normalized.is_empty() {
+            None
+        } else {
+            Some(std::path::PathBuf::from(normalized))
+        };
+
+        let current = config.concurrent_limit.parallel_download.aria2_binary_path.clone();
+        if new_value != current {
+            config.concurrent_limit.parallel_download.aria2_binary_path = new_value;
+            updated_fields.push("aria2_binary_path");
         }
     }
 

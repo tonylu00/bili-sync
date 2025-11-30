@@ -11,13 +11,13 @@ use crate::config::CONFIG_DIR;
 use crate::http::headers::create_aria2_headers;
 
 /// 嵌入的aria2二进制文件 (编译时自动下载对应平台版本)
-#[cfg(target_os = "windows")]
+#[cfg(all(feature = "bundled-aria2", target_os = "windows"))]
 static ARIA2_BINARY: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/aria2c.exe"));
 
-#[cfg(target_os = "linux")]
+#[cfg(all(feature = "bundled-aria2", target_os = "linux"))]
 static ARIA2_BINARY: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/aria2c"));
 
-#[cfg(any(target_os = "macos", target_os = "ios"))]
+#[cfg(all(feature = "bundled-aria2", any(target_os = "macos", target_os = "ios")))]
 static ARIA2_BINARY: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/aria2c"));
 
 /// 单个aria2进程实例
@@ -98,10 +98,30 @@ impl Aria2Instance {
     }
 }
 
+#[derive(Clone, Debug, Default)]
+pub struct Aria2LaunchOptions {
+    pub custom_binary: Option<PathBuf>,
+    pub allow_embedded: bool,
+}
+
+impl Aria2LaunchOptions {
+    pub fn new(custom_binary: Option<PathBuf>) -> Self {
+        Self {
+            custom_binary,
+            allow_embedded: cfg!(feature = "bundled-aria2"),
+        }
+    }
+
+    pub fn with_allow_embedded(mut self, allow_embedded: bool) -> Self {
+        self.allow_embedded = allow_embedded;
+        self
+    }
+}
+
 pub struct Aria2Downloader {
     client: Client,
     aria2_instances: Arc<Mutex<Vec<Aria2Instance>>>,
-    aria2_binary_path: PathBuf,
+    aria2_binary_path: Arc<PathBuf>,
     instance_count: usize,
     #[allow(dead_code)]
     next_instance_index: std::sync::atomic::AtomicUsize,
@@ -109,16 +129,17 @@ pub struct Aria2Downloader {
 
 impl Aria2Downloader {
     /// 创建新的aria2下载器实例，支持多进程
-    pub async fn new(client: Client) -> Result<Self> {
+    pub async fn new(client: Client, options: Aria2LaunchOptions) -> Result<Self> {
         tracing::info!("初始化aria2下载器...");
 
         // 启动前先清理所有旧的aria2进程
         tracing::debug!("清理旧的aria2进程...");
         Self::cleanup_all_aria2_processes().await;
 
-        tracing::debug!("提取aria2可执行文件...");
-        let aria2_binary_path = Self::extract_aria2_binary().await?;
-        tracing::debug!("aria2可执行文件路径: {}", aria2_binary_path.display());
+        tracing::debug!("定位aria2可执行文件...");
+        let resolved_binary_path = Self::locate_aria2_binary(&options).await?;
+        tracing::debug!("aria2可执行文件路径: {}", resolved_binary_path.display());
+        let aria2_binary_path = Arc::new(resolved_binary_path);
 
         // 确定进程数量：根据系统资源动态计算
         let instance_count = Self::calculate_optimal_instance_count();
@@ -127,7 +148,7 @@ impl Aria2Downloader {
         let mut downloader = Self {
             client,
             aria2_instances: Arc::new(Mutex::new(Vec::new())),
-            aria2_binary_path,
+            aria2_binary_path: Arc::clone(&aria2_binary_path),
             instance_count,
             next_instance_index: std::sync::atomic::AtomicUsize::new(0),
         };
@@ -146,6 +167,7 @@ impl Aria2Downloader {
             // 智能健康检查监控任务
             let instances = Arc::clone(&downloader.aria2_instances);
             let instance_count = downloader.instance_count;
+            let binary_path = Arc::clone(&aria2_binary_path);
 
             // 为健康检查任务创建独立的client
             let health_check_client = crate::bilibili::Client::new();
@@ -193,7 +215,13 @@ impl Aria2Downloader {
                         );
 
                         // 执行完整的智能健康检查
-                        if let Err(e) = Self::smart_health_check(&health_check_client, &instances, instance_count).await
+                            if let Err(e) = Self::smart_health_check(
+                                &health_check_client,
+                                &instances,
+                                instance_count,
+                                Arc::clone(&binary_path),
+                            )
+                            .await
                         {
                             warn!("全面健康检查失败: {:#}", e);
                         } else {
@@ -214,8 +242,8 @@ impl Aria2Downloader {
                             let missing_count = instance_count - current_count;
 
                             // 尝试创建缺失的实例
-                            for i in 0..missing_count {
-                                match Self::create_missing_instance(&instances).await {
+                                for i in 0..missing_count {
+                                    match Self::create_missing_instance(Arc::clone(&binary_path)).await {
                                     Ok(new_instance) => {
                                         let mut instances_guard = instances.lock().await;
                                         instances_guard.push(new_instance);
@@ -462,8 +490,48 @@ impl Aria2Downloader {
         Ok(())
     }
 
+    /// 定位可用的aria2可执行文件
+    async fn locate_aria2_binary(options: &Aria2LaunchOptions) -> Result<PathBuf> {
+        if let Some(custom_path) = options.custom_binary.as_ref() {
+            if Self::is_valid_aria2_binary(custom_path).await {
+                info!("使用用户指定的aria2: {}", custom_path.display());
+                return Ok(custom_path.clone());
+            } else {
+                warn!("用户指定的aria2路径无效，将尝试其他来源: {}", custom_path.display());
+            }
+        }
+
+        if options.allow_embedded {
+            #[cfg(feature = "bundled-aria2")]
+            {
+                if let Ok(path) = Self::extract_embedded_aria2().await {
+                    info!("使用内置aria2: {}", path.display());
+                    return Ok(path);
+                } else {
+                    warn!("内置aria2提取失败，将尝试系统环境");
+                }
+            }
+
+            #[cfg(not(feature = "bundled-aria2"))]
+            {
+                warn!("当前构建未包含内置aria2，无法使用嵌入式回退");
+            }
+        }
+
+        match Self::find_system_aria2().await {
+            Ok(path) => Ok(path),
+            Err(e) => {
+                bail!(
+                    "未找到可用的aria2可执行文件: {}。请在设置中提供路径，或使用 --features bundled-aria2 重新编译",
+                    e
+                )
+            }
+        }
+    }
+
     /// 提取嵌入的aria2二进制文件到临时目录，失败时回退到系统aria2
-    async fn extract_aria2_binary() -> Result<PathBuf> {
+    #[cfg(feature = "bundled-aria2")]
+    async fn extract_embedded_aria2() -> Result<PathBuf> {
         // 使用配置文件夹存储aria2二进制文件，而不是临时目录
         let binary_name = if cfg!(target_os = "windows") {
             "aria2c.exe"
@@ -476,7 +544,7 @@ impl Aria2Downloader {
         if let Err(e) = tokio::fs::create_dir_all(&*CONFIG_DIR).await {
             warn!("创建配置目录失败: {}, 将使用临时目录", e);
             let temp_dir = std::env::temp_dir();
-            return Self::extract_aria2_binary_to_temp(temp_dir, binary_name).await;
+            return Self::extract_embedded_aria2_to_temp(temp_dir, binary_name).await;
         }
 
         // 如果文件已存在且可执行，直接返回
@@ -523,12 +591,12 @@ impl Aria2Downloader {
             }
         }
 
-        // 回退到系统安装的aria2
-        Self::find_system_aria2().await
+        bail!("内置aria2不可用")
     }
 
     /// 备用方案：提取到临时目录
-    async fn extract_aria2_binary_to_temp(temp_dir: PathBuf, binary_name: &str) -> Result<PathBuf> {
+    #[cfg(feature = "bundled-aria2")]
+    async fn extract_embedded_aria2_to_temp(temp_dir: PathBuf, binary_name: &str) -> Result<PathBuf> {
         let binary_path = temp_dir.join(format!("bili-sync-{}", binary_name));
 
         debug!("尝试提取aria2二进制文件到临时目录: {}", binary_path.display());
@@ -572,8 +640,7 @@ impl Aria2Downloader {
             }
         }
 
-        // 最终回退到系统安装的aria2
-        Self::find_system_aria2().await
+        bail!("内置aria2不可用")
     }
 
     /// 验证aria2二进制文件是否有效
@@ -1448,6 +1515,7 @@ impl Aria2Downloader {
         client: &crate::bilibili::Client,
         instances: &Arc<Mutex<Vec<Aria2Instance>>>,
         instance_count: usize,
+        binary_path: Arc<PathBuf>,
     ) -> Result<()> {
         // 首先检查是否启用了健康检查
         let config = crate::config::with_config(|bundle| bundle.config.clone());
@@ -1467,7 +1535,7 @@ impl Aria2Downloader {
         }
 
         debug!("系统空闲，开始执行健康检查");
-        Self::health_check(client, instances, instance_count).await
+        Self::health_check(client, instances, instance_count, binary_path).await
     }
 
     /// 健康检查：移除不健康的实例并重新启动（增强版）
@@ -1475,6 +1543,7 @@ impl Aria2Downloader {
         client: &crate::bilibili::Client,
         instances: &Arc<Mutex<Vec<Aria2Instance>>>,
         instance_count: usize,
+        binary_path: Arc<PathBuf>,
     ) -> Result<()> {
         let mut instances_guard = instances.lock().await;
         let mut unhealthy_indices = Vec::new();
@@ -1520,7 +1589,7 @@ impl Aria2Downloader {
                 info!("重新启动 {} 个aria2实例", unhealthy_count);
 
                 for i in 0..unhealthy_count {
-                    match Self::create_missing_instance(instances).await {
+                    match Self::create_missing_instance(Arc::clone(&binary_path)).await {
                         Ok(instance) => {
                             instances.lock().await.push(instance);
                             info!("成功重启第{}个aria2实例", i + 1);
@@ -1584,15 +1653,14 @@ impl Aria2Downloader {
     }
 
     /// 创建缺失的实例（用于监控任务自动恢复）
-    async fn create_missing_instance(_instances: &Arc<Mutex<Vec<Aria2Instance>>>) -> Result<Aria2Instance> {
+    async fn create_missing_instance(binary_path: Arc<PathBuf>) -> Result<Aria2Instance> {
         let rpc_port = Self::find_available_port().await?;
         let rpc_secret = Self::generate_secret();
 
         info!("尝试创建缺失的aria2实例，端口: {}", rpc_port);
 
         // 需要临时创建一个aria2下载器来启动实例
-        let aria2_binary_path = Self::extract_aria2_binary().await?;
-        let temp_downloader = Self::create_temp_downloader(aria2_binary_path).await?;
+        let temp_downloader = Self::create_temp_downloader(binary_path).await?;
 
         let process = temp_downloader.start_single_instance(rpc_port, &rpc_secret).await?;
         let instance = Aria2Instance::new(process, rpc_port, rpc_secret.clone());
@@ -1609,7 +1677,7 @@ impl Aria2Downloader {
     }
 
     /// 创建临时下载器用于实例恢复
-    async fn create_temp_downloader(aria2_binary_path: PathBuf) -> Result<Self> {
+    async fn create_temp_downloader(aria2_binary_path: Arc<PathBuf>) -> Result<Self> {
         let client = crate::bilibili::Client::new();
         Ok(Self {
             client,
@@ -1625,7 +1693,8 @@ impl Aria2Downloader {
         error!("=== Aria2启动失败诊断信息 ===");
 
         // 检查aria2二进制文件
-        match Self::extract_aria2_binary().await {
+        #[cfg(feature = "bundled-aria2")]
+        match Self::extract_embedded_aria2().await {
             Ok(binary_path) => {
                 if binary_path.exists() {
                     info!("✓ aria2二进制文件存在: {}", binary_path.display());
@@ -1667,6 +1736,9 @@ impl Aria2Downloader {
             }
             Err(e) => error!("✗ 无法获取aria2二进制文件: {:#}", e),
         }
+
+        #[cfg(not(feature = "bundled-aria2"))]
+        info!("当前构建未包含内置aria2二进制，跳过嵌入式诊断");
 
         // 检查端口可用性
         match Self::find_available_port().await {

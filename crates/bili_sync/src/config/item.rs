@@ -190,10 +190,13 @@ pub struct ParallelDownloadConfig {
     /// 每个文件的下载线程数
     #[serde(default = "default_parallel_download_threads")]
     pub threads: usize,
+    /// 用户自定义的aria2可执行文件路径
+    #[serde(default)]
+    pub aria2_binary_path: Option<PathBuf>,
 }
 
 fn default_parallel_download_enabled() -> bool {
-    true
+    false
 }
 
 fn default_parallel_download_threads() -> usize {
@@ -205,6 +208,7 @@ impl Default for ParallelDownloadConfig {
         Self {
             enabled: default_parallel_download_enabled(),
             threads: default_parallel_download_threads(),
+            aria2_binary_path: None,
         }
     }
 }

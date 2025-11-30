@@ -9,6 +9,11 @@ publish = { workspace = true }
 readme = "../../README.md"
 build = "build.rs"
 
+[features]
+default = []
+aria2 = []
+bundled-aria2 = ["aria2"]
+
 [dependencies]
 anyhow = { workspace = true }
 arc-swap = { workspace = true }

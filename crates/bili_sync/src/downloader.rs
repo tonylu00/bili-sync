@@ -1,18 +1,24 @@
 use core::str;
+use std::io::SeekFrom;
 use std::path::Path;
 use std::process::Stdio;
+use std::sync::Arc;
 use std::time::Duration;
 
 use anyhow::{bail, ensure, Context, Result};
-use futures::TryStreamExt;
-use reqwest::Method;
-use tokio::fs::{self, File};
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use futures::{stream, StreamExt, TryStreamExt};
+use reqwest::{header, Method};
+use tokio::fs::{self, File, OpenOptions};
+use tokio::io::{AsyncReadExt, AsyncSeekExt, AsyncWriteExt};
+use tokio::sync::Mutex;
 use tokio::time::timeout;
 use tokio_util::io::StreamReader;
-use tracing::{error, warn};
+use tracing::{error, info, warn};
 
 use crate::bilibili::Client;
+
+const HARD_THREAD_CAP: usize = 16;
+const MIN_PARALLEL_SIZE_BYTES: u64 = 1 * 1024 * 1024;
 pub struct Downloader {
     client: Client,
 }
@@ -26,13 +32,40 @@ impl Downloader {
     }
 
     pub async fn fetch(&self, url: &str, path: &Path) -> Result<()> {
-        // 创建父目录
-        if let Some(parent) = path.parent() {
-            if !parent.exists() {
-                fs::create_dir_all(parent).await?;
+        Self::ensure_parent_dir(path).await?;
+
+        let (parallel_enabled, configured_threads) = crate::config::with_config(|bundle| {
+            let cfg = &bundle.config.concurrent_limit.parallel_download;
+            (cfg.enabled, cfg.threads)
+        });
+
+        let requested_threads = configured_threads.clamp(1, HARD_THREAD_CAP);
+
+        if parallel_enabled && requested_threads > 1 {
+            match self.fetch_parallel(url, path, requested_threads).await {
+                Ok(_) => return Ok(()),
+                Err(err) => {
+                    warn!("原生并行下载失败，将回退到单线程: {:#}", err);
+                    let _ = fs::remove_file(path).await;
+                }
             }
         }
 
+        self.fetch_single_thread(url, path).await
+    }
+
+    async fn ensure_parent_dir(path: &Path) -> Result<()> {
+        if let Some(parent) = path.parent() {
+            if !parent.exists() {
+                fs::create_dir_all(parent)
+                    .await
+                    .with_context(|| format!("无法创建下载目录: {}", parent.display()))?;
+            }
+        }
+        Ok(())
+    }
+
+    async fn fetch_single_thread(&self, url: &str, path: &Path) -> Result<()> {
         let mut file = match File::create(path).await {
             Ok(f) => f,
             Err(e) => {
@@ -76,6 +109,134 @@ impl Downloader {
         );
 
         Ok(())
+    }
+
+    async fn fetch_parallel(&self, url: &str, path: &Path, max_threads: usize) -> Result<()> {
+        let head_resp = self
+            .client
+            .request(Method::HEAD, url, None)
+            .send()
+            .await
+            .context("发送 HEAD 请求以检测分片信息失败")?;
+
+        let total_size = head_resp
+            .content_length()
+            .context("远端未返回 Content-Length，无法执行多线程下载")?;
+
+        if total_size < MIN_PARALLEL_SIZE_BYTES {
+            bail!("文件过小 ({} 字节)，无需启用多线程下载", total_size);
+        }
+
+        let supports_range = head_resp
+            .headers()
+            .get(header::ACCEPT_RANGES)
+            .and_then(|value| value.to_str().ok())
+            .map(|value| value.eq_ignore_ascii_case("bytes") || value.to_ascii_lowercase().contains("bytes"))
+            .unwrap_or(false);
+
+        if !supports_range {
+            bail!("远端不支持分片下载 (缺少 Accept-Ranges: bytes)");
+        }
+
+        let thread_budget = max_threads.min(HARD_THREAD_CAP);
+        let chunk_size = std::cmp::max(
+            MIN_PARALLEL_SIZE_BYTES,
+            (total_size + thread_budget as u64 - 1) / thread_budget as u64,
+        );
+
+        let mut ranges = Vec::new();
+        let mut start = 0u64;
+        while start < total_size {
+            let end = std::cmp::min(start + chunk_size - 1, total_size - 1);
+            ranges.push((start, end));
+            start = end + 1;
+        }
+
+        let concurrency = ranges.len().min(thread_budget);
+        info!(
+            "使用原生多线程下载，线程数: {}, 总大小: {:.2} MB",
+            concurrency,
+            total_size as f64 / (1024.0 * 1024.0)
+        );
+
+        let file = OpenOptions::new()
+            .create(true)
+            .write(true)
+            .truncate(true)
+            .open(path)
+            .await
+            .with_context(|| format!("创建文件失败: {}", path.display()))?;
+        file.set_len(total_size).await?;
+        let shared_file = Arc::new(Mutex::new(file));
+        let url_arc: Arc<str> = Arc::from(url.to_string());
+
+        let mut stream = stream::iter(ranges.into_iter().map(|(range_start, range_end)| {
+            let client = self.client.clone();
+            let file = Arc::clone(&shared_file);
+            let url = Arc::clone(&url_arc);
+            async move {
+                let data = Self::download_range(client, &url, range_start, range_end).await?;
+                {
+                    let mut file = file.lock().await;
+                    file.seek(SeekFrom::Start(range_start)).await?;
+                    file.write_all(&data).await?;
+                }
+                Ok::<u64, anyhow::Error>(data.len() as u64)
+            }
+        }))
+        .buffer_unordered(concurrency);
+
+        let mut received = 0u64;
+        while let Some(chunk) = stream.next().await {
+            received += chunk?;
+        }
+
+        ensure!(
+            received == total_size,
+            "并行下载的字节数与期望不符 ({} vs {})",
+            received,
+            total_size
+        );
+
+        {
+            let mut file = shared_file.lock().await;
+            file.flush().await?;
+            file.sync_all().await?;
+        }
+
+        Ok(())
+    }
+
+    async fn download_range(client: Client, url: &str, start: u64, end: u64) -> Result<Vec<u8>> {
+        let range_header = format!("bytes={}-{}", start, end);
+        let resp = client
+            .request(Method::GET, url, None)
+            .header(header::RANGE, range_header)
+            .send()
+            .await
+            .with_context(|| format!("下载区间 {}-{} 失败", start, end))?;
+
+        if !(resp.status().is_success() || resp.status() == reqwest::StatusCode::PARTIAL_CONTENT) {
+            bail!(
+                "服务器未返回成功状态码，区间 {}-{}，状态: {}",
+                start,
+                end,
+                resp.status()
+            );
+        }
+
+        let bytes = resp.bytes().await?;
+        let expected_len = (end - start + 1) as usize;
+        ensure!(
+            bytes.len() == expected_len,
+            "区间 {}-{} 数据长度不符 ({} vs {})",
+            start,
+            end,
+            bytes.len(),
+            expected_len
+        );
+
+        Ok(bytes.to_vec())
     }
 
     pub async fn fetch_with_fallback(&self, urls: &[&str], path: &Path) -> Result<()> {

@@ -9,6 +9,13 @@ fn main() {
 
     println!("cargo:rerun-if-changed=build.rs");
 
+    // 如果未启用 bundled-aria2 特性，则跳过aria2处理逻辑
+    let bundled_enabled = env::var("CARGO_FEATURE_BUNDLED_ARIA2").is_ok();
+    if !bundled_enabled {
+        println!("cargo:warning=未启用bundled-aria2特性，跳过内置aria2二进制处理");
+        return;
+    }
+
     let out_dir = env::var("OUT_DIR").unwrap();
     let target = env::var("TARGET").unwrap();
 

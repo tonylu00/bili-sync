@@ -328,10 +328,18 @@ pub(super) async fn run_download_cycle(
             let downloader_arc = if let Some(existing) = TASK_CONTROLLER.get_downloader().await {
                 existing
             } else {
-                let downloader = UnifiedDownloader::new_smart(bili_client.client.clone()).await;
-                let arc = std::sync::Arc::new(downloader);
-                TASK_CONTROLLER.set_downloader(Some(arc.clone())).await;
-                arc
+                match UnifiedDownloader::new_smart(bili_client.client.clone()).await {
+                    Ok(downloader) => {
+                        let arc = Arc::new(downloader);
+                        TASK_CONTROLLER.set_downloader(Some(arc.clone())).await;
+                        arc
+                    }
+                    Err(err) => {
+                        error!("初始化下载器失败: {:#}", err);
+                        TASK_CONTROLLER.set_scanning(false);
+                        break 'inner;
+                    }
+                }
             };
 
             // 获取最后扫描的ID记录
