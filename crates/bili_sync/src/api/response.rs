@@ -804,6 +804,40 @@ impl From<&crate::config::NotificationEventsConfig> for NotificationEventsRespon
     }
 }
 
+#[derive(Serialize, ToSchema)]
+pub struct NotificationErrorRuleResponse {
+    pub error_type: crate::error::ErrorType,
+    pub severity: crate::config::NotificationSeverityLevel,
+}
+
+impl From<&crate::config::NotificationErrorRule> for NotificationErrorRuleResponse {
+    fn from(value: &crate::config::NotificationErrorRule) -> Self {
+        Self {
+            error_type: value.error_type,
+            severity: value.severity,
+        }
+    }
+}
+
+#[derive(Serialize, ToSchema)]
+pub struct NotificationErrorFiltersResponse {
+    pub rules: Vec<NotificationErrorRuleResponse>,
+}
+
+impl From<&crate::config::NotificationErrorFilterConfig> for NotificationErrorFiltersResponse {
+    fn from(value: &crate::config::NotificationErrorFilterConfig) -> Self {
+        Self {
+            rules: value.rules.iter().map(NotificationErrorRuleResponse::from).collect(),
+        }
+    }
+}
+
+#[derive(Serialize, ToSchema)]
+pub struct NotificationErrorTypeOptionResponse {
+    pub error_type: crate::error::ErrorType,
+    pub label: String,
+}
+
 // 推送配置响应
 #[derive(Serialize, ToSchema)]
 pub struct NotificationConfigResponse {
@@ -818,6 +852,8 @@ pub struct NotificationConfigResponse {
     pub notification_min_videos: usize,
     pub notification_timeout: u64,
     pub notification_retry_count: u8,
+    pub error_filters: NotificationErrorFiltersResponse,
+    pub error_catalog: Vec<NotificationErrorTypeOptionResponse>,
 }
 
 // 测试推送响应

@@ -129,6 +129,7 @@ export enum ErrorType {
 	FileSystem = 'FileSystem',
 	Configuration = 'Configuration',
 	RiskControl = 'RiskControl',
+	UserCancelled = 'UserCancelled',
 	Unknown = 'Unknown'
 }
 
@@ -147,8 +148,11 @@ export const ErrorTypeMessages: Record<ErrorType, string> = {
 	[ErrorType.FileSystem]: '文件系统错误',
 	[ErrorType.Configuration]: '配置错误',
 	[ErrorType.RiskControl]: '风控触发',
+	[ErrorType.UserCancelled]: '用户主动暂停',
 	[ErrorType.Unknown]: '未知错误'
 };
+
+export type NotificationSeverityLevel = 'warning' | 'error';
 
 // 分类后的错误信息
 export interface ClassifiedError {
@@ -880,6 +884,8 @@ export interface NotificationConfigResponse {
 	notification_retry_count: number;
 	events?: NotificationEventsConfig;
 	bark_defaults?: BarkDefaultsConfig;
+	error_filters?: NotificationErrorFiltersResponse;
+	error_catalog?: NotificationErrorTypeOptionResponse[];
 }
 
 // 更新推送通知配置请求
@@ -895,4 +901,28 @@ export interface UpdateNotificationConfigRequest {
 	notification_retry_count?: number;
 	events?: NotificationEventsConfig;
 	bark_defaults?: BarkDefaultsConfig;
+	error_filters?: NotificationErrorFiltersRequest;
+}
+
+export interface NotificationErrorRuleResponse {
+	error_type: ErrorType;
+	severity: NotificationSeverityLevel;
+}
+
+export interface NotificationErrorRuleRequest {
+	error_type: ErrorType;
+	severity?: NotificationSeverityLevel;
+}
+
+export interface NotificationErrorFiltersResponse {
+	rules: NotificationErrorRuleResponse[];
+}
+
+export interface NotificationErrorFiltersRequest {
+	rules: NotificationErrorRuleRequest[];
+}
+
+export interface NotificationErrorTypeOptionResponse {
+	error_type: ErrorType;
+	label: string;
 }

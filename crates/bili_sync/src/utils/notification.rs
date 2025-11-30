@@ -7,9 +7,30 @@ use tracing::{debug, error, info, warn};
 
 use super::notification_bark::{self, BarkLevel, DeviceKeySelection};
 use super::notification_serverchan;
-use crate::config::{NotificationConfig, NotificationMethod};
+use crate::config::{NotificationConfig, NotificationMethod, NotificationSeverityLevel};
+use crate::error::ErrorType;
 
 // 推送通知客户端
+fn severity_icon(severity: NotificationSeverityLevel) -> &'static str {
+    match severity {
+        NotificationSeverityLevel::Warning => "⚠️",
+        NotificationSeverityLevel::Error => "❌",
+    }
+}
+
+fn severity_suffix(severity: NotificationSeverityLevel) -> &'static str {
+    match severity {
+        NotificationSeverityLevel::Warning => "告警",
+        NotificationSeverityLevel::Error => "失败",
+    }
+}
+
+fn severity_label(severity: NotificationSeverityLevel) -> &'static str {
+    match severity {
+        NotificationSeverityLevel::Warning => "Warning",
+        NotificationSeverityLevel::Error => "Error",
+    }
+}
 pub struct NotificationClient {
     client: Client,
     config: NotificationConfig,
@@ -51,6 +72,7 @@ pub struct DownloadFailureNotification {
     pub source_name: String,
     pub video_title: Option<String>,
     pub error: String,
+    pub error_type: ErrorType,
 }
 
 #[derive(Debug, Clone)]
@@ -199,7 +221,15 @@ impl NotificationClient {
             return Ok(());
         }
 
-        let message = self.build_download_failure_message(&details);
+        let Some(severity) = self.config.error_filters.severity_for(&details.error_type) else {
+            debug!(
+                "错误类型 {:?} 未启用推送过滤 (download_failure)，跳过发送",
+                details.error_type
+            );
+            return Ok(());
+        };
+
+        let message = self.build_download_failure_message(&details, severity);
         self.dispatch_with_retry(NotificationEventKind::DownloadFailure, message)
             .await
     }
@@ -210,7 +240,12 @@ impl NotificationClient {
             return Ok(());
         }
 
-        let message = self.build_risk_control_message(&details);
+        let Some(severity) = self.config.error_filters.severity_for(&ErrorType::RiskControl) else {
+            debug!("风控错误类型未在推送过滤中启用，跳过推送");
+            return Ok(());
+        };
+
+        let message = self.build_risk_control_message(&details, severity);
         self.dispatch_with_retry(NotificationEventKind::RiskControl, message)
             .await
     }
@@ -371,13 +406,25 @@ impl NotificationClient {
         NotificationMessage::new(title, body)
     }
 
-    fn build_download_failure_message(&self, details: &DownloadFailureNotification) -> NotificationMessage {
-        let title = format!("{} 下载失败", sanitize_text(&details.source_name));
+    fn build_download_failure_message(
+        &self,
+        details: &DownloadFailureNotification,
+        severity: NotificationSeverityLevel,
+    ) -> NotificationMessage {
+        let title = format!(
+            "{} {} 下载{}",
+            severity_icon(severity),
+            sanitize_text(&details.source_name),
+            severity_suffix(severity)
+        );
         let mut body = format!(
             "**源类型**: {}\n**源名称**: {}\n",
             sanitize_text(&details.source_type),
             sanitize_text(&details.source_name)
         );
+
+        body.push_str(&format!("**错误类型**: {}\n", details.error_type));
+        body.push_str(&format!("**严重性**: {}\n", severity_label(severity)));
 
         if let Some(title) = &details.video_title {
             body.push_str(&format!("**视频标题**: {}\n", sanitize_text(title)));
@@ -391,13 +438,17 @@ impl NotificationClient {
         NotificationMessage::new(title, body)
     }
 
-    fn build_risk_control_message(&self, details: &RiskControlNotification) -> NotificationMessage {
-        let mut title = "检测到风控".to_string();
+    fn build_risk_control_message(
+        &self,
+        details: &RiskControlNotification,
+        severity: NotificationSeverityLevel,
+    ) -> NotificationMessage {
+        let mut title = format!("{} 检测到风控", severity_icon(severity));
         if let Some(source_name) = &details.source_name {
             title = format!("{} 触发风控", sanitize_text(source_name));
         }
 
-        let mut body = String::new();
+        let mut body = format!("**严重性**: {}\n", severity_label(severity));
         if let Some(source_type) = &details.source_type {
             body.push_str(&format!("**源类型**: {}\n", sanitize_text(source_type)));
         }

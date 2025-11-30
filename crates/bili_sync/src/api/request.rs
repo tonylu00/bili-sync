@@ -1,4 +1,5 @@
-use crate::config::Trigger;
+use crate::config::{NotificationSeverityLevel, Trigger};
+use crate::error::ErrorType;
 use serde::Deserialize;
 use utoipa::IntoParams;
 use utoipa::ToSchema;
@@ -254,6 +255,7 @@ pub struct UpdateNotificationConfigRequest {
     pub notification_min_videos: Option<usize>,
     pub notification_timeout: Option<u64>,
     pub notification_retry_count: Option<u8>,
+    pub error_filters: Option<NotificationErrorFiltersRequest>,
 }
 
 #[derive(Deserialize, ToSchema, Default, Clone)]
@@ -282,6 +284,18 @@ pub struct NotificationEventsRequest {
     pub source_updates: Option<bool>,
     pub download_failures: Option<bool>,
     pub risk_control: Option<bool>,
+}
+
+#[derive(Deserialize, ToSchema, Clone)]
+pub struct NotificationErrorRuleRequest {
+    pub error_type: ErrorType,
+    pub severity: Option<NotificationSeverityLevel>,
+}
+
+#[derive(Deserialize, ToSchema, Clone)]
+pub struct NotificationErrorFiltersRequest {
+    #[serde(default)]
+    pub rules: Vec<NotificationErrorRuleRequest>,
 }
 
 // 测试推送请求（可选消息内容）

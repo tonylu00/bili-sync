@@ -5,6 +5,7 @@ use std::sync::Arc;
 
 use arc_swap::ArcSwapOption;
 use serde::{Deserialize, Serialize};
+use utoipa::ToSchema;
 
 mod bundle;
 mod clap;
@@ -24,6 +25,7 @@ pub use crate::config::item::{
     EmptyUpperStrategy, NFOConfig, NFOTimeType, PathSafeTemplate, RateLimit, SubmissionRiskControlConfig, Trigger,
 };
 pub use crate::config::manager::ConfigManager;
+use crate::error::ErrorType;
 
 // 移除不再需要的配置结构体，因为视频源现在存储在数据库中
 // #[derive(Serialize, Deserialize, Default, Debug, Clone)]
@@ -369,6 +371,69 @@ fn default_event_risk_control() -> bool {
     true
 }
 
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, ToSchema)]
+#[serde(rename_all = "lowercase")]
+pub enum NotificationSeverityLevel {
+    Warning,
+    Error,
+}
+
+impl Default for NotificationSeverityLevel {
+    fn default() -> Self {
+        NotificationSeverityLevel::Error
+    }
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct NotificationErrorRule {
+    pub error_type: ErrorType,
+    #[serde(default)]
+    pub severity: NotificationSeverityLevel,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct NotificationErrorFilterConfig {
+    #[serde(default = "default_notification_error_rules")]
+    pub rules: Vec<NotificationErrorRule>,
+}
+
+impl NotificationErrorFilterConfig {
+    pub fn severity_for(&self, target: &ErrorType) -> Option<NotificationSeverityLevel> {
+        self.rules
+            .iter()
+            .find(|rule| &rule.error_type == target)
+            .map(|rule| rule.severity)
+    }
+
+    pub fn set_rules(&mut self, rules: Vec<NotificationErrorRule>) {
+        let mut deduped: Vec<NotificationErrorRule> = Vec::new();
+        for rule in rules {
+            if let Some(existing) = deduped.iter_mut().find(|r| r.error_type == rule.error_type) {
+                *existing = rule;
+            } else {
+                deduped.push(rule);
+            }
+        }
+
+        self.rules = deduped;
+    }
+}
+
+fn default_notification_error_rules() -> Vec<NotificationErrorRule> {
+    vec![NotificationErrorRule {
+        error_type: ErrorType::RiskControl,
+        severity: NotificationSeverityLevel::Error,
+    }]
+}
+
+impl Default for NotificationErrorFilterConfig {
+    fn default() -> Self {
+        Self {
+            rules: default_notification_error_rules(),
+        }
+    }
+}
+
 // 推送通知配置结构体
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct NotificationConfig {
@@ -394,6 +459,8 @@ pub struct NotificationConfig {
     pub notification_timeout: u64,
     #[serde(default = "default_notification_retry_count")]
     pub notification_retry_count: u8,
+    #[serde(default)]
+    pub error_filters: NotificationErrorFilterConfig,
 }
 
 fn default_notification_min_videos() -> usize {
@@ -422,6 +489,7 @@ impl Default for NotificationConfig {
             notification_min_videos: default_notification_min_videos(),
             notification_timeout: default_notification_timeout(),
             notification_retry_count: default_notification_retry_count(),
+            error_filters: NotificationErrorFilterConfig::default(),
         }
     }
 }

@@ -9,6 +9,7 @@ use super::DownloadTaskManager;
 use crate::adapter::{Args, VideoSource};
 use crate::bilibili::{self, BiliClient, CollectionItem, CollectionType};
 use crate::config::Config;
+use crate::error::{ErrorClassifier, ErrorType};
 use crate::initialization;
 use crate::task::TASK_CONTROLLER;
 use crate::unified_downloader::UnifiedDownloader;
@@ -566,34 +567,8 @@ pub(super) async fn run_download_cycle(
                         // mmap自动处理数据持久化，不需要手动同步
                     }
                     Err(e) => {
-                        // 检查是否为风控错误，如果是则停止所有后续扫描
-                        let mut is_risk_control = false;
-
-                        // 检查DownloadAbortError
-                        if e.downcast_ref::<crate::error::DownloadAbortError>().is_some() {
-                            is_risk_control = true;
-                        }
-
-                        // 检查错误链中的BiliError
-                        for cause in e.chain() {
-                            if let Some(bili_err) = cause.downcast_ref::<crate::bilibili::BiliError>() {
-                                match bili_err {
-                                    crate::bilibili::BiliError::RiskControlOccurred => {
-                                        is_risk_control = true;
-                                        break;
-                                    }
-                                    crate::bilibili::BiliError::RequestFailed(code, _) => {
-                                        // -352和-412都是风控错误码
-                                        if *code == -352 || *code == -412 {
-                                            is_risk_control = true;
-                                            break;
-                                        }
-                                    }
-                                    _ => {}
-                                }
-                            }
-                        }
-
+                        let classified_error = ErrorClassifier::classify_error(&e);
+                        let error_type = classified_error.error_type;
                         let (source_type_display, source_name_display) = match crate::adapter::video_source_from(
                             args,
                             path,
@@ -615,7 +590,7 @@ pub(super) async fn run_download_cycle(
                             }
                         };
 
-                        if is_risk_control {
+                        if matches!(error_type, ErrorType::RiskControl) {
                             error!("检测到风控，停止所有后续视频源的扫描");
                             info!("触发风控的源(ID: {})未完成处理，下次扫描将重新处理该源", source.id);
 
@@ -642,6 +617,7 @@ pub(super) async fn run_download_cycle(
                                 source_name: source_name_display,
                                 error: format!("{:#}", e),
                                 video_title: None,
+                                error_type,
                             },
                         )
                         .await

@@ -1,7 +1,9 @@
 use std::io;
 
 use anyhow::Result;
+use serde::{Deserialize, Serialize};
 use thiserror::Error;
+use utoipa::ToSchema;
 
 #[derive(Error, Debug)]
 #[error("Request too frequently")]
@@ -48,7 +50,8 @@ impl std::fmt::Display for ProcessPageError {
 }
 
 /// 错误类型枚举，用于更精确的错误分类
-#[derive(Error, Debug, Clone, PartialEq)]
+#[derive(Error, Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "snake_case")]
 pub enum ErrorType {
     #[error("网络连接错误")]
     Network,
@@ -80,6 +83,30 @@ pub enum ErrorType {
     UserCancelled,
     #[error("未知错误")]
     Unknown,
+}
+
+impl ErrorType {
+    const ALL: [ErrorType; 15] = [
+        ErrorType::Network,
+        ErrorType::Permission,
+        ErrorType::Authentication,
+        ErrorType::Authorization,
+        ErrorType::NotFound,
+        ErrorType::RateLimit,
+        ErrorType::ServerError,
+        ErrorType::ClientError,
+        ErrorType::Parse,
+        ErrorType::Timeout,
+        ErrorType::FileSystem,
+        ErrorType::Configuration,
+        ErrorType::RiskControl,
+        ErrorType::UserCancelled,
+        ErrorType::Unknown,
+    ];
+
+    pub fn all_variants() -> &'static [ErrorType] {
+        &Self::ALL
+    }
 }
 
 /// 分类后的错误信息

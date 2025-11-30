@@ -5112,6 +5112,10 @@ pub async fn get_config() -> Result<ApiResponse<crate::api::response::ConfigResp
             notification_min_videos: config.notification.notification_min_videos,
             notification_timeout: config.notification.notification_timeout,
             notification_retry_count: config.notification.notification_retry_count,
+            error_filters: crate::api::response::NotificationErrorFiltersResponse::from(
+                &config.notification.error_filters,
+            ),
+            error_catalog: build_error_type_catalog(),
         },
         // 风控验证配置
         risk_control: crate::api::response::RiskControlConfigResponse {
@@ -11405,6 +11409,8 @@ pub async fn get_notification_config() -> Result<ApiResponse<crate::api::respons
         notification_min_videos: config.notification_min_videos,
         notification_timeout: config.notification_timeout,
         notification_retry_count: config.notification_retry_count,
+        error_filters: crate::api::response::NotificationErrorFiltersResponse::from(&config.error_filters),
+        error_catalog: build_error_type_catalog(),
     }))
 }
 
@@ -11567,6 +11573,19 @@ pub async fn update_notification_config(
         }
     }
 
+    if let Some(ref filters) = request.error_filters {
+        let new_rules = filters
+            .rules
+            .iter()
+            .map(|rule| crate::config::NotificationErrorRule {
+                error_type: rule.error_type,
+                severity: rule.severity.unwrap_or_default(),
+            })
+            .collect();
+        notification_config.error_filters.set_rules(new_rules);
+        updated = true;
+    }
+
     if let Some(enabled) = request.enable_scan_notifications {
         notification_config.enable_scan_notifications = enabled;
         updated = true;
@@ -11665,6 +11684,16 @@ pub async fn get_notification_status() -> Result<ApiResponse<crate::api::respons
     };
 
     Ok(ApiResponse::ok(status))
+}
+
+fn build_error_type_catalog() -> Vec<crate::api::response::NotificationErrorTypeOptionResponse> {
+    crate::error::ErrorType::all_variants()
+        .iter()
+        .map(|error_type| crate::api::response::NotificationErrorTypeOptionResponse {
+            error_type: *error_type,
+            label: error_type.to_string(),
+        })
+        .collect()
 }
 
 /// 从番剧标题中提取系列名称
