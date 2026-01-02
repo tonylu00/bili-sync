@@ -136,6 +136,7 @@
 	let ffmpegTimeoutSeconds = 600;
 	let nfoTimeType = 'favtime';
 	let bindAddress = '0.0.0.0:12345';
+	let parallelDownloadDownloader = 'aria2';
 	let parallelDownloadEnabled = false;
 	let parallelDownloadThreads = 4;
 
@@ -532,6 +533,7 @@
 			ffmpegTimeoutSeconds = config.ffmpeg_timeout_seconds ?? 600;
 			nfoTimeType = config.nfo_time_type || 'favtime';
 			bindAddress = config.bind_address || '0.0.0.0:12345';
+			parallelDownloadDownloader = config.parallel_download_downloader || 'aria2';
 			parallelDownloadEnabled = config.parallel_download_enabled || false;
 			parallelDownloadThreads = config.parallel_download_threads || 4;
 
@@ -779,6 +781,7 @@
 				ffmpeg_timeout_seconds: ffmpegTimeoutSeconds,
 				nfo_time_type: nfoTimeType,
 				bind_address: bindAddress,
+				parallel_download_downloader: parallelDownloadDownloader,
 				parallel_download_enabled: parallelDownloadEnabled,
 				parallel_download_threads: parallelDownloadThreads,
 				// 视频质量设置
@@ -2000,6 +2003,18 @@
 					<div class="flex-1 space-y-6 overflow-y-auto {isMobile ? 'px-4 py-4' : 'px-6 py-6'}">
 						<div class="mt-6 space-y-6">
 							<h3 class="text-base font-semibold">下载配置</h3>
+
+							<div class="space-y-2">
+								<Label for="download-downloader">下载器</Label>
+								<select
+									id="download-downloader"
+									class="w-full rounded-md border border-input bg-background px-3 py-2 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+									bind:value={parallelDownloadDownloader}
+								>
+									<option value="aria2">aria2 下载器</option>
+									<option value="native">内置下载器</option>
+								</select>
+							</div>
 
 							<div class="flex items-center space-x-2">
 								<input

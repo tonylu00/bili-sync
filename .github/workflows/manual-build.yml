@@ -85,24 +85,52 @@ jobs:
       if: matrix.target == 'x86_64-unknown-linux-musl'
       run: sudo apt-get update && sudo apt-get install -y musl-tools
 
-    - name: Build
+    - name: Build & Package (with/without bundled aria2)
       run: |
-        if [ "${{ matrix.target }}" = "aarch64-unknown-linux-musl" ]; then
-          cross build --release --target ${{ matrix.target }} -p bili_sync
-        else
-          cargo build --release --target ${{ matrix.target }} -p bili_sync
-        fi
-      shell: bash
+        set -euo pipefail
 
-    - name: Package
-      run: |
-        mkdir release
+        mkdir -p release
+
+        build_one() {
+          local features="$1"
+          if [ "${{ matrix.target }}" = "aarch64-unknown-linux-musl" ]; then
+            cross build --release --target ${{ matrix.target }} -p bili_sync --features "$features"
+          else
+            cargo build --release --target ${{ matrix.target }} -p bili_sync --features "$features"
+          fi
+        }
+
         if [ "${{ runner.os }}" = "Windows" ]; then
-          cp target/${{ matrix.target }}/release/bili-sync-rs.exe release/bili-sync-rs.exe
-          cd release && 7z a ${{ matrix.archive_name }} bili-sync-rs.exe
+          bin_src="target/${{ matrix.target }}/release/bili-sync-rs.exe"
+          bin_plain="release/bili-sync-rs.exe"
+          bin_bundled="release/bili-sync-rs-bundled-aria2.exe"
         else
-          cp target/${{ matrix.target }}/release/bili-sync-rs release/bili-sync-rs
-          cd release && tar -czf ${{ matrix.archive_name }} bili-sync-rs
+          bin_src="target/${{ matrix.target }}/release/bili-sync-rs"
+          bin_plain="release/bili-sync-rs"
+          bin_bundled="release/bili-sync-rs-bundled-aria2"
+        fi
+
+        echo "==> Build aria2 (no bundled)"
+        build_one "aria2"
+        cp "$bin_src" "$bin_plain"
+
+        echo "==> Build bundled-aria2"
+        build_one "bundled-aria2"
+        cp "$bin_src" "$bin_bundled"
+
+        cd release
+        bundled_archive_name="${{ matrix.archive_name }}"
+        case "$bundled_archive_name" in
+          *.tar.gz) bundled_archive_name="${bundled_archive_name%.tar.gz}-bundled-aria2.tar.gz" ;;
+          *.zip) bundled_archive_name="${bundled_archive_name%.zip}-bundled-aria2.zip" ;;
+        esac
+
+        if [ "${{ runner.os }}" = "Windows" ]; then
+          7z a ${{ matrix.archive_name }} bili-sync-rs.exe
+          7z a "$bundled_archive_name" bili-sync-rs-bundled-aria2.exe
+        else
+          tar -czf ${{ matrix.archive_name }} bili-sync-rs
+          tar -czf "$bundled_archive_name" bili-sync-rs-bundled-aria2
         fi
       shell: bash
 
@@ -111,3 +139,17 @@ jobs:
       with:
         name: ${{ matrix.archive_name }}
         path: release/${{ matrix.archive_name }} 
+
+    - name: Upload bundled-aria2 package (zip)
+      if: runner.os == 'Windows'
+      uses: actions/upload-artifact@v4
+      with:
+        name: ${{ matrix.archive_name }}-bundled-aria2
+        path: release/*-bundled-aria2.zip
+
+    - name: Upload bundled-aria2 package (tar.gz)
+      if: runner.os != 'Windows'
+      uses: actions/upload-artifact@v4
+      with:
+        name: ${{ matrix.archive_name }}-bundled-aria2
+        path: release/*-bundled-aria2.tar.gz

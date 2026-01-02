@@ -182,11 +182,44 @@ impl Default for NFOConfig {
 }
 
 /// 多线程下载配置
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum ParallelDownloadDownloader {
+    Aria2,
+    Native,
+}
+
+impl Default for ParallelDownloadDownloader {
+    fn default() -> Self {
+        #[cfg(feature = "aria2")]
+        {
+            Self::Aria2
+        }
+
+        #[cfg(not(feature = "aria2"))]
+        {
+            Self::Native
+        }
+    }
+}
+
+impl ParallelDownloadDownloader {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::Aria2 => "aria2",
+            Self::Native => "native",
+        }
+    }
+}
+
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct ParallelDownloadConfig {
     /// 是否启用多线程下载
     #[serde(default = "default_parallel_download_enabled")]
     pub enabled: bool,
+    /// 下载器选择（aria2 / 内置下载器）
+    #[serde(default)]
+    pub downloader: ParallelDownloadDownloader,
     /// 每个文件的下载线程数
     #[serde(default = "default_parallel_download_threads")]
     pub threads: usize,
@@ -207,6 +240,7 @@ impl Default for ParallelDownloadConfig {
     fn default() -> Self {
         Self {
             enabled: default_parallel_download_enabled(),
+            downloader: ParallelDownloadDownloader::default(),
             threads: default_parallel_download_threads(),
             aria2_binary_path: None,
         }

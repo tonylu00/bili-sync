@@ -5026,6 +5026,12 @@ pub async fn get_config() -> Result<ApiResponse<crate::api::response::ConfigResp
         nfo_time_type: nfo_time_type.to_string(),
         parallel_download_enabled: config.concurrent_limit.parallel_download.enabled,
         parallel_download_threads: config.concurrent_limit.parallel_download.threads,
+        parallel_download_downloader: config
+            .concurrent_limit
+            .parallel_download
+            .downloader
+            .as_str()
+            .to_string(),
         aria2_binary_path: config
             .concurrent_limit
             .parallel_download
@@ -5174,6 +5180,7 @@ pub async fn update_config(
             nfo_time_type: params.nfo_time_type.clone(),
             parallel_download_enabled: params.parallel_download_enabled,
             parallel_download_threads: params.parallel_download_threads,
+            parallel_download_downloader: params.parallel_download_downloader.clone(),
             aria2_binary_path: params.aria2_binary_path.clone(),
             // 视频质量设置
             video_max_quality: params.video_max_quality.clone(),
@@ -5390,6 +5397,38 @@ pub async fn update_config_internal(
         if threads > 0 && threads != config.concurrent_limit.parallel_download.threads {
             config.concurrent_limit.parallel_download.threads = threads;
             updated_fields.push("parallel_download_threads");
+        }
+    }
+
+    if let Some(downloader) = params.parallel_download_downloader {
+        let normalized = downloader.trim();
+
+        if !normalized.is_empty() {
+            let new_value = match normalized {
+                "aria2" => {
+                    #[cfg(not(feature = "aria2"))]
+                    {
+                        return Err(anyhow!("当前构建未启用 aria2 特性，无法选择 aria2 下载器").into());
+                    }
+
+                    #[cfg(feature = "aria2")]
+                    {
+                        crate::config::ParallelDownloadDownloader::Aria2
+                    }
+                }
+                "native" | "builtin" => crate::config::ParallelDownloadDownloader::Native,
+                _ => {
+                    return Err(anyhow!(
+                        "无效的下载器类型，只支持 'aria2' 或 'native'（也兼容 'builtin'）"
+                    )
+                    .into())
+                }
+            };
+
+            if new_value != config.concurrent_limit.parallel_download.downloader {
+                config.concurrent_limit.parallel_download.downloader = new_value;
+                updated_fields.push("parallel_download_downloader");
+            }
         }
     }
 

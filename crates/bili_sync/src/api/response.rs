@@ -300,6 +300,7 @@ pub struct ConfigResponse {
     // 多线程下载配置
     pub parallel_download_enabled: bool,
     pub parallel_download_threads: usize,
+    pub parallel_download_downloader: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub aria2_binary_path: Option<String>,
     // 视频质量设置

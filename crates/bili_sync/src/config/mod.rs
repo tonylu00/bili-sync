@@ -18,11 +18,12 @@ pub use crate::config::bundle::ConfigBundle;
 pub use crate::config::clap::version;
 pub use crate::config::global::{
     get_config_manager, init_config_with_database, reload_config, reload_config_bundle, with_config, ARGS,
-    CONFIG_BUNDLE, CONFIG_DIR,
+    set_parallel_download_downloader, CONFIG_BUNDLE, CONFIG_DIR,
 };
 use crate::config::item::ConcurrentLimit;
 pub use crate::config::item::{
-    EmptyUpperStrategy, NFOConfig, NFOTimeType, PathSafeTemplate, RateLimit, SubmissionRiskControlConfig, Trigger,
+    EmptyUpperStrategy, NFOConfig, NFOTimeType, ParallelDownloadDownloader, PathSafeTemplate, RateLimit,
+    SubmissionRiskControlConfig, Trigger,
 };
 pub use crate::config::manager::ConfigManager;
 use crate::error::ErrorType;

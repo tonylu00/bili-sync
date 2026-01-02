@@ -5,6 +5,7 @@ use anyhow::Result;
 use arc_swap::ArcSwap;
 use clap::Parser;
 use once_cell::sync::Lazy;
+use serde_json::Value;
 use tracing::{info, warn};
 
 use crate::config::clap::Args;
@@ -30,6 +31,34 @@ pub fn set_config_manager(manager: crate::config::ConfigManager) {
 pub fn get_config_manager() -> Option<crate::config::ConfigManager> {
     let guard = CONFIG_MANAGER.read().unwrap();
     guard.clone()
+}
+
+/// 设置下载器选择（用于自动回退等场景）
+///
+/// - 会写入数据库配置项（嵌套 key）并触发热重载
+/// - 若配置管理器未初始化，则只记录 warning
+pub async fn set_parallel_download_downloader(
+    downloader: crate::config::ParallelDownloadDownloader,
+) -> Result<()> {
+    let manager_opt = {
+        let manager_guard = CONFIG_MANAGER.read().unwrap();
+        manager_guard.clone()
+    };
+
+    let Some(manager) = manager_opt else {
+        warn!("配置管理器未初始化，无法写回下载器设置（期望写入: {}）", downloader.as_str());
+        return Ok(());
+    };
+
+    manager
+        .update_config_item(
+            "concurrent_limit.parallel_download.downloader",
+            Value::String(downloader.as_str().to_string()),
+        )
+        .await?;
+
+    reload_config_bundle().await?;
+    Ok(())
 }
 
 /// 重新加载配置包（支持热重载）

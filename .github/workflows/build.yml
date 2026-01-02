@@ -115,32 +115,58 @@ jobs:
         echo "Aria2 installation completed"
         aria2c --version
 
-    - name: Build binary
+    - name: Build binaries (with/without bundled aria2)
       run: |
-        if [ "${{ matrix.target }}" = "aarch64-unknown-linux-musl" ]; then
-          cross build --release --target ${{ matrix.target }} -p bili_sync
-        else
-          cargo build --release --target ${{ matrix.target }} -p bili_sync
-        fi
-      shell: bash
+        set -euo pipefail
 
-    - name: Prepare binary
-      run: |
         mkdir -p release
+
+        build_one() {
+          local features="$1"
+          if [ "${{ matrix.target }}" = "aarch64-unknown-linux-musl" ]; then
+            cross build --release --target ${{ matrix.target }} -p bili_sync --features "$features"
+          else
+            cargo build --release --target ${{ matrix.target }} -p bili_sync --features "$features"
+          fi
+        }
+
         if [ "${{ runner.os }}" = "Windows" ]; then
-          cp target/${{ matrix.target }}/release/bili-sync-rs${{ matrix.extension }} release/bili-sync-rs${{ matrix.extension }}
+          bin_src="target/${{ matrix.target }}/release/bili-sync-rs${{ matrix.extension }}"
+          bin_plain="release/bili-sync-rs${{ matrix.extension }}"
+          bin_bundled="release/bili-sync-rs-bundled-aria2${{ matrix.extension }}"
         else
-          cp target/${{ matrix.target }}/release/bili-sync-rs release/bili-sync-rs
+          bin_src="target/${{ matrix.target }}/release/bili-sync-rs"
+          bin_plain="release/bili-sync-rs"
+          bin_bundled="release/bili-sync-rs-bundled-aria2"
         fi
+
+        echo "==> Build aria2 (no bundled)"
+        build_one "aria2"
+        cp "$bin_src" "$bin_plain"
+
+        echo "==> Build bundled-aria2"
+        build_one "bundled-aria2"
+        cp "$bin_src" "$bin_bundled"
       shell: bash
 
-    - name: Create release archive
+    - name: Create release archives (with/without bundled aria2)
       run: |
+        set -euo pipefail
         cd release
+
+        bundled_archive_name="${{ matrix.archive_name }}"
+        # 插入 -bundled-aria2 后缀
+        case "$bundled_archive_name" in
+          *.tar.gz) bundled_archive_name="${bundled_archive_name%.tar.gz}-bundled-aria2.tar.gz" ;;
+          *.zip) bundled_archive_name="${bundled_archive_name%.zip}-bundled-aria2.zip" ;;
+        esac
+
         if [ "${{ matrix.archive }}" = "zip" ]; then
           7z a ${{ matrix.archive_name }} bili-sync-rs${{ matrix.extension }}
+          7z a "$bundled_archive_name" bili-sync-rs-bundled-aria2${{ matrix.extension }}
         else
           tar -czf ${{ matrix.archive_name }} bili-sync-rs
+          tar -czf "$bundled_archive_name" bili-sync-rs-bundled-aria2
         fi
       shell: bash
 
@@ -181,11 +207,25 @@ jobs:
         echo "Binary will try embedded aria2 first, then fallback to system aria2"
       shell: bash
 
-    - name: Upload release package
+    - name: Upload release packages
       uses: actions/upload-artifact@v4
       with:
         name: ${{ matrix.archive_name }}
         path: release/${{ matrix.archive_name }}
+
+    - name: Upload bundled-aria2 package (zip)
+      if: matrix.archive == 'zip'
+      uses: actions/upload-artifact@v4
+      with:
+        name: ${{ matrix.archive_name }}-bundled-aria2
+        path: release/*-bundled-aria2.zip
+
+    - name: Upload bundled-aria2 package (tar.gz)
+      if: matrix.archive != 'zip'
+      uses: actions/upload-artifact@v4
+      with:
+        name: ${{ matrix.archive_name }}-bundled-aria2
+        path: release/*-bundled-aria2.tar.gz
 
   release:
     name: Create Release

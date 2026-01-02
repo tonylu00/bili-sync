@@ -78,6 +78,7 @@ pub struct UpdateConfigTask {
     pub nfo_time_type: Option<String>,
     pub parallel_download_enabled: Option<bool>,
     pub parallel_download_threads: Option<usize>,
+    pub parallel_download_downloader: Option<String>,
     pub aria2_binary_path: Option<String>,
     // 视频质量设置
     pub video_max_quality: Option<String>,
@@ -1408,6 +1409,7 @@ impl ConfigTaskQueue {
                 nfo_time_type: task.nfo_time_type.clone(),
                 parallel_download_enabled: task.parallel_download_enabled,
                 parallel_download_threads: task.parallel_download_threads,
+                parallel_download_downloader: task.parallel_download_downloader.clone(),
                 aria2_binary_path: task.aria2_binary_path.clone(),
                 // 视频质量设置
                 video_max_quality: task.video_max_quality.clone(),

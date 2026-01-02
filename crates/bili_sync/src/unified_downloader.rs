@@ -1,6 +1,6 @@
 use anyhow::Result;
 use std::path::Path;
-use tracing::{info, warn};
+use tracing::info;
 
 use crate::bilibili::Client;
 use crate::downloader::Downloader;
@@ -35,10 +35,14 @@ impl UnifiedDownloader {
         // 获取最新配置
         let config = crate::config::reload_config();
 
-        // 检查是否启用了多线程下载
-        if !config.concurrent_limit.parallel_download.enabled {
-            info!("多线程下载已禁用，使用原生下载器");
-            return Ok(Self::Native(Downloader::new(client)));
+        match config.concurrent_limit.parallel_download.downloader {
+            crate::config::ParallelDownloadDownloader::Native => {
+                info!("配置选择内置下载器");
+                return Ok(Self::Native(Downloader::new(client)));
+            }
+            crate::config::ParallelDownloadDownloader::Aria2 => {
+                // 继续往下走 aria2 初始化逻辑
+            }
         }
 
         #[cfg(feature = "aria2")]
@@ -47,20 +51,45 @@ impl UnifiedDownloader {
             let options = Aria2LaunchOptions::new(user_binary);
             match Aria2Downloader::new(client.clone(), options).await {
                 Ok(aria2_downloader) => {
-                    info!("成功初始化aria2并行下载器");
+                    info!("成功初始化 aria2 下载器");
                     return Ok(Self::Aria2(aria2_downloader));
                 }
                 Err(err) => {
-                    warn!("初始化aria2失败，改用原生多线程: {:#}", err);
+                    tracing::error!("aria2 不可用（初始化失败）: {:#}", err);
+                    tracing::warn!(
+                        "将回退到内置下载器，并自动把下载器设置切换为 'native'（请在设置页确认）"
+                    );
+
+                    if let Err(e) = crate::config::set_parallel_download_downloader(
+                        crate::config::ParallelDownloadDownloader::Native,
+                    )
+                    .await
+                    {
+                        tracing::warn!("写回下载器设置失败（仍将继续使用内置下载器）: {:#}", e);
+                    }
+
+                    return Ok(Self::Native(Downloader::new(client)));
                 }
             }
         }
 
         #[cfg(not(feature = "aria2"))]
-        warn!("当前构建未启用aria2特性，使用原生多线程下载器");
+        {
+            tracing::error!("当前构建未启用 aria2 特性，但配置选择了 aria2 下载器");
+            tracing::warn!(
+                "将回退到内置下载器，并自动把下载器设置切换为 'native'（请在设置页确认）"
+            );
 
-        info!("使用原生多线程下载器");
-        Ok(Self::Native(Downloader::new(client)))
+            if let Err(e) = crate::config::set_parallel_download_downloader(
+                crate::config::ParallelDownloadDownloader::Native,
+            )
+            .await
+            {
+                tracing::warn!("写回下载器设置失败（仍将继续使用内置下载器）: {:#}", e);
+            }
+
+            return Ok(Self::Native(Downloader::new(client)));
+        }
     }
 
     /// 下载文件，支持多个URL备选
