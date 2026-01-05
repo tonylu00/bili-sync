@@ -662,9 +662,7 @@ class ApiClient {
 	/**
 	 * 获取推送通知配置
 	 */
-	async getNotificationConfig(): Promise<
-		ApiResponse<NotificationConfigResponse>
-	> {
+	async getNotificationConfig(): Promise<ApiResponse<NotificationConfigResponse>> {
 		return this.get<NotificationConfigResponse>('/config/notification');
 	}
 

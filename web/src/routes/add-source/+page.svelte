@@ -14,16 +14,33 @@
 		UserFollowing,
 		BangumiSeasonInfo,
 		BangumiSourceOption,
-		BangumiSourceListResponse,
 		ValidateFavoriteResponse,
 		UserCollectionInfo,
-		AddVideoSourceRequest
+		AddVideoSourceRequest,
+		VideoSourcesResponse
 	} from '$lib/types';
 	import { Search, X, Plus as PlusIcon } from '@lucide/svelte';
 	import { onDestroy, onMount } from 'svelte';
 	import { toast } from 'svelte-sonner';
 	import { flip } from 'svelte/animate';
 	import { fade, fly } from 'svelte/transition';
+
+	type BatchSelectedItemType = 'search' | 'favorite' | 'collection' | 'following' | 'bangumi';
+	type BatchSelectedItem = {
+		type: BatchSelectedItemType;
+		data:
+			| SearchResultItem
+			| UserFavoriteFolder
+			| UserCollectionItem
+			| UserCollectionInfo
+			| UserFollowing
+			| BangumiSeasonInfo;
+		name: string;
+	};
+
+	type HoveredItem =
+		| { type: 'search'; data: SearchResultItem }
+		| { type: 'season'; data: BangumiSeasonInfo };
 
 	let sourceType: VideoCategory = 'collection';
 	let lastSourceType: VideoCategory = sourceType; // 记录上一次的源类型，用于检测切换
@@ -62,8 +79,6 @@
 
 	// UP主合集相关
 	let userCollections: UserCollectionItem[] = [];
-	// eslint-disable-next-line @typescript-eslint/no-unused-vars
-	let loadingCollections = false; // 合集加载状态
 	let upIdTimeout: ReturnType<typeof setTimeout> | null = null;
 
 	// 关注的UP主相关
@@ -78,26 +93,28 @@
 
 	// 番剧合并相关
 	let existingBangumiSources: BangumiSourceOption[] = [];
+	// eslint-disable-next-line @typescript-eslint/no-unused-vars
 	let loadingBangumiSources = false;
 	let mergeToSourceId: number | null = null;
-	let showMergeOptions = false;
 	let cachedNameBeforeMerge = '';
 	let cachedPathBeforeMerge = '';
 	let isUsingMergedSourceMeta = false;
 
 	// 过滤已有视频源相关
+	// eslint-disable-next-line @typescript-eslint/no-unused-vars
 	let existingVideoSources: VideoSourcesResponse | null = null;
 	let existingCollectionIds: Set<string> = new Set();
 	let existingFavoriteIds: Set<number> = new Set();
 	let existingSubmissionIds: Set<number> = new Set();
 	let existingBangumiSeasonIds: Set<string> = new Set();
+	// eslint-disable-next-line @typescript-eslint/no-unused-vars
 	let loadingExistingSources = false;
 	let isMergingBangumi = false;
 
 	// 批量添加相关
 	let batchMode = false; // 是否为批量模式
-	let batchSelectedItems = new Map(); // 存储选中项 {key: {type, data, name}}
-	let batchCheckboxStates = {}; // 存储checkbox状态的响应式对象
+	let batchSelectedItems = new Map<string, BatchSelectedItem>(); // 存储选中项 {key: {type, data, name}}
+	let batchCheckboxStates: Record<string, boolean> = {}; // 存储checkbox状态的响应式对象
 	let batchBasePath = '/Downloads'; // 批量基础路径
 	let batchAdding = false; // 批量添加进行中
 	let batchProgress = { current: 0, total: 0 }; // 批量添加进度
@@ -145,7 +162,7 @@
 
 	// 响应式语句：当Map变化时更新checkbox状态对象
 	$: {
-		const newStates = {};
+		const newStates: Record<string, boolean> = {};
 		for (const [key] of batchSelectedItems) {
 			newStates[key] = true;
 		}
@@ -154,10 +171,7 @@
 	}
 
 	// 悬停详情相关
-	let hoveredItem: {
-		type: 'search' | 'season';
-		data: SearchResultItem | BangumiSeasonInfo;
-	} | null = null;
+	let hoveredItem: HoveredItem | null = null;
 	let hoverTimeout: ReturnType<typeof setTimeout> | null = null;
 	let mousePosition = { x: 0, y: 0 };
 
@@ -248,10 +262,10 @@
 
 	onDestroy(() => {
 		// 清理定时器
-		clearTimeout(hoverTimeout);
-		clearTimeout(upIdTimeout);
-		clearTimeout(seasonIdTimeout);
-		clearTimeout(favoriteValidationTimeout);
+		if (hoverTimeout) clearTimeout(hoverTimeout);
+		if (upIdTimeout) clearTimeout(upIdTimeout);
+		if (seasonIdTimeout) clearTimeout(seasonIdTimeout);
+		if (favoriteValidationTimeout) clearTimeout(favoriteValidationTimeout);
 	});
 
 	$: isMergingBangumi = sourceType === 'bangumi' && mergeToSourceId !== null;
@@ -507,7 +521,11 @@
 		if (maxDurationValue === undefined) {
 			return null;
 		}
-		if (minDurationValue !== null && maxDurationValue !== null && minDurationValue > maxDurationValue) {
+		if (
+			minDurationValue !== null &&
+			maxDurationValue !== null &&
+			minDurationValue > maxDurationValue
+		) {
 			toast.error('视频总时长范围无效', { description: '下限不能大于上限' });
 			return null;
 		}
@@ -761,17 +779,17 @@
 		// 检查收藏夹是否已存在
 		if (isFavoriteExists(favorite.id)) {
 			toast.error('收藏夹已存在', {
-				description: `该收藏夹「${favorite.name || favorite.title}」已经添加过了`
+				description: `该收藏夹「${favorite.name || favorite.title || ''}」已经添加过了`
 			});
 			return;
 		}
 
 		sourceId = favorite.id.toString();
-		name = favorite.name || favorite.title;
+		name = favorite.name || favorite.title || '';
 		favoriteValidationResult = {
 			valid: true,
-			fid: favorite.id,
-			title: favorite.name || favorite.title,
+			fid: Number(favorite.id),
+			title: favorite.name || favorite.title || '',
 			message: '收藏夹验证成功'
 		};
 		toast.success('已选择收藏夹', { description: name });
@@ -782,17 +800,18 @@
 		// 检查收藏夹是否已存在
 		if (isFavoriteExists(favorite.fid)) {
 			toast.error('收藏夹已存在', {
-				description: `该收藏夹「${favorite.title}」已经添加过了`
+				description: `该收藏夹「${favorite.title || ''}」已经添加过了`
 			});
 			return;
 		}
+		if (favorite.fid === undefined) return;
 
 		sourceId = favorite.fid.toString();
-		name = favorite.title;
+		name = favorite.title || '';
 		favoriteValidationResult = {
 			valid: true,
-			fid: favorite.fid,
-			title: favorite.title,
+			fid: Number(favorite.fid),
+			title: favorite.title || '',
 			message: '收藏夹验证成功'
 		};
 		toast.success('已选择收藏夹', { description: name });
@@ -800,6 +819,7 @@
 
 	// 选择UP主并获取其收藏夹
 	async function selectUserAndFetchFavorites(user: SearchResultItem) {
+		if (user.mid === undefined) return;
 		selectedUserId = user.mid.toString();
 		selectedUserName = user.title; // 使用搜索结果中的title
 
@@ -875,7 +895,7 @@
 
 	// 处理收藏夹ID变化
 	function handleFavoriteIdChange() {
-		clearTimeout(favoriteValidationTimeout);
+		if (favoriteValidationTimeout) clearTimeout(favoriteValidationTimeout);
 		if (sourceType === 'favorite' && sourceId.trim()) {
 			favoriteValidationTimeout = setTimeout(() => {
 				validateFavoriteId(sourceId);
@@ -887,7 +907,7 @@
 
 	// 处理UP主ID变化
 	function handleUpIdChange() {
-		clearTimeout(upIdTimeout);
+		if (upIdTimeout) clearTimeout(upIdTimeout);
 		if (upId.trim()) {
 			upIdTimeout = setTimeout(() => {
 				fetchUserCollections();
@@ -900,8 +920,6 @@
 	// 获取UP主合集列表
 	async function fetchUserCollections() {
 		if (!upId.trim()) return;
-
-		loadingCollections = true;
 		try {
 			const result = await api.getUserCollections(upId);
 			if (result.data && result.data.collections) {
@@ -938,8 +956,6 @@
 
 			toast.error(errorMessage, { description: errorDescription });
 			userCollections = [];
-		} finally {
-			loadingCollections = false;
 		}
 	}
 
@@ -966,7 +982,7 @@
 	// 处理Season ID变化
 	// eslint-disable-next-line @typescript-eslint/no-unused-vars
 	function handleSeasonIdChange() {
-		clearTimeout(seasonIdTimeout);
+		if (seasonIdTimeout) clearTimeout(seasonIdTimeout);
 		if (sourceId.trim() && sourceType === 'bangumi') {
 			seasonIdTimeout = setTimeout(() => {
 				fetchBangumiSeasons();
@@ -1111,8 +1127,11 @@
 	}
 
 	// 检查收藏夹是否已存在
-	function isFavoriteExists(fId: number): boolean {
-		return existingFavoriteIds.has(fId);
+	function isFavoriteExists(fId: number | string | undefined): boolean {
+		if (fId === undefined) return false;
+		const parsed = typeof fId === 'number' ? fId : Number.parseInt(fId, 10);
+		if (!Number.isFinite(parsed)) return false;
+		return existingFavoriteIds.has(parsed);
 	}
 
 	// 检查番剧季度是否已存在
@@ -1170,7 +1189,6 @@
 	$: if (sourceType !== 'bangumi') {
 		bangumiSeasons = [];
 		selectedSeasons = [];
-		showMergeOptions = false;
 		mergeToSourceId = null;
 	}
 
@@ -1216,12 +1234,17 @@
 	}
 
 	// 统一的悬浮处理函数
+	function handleItemMouseEnter(type: 'search', data: SearchResultItem, event: MouseEvent): void;
+	function handleItemMouseEnter(type: 'season', data: BangumiSeasonInfo, event: MouseEvent): void;
 	function handleItemMouseEnter(
 		type: 'search' | 'season',
 		data: SearchResultItem | BangumiSeasonInfo,
 		event: MouseEvent
 	) {
-		hoveredItem = { type, data };
+		hoveredItem =
+			type === 'search'
+				? { type: 'search', data: data as SearchResultItem }
+				: { type: 'season', data: data as BangumiSeasonInfo };
 		updateTooltipPosition(event);
 	}
 
@@ -1412,7 +1435,6 @@
 	let isSearching = false;
 
 	// 搜索过滤投稿 - 使用后端API搜索
-	// eslint-disable-next-line svelte/infinite-reactive-loop
 	$: {
 		if (submissionSearchQuery.trim()) {
 			// 清除之前的搜索定时器
@@ -1676,7 +1698,11 @@
 				return sourceType;
 		}
 	}
-	function toggleBatchSelection(itemKey: string, item: any, itemType: string) {
+	function toggleBatchSelection(
+		itemKey: string,
+		item: BatchSelectedItem['data'],
+		itemType: BatchSelectedItemType
+	) {
 		console.log('🔵 toggleBatchSelection called with:', {
 			itemKey,
 			itemType,
@@ -1694,6 +1720,7 @@
 			const newItemSourceType = resolveBatchItemSourceTypeByRawType(itemType);
 			if (batchSelectedItems.size > 0) {
 				const first = batchSelectedItems.values().next().value;
+				if (!first) return;
 				const currentBatchSourceType = getSourceTypeFromBatchItem(first);
 				if (newItemSourceType !== currentBatchSourceType) {
 					console.log('❌ Cross-type selection rejected');
@@ -1709,19 +1736,22 @@
 
 			switch (itemType) {
 				case 'search':
-					itemName = cleanTitle(item.title);
+					itemName = cleanTitle((item as SearchResultItem).title);
 					break;
 				case 'favorite':
-					itemName = item.name || item.title;
+					itemName = (item as UserFavoriteFolder).name || (item as UserFavoriteFolder).title || '';
 					break;
 				case 'collection':
-					itemName = item.name || item.title;
+					itemName = (item as UserCollectionItem | UserCollectionInfo).name;
 					break;
 				case 'following':
-					itemName = item.name;
+					itemName = (item as UserFollowing).name;
 					break;
 				case 'bangumi':
-					itemName = item.season_title || item.title || item.full_title;
+					itemName =
+						(item as BangumiSeasonInfo).season_title ||
+						(item as BangumiSeasonInfo).full_title ||
+						'';
 					break;
 			}
 
@@ -1777,7 +1807,7 @@
 				userFavorites.forEach((favorite) => {
 					const key = `favorite_${favorite.id}`;
 					// 跳过已添加的收藏夹
-					const isDisabled = existingFavoriteIds.has(favorite.id);
+					const isDisabled = existingFavoriteIds.has(Number(favorite.id));
 					if (!batchSelectedItems.has(key) && !isDisabled) {
 						toggleBatchSelection(key, favorite, 'favorite');
 					}
@@ -1825,7 +1855,7 @@
 
 		// 校验所有被选项是否属于同一视频源类型，防止跨源类型批量添加
 		const resolvedTypes = new Set(
-			Array.from(batchSelectedItems.values()).map((it: any) => getSourceTypeFromBatchItem(it))
+			Array.from(batchSelectedItems.values()).map(getSourceTypeFromBatchItem)
 		);
 		if (resolvedTypes.size > 1) {
 			toast.error('不能跨源类型批量添加', {
@@ -1864,7 +1894,8 @@
 					// 添加特定类型的额外参数
 					if (item.type === 'following') {
 						if (sourceType === 'collection') {
-							params.up_id = item.data.mid.toString();
+							const following = item.data as UserFollowing;
+							params.up_id = following.mid.toString();
 							params.collection_type = 'season';
 						} else if (sourceType === 'submission') {
 							// 批量添加UP主投稿时总是使用全部投稿模式
@@ -1873,17 +1904,20 @@
 						// 区分普通合集和关注的合集
 						if (itemKey.startsWith('subscribed-collection_')) {
 							// 关注的合集使用 up_mid
-							params.up_id = item.data.up_mid.toString();
-							params.collection_type = item.data.collection_type || 'season';
+							const collection = item.data as UserCollectionInfo;
+							params.up_id = collection.up_mid.toString();
+							params.collection_type = collection.collection_type || 'season';
 						} else {
 							// 普通合集使用 mid
-							params.up_id = item.data.mid.toString();
-							params.collection_type = item.data.type || 'season';
+							const collection = item.data as UserCollectionItem;
+							params.up_id = collection.mid.toString();
+							params.collection_type = collection.collection_type || 'season';
 						}
 					}
 
-					if (item.data.cover) {
-						params.cover = item.data.cover;
+					const coverCandidate = (item.data as { cover?: string }).cover;
+					if (coverCandidate) {
+						params.cover = coverCandidate;
 					}
 
 					if (filterParams && Object.keys(filterParams).length > 0) {
@@ -1953,7 +1987,7 @@
 	}
 
 	// 根据批量选择项获取视频源类型
-	function getSourceTypeFromBatchItem(item: any): string {
+	function getSourceTypeFromBatchItem(item: BatchSelectedItem): string {
 		switch (item.type) {
 			case 'search':
 				return sourceType; // 使用当前选择的源类型
@@ -1971,22 +2005,30 @@
 	}
 
 	// 根据批量选择项获取视频源ID
-	function getSourceIdFromBatchItem(item: any): string {
+	function getSourceIdFromBatchItem(item: BatchSelectedItem): string {
 		switch (item.type) {
 			case 'search':
 				if (sourceType === 'submission') {
-					return item.data.mid?.toString() || '';
+					return (item.data as SearchResultItem).mid?.toString() || '';
 				}
-				return item.data.bvid || item.data.season_id || item.data.mid?.toString() || '';
+				return (
+					(item.data as SearchResultItem).bvid ||
+					(item.data as SearchResultItem).season_id ||
+					(item.data as SearchResultItem).mid?.toString() ||
+					''
+				);
 			case 'following':
-				return item.data.mid.toString();
+				return (item.data as UserFollowing).mid.toString();
 			case 'favorite':
 				// 处理两种收藏夹数据结构：用户自己的收藏夹使用id，搜索到的收藏夹使用fid
-				return (item.data.fid || item.data.id).toString();
+				return (
+					((item.data as UserFavoriteFolder).fid || (item.data as UserFavoriteFolder).id) ??
+					''
+				).toString();
 			case 'collection':
-				return item.data.sid.toString();
+				return (item.data as UserCollectionItem | UserCollectionInfo).sid.toString();
 			case 'bangumi':
-				return item.data.season_id || '';
+				return (item.data as BangumiSeasonInfo).season_id || '';
 			default:
 				return '';
 		}
@@ -2342,7 +2384,7 @@
 												class="w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm focus:border-purple-500 focus:ring-1 focus:ring-purple-500 dark:border-gray-600 dark:bg-gray-800 dark:text-white"
 											>
 												<option value={null}>作为新的独立番剧源添加</option>
-												{#each existingBangumiSources as source}
+												{#each existingBangumiSources as source (source.id)}
 													<option value={source.id}>
 														合并到：{source.name}
 														{#if source.season_id}(Season ID: {source.season_id}){/if}
@@ -2448,9 +2490,11 @@
 						</div>
 
 						<!-- 下载过滤设置 -->
-						<div class="space-y-3 rounded-lg border border-dashed border-slate-200 p-4 dark:border-slate-700">
+						<div
+							class="space-y-3 rounded-lg border border-dashed border-slate-200 p-4 dark:border-slate-700"
+						>
 							<div class="flex items-center justify-between">
-								<span class="text-sm font-medium text-foreground">下载过滤设置</span>
+								<span class="text-foreground text-sm font-medium">下载过滤设置</span>
 								<Button
 									type="button"
 									variant="outline"
@@ -2512,7 +2556,7 @@
 										bind:value={includeKeywordsInput}
 										placeholder="多个关键词用逗号、分号或换行分隔"
 										rows="3"
-										class="border-input bg-background ring-offset-background w-full rounded-md border px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+										class="border-input bg-background ring-offset-background focus-visible:ring-ring w-full rounded-md border px-3 py-2 text-sm focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:outline-none"
 									></textarea>
 								</div>
 								<div class="space-y-2">
@@ -2522,7 +2566,7 @@
 										bind:value={excludeKeywordsInput}
 										placeholder="多个关键词用逗号、分号或换行分隔"
 										rows="3"
-										class="border-input bg-background ring-offset-background w-full rounded-md border px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+										class="border-input bg-background ring-offset-background focus-visible:ring-ring w-full rounded-md border px-3 py-2 text-sm focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:outline-none"
 									></textarea>
 								</div>
 							</div>
@@ -2603,7 +2647,7 @@
 										{#each filteredSearchResults as result, i (result.bvid || result.season_id || result.mid || i)}
 											{@const isBangumiExisting =
 												sourceType === 'bangumi' &&
-												result.season_id &&
+												!!result.season_id &&
 												isBangumiSeasonExists(result.season_id)}
 											{@const itemKey = `search_${result.bvid || result.season_id || result.mid || i}`}
 											<button
@@ -3192,7 +3236,7 @@
 									>
 										{#each filteredSearchedUserFavorites as favorite (favorite.fid)}
 											{@const itemKey = `searched-favorite_${favorite.fid}`}
-												{@const isDisabled = existingFavoriteIds.has(Number(favorite.fid))}
+											{@const isDisabled = existingFavoriteIds.has(Number(favorite.fid))}
 											<button
 												onclick={() => {
 													if (batchMode) {
@@ -3344,7 +3388,7 @@
 														{#if season.cover}
 															<img
 																src={processBilibiliImageUrl(season.cover)}
-																alt={season.season_title || season.title}
+																alt={season.season_title || season.full_title || ''}
 																class="h-20 w-14 flex-shrink-0 rounded object-cover"
 																onerror={handleImageError}
 																loading="lazy"
@@ -3382,7 +3426,7 @@
 															{/if}
 															<label for="season-{season.season_id}" class="cursor-pointer">
 																<h4 class="truncate pr-6 text-sm font-medium">
-																	{season.full_title || season.season_title || season.title}
+																	{season.full_title || season.season_title}
 																</h4>
 																{#if season.season_id === sourceId}
 																	<span
@@ -4017,7 +4061,7 @@
 				{#if hoveredItem.data.cover}
 					<img
 						src={processBilibiliImageUrl(hoveredItem.data.cover)}
-						alt={hoveredItem.data.season_title || hoveredItem.data.title}
+						alt={hoveredItem.data.full_title || hoveredItem.data.season_title}
 						class="h-32 w-24 flex-shrink-0 rounded object-cover"
 						loading="lazy"
 						crossorigin="anonymous"
@@ -4033,9 +4077,7 @@
 				<div class="min-w-0 flex-1">
 					<div class="mb-1 flex items-center gap-2">
 						<h4 class="flex-1 text-sm font-semibold">
-							{hoveredItem.data.full_title ||
-								hoveredItem.data.season_title ||
-								hoveredItem.data.title}
+							{hoveredItem.data.full_title || hoveredItem.data.season_title}
 						</h4>
 						<span
 							class="flex-shrink-0 rounded bg-purple-100 px-1.5 py-0.5 text-xs text-purple-700 dark:bg-purple-900 dark:text-purple-300"
@@ -4129,7 +4171,7 @@
 
 				<div class="max-h-60 overflow-y-auto rounded border">
 					<div class="space-y-2 p-3">
-						{#each Array.from(batchSelectedItems.values()) as item, index}
+						{#each Array.from(batchSelectedItems) as [key, item] (key)}
 							<div class="bg-muted flex items-center justify-between rounded p-2 text-sm">
 								<div class="min-w-0 flex-1">
 									<div class="truncate font-medium">{item.name}</div>

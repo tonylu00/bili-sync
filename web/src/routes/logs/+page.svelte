@@ -35,7 +35,7 @@
 	let filteredLogs: LogEntry[] = [];
 	let isLoading = false;
 	let autoRefresh = true;
-	let refreshInterval: number;
+	let refreshInterval: ReturnType<typeof setInterval> | null = null;
 	let currentTab = 'all';
 	let isAuthenticated = false;
 	let authError = '';
@@ -261,7 +261,10 @@
 		if (autoRefresh) {
 			refreshInterval = setInterval(() => handleRefresh(), 5000);
 		} else {
-			clearInterval(refreshInterval);
+			if (refreshInterval) {
+				clearInterval(refreshInterval);
+			}
+			refreshInterval = null;
 		}
 	}
 

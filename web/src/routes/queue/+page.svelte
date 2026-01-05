@@ -27,7 +27,7 @@
 	let queueStatus: QueueStatusResponse | null = null;
 	let loading = true;
 	let error: string | null = null;
-	let refreshInterval: number | null = null;
+	let refreshInterval: ReturnType<typeof setInterval> | null = null;
 
 	// 设置面包屑
 	setBreadcrumb([

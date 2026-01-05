@@ -2,6 +2,9 @@
 	import type { HTMLInputAttributes, HTMLInputTypeAttribute } from 'svelte/elements';
 	import { cn, type WithElementRef } from '$lib/utils.js';
 
+	// Allow consumers to attach standard DOM events (e.g. on:input) without TS errors.
+	export type $$Events = Record<string, Event>;
+
 	type InputType = Exclude<HTMLInputTypeAttribute, 'file'>;
 
 	type Props = WithElementRef<

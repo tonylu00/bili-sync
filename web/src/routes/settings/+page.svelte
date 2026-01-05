@@ -16,7 +16,7 @@
 	import * as Tabs from '$lib/components/ui/tabs';
 	import QrLogin from '$lib/components/qr-login.svelte';
 	import { setBreadcrumb } from '$lib/stores/breadcrumb';
-	import type { ConfigResponse, VideoInfo, UserInfo } from '$lib/types';
+	import type { ConfigResponse, UpdateConfigRequest, VideoInfo, UserInfo } from '$lib/types';
 	import {
 		DownloadIcon,
 		FileTextIcon,
@@ -185,7 +185,7 @@
 	let buvid4 = '';
 	let dedeUserIdCkMd5 = '';
 	let credentialSaving = false;
-	let currentUser: { user_id: string; username: string; avatar_url: string } | null = null;
+	let currentUser: UserInfo | null = null;
 
 	// UP主投稿风控配置
 	let largeSubmissionThreshold = 100;
@@ -529,7 +529,10 @@
 			bangumiFolderName = config.bangumi_folder_name || '{{title}}';
 			collectionFolderMode = config.collection_folder_mode || 'separate';
 			timeFormat = config.time_format || '';
-			interval = config.interval || 1200;
+			interval =
+				typeof config.interval === 'number'
+					? config.interval
+					: Number.parseInt(config.interval || '', 10) || 1200;
 			ffmpegTimeoutSeconds = config.ffmpeg_timeout_seconds ?? 600;
 			nfoTimeType = config.nfo_time_type || 'favtime';
 			bindAddress = config.bind_address || '0.0.0.0:12345';
@@ -1063,7 +1066,7 @@
 				await loadNotificationStatus();
 				openSheet = null; // 关闭抽屉
 			} else {
-				toast.error('保存失败', { description: response.data || '未知错误' });
+				toast.error('保存失败', { description: response.data?.message || '未知错误' });
 			}
 		} catch (error: unknown) {
 			console.error('保存推送通知配置失败:', error);
@@ -1093,7 +1096,7 @@
 				await loadConfig();
 				openSheet = null; // 关闭抽屉
 			} else {
-				toast.error('保存失败', { description: response.data || '未知错误' });
+				toast.error('保存失败', { description: response.data?.message || '未知错误' });
 			}
 		} catch (error: unknown) {
 			console.error('保存验证码风控配置失败:', error);
@@ -1121,8 +1124,7 @@
 						source_updates:
 							response.data.events.source_updates ?? defaultNotificationEvents.source_updates,
 						download_failures:
-							response.data.events.download_failures ??
-							defaultNotificationEvents.download_failures,
+							response.data.events.download_failures ?? defaultNotificationEvents.download_failures,
 						risk_control:
 							response.data.events.risk_control ?? defaultNotificationEvents.risk_control
 					};
@@ -1153,9 +1155,7 @@
 							? String(defaults.volume)
 							: '',
 					badge:
-						defaults.badge !== undefined && defaults.badge !== null
-							? String(defaults.badge)
-							: '',
+						defaults.badge !== undefined && defaults.badge !== null ? String(defaults.badge) : '',
 					call: toTriState(defaults.call),
 					autoCopy: toTriState(defaults.auto_copy),
 					copy: defaults.copy ?? '',
@@ -1188,7 +1188,7 @@
 			if (response.status_code === 200) {
 				toast.success('测试推送发送成功', { description: '请检查您的推送接收端' });
 			} else {
-				toast.error('测试推送失败', { description: response.data || '未知错误' });
+				toast.error('测试推送失败', { description: response.data?.message || '未知错误' });
 			}
 		} catch (error: unknown) {
 			console.error('测试推送失败:', error);
@@ -2008,7 +2008,7 @@
 								<Label for="download-downloader">下载器</Label>
 								<select
 									id="download-downloader"
-									class="w-full rounded-md border border-input bg-background px-3 py-2 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+									class="border-input bg-background focus-visible:ring-ring w-full rounded-md border px-3 py-2 text-sm shadow-sm focus-visible:ring-2 focus-visible:outline-none"
 									bind:value={parallelDownloadDownloader}
 								>
 									<option value="aria2">aria2 下载器</option>
@@ -3407,7 +3407,7 @@
 									bind:value={bindAddress}
 									placeholder="0.0.0.0:12345"
 									class={bindAddressValid ? '' : 'border-red-500'}
-									on:input={() => validateBindAddress(bindAddress)}
+									oninput={() => validateBindAddress(bindAddress)}
 								/>
 								{#if bindAddressError}
 									<p class="text-sm text-red-500">{bindAddressError}</p>
@@ -3607,7 +3607,7 @@
 								<Label for="notification-method">选择推送渠道</Label>
 								<select
 									id="notification-method"
-									class="w-full rounded-md border border-input bg-background px-3 py-2 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+									class="border-input bg-background focus-visible:ring-ring w-full rounded-md border px-3 py-2 text-sm shadow-sm focus-visible:ring-2 focus-visible:outline-none"
 									bind:value={notificationMethod}
 								>
 									<option value="serverchan">Server酱（微信推送）</option>
@@ -3632,9 +3632,7 @@
 										max="100"
 										bind:value={notificationMinVideos}
 									/>
-									<p class="text-muted-foreground text-xs">
-										新增视频数量达到该阈值才会发送推送
-									</p>
+									<p class="text-muted-foreground text-xs">新增视频数量达到该阈值才会发送推送</p>
 								</div>
 								<div class="space-y-2">
 									<Label for="notification-timeout">推送超时时间 (秒)</Label>
@@ -3645,9 +3643,7 @@
 										max="60"
 										bind:value={notificationTimeout}
 									/>
-									<p class="text-muted-foreground text-xs">
-										网络请求超时会自动重试
-									</p>
+									<p class="text-muted-foreground text-xs">网络请求超时会自动重试</p>
 								</div>
 								<div class="space-y-2">
 									<Label for="notification-retry">最大重试次数</Label>
@@ -3658,9 +3654,7 @@
 										max="5"
 										bind:value={notificationRetryCount}
 									/>
-									<p class="text-muted-foreground text-xs">
-										失败后会按间隔重试，避免临时网络波动
-									</p>
+									<p class="text-muted-foreground text-xs">失败后会按间隔重试，避免临时网络波动</p>
 								</div>
 							</div>
 						</div>
@@ -3675,7 +3669,7 @@
 								<label class="flex items-start space-x-2 text-sm">
 									<input
 										type="checkbox"
-										class="mt-1 h-4 w-4 rounded border-gray-300 text-primary focus:ring-primary"
+										class="text-primary focus:ring-primary mt-1 h-4 w-4 rounded border-gray-300"
 										bind:checked={notificationEvents.scan_summary}
 										disabled={!notificationEnabled}
 									/>
@@ -3684,7 +3678,7 @@
 								<label class="flex items-start space-x-2 text-sm">
 									<input
 										type="checkbox"
-										class="mt-1 h-4 w-4 rounded border-gray-300 text-primary focus:ring-primary"
+										class="text-primary focus:ring-primary mt-1 h-4 w-4 rounded border-gray-300"
 										bind:checked={notificationEvents.source_updates}
 										disabled={!notificationEnabled}
 									/>
@@ -3693,7 +3687,7 @@
 								<label class="flex items-start space-x-2 text-sm">
 									<input
 										type="checkbox"
-										class="mt-1 h-4 w-4 rounded border-gray-300 text-primary focus:ring-primary"
+										class="text-primary focus:ring-primary mt-1 h-4 w-4 rounded border-gray-300"
 										bind:checked={notificationEvents.download_failures}
 										disabled={!notificationEnabled}
 									/>
@@ -3702,7 +3696,7 @@
 								<label class="flex items-start space-x-2 text-sm">
 									<input
 										type="checkbox"
-										class="mt-1 h-4 w-4 rounded border-gray-300 text-primary focus:ring-primary"
+										class="text-primary focus:ring-primary mt-1 h-4 w-4 rounded border-gray-300"
 										bind:checked={notificationEvents.risk_control}
 										disabled={!notificationEnabled}
 									/>
@@ -3722,7 +3716,8 @@
 										id="serverchan-key"
 										type="password"
 										bind:value={serverchanKey}
-										placeholder={notificationStatus?.configured && statusNotificationMethod === 'serverchan'
+										placeholder={notificationStatus?.configured &&
+										statusNotificationMethod === 'serverchan'
 											? '已配置（留空保持不变）'
 											: '请输入Server酱密钥'}
 									/>
@@ -3746,7 +3741,8 @@
 										id="bark-device-key"
 										type="password"
 										bind:value={barkDeviceKey}
-										placeholder={statusNotificationMethod === 'bark' && notificationStatus?.configured
+										placeholder={statusNotificationMethod === 'bark' &&
+										notificationStatus?.configured
 											? '已配置（留空保持不变）'
 											: '请输入 Bark Device Key'}
 									/>
@@ -3772,7 +3768,7 @@
 									<Label for="bark-device-keys">额外设备 Key（每行一个，可选）</Label>
 									<textarea
 										id="bark-device-keys"
-										class="w-full rounded-md border border-input bg-background px-3 py-2 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+										class="border-input bg-background focus-visible:ring-ring w-full rounded-md border px-3 py-2 text-sm shadow-sm focus-visible:ring-2 focus-visible:outline-none"
 										rows="3"
 										bind:value={barkDeviceKeysText}
 										placeholder="支持多个设备推送时，每行填写一个 Device Key"
@@ -3782,8 +3778,12 @@
 									</p>
 								</div>
 
-								<details class="rounded-md border border-dashed border-purple-200 bg-purple-50/60 p-4 dark:border-purple-900 dark:bg-purple-950/30">
-									<summary class="cursor-pointer text-sm font-medium text-purple-700 dark:text-purple-300">
+								<details
+									class="rounded-md border border-dashed border-purple-200 bg-purple-50/60 p-4 dark:border-purple-900 dark:bg-purple-950/30"
+								>
+									<summary
+										class="cursor-pointer text-sm font-medium text-purple-700 dark:text-purple-300"
+									>
 										Bark 高级推送选项（可选）
 									</summary>
 									<div class="mt-4 space-y-4 text-sm">
@@ -3798,11 +3798,19 @@
 											</div>
 											<div class="space-y-2">
 												<Label for="bark-sound">自定义铃声</Label>
-												<Input id="bark-sound" bind:value={barkDefaultsForm.sound} placeholder="如: minuet" />
+												<Input
+													id="bark-sound"
+													bind:value={barkDefaultsForm.sound}
+													placeholder="如: minuet"
+												/>
 											</div>
 											<div class="space-y-2">
 												<Label for="bark-icon">自定义图标 URL</Label>
-												<Input id="bark-icon" bind:value={barkDefaultsForm.icon} placeholder="https://..." />
+												<Input
+													id="bark-icon"
+													bind:value={barkDefaultsForm.icon}
+													placeholder="https://..."
+												/>
 											</div>
 											<div class="space-y-2">
 												<Label for="bark-group">通知分组</Label>
@@ -3810,36 +3818,51 @@
 											</div>
 											<div class="space-y-2">
 												<Label for="bark-url">点击跳转链接</Label>
-												<Input id="bark-url" bind:value={barkDefaultsForm.url} placeholder="https://..." />
+												<Input
+													id="bark-url"
+													bind:value={barkDefaultsForm.url}
+													placeholder="https://..."
+												/>
 											</div>
 											<div class="space-y-2">
 												<Label for="bark-level">通知级别</Label>
 												<select
 													id="bark-level"
-													class="w-full rounded-md border border-input bg-background px-3 py-2 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+													class="border-input bg-background focus-visible:ring-ring w-full rounded-md border px-3 py-2 text-sm shadow-sm focus-visible:ring-2 focus-visible:outline-none"
 													bind:value={barkDefaultsForm.level}
 												>
-													{#each barkLevelOptions as option}
+													{#each barkLevelOptions as option (option.value)}
 														<option value={option.value}>{option.label}</option>
 													{/each}
 												</select>
 											</div>
 											<div class="space-y-2">
 												<Label for="bark-volume">重要警告音量 (0-10)</Label>
-												<Input id="bark-volume" type="number" min="0" max="10" bind:value={barkDefaultsForm.volume} />
+												<Input
+													id="bark-volume"
+													type="number"
+													min="0"
+													max="10"
+													bind:value={barkDefaultsForm.volume}
+												/>
 											</div>
 											<div class="space-y-2">
 												<Label for="bark-badge">应用角标</Label>
-												<Input id="bark-badge" type="number" min="0" bind:value={barkDefaultsForm.badge} />
+												<Input
+													id="bark-badge"
+													type="number"
+													min="0"
+													bind:value={barkDefaultsForm.badge}
+												/>
 											</div>
 											<div class="space-y-2">
 												<Label for="bark-call">重复铃声</Label>
 												<select
 													id="bark-call"
-													class="w-full rounded-md border border-input bg-background px-3 py-2 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+													class="border-input bg-background focus-visible:ring-ring w-full rounded-md border px-3 py-2 text-sm shadow-sm focus-visible:ring-2 focus-visible:outline-none"
 													bind:value={barkDefaultsForm.call}
 												>
-													{#each triStateOptions as option}
+													{#each triStateOptions as option (option.value)}
 														<option value={option.value}>{option.label}</option>
 													{/each}
 												</select>
@@ -3848,33 +3871,41 @@
 												<Label for="bark-auto-copy">自动复制内容</Label>
 												<select
 													id="bark-auto-copy"
-													class="w-full rounded-md border border-input bg-background px-3 py-2 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+													class="border-input bg-background focus-visible:ring-ring w-full rounded-md border px-3 py-2 text-sm shadow-sm focus-visible:ring-2 focus-visible:outline-none"
 													bind:value={barkDefaultsForm.autoCopy}
 												>
-													{#each triStateOptions as option}
+													{#each triStateOptions as option (option.value)}
 														<option value={option.value}>{option.label}</option>
 													{/each}
 												</select>
 											</div>
 											<div class="space-y-2">
 												<Label for="bark-copy">自定义复制内容</Label>
-												<Input id="bark-copy" bind:value={barkDefaultsForm.copy} placeholder="填写后长按通知复制该内容" />
+												<Input
+													id="bark-copy"
+													bind:value={barkDefaultsForm.copy}
+													placeholder="填写后长按通知复制该内容"
+												/>
 											</div>
 											<div class="space-y-2">
 												<Label for="bark-is-archive">保存到历史</Label>
 												<select
 													id="bark-is-archive"
-													class="w-full rounded-md border border-input bg-background px-3 py-2 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+													class="border-input bg-background focus-visible:ring-ring w-full rounded-md border px-3 py-2 text-sm shadow-sm focus-visible:ring-2 focus-visible:outline-none"
 													bind:value={barkDefaultsForm.isArchive}
 												>
-													{#each triStateOptions as option}
+													{#each triStateOptions as option (option.value)}
 														<option value={option.value}>{option.label}</option>
 													{/each}
 												</select>
 											</div>
 											<div class="space-y-2">
 												<Label for="bark-action">点击行为</Label>
-												<Input id="bark-action" bind:value={barkDefaultsForm.action} placeholder="none / openUrl / ..." />
+												<Input
+													id="bark-action"
+													bind:value={barkDefaultsForm.action}
+													placeholder="none / openUrl / ..."
+												/>
 											</div>
 											<div class="space-y-2">
 												<Label for="bark-ciphertext">加密内容密文</Label>
@@ -3888,10 +3919,10 @@
 												<Label for="bark-delete">删除历史通知</Label>
 												<select
 													id="bark-delete"
-													class="w-full rounded-md border border-input bg-background px-3 py-2 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+													class="border-input bg-background focus-visible:ring-ring w-full rounded-md border px-3 py-2 text-sm shadow-sm focus-visible:ring-2 focus-visible:outline-none"
 													bind:value={barkDefaultsForm.delete}
 												>
-													{#each triStateOptions as option}
+													{#each triStateOptions as option (option.value)}
 														<option value={option.value}>{option.label}</option>
 													{/each}
 												</select>
@@ -3946,13 +3977,15 @@
 										在 iOS 设备上安装 <a
 											href="https://apps.apple.com/app/id1403753865"
 											target="_blank"
-											class="text-primary hover:underline">Bark</a> 并完成初始设置
+											class="text-primary hover:underline">Bark</a
+										> 并完成初始设置
 									</li>
 									<li>
 										参阅 <a
 											href="https://bark.day.app/#/en-us/tutorial"
 											target="_blank"
-											class="text-primary hover:underline">官方教程</a> 获取 Device Key 或自建服务器地址
+											class="text-primary hover:underline">官方教程</a
+										> 获取 Device Key 或自建服务器地址
 									</li>
 									<li>将 Device Key 和服务器地址填入上方输入框并保存</li>
 									<li>使用测试按钮验证推送是否正常</li>

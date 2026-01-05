@@ -58,6 +58,7 @@ export interface VideoSourcesResponse {
 	submission: VideoSource[];
 	watch_later: VideoSource[];
 	bangumi: VideoSource[];
+	[key: string]: VideoSource[];
 }
 
 // 视频信息类型
@@ -178,6 +179,7 @@ export interface AddVideoSourceRequest {
 	up_id?: string;
 	name: string;
 	path: string;
+	cover?: string;
 	collection_type?: string;
 	media_id?: string;
 	ep_id?: string;
@@ -278,6 +280,8 @@ export interface ConfigResponse {
 	enable_auto_backoff?: boolean;
 	auto_backoff_base_seconds?: number;
 	auto_backoff_max_multiplier?: number;
+	source_delay_seconds?: number;
+	submission_source_delay_seconds?: number;
 	// 扫描已删除视频设置
 	scan_deleted_videos?: boolean;
 	ffmpeg_timeout_seconds?: number;
@@ -298,6 +302,8 @@ export interface ConfigResponse {
 		buvid3: string;
 		dedeuserid: string;
 		ac_time_value: string;
+		buvid4?: string;
+		dedeuserid_ckmd5?: string;
 	};
 	// UP主头像保存路径
 	upper_path?: string;
@@ -306,6 +312,12 @@ export interface ConfigResponse {
 		enabled: boolean;
 		mode: string;
 		timeout: number;
+		auto_solve?: {
+			service?: string;
+			api_key?: string;
+			max_retries?: number;
+			solve_timeout?: number;
+		};
 	};
 	// 服务器绑定地址
 	bind_address: string;
@@ -370,6 +382,8 @@ export interface UpdateConfigRequest {
 	enable_auto_backoff?: boolean;
 	auto_backoff_base_seconds?: number;
 	auto_backoff_max_multiplier?: number;
+	source_delay_seconds?: number;
+	submission_source_delay_seconds?: number;
 	// 扫描已删除视频设置
 	scan_deleted_videos?: boolean;
 	ffmpeg_timeout_seconds?: number;

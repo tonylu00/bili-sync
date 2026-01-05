@@ -95,7 +95,14 @@
 		};
 	}
 
-	$: currentSnapshot = snapshotState();
+	$: currentSnapshot = {
+		minDuration: minDurationInput.trim(),
+		maxDuration: maxDurationInput.trim(),
+		minPageDuration: minPageDurationInput.trim(),
+		maxPageDuration: maxPageDurationInput.trim(),
+		includeKeywords: parseKeywordInput(includeKeywordsInput),
+		excludeKeywords: parseKeywordInput(excludeKeywordsInput)
+	};
 	$: hasChanges = initialSnapshot
 		? JSON.stringify(initialSnapshot) !== JSON.stringify(currentSnapshot)
 		: true;
@@ -193,27 +200,33 @@
 				编辑视频过滤规则
 			</AlertDialog.Title>
 			<AlertDialog.Description class="space-y-4">
-				<div class="rounded-lg border border-purple-200 bg-purple-50 p-3 text-xs text-purple-800 dark:border-purple-800 dark:bg-purple-950 dark:text-purple-200">
+				<div
+					class="rounded-lg border border-purple-200 bg-purple-50 p-3 text-xs text-purple-800 dark:border-purple-800 dark:bg-purple-950 dark:text-purple-200"
+				>
 					<p class="font-medium">通过过滤规则可以更精准地控制自动下载的视频范围。</p>
 					<p class="mt-1">支持配置视频总时长、分P时长范围，以及标题关键词包含/排除规则。</p>
 				</div>
 
-				<div class="space-y-2 text-sm text-muted-foreground">
+				<div class="text-muted-foreground space-y-2 text-sm">
 					<div>
-						<span class="font-medium text-foreground">类型：</span>
-						<span class="rounded bg-purple-100 px-2 py-0.5 text-xs text-purple-700 dark:bg-purple-900 dark:text-purple-100">
+						<span class="text-foreground font-medium">类型：</span>
+						<span
+							class="rounded bg-purple-100 px-2 py-0.5 text-xs text-purple-700 dark:bg-purple-900 dark:text-purple-100"
+						>
 							{getSourceTypeLabel(sourceType)}
 						</span>
 					</div>
 					<div>
-						<span class="font-medium text-foreground">名称：</span>
-						<span class="font-mono text-foreground">"{sourceName}"</span>
+						<span class="text-foreground font-medium">名称：</span>
+						<span class="text-foreground font-mono">"{sourceName}"</span>
 					</div>
 				</div>
 
 				<div class="grid gap-4 md:grid-cols-2">
 					<div class="space-y-2">
-						<label class="text-sm font-medium text-foreground" for="min-duration">视频总时长下限（秒）</label>
+						<label class="text-foreground text-sm font-medium" for="min-duration"
+							>视频总时长下限（秒）</label
+						>
 						<input
 							id="min-duration"
 							type="text"
@@ -224,7 +237,9 @@
 						/>
 					</div>
 					<div class="space-y-2">
-						<label class="text-sm font-medium text-foreground" for="max-duration">视频总时长上限（秒）</label>
+						<label class="text-foreground text-sm font-medium" for="max-duration"
+							>视频总时长上限（秒）</label
+						>
 						<input
 							id="max-duration"
 							type="text"
@@ -235,7 +250,9 @@
 						/>
 					</div>
 					<div class="space-y-2">
-						<label class="text-sm font-medium text-foreground" for="min-page-duration">分P时长下限（秒）</label>
+						<label class="text-foreground text-sm font-medium" for="min-page-duration"
+							>分P时长下限（秒）</label
+						>
 						<input
 							id="min-page-duration"
 							type="text"
@@ -246,7 +263,9 @@
 						/>
 					</div>
 					<div class="space-y-2">
-						<label class="text-sm font-medium text-foreground" for="max-page-duration">分P时长上限（秒）</label>
+						<label class="text-foreground text-sm font-medium" for="max-page-duration"
+							>分P时长上限（秒）</label
+						>
 						<input
 							id="max-page-duration"
 							type="text"
@@ -260,7 +279,9 @@
 
 				<div class="grid gap-4 md:grid-cols-2">
 					<div class="space-y-2">
-						<label class="text-sm font-medium text-foreground" for="include-keywords">包含关键词</label>
+						<label class="text-foreground text-sm font-medium" for="include-keywords"
+							>包含关键词</label
+						>
 						<textarea
 							id="include-keywords"
 							bind:value={includeKeywordsInput}
@@ -269,10 +290,14 @@
 							class="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-purple-500 focus:ring-2 focus:ring-purple-500 focus:outline-none dark:border-gray-600 dark:bg-gray-700 dark:text-gray-200"
 							disabled={isProcessing}
 						></textarea>
-						<p class="text-xs text-muted-foreground">所有关键词都会被转为小写后匹配标题，留空表示不过滤。</p>
+						<p class="text-muted-foreground text-xs">
+							所有关键词都会被转为小写后匹配标题，留空表示不过滤。
+						</p>
 					</div>
 					<div class="space-y-2">
-						<label class="text-sm font-medium text-foreground" for="exclude-keywords">排除关键词</label>
+						<label class="text-foreground text-sm font-medium" for="exclude-keywords"
+							>排除关键词</label
+						>
 						<textarea
 							id="exclude-keywords"
 							bind:value={excludeKeywordsInput}
@@ -281,11 +306,13 @@
 							class="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-purple-500 focus:ring-2 focus:ring-purple-500 focus:outline-none dark:border-gray-600 dark:bg-gray-700 dark:text-gray-200"
 							disabled={isProcessing}
 						></textarea>
-						<p class="text-xs text-muted-foreground">匹配到任意排除关键词的视频会被跳过下载。</p>
+						<p class="text-muted-foreground text-xs">匹配到任意排除关键词的视频会被跳过下载。</p>
 					</div>
 				</div>
 
-				<div class="rounded-lg border border-yellow-200 bg-yellow-50 p-3 text-xs text-yellow-800 dark:border-yellow-800 dark:bg-yellow-950 dark:text-yellow-200">
+				<div
+					class="rounded-lg border border-yellow-200 bg-yellow-50 p-3 text-xs text-yellow-800 dark:border-yellow-800 dark:bg-yellow-950 dark:text-yellow-200"
+				>
 					<p class="font-medium">提示</p>
 					<ul class="mt-1 list-inside list-disc space-y-1">
 						<li>所有过滤设置都会在下一次扫描该视频源时生效。</li>
@@ -311,7 +338,8 @@
 			>
 				{#if isProcessing}
 					<svg class="mr-2 inline h-4 w-4 animate-spin" fill="none" viewBox="0 0 24 24">
-						<circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+						<circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"
+						></circle>
 						<path
 							class="opacity-75"
 							fill="currentColor"

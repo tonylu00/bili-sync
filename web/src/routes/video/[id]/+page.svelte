@@ -28,7 +28,6 @@
 	// eslint-disable-next-line @typescript-eslint/no-explicit-any
 	let onlinePlayInfo: any = null;
 	let loadingPlayInfo = false;
-	// let _isFullscreen = false; // 未使用，已注释 // 是否全屏模式
 	let deleteDialogOpen = false;
 	let deleting = false;
 
@@ -252,30 +251,6 @@
 		}
 	}
 
-	// 监听全屏变化事件
-	function handleFullscreenChange() {
-		isFullscreen = !!(
-			document.fullscreenElement ||
-			// eslint-disable-next-line @typescript-eslint/no-explicit-any
-			(document as any).webkitFullscreenElement ||
-			// eslint-disable-next-line @typescript-eslint/no-explicit-any
-			(document as any).mozFullScreenElement
-		);
-	}
-
-	// 组件挂载时添加全屏事件监听
-	onMount(() => {
-		document.addEventListener('fullscreenchange', handleFullscreenChange);
-		document.addEventListener('webkitfullscreenchange', handleFullscreenChange);
-		document.addEventListener('mozfullscreenchange', handleFullscreenChange);
-
-		return () => {
-			document.removeEventListener('fullscreenchange', handleFullscreenChange);
-			document.removeEventListener('webkitfullscreenchange', handleFullscreenChange);
-			document.removeEventListener('mozfullscreenchange', handleFullscreenChange);
-		};
-	});
-
 	// 删除视频
 	async function handleDeleteVideo() {
 		if (!videoData) return;
@@ -297,10 +272,12 @@
 					description: data.message
 				});
 			}
-		} catch (error) {
+		} catch (error: unknown) {
 			console.error('删除视频失败:', error);
+			const errorMessage =
+				error instanceof Error ? error.message : (error as ApiError | undefined)?.message;
 			toast.error('删除视频失败', {
-				description: (error as ApiError).message
+				description: errorMessage || '未知错误'
 			});
 		} finally {
 			deleting = false;
@@ -588,14 +565,18 @@
 												onplay={() => {
 													// 同步播放音频
 													if (isDashSeparatedStream()) {
-														const audio = document.querySelector('#sync-audio');
+														const audio = document.querySelector(
+															'#sync-audio'
+														) as HTMLAudioElement | null;
 														if (audio) audio.play();
 													}
 												}}
 												onpause={() => {
 													// 同步暂停音频
 													if (isDashSeparatedStream()) {
-														const audio = document.querySelector('#sync-audio');
+														const audio = document.querySelector(
+															'#sync-audio'
+														) as HTMLAudioElement | null;
 														if (audio) audio.pause();
 													}
 												}}

@@ -348,7 +348,7 @@
 			const filterParams = videoSource
 				? {
 						[videoSource.type]: parseInt(videoSource.id)
-				  }
+					}
 				: undefined;
 			const result = await api.setSpecificTasksStatus(uniqueTaskIndexes, statusValue, filterParams);
 			const data = result.data;
@@ -365,14 +365,7 @@
 					sortBy,
 					sortOrder
 				} = $appStateStore;
-				await loadVideos(
-					query,
-					currentPage,
-					currentVideoSource,
-					showFailedOnly,
-					sortBy,
-					sortOrder
-				);
+				await loadVideos(query, currentPage, currentVideoSource, showFailedOnly, sortBy, sortOrder);
 			} else {
 				toast.info('没有需要更新的任务');
 			}
@@ -966,138 +959,140 @@
 	</AlertDialog.Content>
 </AlertDialog.Root>
 
-	<!-- 批量设置状态对话框 -->
-	<AlertDialog.Root bind:open={setStatusDialogOpen}>
-		<AlertDialog.Content>
-			<AlertDialog.Header>
-				<AlertDialog.Title>批量设置任务状态</AlertDialog.Title>
-				<AlertDialog.Description>
-					{#if selectedSourceType && selectedSourceId && videoSources}
-						{@const sourceConfig = Object.values(VIDEO_SOURCES).find(
-							(config) => config.type === selectedSourceType
-						)}
-						{@const sources = videoSources[selectedSourceType]}
-						{@const currentSource = sources?.find((s) => s.id.toString() === selectedSourceId)}
-						{#if sourceConfig && currentSource}
-							将把所选任务设置为指定状态，作用范围：视频源「{currentSource.name}」。
-						{:else}
-							将把所选任务设置为指定状态（作用于当前筛选结果）。
-						{/if}
+<!-- 批量设置状态对话框 -->
+<AlertDialog.Root bind:open={setStatusDialogOpen}>
+	<AlertDialog.Content>
+		<AlertDialog.Header>
+			<AlertDialog.Title>批量设置任务状态</AlertDialog.Title>
+			<AlertDialog.Description>
+				{#if selectedSourceType && selectedSourceId && videoSources}
+					{@const sourceConfig = Object.values(VIDEO_SOURCES).find(
+						(config) => config.type === selectedSourceType
+					)}
+					{@const sources = videoSources[selectedSourceType]}
+					{@const currentSource = sources?.find((s) => s.id.toString() === selectedSourceId)}
+					{#if sourceConfig && currentSource}
+						将把所选任务设置为指定状态，作用范围：视频源「{currentSource.name}」。
 					{:else}
-						将把所选任务设置为指定状态，作用范围：全部视频。
+						将把所选任务设置为指定状态（作用于当前筛选结果）。
 					{/if}
-				</AlertDialog.Description>
-			</AlertDialog.Header>
-			<div class="space-y-4 py-4">
-				<!-- 状态值选择 -->
-				<div class="space-y-2">
-					<div class="text-sm font-medium">选择目标状态：</div>
-					<select
-						class="border-input bg-background ring-offset-background focus:ring-ring h-9 w-full rounded-md border px-3 py-1 text-sm focus:ring-2 focus:ring-offset-2 focus:outline-none"
-						bind:value={selectedStatusValue}
-					>
-						{#each STATUS_OPTIONS as option (option.value)}
-							<option value={option.value}>{option.label}</option>
-						{/each}
-					</select>
-					<p class="text-muted-foreground text-xs">
-						状态值会同步应用到所选任务对应的视频状态与分页状态。
-					</p>
-				</div>
+				{:else}
+					将把所选任务设置为指定状态，作用范围：全部视频。
+				{/if}
+			</AlertDialog.Description>
+		</AlertDialog.Header>
+		<div class="space-y-4 py-4">
+			<!-- 状态值选择 -->
+			<div class="space-y-2">
+				<div class="text-sm font-medium">选择目标状态：</div>
+				<select
+					class="border-input bg-background ring-offset-background focus:ring-ring h-9 w-full rounded-md border px-3 py-1 text-sm focus:ring-2 focus:ring-offset-2 focus:outline-none"
+					bind:value={selectedStatusValue}
+				>
+					{#each STATUS_OPTIONS as option (option.value)}
+						<option value={option.value}>{option.label}</option>
+					{/each}
+				</select>
+				<p class="text-muted-foreground text-xs">
+					状态值会同步应用到所选任务对应的视频状态与分页状态。
+				</p>
+			</div>
 
-				<!-- 任务类型选择 -->
-				<div class="space-y-3">
-					<div class="text-sm font-medium">选择要更新的任务类型：</div>
+			<!-- 任务类型选择 -->
+			<div class="space-y-3">
+				<div class="text-sm font-medium">选择要更新的任务类型：</div>
+
+				<label class="flex items-center gap-2">
+					<input
+						type="checkbox"
+						bind:checked={setStatusAllTasks}
+						onchange={handleSetStatusAllTasksChange}
+						class="rounded border-gray-300"
+					/>
+					<span class="text-sm font-medium">更新所有任务类型</span>
+				</label>
+
+				<div class="ml-4 space-y-2">
+					<div class="text-muted-foreground text-sm">或选择特定任务：</div>
 
 					<label class="flex items-center gap-2">
 						<input
 							type="checkbox"
-							bind:checked={setStatusAllTasks}
-							onchange={handleSetStatusAllTasksChange}
+							bind:checked={setStatusTaskPages}
+							onchange={handleSetStatusSpecificChange}
+							disabled={setStatusAllTasks}
 							class="rounded border-gray-300"
 						/>
-						<span class="text-sm font-medium">更新所有任务类型</span>
+						<span class="text-sm">更新视频封面</span>
 					</label>
 
-					<div class="ml-4 space-y-2">
-						<div class="text-muted-foreground text-sm">或选择特定任务：</div>
+					<label class="flex items-center gap-2">
+						<input
+							type="checkbox"
+							bind:checked={setStatusTaskVideo}
+							onchange={handleSetStatusSpecificChange}
+							disabled={setStatusAllTasks}
+							class="rounded border-gray-300"
+						/>
+						<span class="text-sm">更新视频内容</span>
+					</label>
 
-						<label class="flex items-center gap-2">
-							<input
-								type="checkbox"
-								bind:checked={setStatusTaskPages}
-								onchange={handleSetStatusSpecificChange}
-								disabled={setStatusAllTasks}
-								class="rounded border-gray-300"
-							/>
-							<span class="text-sm">更新视频封面</span>
-						</label>
+					<label class="flex items-center gap-2">
+						<input
+							type="checkbox"
+							bind:checked={setStatusTaskInfo}
+							onchange={handleSetStatusSpecificChange}
+							disabled={setStatusAllTasks}
+							class="rounded border-gray-300"
+						/>
+						<span class="text-sm">更新视频信息</span>
+					</label>
 
-						<label class="flex items-center gap-2">
-							<input
-								type="checkbox"
-								bind:checked={setStatusTaskVideo}
-								onchange={handleSetStatusSpecificChange}
-								disabled={setStatusAllTasks}
-								class="rounded border-gray-300"
-							/>
-							<span class="text-sm">更新视频内容</span>
-						</label>
+					<label class="flex items-center gap-2">
+						<input
+							type="checkbox"
+							bind:checked={setStatusTaskDanmaku}
+							onchange={handleSetStatusSpecificChange}
+							disabled={setStatusAllTasks}
+							class="rounded border-gray-300"
+						/>
+						<span class="text-sm">更新视频弹幕</span>
+					</label>
 
-						<label class="flex items-center gap-2">
-							<input
-								type="checkbox"
-								bind:checked={setStatusTaskInfo}
-								onchange={handleSetStatusSpecificChange}
-								disabled={setStatusAllTasks}
-								class="rounded border-gray-300"
-							/>
-							<span class="text-sm">更新视频信息</span>
-						</label>
+					<label class="flex items-center gap-2">
+						<input
+							type="checkbox"
+							bind:checked={setStatusTaskSubtitle}
+							onchange={handleSetStatusSpecificChange}
+							disabled={setStatusAllTasks}
+							class="rounded border-gray-300"
+						/>
+						<span class="text-sm">更新视频字幕</span>
+					</label>
+				</div>
 
-						<label class="flex items-center gap-2">
-							<input
-								type="checkbox"
-								bind:checked={setStatusTaskDanmaku}
-								onchange={handleSetStatusSpecificChange}
-								disabled={setStatusAllTasks}
-								class="rounded border-gray-300"
-							/>
-							<span class="text-sm">更新视频弹幕</span>
-						</label>
-
-						<label class="flex items-center gap-2">
-							<input
-								type="checkbox"
-								bind:checked={setStatusTaskSubtitle}
-								onchange={handleSetStatusSpecificChange}
-								disabled={setStatusAllTasks}
-								class="rounded border-gray-300"
-							/>
-							<span class="text-sm">更新视频字幕</span>
-						</label>
-					</div>
-
-					<div class="mt-4 rounded-lg border border-blue-200 bg-blue-50 p-3 dark:border-blue-800 dark:bg-blue-950/20">
-						<div class="text-sm text-blue-800 dark:text-blue-200">
-							<strong>说明：</strong>
-							<ul class="mt-1 list-inside list-disc">
-								<li>状态值 0 表示未开始，7 表示已完成，其余数值代表失败次数</li>
-								<li>所选任务会同步更新对应的视频任务与分P任务</li>
-								<li>更新后系统会自动同步任务状态，无需手动刷新</li>
-							</ul>
-						</div>
+				<div
+					class="mt-4 rounded-lg border border-blue-200 bg-blue-50 p-3 dark:border-blue-800 dark:bg-blue-950/20"
+				>
+					<div class="text-sm text-blue-800 dark:text-blue-200">
+						<strong>说明：</strong>
+						<ul class="mt-1 list-inside list-disc">
+							<li>状态值 0 表示未开始，7 表示已完成，其余数值代表失败次数</li>
+							<li>所选任务会同步更新对应的视频任务与分P任务</li>
+							<li>更新后系统会自动同步任务状态，无需手动刷新</li>
+						</ul>
 					</div>
 				</div>
 			</div>
-			<AlertDialog.Footer>
-				<AlertDialog.Cancel disabled={settingStatus}>取消</AlertDialog.Cancel>
-				<AlertDialog.Action onclick={handleSetTasksStatus} disabled={settingStatus}>
-					{settingStatus ? '设置中...' : '确认设置'}
-				</AlertDialog.Action>
-			</AlertDialog.Footer>
-		</AlertDialog.Content>
-	</AlertDialog.Root>
+		</div>
+		<AlertDialog.Footer>
+			<AlertDialog.Cancel disabled={settingStatus}>取消</AlertDialog.Cancel>
+			<AlertDialog.Action onclick={handleSetTasksStatus} disabled={settingStatus}>
+				{settingStatus ? '设置中...' : '确认设置'}
+			</AlertDialog.Action>
+		</AlertDialog.Footer>
+	</AlertDialog.Content>
+</AlertDialog.Root>
 
 <!-- 批量删除确认对话框 -->
 <AlertDialog.Root bind:open={batchDeleteDialogOpen}>

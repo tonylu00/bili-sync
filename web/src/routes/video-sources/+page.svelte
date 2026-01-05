@@ -86,8 +86,10 @@
 			setVideoSources(response.data);
 		} catch (error) {
 			console.error('加载视频源失败:', error);
+			const errorMessage =
+				error instanceof Error ? error.message : (error as ApiError | undefined)?.message;
 			toast.error('加载视频源失败', {
-				description: (error as ApiError).message
+				description: errorMessage || '未知错误'
 			});
 		} finally {
 			loading = false;
@@ -111,7 +113,9 @@
 			}
 		} catch (error: unknown) {
 			console.error('切换视频源状态失败:', error);
-			toast.error('操作失败', { description: error.message });
+			toast.error('操作失败', {
+				description: error instanceof Error ? error.message : '未知错误'
+			});
 		}
 	}
 
@@ -178,7 +182,9 @@
 			}
 		} catch (error: unknown) {
 			console.error('设置更新失败:', error);
-			toast.error('设置更新失败', { description: error.message });
+			toast.error('设置更新失败', {
+				description: error instanceof Error ? error.message : '未知错误'
+			});
 		}
 	}
 
@@ -203,7 +209,9 @@
 			}
 		} catch (error: unknown) {
 			console.error('删除视频源失败:', error);
-			toast.error('删除失败', { description: error.message });
+			toast.error('删除失败', {
+				description: error instanceof Error ? error.message : '未知错误'
+			});
 		}
 	}
 
@@ -240,7 +248,9 @@
 			}
 		} catch (error: unknown) {
 			console.error('路径重设失败:', error);
-			toast.error('路径重设失败', { description: error.message });
+			toast.error('路径重设失败', {
+				description: error instanceof Error ? error.message : '未知错误'
+			});
 		}
 	}
 
@@ -249,9 +259,7 @@
 		showResetPathDialog = false;
 	}
 
-	async function handleConfirmEditFilters(
-		event: CustomEvent<UpdateVideoSourceFiltersRequest>
-	) {
+	async function handleConfirmEditFilters(event: CustomEvent<UpdateVideoSourceFiltersRequest>) {
 		const payload = event.detail;
 		showEditFiltersDialog = false;
 		try {
@@ -275,8 +283,7 @@
 			console.error('更新过滤规则失败:', error);
 			const apiError = error as ApiError;
 			toast.error('更新过滤规则失败', {
-				description:
-					apiError?.message || (error instanceof Error ? error.message : '请稍后重试')
+				description: apiError?.message || (error instanceof Error ? error.message : '请稍后重试')
 			});
 			showEditFiltersDialog = true;
 		}
