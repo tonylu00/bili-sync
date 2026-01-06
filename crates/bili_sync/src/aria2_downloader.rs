@@ -7,6 +7,7 @@ use tokio::time::{sleep, timeout};
 use tracing::{debug, error, info, warn};
 
 use crate::bilibili::Client;
+#[cfg(feature = "bundled-aria2")]
 use crate::config::CONFIG_DIR;
 use crate::http::headers::create_aria2_headers;
 
@@ -838,7 +839,7 @@ impl Aria2Downloader {
         }
 
         // 启动aria2进程，保留stderr用于诊断
-        let mut child = tokio::process::Command::new(&self.aria2_binary_path)
+        let mut child = tokio::process::Command::new(self.aria2_binary_path.as_ref())
             .args(&args)
             .stdin(std::process::Stdio::null())
             .stdout(std::process::Stdio::null())
