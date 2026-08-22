@@ -234,13 +234,13 @@ impl PageAnalyzer {
 
     fn is_html5_mp4_stream(&self) -> bool {
         self.info.get("durl").is_some()
-            && self.info["format"].as_str().is_some_and(|f| f.starts_with("mp4"))
+            && self.info["format"].as_str().is_some_and(|f| f.contains("mp4"))
             && self.info["is_html5"].as_bool().is_some_and(|b| b)
     }
 
     fn is_episode_try_mp4_stream(&self) -> bool {
         self.info.get("durl").is_some()
-            && self.info["format"].as_str().is_some_and(|f| f.starts_with("mp4"))
+            && self.info["format"].as_str().is_some_and(|f| f.contains("mp4"))
             && self.info["is_html5"].as_bool().is_none_or(|b| !b)
     }
 
