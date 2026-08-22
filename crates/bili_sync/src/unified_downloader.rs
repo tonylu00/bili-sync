@@ -56,9 +56,7 @@ impl UnifiedDownloader {
                 }
                 Err(err) => {
                     tracing::error!("aria2 不可用（初始化失败）: {:#}", err);
-                    tracing::warn!(
-                        "将回退到内置下载器，并自动把下载器设置切换为 'native'（请在设置页确认）"
-                    );
+                    tracing::warn!("将回退到内置下载器，并自动把下载器设置切换为 'native'（请在设置页确认）");
 
                     if let Err(e) = crate::config::set_parallel_download_downloader(
                         crate::config::ParallelDownloadDownloader::Native,
@@ -76,14 +74,10 @@ impl UnifiedDownloader {
         #[cfg(not(feature = "aria2"))]
         {
             tracing::error!("当前构建未启用 aria2 特性，但配置选择了 aria2 下载器");
-            tracing::warn!(
-                "将回退到内置下载器，并自动把下载器设置切换为 'native'（请在设置页确认）"
-            );
+            tracing::warn!("将回退到内置下载器，并自动把下载器设置切换为 'native'（请在设置页确认）");
 
-            if let Err(e) = crate::config::set_parallel_download_downloader(
-                crate::config::ParallelDownloadDownloader::Native,
-            )
-            .await
+            if let Err(e) =
+                crate::config::set_parallel_download_downloader(crate::config::ParallelDownloadDownloader::Native).await
             {
                 tracing::warn!("写回下载器设置失败（仍将继续使用内置下载器）: {:#}", e);
             }

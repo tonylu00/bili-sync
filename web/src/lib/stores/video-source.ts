@@ -1,5 +1,5 @@
-import { writable } from 'svelte/store';
 import { type VideoSourcesResponse } from '$lib/types';
+import { writable } from 'svelte/store';
 
 export const videoSourceStore = writable<VideoSourcesResponse | undefined>(undefined);
 

@@ -1,8 +1,8 @@
-import HeartIcon from '@lucide/svelte/icons/heart';
-import FolderIcon from '@lucide/svelte/icons/folder';
-import UserIcon from '@lucide/svelte/icons/user';
 import ClockIcon from '@lucide/svelte/icons/clock';
+import FolderIcon from '@lucide/svelte/icons/folder';
+import HeartIcon from '@lucide/svelte/icons/heart';
 import TvIcon from '@lucide/svelte/icons/tv';
+import UserIcon from '@lucide/svelte/icons/user';
 
 export const VIDEO_SOURCES = {
 	FAVORITE: { type: 'favorite', title: '收藏夹', icon: HeartIcon },

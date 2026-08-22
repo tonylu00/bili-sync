@@ -217,6 +217,9 @@ pub(super) async fn run_download_cycle(
         }
     }
 
+    // This block deliberately executes one scan cycle; the task manager schedules
+    // subsequent cycles and the `break` paths share the common post-processing.
+    #[allow(clippy::never_loop)]
     loop {
         // ========== 扫描任务阶段 ==========
         // 注意：在此阶段不应该中断任务，即使配置更新了也要等待当前扫描完成

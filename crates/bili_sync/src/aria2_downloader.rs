@@ -216,13 +216,13 @@ impl Aria2Downloader {
                         );
 
                         // 执行完整的智能健康检查
-                            if let Err(e) = Self::smart_health_check(
-                                &health_check_client,
-                                &instances,
-                                instance_count,
-                                Arc::clone(&binary_path),
-                            )
-                            .await
+                        if let Err(e) = Self::smart_health_check(
+                            &health_check_client,
+                            &instances,
+                            instance_count,
+                            Arc::clone(&binary_path),
+                        )
+                        .await
                         {
                             warn!("全面健康检查失败: {:#}", e);
                         } else {
@@ -243,8 +243,8 @@ impl Aria2Downloader {
                             let missing_count = instance_count - current_count;
 
                             // 尝试创建缺失的实例
-                                for i in 0..missing_count {
-                                    match Self::create_missing_instance(Arc::clone(&binary_path)).await {
+                            for i in 0..missing_count {
+                                match Self::create_missing_instance(Arc::clone(&binary_path)).await {
                                     Ok(new_instance) => {
                                         let mut instances_guard = instances.lock().await;
                                         instances_guard.push(new_instance);

@@ -288,8 +288,7 @@
 							placeholder="多个关键词用逗号、分号或换行分隔"
 							rows="5"
 							class="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-purple-500 focus:ring-2 focus:ring-purple-500 focus:outline-none dark:border-gray-600 dark:bg-gray-700 dark:text-gray-200"
-							disabled={isProcessing}
-						></textarea>
+							disabled={isProcessing}></textarea>
 						<p class="text-muted-foreground text-xs">
 							所有关键词都会被转为小写后匹配标题，留空表示不过滤。
 						</p>
@@ -304,8 +303,7 @@
 							placeholder="多个关键词用逗号、分号或换行分隔"
 							rows="5"
 							class="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-purple-500 focus:ring-2 focus:ring-purple-500 focus:outline-none dark:border-gray-600 dark:bg-gray-700 dark:text-gray-200"
-							disabled={isProcessing}
-						></textarea>
+							disabled={isProcessing}></textarea>
 						<p class="text-muted-foreground text-xs">匹配到任意排除关键词的视频会被跳过下载。</p>
 					</div>
 				</div>

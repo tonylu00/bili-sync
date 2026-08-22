@@ -5417,12 +5417,7 @@ pub async fn update_config_internal(
                     }
                 }
                 "native" | "builtin" => crate::config::ParallelDownloadDownloader::Native,
-                _ => {
-                    return Err(anyhow!(
-                        "无效的下载器类型，只支持 'aria2' 或 'native'（也兼容 'builtin'）"
-                    )
-                    .into())
-                }
+                _ => return Err(anyhow!("无效的下载器类型，只支持 'aria2' 或 'native'（也兼容 'builtin'）").into()),
             };
 
             if new_value != config.concurrent_limit.parallel_download.downloader {

@@ -1,51 +1,61 @@
 import type {
-	ApiResponse,
-	VideoSourcesResponse,
-	VideosRequest,
-	VideosResponse,
-	VideoResponse,
-	ResetVideoResponse,
-	ResetAllVideosResponse,
-	UpdateVideoStatusRequest,
-	UpdateVideoStatusResponse,
-	ApiError,
 	AddVideoSourceRequest,
 	AddVideoSourceResponse,
-	DeleteVideoSourceResponse,
-	DeleteVideoResponse,
+	ApiError,
+	ApiResponse,
+	BangumiSeasonsResponse,
+	CollectionsResponse,
 	ConfigResponse,
-	UpdateConfigRequest,
-	UpdateConfigResponse,
-	SearchRequest,
-	SearchResponse,
-	UserFavoriteFolder,
-	UserCollectionsResponse,
-	UserFollowing,
-	UserCollectionInfo,
+	DashBoardResponse,
+	DeleteVideoResponse,
+	DeleteVideoSourceResponse,
+	FavoritesResponse,
+	InitialSetupCheckResponse,
+	InsertCollectionRequest,
+	InsertFavoriteRequest,
+	InsertSubmissionRequest,
+	NotificationConfigResponse,
+	QrcodeGenerateResponse,
+	QrcodePollResponse,
 	QueueStatusResponse,
-	UpdateVideoSourceEnabledResponse,
+	ResetAllVideosResponse,
+	ResetVideoResponse,
 	ResetVideoSourcePathRequest,
 	ResetVideoSourcePathResponse,
-	UpdateVideoSourceFiltersRequest,
-	UpdateVideoSourceFiltersResponse,
-	UpdateCredentialRequest,
-	UpdateCredentialResponse,
-	InitialSetupCheckResponse,
-	TaskControlStatusResponse,
-	TaskControlResponse,
-	VideoPlayInfoResponse,
-	ValidateFavoriteResponse,
+	RestoreVideoResponse,
+	SearchRequest,
+	SearchResponse,
+	SetSpecificTasksStatusResponse,
 	SubmissionVideosRequest,
 	SubmissionVideosResponse,
-	DashBoardResponse,
 	SysInfo,
+	TaskControlResponse,
+	TaskControlStatusResponse,
 	TaskStatus,
-	BangumiSeasonsResponse,
-	VideoBvidResponse,
-	NotificationConfigResponse,
+	UpdateConfigRequest,
+	UpdateConfigResponse,
+	UpdateCredentialRequest,
+	UpdateCredentialResponse,
+	UpdateFilteredVideoStatusRequest,
+	UpdateFilteredVideoStatusResponse,
 	UpdateNotificationConfigRequest,
-	SetSpecificTasksStatusResponse,
-	RestoreVideoResponse
+	UpdateVideoSourceEnabledResponse,
+	UpdateVideoSourceFiltersRequest,
+	UpdateVideoSourceFiltersResponse,
+	UpdateVideoStatusRequest,
+	UpdateVideoStatusResponse,
+	UppersResponse,
+	UserCollectionInfo,
+	UserCollectionsResponse,
+	UserFavoriteFolder,
+	UserFollowing,
+	ValidateFavoriteResponse,
+	VideoBvidResponse,
+	VideoPlayInfoResponse,
+	VideoResponse,
+	VideoSourcesResponse,
+	VideosRequest,
+	VideosResponse
 } from './types';
 import { ErrorType } from './types';
 import { wsManager } from './ws';
@@ -526,6 +536,62 @@ class ApiClient {
 		return this.post<UpdateVideoStatusResponse>(`/videos/${id}/update-status`, request);
 	}
 
+	async updateFilteredVideoStatus(
+		request: UpdateFilteredVideoStatusRequest
+	): Promise<ApiResponse<UpdateFilteredVideoStatusResponse>> {
+		return this.post<UpdateFilteredVideoStatusResponse>('/videos/update-status', request);
+	}
+
+	async getCreatedFavorites(): Promise<ApiResponse<FavoritesResponse>> {
+		return this.get<FavoritesResponse>('/me/favorites');
+	}
+
+	async getFollowedCollections(
+		pageNum?: number,
+		pageSize?: number
+	): Promise<ApiResponse<CollectionsResponse>> {
+		return this.get<CollectionsResponse>('/me/collections', {
+			page_num: pageNum,
+			page_size: pageSize
+		});
+	}
+
+	async getFollowedUppers(
+		pageNum?: number,
+		pageSize?: number,
+		name?: string
+	): Promise<ApiResponse<UppersResponse>> {
+		return this.get<UppersResponse>('/me/uppers', {
+			page_num: pageNum,
+			page_size: pageSize,
+			name
+		});
+	}
+
+	async insertFavorite(request: InsertFavoriteRequest): Promise<ApiResponse<boolean>> {
+		return this.post<boolean>('/video-sources/favorites', request);
+	}
+
+	async insertCollection(request: InsertCollectionRequest): Promise<ApiResponse<boolean>> {
+		return this.post<boolean>('/video-sources/collections', request);
+	}
+
+	async insertSubmission(request: InsertSubmissionRequest): Promise<ApiResponse<boolean>> {
+		return this.post<boolean>('/video-sources/submissions', request);
+	}
+
+	async getDefaultPath(type: string, name: string): Promise<ApiResponse<string>> {
+		return this.get<string>(`/video-sources/${type}/default-path`, { name });
+	}
+
+	async generateQrcode(): Promise<ApiResponse<QrcodeGenerateResponse>> {
+		return this.post<QrcodeGenerateResponse>('/login/qrcode/generate');
+	}
+
+	async pollQrcode(qrcodeKey: string): Promise<ApiResponse<QrcodePollResponse>> {
+		return this.get<QrcodePollResponse>('/login/qrcode/poll', { qrcode_key: qrcodeKey });
+	}
+
 	/**
 	 * 检查是否需要初始设置
 	 */
@@ -864,6 +930,19 @@ export const api = {
 	 */
 	updateVideoStatus: (id: number, request: UpdateVideoStatusRequest) =>
 		apiClient.updateVideoStatus(id, request),
+	updateFilteredVideoStatus: (request: UpdateFilteredVideoStatusRequest) =>
+		apiClient.updateFilteredVideoStatus(request),
+	getCreatedFavorites: () => apiClient.getCreatedFavorites(),
+	getFollowedCollections: (pageNum?: number, pageSize?: number) =>
+		apiClient.getFollowedCollections(pageNum, pageSize),
+	getFollowedUppers: (pageNum?: number, pageSize?: number, name?: string) =>
+		apiClient.getFollowedUppers(pageNum, pageSize, name),
+	insertFavorite: (request: InsertFavoriteRequest) => apiClient.insertFavorite(request),
+	insertCollection: (request: InsertCollectionRequest) => apiClient.insertCollection(request),
+	insertSubmission: (request: InsertSubmissionRequest) => apiClient.insertSubmission(request),
+	getDefaultPath: (type: string, name: string) => apiClient.getDefaultPath(type, name),
+	generateQrcode: () => apiClient.generateQrcode(),
+	pollQrcode: (qrcodeKey: string) => apiClient.pollQrcode(qrcodeKey),
 
 	/**
 	 * 更新视频源启用状态

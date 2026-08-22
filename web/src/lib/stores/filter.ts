@@ -1,5 +1,8 @@
-import { writable } from 'svelte/store';
 import type { SortBy, SortOrder } from '$lib/types';
+import { writable } from 'svelte/store';
+
+export type StatusFilterValue = 'failed' | 'succeeded' | 'waiting' | null;
+export type ValidationFilterValue = 'skipped' | 'invalid' | 'normal' | null;
 
 export interface AppState {
 	query: string;

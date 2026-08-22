@@ -10,7 +10,7 @@ use sea_orm::sea_query::SimpleExpr;
 use sea_orm::ActiveValue::Set;
 use sea_orm::{DatabaseConnection, Unchanged};
 
-use crate::adapter::{VideoSource, VideoSourceEnum, _ActiveModel};
+use crate::adapter::{_ActiveModel, VideoSource, VideoSourceEnum};
 use crate::bilibili::{BiliClient, VideoInfo, WatchLater};
 use crate::utils::keyword_filter::deserialize_keywords;
 

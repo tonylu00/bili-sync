@@ -51,7 +51,7 @@
 	})();
 
 	// 检查视频是否可播放（分P下载任务已完成）
-	// eslint-disable-next-line @typescript-eslint/no-unused-vars, @typescript-eslint/no-explicit-any
+	// eslint-disable-next-line @typescript-eslint/no-explicit-any
 	function _isVideoPlayable(video: any): boolean {
 		if (video && video.download_status && Array.isArray(video.download_status)) {
 			// 检查第5个任务（分P下载，索引4）是否完成（状态为7）
@@ -73,7 +73,7 @@
 	}
 
 	async function loadVideoDetail() {
-		const videoId = parseInt($page.params.id);
+		const videoId = parseInt($page.params.id ?? '');
 		if (isNaN(videoId)) {
 			error = '无效的视频ID';
 			toast.error('无效的视频ID');

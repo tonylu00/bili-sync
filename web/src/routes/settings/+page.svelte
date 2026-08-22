@@ -3771,8 +3771,7 @@
 										class="border-input bg-background focus-visible:ring-ring w-full rounded-md border px-3 py-2 text-sm shadow-sm focus-visible:ring-2 focus-visible:outline-none"
 										rows="3"
 										bind:value={barkDeviceKeysText}
-										placeholder="支持多个设备推送时，每行填写一个 Device Key"
-									></textarea>
+										placeholder="支持多个设备推送时，每行填写一个 Device Key"></textarea>
 									<p class="text-muted-foreground text-sm">
 										可同时推送到多台设备，主 Device Key 可保持为空使用上方输入框
 									</p>

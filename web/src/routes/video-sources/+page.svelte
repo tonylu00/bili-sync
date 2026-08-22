@@ -101,7 +101,7 @@
 		sourceType: string,
 		sourceId: number,
 		currentEnabled: boolean,
-		_sourceName: string // eslint-disable-line @typescript-eslint/no-unused-vars
+		_sourceName: string
 	) {
 		try {
 			const result = await api.updateVideoSourceEnabled(sourceType, sourceId, !currentEnabled);

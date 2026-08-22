@@ -37,16 +37,17 @@ pub fn get_config_manager() -> Option<crate::config::ConfigManager> {
 ///
 /// - 会写入数据库配置项（嵌套 key）并触发热重载
 /// - 若配置管理器未初始化，则只记录 warning
-pub async fn set_parallel_download_downloader(
-    downloader: crate::config::ParallelDownloadDownloader,
-) -> Result<()> {
+pub async fn set_parallel_download_downloader(downloader: crate::config::ParallelDownloadDownloader) -> Result<()> {
     let manager_opt = {
         let manager_guard = CONFIG_MANAGER.read().unwrap();
         manager_guard.clone()
     };
 
     let Some(manager) = manager_opt else {
-        warn!("配置管理器未初始化，无法写回下载器设置（期望写入: {}）", downloader.as_str());
+        warn!(
+            "配置管理器未初始化，无法写回下载器设置（期望写入: {}）",
+            downloader.as_str()
+        );
         return Ok(());
     };
 

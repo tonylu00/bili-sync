@@ -2,7 +2,6 @@
 
 use sea_orm::entity::prelude::*;
 use sea_orm::ActiveModelBehavior;
-use strum::EnumIter;
 
 #[derive(Clone, Debug, PartialEq, Eq, DeriveActiveEnum, EnumIter, Default)]
 #[sea_orm(rs_type = "i32", db_type = "Integer")]

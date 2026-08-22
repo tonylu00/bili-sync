@@ -81,6 +81,11 @@ fn download_static_aria2_linux(
             "https://github.com/abcfy2/aria2-static-build/releases/download/1.37.0/aria2-x86_64-linux-musl_static.zip",
             "aria2-x86_64-linux-musl_static.zip",
         )
+    } else if target.contains("armv7") {
+        (
+            "https://github.com/abcfy2/aria2-static-build/releases/download/1.37.0/aria2-armv7-linux-musleabihf_static.zip",
+            "aria2-armv7-linux-musleabihf_static.zip",
+        )
     } else if target.contains("aarch64") {
         (
             "https://github.com/abcfy2/aria2-static-build/releases/download/1.37.0/aria2-aarch64-linux-musl_static.zip",

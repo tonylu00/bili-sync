@@ -30,6 +30,12 @@ jobs:
             extension: ""
             archive: tar.gz
             archive_name: bili-sync-rs-Linux-x86_64-musl.tar.gz
+          - target: armv7-unknown-linux-musleabihf
+            os: ubuntu-latest
+            name: Linux-armv7-musl
+            extension: ""
+            archive: tar.gz
+            archive_name: bili-sync-rs-Linux-armv7-musl.tar.gz
           - target: aarch64-unknown-linux-musl
             os: ubuntu-latest
             name: Linux-aarch64-musl
@@ -78,8 +84,8 @@ jobs:
       with:
         key: ${{ matrix.target }}
 
-    - name: Install cross (for Linux ARM64)
-      if: matrix.target == 'aarch64-unknown-linux-musl'
+    - name: Install cross (for Linux ARM)
+      if: matrix.target == 'aarch64-unknown-linux-musl' || matrix.target == 'armv7-unknown-linux-musleabihf'
       run: cargo install cross --git https://github.com/cross-rs/cross
 
     - name: Install musl tools (for Linux x86_64)
@@ -123,7 +129,7 @@ jobs:
 
         build_one() {
           local features="$1"
-          if [ "${{ matrix.target }}" = "aarch64-unknown-linux-musl" ]; then
+          if [[ "${{ matrix.target }}" == "aarch64-unknown-linux-musl" || "${{ matrix.target }}" == "armv7-unknown-linux-musleabihf" ]]; then
             cross build --release --target ${{ matrix.target }} -p bili_sync --features "$features"
           else
             cargo build --release --target ${{ matrix.target }} -p bili_sync --features "$features"
@@ -240,7 +246,7 @@ jobs:
         path: artifacts
 
     - name: Create Release
-      uses: softprops/action-gh-release@v1
+      uses: softprops/action-gh-release@v2
       with:
         files: artifacts/**/*
         draft: false
@@ -342,4 +348,4 @@ jobs:
           rm -rf "$test_dir"
         else
           echo "No Linux x86_64 archive found for testing"
-        fi 
+        fi

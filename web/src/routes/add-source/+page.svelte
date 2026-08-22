@@ -39,8 +39,7 @@
 	};
 
 	type HoveredItem =
-		| { type: 'search'; data: SearchResultItem }
-		| { type: 'season'; data: BangumiSeasonInfo };
+		{ type: 'search'; data: SearchResultItem } | { type: 'season'; data: BangumiSeasonInfo };
 
 	let sourceType: VideoCategory = 'collection';
 	let lastSourceType: VideoCategory = sourceType; // 记录上一次的源类型，用于检测切换

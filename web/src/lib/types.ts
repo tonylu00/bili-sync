@@ -942,3 +942,140 @@ export interface NotificationErrorTypeOptionResponse {
 	error_type: ErrorType;
 	label: string;
 }
+
+// Canonical upstream types used by the merged subscription, rule, and login views.
+export interface UpdateFilteredVideoStatusRequest {
+	collection?: number;
+	favorite?: number;
+	submission?: number;
+	watch_later?: number;
+	query?: string;
+	status_filter?: 'failed' | 'succeeded' | 'waiting';
+	validation_filter?: 'skipped' | 'invalid' | 'normal';
+	video_updates?: StatusUpdate[];
+	page_updates?: StatusUpdate[];
+}
+
+export interface UpdateFilteredVideoStatusResponse {
+	success: boolean;
+	updated_videos_count: number;
+	updated_pages_count: number;
+}
+
+export type Followed =
+	| {
+			type: 'favorite';
+			title: string;
+			media_count: number;
+			fid: number;
+			mid: number;
+			invalid: boolean;
+			subscribed: boolean;
+	  }
+	| {
+			type: 'collection';
+			title: string;
+			sid: number;
+			mid: number;
+			media_count: number;
+			invalid: boolean;
+			subscribed: boolean;
+	  }
+	| {
+			type: 'upper';
+			mid: number;
+			uname: string;
+			face: string;
+			sign: string;
+			invalid: boolean;
+			subscribed: boolean;
+	  };
+
+export interface FavoritesResponse {
+	favorites: Followed[];
+}
+
+export interface CollectionsResponse {
+	collections: Followed[];
+	total: number;
+}
+
+export interface UppersResponse {
+	uppers: Followed[];
+	total: number;
+}
+
+export interface InsertFavoriteRequest {
+	fid: number;
+	path: string;
+}
+
+export interface InsertCollectionRequest {
+	sid: number;
+	mid: number;
+	collection_type?: number;
+	path: string;
+}
+
+export interface InsertSubmissionRequest {
+	upper_id: number;
+	path: string;
+}
+
+export interface Condition<T> {
+	operator: string;
+	value: T | T[];
+}
+
+export interface RuleTarget<T> {
+	field: string;
+	rule: Condition<T> | RuleTarget<T>;
+}
+
+export type Rule = RuleTarget<string | number | boolean | Date>[][];
+
+export interface FilterOption {
+	video_max_quality: string;
+	video_min_quality: string;
+	audio_max_quality: string;
+	audio_min_quality: string;
+	codecs: string[];
+	no_dolby_video: boolean;
+	no_dolby_audio: boolean;
+	no_hdr: boolean;
+	no_hires: boolean;
+}
+
+export interface Credential {
+	sessdata: string;
+	bili_jct: string;
+	buvid3: string;
+	dedeuserid: string;
+	ac_time_value: string;
+}
+
+export interface TelegramNotifier {
+	type: 'telegram';
+	bot_token: string;
+	chat_id: string;
+	skip_image: boolean;
+}
+
+export interface WebhookNotifier {
+	type: 'webhook';
+	url: string;
+	template?: string | null;
+	headers?: Record<string, string> | null;
+}
+
+export type Notifier = TelegramNotifier | WebhookNotifier;
+
+export interface QrcodeGenerateResponse {
+	url: string;
+	qrcode_key: string;
+}
+
+export type QrcodePollResponse =
+	| { status: 'success'; credential: Credential }
+	| { status: 'pending'; message: string; scanned?: boolean }
+	| { status: 'expired'; message: string };
