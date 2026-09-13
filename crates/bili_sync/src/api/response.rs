@@ -459,6 +459,7 @@ pub struct BangumiSeasonInfo {
 
 #[derive(Debug, Clone, Serialize, Deserialize, utoipa::ToSchema)]
 pub struct BangumiSeasonsResponse {
+    pub current_season_id: String,
     pub success: bool,
     pub data: Vec<BangumiSeasonInfo>,
 }

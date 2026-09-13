@@ -86,6 +86,9 @@
 
 	// 番剧季度相关
 	let bangumiSeasons: BangumiSeasonInfo[] = [];
+	let resolvedBangumiId = '';
+	let bangumiSeasonsError = '';
+	let bangumiRequest = 0;
 	let loadingSeasons = false;
 	let selectedSeasons: string[] = [];
 	let seasonIdTimeout: ReturnType<typeof setTimeout> | null = null;
@@ -189,7 +192,11 @@
 		},
 		{ value: 'submission', label: 'UP主投稿', description: 'UP主ID可在UP主空间URL中获取' },
 		{ value: 'watch_later', label: '稍后观看', description: '同步稍后观看列表' },
-		{ value: 'bangumi', label: '番剧', description: '番剧season_id可在番剧页面URL中获取' }
+		{
+			value: 'bangumi',
+			label: '番剧',
+			description: '支持番剧链接、ss季度ID、md媒体ID、ep剧集ID或纯数字季度ID'
+		}
 	];
 
 	// 合集类型选项
@@ -420,8 +427,8 @@
 				}
 				break;
 			case 'bangumi':
-				if (result.season_id) {
-					sourceId = result.season_id;
+				if (result.season_id || result.media_id) {
+					sourceId = result.season_id || `md${result.media_id}`;
 					name = cleanTitle(result.title);
 				}
 				break;
@@ -628,6 +635,12 @@
 
 		// 番剧特殊验证
 		if (sourceType === 'bangumi') {
+			if (loadingSeasons || !resolvedBangumiId) {
+				toast.error('请先获取番剧季度信息', {
+					description: bangumiSeasonsError || '正在获取，请稍候'
+				});
+				return;
+			}
 			// 如果不是下载全部季度，且没有选择任何季度，且不是单季度情况，则提示错误
 			if (!downloadAllSeasons && selectedSeasons.length === 0 && bangumiSeasons.length > 1) {
 				toast.error('请选择要下载的季度', {
@@ -647,7 +660,7 @@
 		try {
 			const params: AddVideoSourceRequest = {
 				source_type: sourceType,
-				source_id: sourceId,
+				source_id: sourceType === 'bangumi' ? resolvedBangumiId : sourceId,
 				name,
 				path
 			};
@@ -979,50 +992,48 @@
 	}
 
 	// 处理Season ID变化
-	// eslint-disable-next-line @typescript-eslint/no-unused-vars
-	function handleSeasonIdChange() {
+	function handleSeasonIdChange(type: string, id: string) {
 		if (seasonIdTimeout) clearTimeout(seasonIdTimeout);
-		if (sourceId.trim() && sourceType === 'bangumi') {
-			seasonIdTimeout = setTimeout(() => {
-				fetchBangumiSeasons();
-			}, 500);
-		} else {
-			bangumiSeasons = [];
-			selectedSeasons = [];
+		bangumiRequest += 1;
+		bangumiSeasons = [];
+		selectedSeasons = [];
+		resolvedBangumiId = '';
+		bangumiSeasonsError = '';
+		loadingSeasons = type === 'bangumi' && !!id.trim();
+		if (loadingSeasons) {
+			seasonIdTimeout = setTimeout(fetchBangumiSeasons, 500);
 		}
 	}
 
-	// 获取番剧季度信息
+	// 丢弃旧输入的响应，避免快速切换番剧时添加到上一个季度。
 	async function fetchBangumiSeasons() {
 		if (!sourceId.trim() || sourceType !== 'bangumi') return;
-
+		const input = sourceId.trim();
+		const request = ++bangumiRequest;
 		loadingSeasons = true;
+		bangumiSeasonsError = '';
 		try {
-			const result = await api.getBangumiSeasons(sourceId);
-			if (result.data && result.data.success) {
-				bangumiSeasons = result.data.data || [];
-				// 默认选中当前季度
-				if (bangumiSeasons.length > 0) {
-					const currentSeason = bangumiSeasons.find((s) => s.season_id === sourceId);
-					if (currentSeason) {
-						selectedSeasons = [currentSeason.season_id];
-					}
-				}
-				// 如果只有一个季度，自动选中它
-				if (bangumiSeasons.length === 1) {
-					selectedSeasons = [bangumiSeasons[0].season_id];
-				}
-			} else {
-				bangumiSeasons = [];
+			const result = await api.getBangumiSeasons(input);
+			if (request !== bangumiRequest) return;
+			if (!result.data?.success || !result.data.current_season_id) {
+				throw new Error('无法解析番剧季度信息');
+			}
+			bangumiSeasons = result.data.data || [];
+			resolvedBangumiId = result.data.current_season_id;
+			selectedSeasons = [resolvedBangumiId];
+			const currentSeason = bangumiSeasons.find((s) => s.season_id === resolvedBangumiId);
+			if (!name.trim() && currentSeason) {
+				name = currentSeason.full_title || currentSeason.season_title;
 			}
 		} catch (error: unknown) {
-			console.error('获取季度信息失败:', error);
-			const errorMessage = error instanceof Error ? error.message : '获取季度信息失败';
-			toast.error('获取季度信息失败', { description: errorMessage });
+			if (request !== bangumiRequest) return;
+			bangumiSeasonsError = error instanceof Error ? error.message : '获取季度信息失败';
+			toast.error('获取季度信息失败', { description: bangumiSeasonsError });
 			bangumiSeasons = [];
 			selectedSeasons = [];
+			resolvedBangumiId = '';
 		} finally {
-			loadingSeasons = false;
+			if (request === bangumiRequest) loadingSeasons = false;
 		}
 	}
 
@@ -1219,9 +1230,7 @@
 	}
 
 	// 监听 source_id 变化，自动获取季度信息
-	$: if (sourceType === 'bangumi' && sourceId) {
-		fetchBangumiSeasons();
-	}
+	$: handleSeasonIdChange(sourceType, sourceId);
 
 	// 切换源类型时，如处于批量模式且已有选择，则清空选择防止跨源类型
 	$: if (sourceType !== lastSourceType) {
@@ -2308,13 +2317,15 @@
 									{#if sourceType === 'collection'}合集ID
 									{:else if sourceType === 'favorite'}收藏夹ID
 									{:else if sourceType === 'submission'}UP主ID
-									{:else if sourceType === 'bangumi'}Season ID
+									{:else if sourceType === 'bangumi'}番剧链接或ID
 									{:else}ID{/if}
 								</Label>
 								<Input
 									id="source-id"
 									bind:value={sourceId}
-									placeholder={`请输入${sourceType === 'collection' ? '合集' : sourceType === 'favorite' ? '任意公开收藏夹' : sourceType === 'submission' ? 'UP主' : sourceType === 'bangumi' ? 'Season' : ''}ID`}
+									placeholder={sourceType === 'bangumi'
+										? '番剧链接、ss / md / ep ID 或纯数字季度ID'
+										: `请输入${sourceType === 'collection' ? '合集' : sourceType === 'favorite' ? '任意公开收藏夹' : sourceType === 'submission' ? 'UP主' : ''}ID`}
 									oninput={() => {
 										if (sourceType === 'collection') {
 											isManualInput = true;
@@ -3427,7 +3438,7 @@
 																<h4 class="truncate pr-6 text-sm font-medium">
 																	{season.full_title || season.season_title}
 																</h4>
-																{#if season.season_id === sourceId}
+																{#if season.season_id === resolvedBangumiId}
 																	<span
 																		class="mt-1 inline-block rounded bg-purple-100 px-1.5 py-0.5 text-xs text-purple-700 dark:bg-purple-900 dark:text-purple-300"
 																		>当前</span
@@ -4113,7 +4124,7 @@
 							</div>
 						{/if}
 
-						{#if hoveredItem.data.season_id === sourceId}
+						{#if hoveredItem.data.season_id === resolvedBangumiId}
 							<div class="font-medium text-purple-600">🎯 当前选择的季度</div>
 						{/if}
 

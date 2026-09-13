@@ -1961,9 +1961,34 @@ pub async fn add_video_source(
 /// 内部添加视频源函数（用于队列处理和直接调用）
 pub async fn add_video_source_internal(
     db: Arc<DatabaseConnection>,
-    params: AddVideoSourceRequest,
+    mut params: AddVideoSourceRequest,
 ) -> Result<AddVideoSourceResponse, ApiError> {
-    // 使用主数据库连接
+    // 先解析并验证番剧 ID，避免把空 season_id 持久化，也避免网络请求占用写事务。
+    if params.source_type == "bangumi" {
+        use crate::bilibili::bangumi::{bangumi_id, Bangumi};
+        let client = crate::bilibili::BiliClient::new(String::new());
+        let bangumi = if params.source_id.trim().is_empty() {
+            Bangumi::new(&client, params.media_id.clone(), None, params.ep_id.clone())
+        } else {
+            Bangumi::from_id(&client, &params.source_id)?
+        };
+        let season_info = bangumi
+            .get_season_info()
+            .await
+            .map_err(|e| anyhow!("无法添加番剧，获取季度信息失败: {:#}", e))?;
+        params.source_id = bangumi_id(&season_info["season_id"]).context("缺少 season_id")?;
+        params.media_id = bangumi_id(&season_info["media_id"]);
+        if let Some(seasons) = &mut params.selected_seasons {
+            for season in seasons.iter_mut() {
+                match crate::bilibili::bangumi::BangumiId::parse(season)? {
+                    crate::bilibili::bangumi::BangumiId::Season(id) => *season = id,
+                    _ => return Err(anyhow!("所选季度必须使用 season_id").into()),
+                }
+            }
+            let mut seen = std::collections::HashSet::new();
+            seasons.retain(|id| seen.insert(id.clone()));
+        }
+    }
 
     let txn = db.begin().await?;
     let include_keywords_json = serialize_keywords(&params.include_keywords)?;
@@ -7389,11 +7414,12 @@ pub async fn get_bangumi_seasons(
     // 创建 BiliClient，使用空 cookie（对于获取季度信息不需要登录）
     let bili_client = BiliClient::new(String::new());
 
-    // 创建 Bangumi 实例
-    let bangumi = Bangumi::new(&bili_client, None, Some(season_id.clone()), None);
+    let bangumi = Bangumi::from_id(&bili_client, &season_id)?;
+    let current_info = bangumi.get_season_info().await?;
+    let current_season_id =
+        crate::bilibili::bangumi::bangumi_id(&current_info["season_id"]).context("缺少 season_id")?;
 
-    // 获取所有季度信息
-    match bangumi.get_all_seasons().await {
+    match Bangumi::seasons_from_info(&current_info) {
         Ok(seasons) => {
             // 并发获取所有季度的详细信息
             let season_details_futures: Vec<_> = seasons
@@ -7401,6 +7427,7 @@ pub async fn get_bangumi_seasons(
                 .map(|s| {
                     let bili_client_clone = bili_client.clone();
                     let season_clone = s.clone();
+                    let cached_info = (s.season_id == current_season_id).then(|| current_info.clone());
                     async move {
                         let season_bangumi = Bangumi::new(
                             &bili_client_clone,
@@ -7409,7 +7436,11 @@ pub async fn get_bangumi_seasons(
                             None,
                         );
 
-                        let (full_title, episode_count, description) = match season_bangumi.get_season_info().await {
+                        let info = match cached_info {
+                            Some(info) => Ok(info),
+                            None => season_bangumi.get_season_info().await,
+                        };
+                        let (full_title, episode_count, description) = match info {
                             Ok(season_info) => {
                                 let full_title = season_info["title"].as_str().map(|t| t.to_string());
 
@@ -7453,6 +7484,7 @@ pub async fn get_bangumi_seasons(
                 .collect();
 
             Ok(ApiResponse::ok(crate::api::response::BangumiSeasonsResponse {
+                current_season_id,
                 success: true,
                 data: season_list,
             }))
@@ -7494,72 +7526,28 @@ pub async fn search_bilibili(
         return Err(anyhow!("搜索关键词不能为空").into());
     }
 
-    // 创建 BiliClient，使用空 cookie（搜索不需要登录）
+    // 搜索使用当前配置的登录凭据和搜索页 Referer。
     let bili_client = BiliClient::new(String::new());
 
-    // 特殊处理：当搜索类型为media_bangumi时，同时搜索番剧和影视
-    let mut all_results = Vec::new();
-    let mut total_results = 0u32;
-
-    if params.search_type == "media_bangumi" {
-        // 搜索番剧
-        match bili_client
-            .search(
-                &params.keyword,
-                "media_bangumi",
-                params.page,
-                params.page_size / 2, // 每种类型分配一半的结果数
-            )
-            .await
-        {
-            Ok(bangumi_wrapper) => {
-                all_results.extend(bangumi_wrapper.results);
-                total_results += bangumi_wrapper.total;
-            }
-            Err(e) => {
-                warn!("搜索番剧失败: {}", e);
-            }
-        }
-
-        // 搜索影视
-        match bili_client
-            .search(
-                &params.keyword,
-                "media_ft",
-                params.page,
-                params.page_size / 2, // 每种类型分配一半的结果数
-            )
-            .await
-        {
-            Ok(ft_wrapper) => {
-                all_results.extend(ft_wrapper.results);
-                total_results += ft_wrapper.total;
-            }
-            Err(e) => {
-                warn!("搜索影视失败: {}", e);
-            }
-        }
-
-        // 如果两个搜索都失败了，返回错误
-        if all_results.is_empty() && total_results == 0 {
-            return Err(anyhow!("搜索失败：无法获取番剧或影视结果").into());
-        }
-    } else {
-        // 其他类型正常搜索
-        match bili_client
-            .search(&params.keyword, &params.search_type, params.page, params.page_size)
-            .await
-        {
-            Ok(search_wrapper) => {
-                all_results = search_wrapper.results;
-                total_results = search_wrapper.total;
-            }
-            Err(e) => {
-                error!("搜索失败: {}", e);
-                return Err(anyhow!("搜索失败: {}", e).into());
-            }
-        }
+    if params.page == 0 || params.page_size == 0 {
+        return Err(anyhow!("页码和每页数量必须大于0").into());
     }
+    let wrapper = if params.search_type == "media_bangumi" {
+        let type_page_size = params.page_size.div_ceil(2);
+        let bangumi = bili_client
+            .search(&params.keyword, "media_bangumi", params.page, type_page_size)
+            .await;
+        let film = bili_client
+            .search(&params.keyword, "media_ft", params.page, type_page_size)
+            .await;
+        crate::bilibili::merge_bangumi_search_results(bangumi, film)?
+    } else {
+        bili_client
+            .search(&params.keyword, &params.search_type, params.page, params.page_size)
+            .await?
+    };
+    let all_results = wrapper.results;
+    let total_results = wrapper.total;
 
     // 转换搜索结果格式
     let api_results: Vec<crate::api::response::SearchResult> = all_results

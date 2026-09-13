@@ -1,6 +1,6 @@
 use std::pin::Pin;
 
-use anyhow::{bail, Result};
+use anyhow::{bail, Context, Result};
 use async_stream::try_stream;
 use chrono::{DateTime, Utc};
 use futures::Stream;
@@ -8,6 +8,7 @@ use serde::Deserialize;
 use tokio_util::sync::CancellationToken;
 use tracing;
 
+use super::client::decode_json_response;
 use super::{BiliClient, Validate, VideoInfo};
 
 /// 检测是否为预告片
@@ -67,6 +68,65 @@ fn assign_episode_numbers(episodes: &[serde_json::Value]) -> std::collections::H
     episode_assignments
 }
 
+/// B 站可能将同一个 ID 返回为数字或字符串；空值和占位 ID 不可用于请求。
+pub fn bangumi_id(value: &serde_json::Value) -> Option<String> {
+    match value {
+        serde_json::Value::String(value) => normalize_id(value).ok(),
+        serde_json::Value::Number(value) => value.as_u64().filter(|id| *id > 0).map(|id| id.to_string()),
+        _ => None,
+    }
+}
+
+fn normalize_id(value: &str) -> Result<String> {
+    let value = value.trim();
+    if value.is_empty() || !value.bytes().all(|c| c.is_ascii_digit()) {
+        bail!("番剧 ID 必须为正整数");
+    }
+    let id: u64 = value.parse().context("无效的番剧 ID")?;
+    if id == 0 {
+        bail!("番剧 ID 必须为正整数");
+    }
+    Ok(id.to_string())
+}
+
+#[derive(Debug, PartialEq)]
+pub enum BangumiId {
+    Season(String),
+    Media(String),
+    Episode(String),
+}
+
+impl BangumiId {
+    /// 支持裸 season_id、ss/md/ep 标识，以及 B 站番剧播放/媒体链接。
+    pub fn parse(input: &str) -> Result<Self> {
+        let input = input.trim();
+        let identifier = if input.starts_with("https://") || input.starts_with("http://") {
+            let url = reqwest::Url::parse(input).context("无效的番剧链接")?;
+            if !matches!(url.host_str(), Some("www.bilibili.com" | "bilibili.com")) {
+                bail!("请使用 bilibili.com 的番剧播放或媒体链接");
+            }
+            url.path()
+                .trim_end_matches('/')
+                .rsplit('/')
+                .next()
+                .unwrap_or("")
+                .to_string()
+        } else {
+            input.to_string()
+        };
+        let identifier = identifier.to_ascii_lowercase();
+        if let Some(id) = identifier.strip_prefix("ss") {
+            Ok(Self::Season(normalize_id(id)?))
+        } else if let Some(id) = identifier.strip_prefix("md") {
+            Ok(Self::Media(normalize_id(id)?))
+        } else if let Some(id) = identifier.strip_prefix("ep") {
+            Ok(Self::Episode(normalize_id(id)?))
+        } else {
+            Ok(Self::Season(normalize_id(&identifier)?))
+        }
+    }
+}
+
 pub struct Bangumi {
     client: BiliClient,
     media_id: Option<String>,
@@ -119,7 +179,7 @@ impl Bangumi {
     pub async fn get_media_info(&self) -> Result<serde_json::Value> {
         if let Some(media_id) = &self.media_id {
             let url = format!("https://api.bilibili.com/pgc/review/user?media_id={}", media_id);
-            let resp = self.client.get(&url, CancellationToken::new()).await?;
+            let resp = self.client.public_get(&url, CancellationToken::new()).await?;
             let json: serde_json::Value = resp.json().await?;
             json.validate().map(|v| v["result"]["media"].clone())
         } else {
@@ -127,27 +187,54 @@ impl Bangumi {
         }
     }
 
-    /// 通过 season_id 获取番剧详情
-    pub async fn get_season_info(&self) -> Result<serde_json::Value> {
-        let season_id = if let Some(season_id) = &self.season_id {
-            season_id.clone()
-        } else if let Some(ep_id) = &self.ep_id {
-            // 通过 ep_id 获取 season_id
-            let url = format!("https://api.bilibili.com/pgc/view/web/season?ep_id={}", ep_id);
-            let resp = self.client.get(&url, CancellationToken::new()).await?;
-            let json: serde_json::Value = resp.json().await?;
-            json.validate()?["result"]["season_id"]
-                .as_str()
-                .unwrap_or_default()
-                .to_string()
-        } else {
-            bail!("season_id or ep_id is required");
-        };
+    pub fn from_id(client: &BiliClient, input: &str) -> Result<Self> {
+        Ok(match BangumiId::parse(input)? {
+            BangumiId::Season(id) => Self::new(client, None, Some(id), None),
+            BangumiId::Media(id) => Self::new(client, Some(id), None, None),
+            BangumiId::Episode(id) => Self::new(client, None, None, Some(id)),
+        })
+    }
 
-        let url = format!("https://api.bilibili.com/pgc/view/web/season?season_id={}", season_id);
-        let resp = self.client.get(&url, CancellationToken::new()).await?;
-        let json: serde_json::Value = resp.json().await?;
-        json.validate().map(|v| v["result"].clone())
+    /// 公开季度接口不使用登录凭证。ep_id 可直接返回完整季度，无需二次请求。
+    pub async fn get_season_info(&self) -> Result<serde_json::Value> {
+        self.get_season_info_from("https://api.bilibili.com").await
+    }
+
+    async fn get_season_info_from(&self, api_base: &str) -> Result<serde_json::Value> {
+        let (key, id) = if let Some(id) = self.season_id.as_deref().filter(|id| !id.trim().is_empty()) {
+            ("season_id", normalize_id(id.strip_prefix("ss").unwrap_or(id))?)
+        } else if let Some(id) = self.ep_id.as_deref().filter(|id| !id.trim().is_empty()) {
+            ("ep_id", normalize_id(id.strip_prefix("ep").unwrap_or(id))?)
+        } else if let Some(id) = self.media_id.as_deref().filter(|id| !id.trim().is_empty()) {
+            let id = normalize_id(id.strip_prefix("md").unwrap_or(id))?;
+            let url = format!("{api_base}/pgc/review/user?media_id={id}");
+            let response = self
+                .client
+                .public_get(&url, CancellationToken::new())
+                .await?
+                .error_for_status()?;
+            let json: serde_json::Value = decode_json_response(response, "番剧媒体信息").await?;
+            let json = json.validate()?;
+            let season_id =
+                bangumi_id(&json["result"]["media"]["season_id"]).context("媒体信息缺少有效的 season_id")?;
+            ("season_id", season_id)
+        } else {
+            bail!("请提供 season_id、media_id 或 ep_id");
+        };
+        let url = format!("{api_base}/pgc/view/web/season?{key}={id}");
+        let response = self
+            .client
+            .public_get(&url, CancellationToken::new())
+            .await?
+            .error_for_status()?;
+        let json: serde_json::Value = decode_json_response(response, "番剧季度信息").await?;
+        let json = json.validate()?;
+        let result = json["result"].clone();
+        bangumi_id(&result["season_id"]).context("番剧信息缺少有效的 season_id")?;
+        if !result["episodes"].is_array() {
+            bail!("番剧信息缺少 episodes 列表");
+        }
+        Ok(result)
     }
 
     /// 轻量级检查番剧是否有更新
@@ -156,6 +243,13 @@ impl Bangumi {
         // 获取最小信息来判断是否有更新
         let season_info = self.get_season_info().await?;
 
+        Ok(Self::check_season_update(&season_info, last_check_time))
+    }
+
+    fn check_season_update(
+        season_info: &serde_json::Value,
+        last_check_time: Option<DateTime<Utc>>,
+    ) -> (bool, Option<DateTime<Utc>>) {
         // 获取最新更新时间
         let latest_episode_time = season_info["new_ep"]["pub_time"]
             .as_i64()
@@ -164,11 +258,10 @@ impl Bangumi {
         // 如果没有上次检查时间，视为有更新
         let has_update = match (last_check_time, latest_episode_time) {
             (Some(last), Some(latest)) => latest > last,
-            (None, Some(_)) => true,
-            _ => false,
+            _ => true,
         };
 
-        Ok((has_update, latest_episode_time))
+        (has_update, latest_episode_time)
     }
 
     /// 获取番剧分集信息（已弃用，直接从season_info解析episodes更高效）
@@ -214,38 +307,42 @@ impl Bangumi {
     /// 获取番剧所有相关季度信息
     pub async fn get_all_seasons(&self) -> Result<Vec<BangumiSeason>> {
         let season_info = self.get_season_info().await?;
-        let seasons = season_info["seasons"]
-            .as_array()
-            .ok_or_else(|| anyhow::anyhow!("Failed to get seasons from season info"))?;
+        Self::seasons_from_info(&season_info)
+    }
 
-        debug!("获取到番剧相关季度信息，共 {} 季", seasons.len());
-
-        let mut result = Vec::new();
-
-        for season in seasons {
-            let season_id = if let Some(id) = season["season_id"].as_str() {
-                id.to_string()
-            } else if let Some(id) = season["season_id"].as_i64() {
-                id.to_string()
-            } else {
-                tracing::warn!("无法获取season_id，跳过该季度");
-                continue;
-            };
-
-            let season_data = BangumiSeason {
-                season_id,
-                media_id: season["media_id"].as_i64().map(|id| id.to_string()),
-                season_title: season["season_title"].as_str().unwrap_or_default().to_string(),
-                cover: season["cover"].as_str().unwrap_or_default().to_string(),
-            };
-            debug!(
-                "解析季度：{} (season_id: {})",
-                season_data.season_title, season_data.season_id
-            );
-            result.push(season_data);
+    pub fn seasons_from_info(season_info: &serde_json::Value) -> Result<Vec<BangumiSeason>> {
+        let current_id = bangumi_id(&season_info["season_id"]).context("缺少 season_id")?;
+        let mut seasons = Vec::new();
+        if let Some(items) = season_info["seasons"].as_array() {
+            for item in items {
+                if let Some(season_id) = bangumi_id(&item["season_id"]) {
+                    if seasons.iter().any(|s: &BangumiSeason| s.season_id == season_id) {
+                        continue;
+                    }
+                    seasons.push(BangumiSeason {
+                        season_id,
+                        media_id: bangumi_id(&item["media_id"]),
+                        season_title: item["season_title"].as_str().unwrap_or_default().to_string(),
+                        cover: item["cover"].as_str().unwrap_or_default().to_string(),
+                    });
+                }
+            }
         }
-
-        Ok(result)
+        // 单季度节目可能没有 seasons 字段，也可能返回空数组。
+        if !seasons.iter().any(|s| s.season_id == current_id) {
+            seasons.push(BangumiSeason {
+                season_id: current_id,
+                media_id: bangumi_id(&season_info["media_id"]),
+                season_title: season_info["season_title"]
+                    .as_str()
+                    .filter(|title| !title.is_empty())
+                    .or_else(|| season_info["title"].as_str())
+                    .unwrap_or_default()
+                    .to_string(),
+                cover: season_info["cover"].as_str().unwrap_or_default().to_string(),
+            });
+        }
+        Ok(seasons)
     }
 
     /// 将单季番剧转换为视频流
@@ -991,7 +1088,7 @@ impl Bangumi {
     #[allow(dead_code)]
     pub async fn get_video_info(&self, ep_id: &str) -> Result<VideoInfo> {
         let url = format!("https://api.bilibili.com/pgc/view/web/season?ep_id={}", ep_id);
-        let resp = self.client.get(&url, CancellationToken::new()).await?;
+        let resp = self.client.public_get(&url, CancellationToken::new()).await?;
         let json: serde_json::Value = resp.json().await?;
         let validated = json.validate()?;
 
@@ -1029,5 +1126,192 @@ impl Bangumi {
             show_season_type: result["show_season_type"].as_i64().map(|v| v as i32),
             actors: result["actors"].as_str().map(|s| s.to_string()),
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::bilibili::test_support::mock_api;
+    use serde_json::json;
+
+    #[test]
+    fn bangumi_input_accepts_ids_and_links() {
+        for input in [
+            "101854",
+            " ss101854 ",
+            "https://www.bilibili.com/bangumi/play/ss101854?from=search",
+        ] {
+            assert_eq!(BangumiId::parse(input).unwrap(), BangumiId::Season("101854".into()));
+        }
+        assert_eq!(
+            BangumiId::parse("https://www.bilibili.com/bangumi/play/ep1914188").unwrap(),
+            BangumiId::Episode("1914188".into())
+        );
+        assert_eq!(
+            BangumiId::parse("https://www.bilibili.com/bangumi/media/md26608960/").unwrap(),
+            BangumiId::Media("26608960".into())
+        );
+        for input in [
+            "",
+            " ",
+            "ss",
+            "-1",
+            "0",
+            "ss0",
+            "1&ep_id=2",
+            "https://example.com/ss101854",
+        ] {
+            assert!(BangumiId::parse(input).is_err(), "{input}");
+        }
+    }
+
+    #[test]
+    fn bangumi_seasons_include_single_season_and_normalize_ids() {
+        for related in [serde_json::Value::Null, json!([])] {
+            let seasons = Bangumi::seasons_from_info(&json!({
+                "season_id": 101854, "media_id": "26608960", "title": "非人哉 第三季", "seasons": related
+            }))
+            .unwrap();
+            assert_eq!(seasons.len(), 1);
+            assert_eq!(seasons[0].season_id, "101854");
+            assert_eq!(seasons[0].media_id.as_deref(), Some("26608960"));
+            assert_eq!(seasons[0].season_title, "非人哉 第三季");
+        }
+        let seasons = Bangumi::seasons_from_info(&json!({
+            "season_id": "101854", "seasons": [{"season_id": 24298}, {"season_id": "24298"}, {"season_id": 0}]
+        }))
+        .unwrap();
+        assert_eq!(
+            seasons.iter().map(|s| s.season_id.as_str()).collect::<Vec<_>>(),
+            ["24298", "101854"]
+        );
+    }
+
+    #[test]
+    fn bangumi_missing_update_timestamp_does_not_reuse_stale_cache() {
+        let last = DateTime::from_timestamp(100, 0);
+        assert!(Bangumi::check_season_update(&json!({"new_ep": {"id": 3648907, "title": "24"}}), last).0);
+        assert!(!Bangumi::check_season_update(&json!({"new_ep": {"pub_time": 90}}), last).0);
+        assert!(Bangumi::check_season_update(&json!({"new_ep": {"pub_time": 110}}), last).0);
+    }
+
+    #[tokio::test]
+    async fn bangumi_episode_resolves_numeric_season_in_one_public_request() {
+        let (base, requests) = mock_api(vec![(
+            200,
+            json!({"code": 0, "message": "success", "result": {
+                "season_id": 101854, "episodes": [{"id": 1914188, "cid": 35771845189_i64}]
+            }})
+            .to_string(),
+        )])
+        .await;
+        // Old persisted ep-only sources can contain Some("") as their season ID.
+        let client = BiliClient::new(String::new());
+        let bangumi = Bangumi::new(&client, None, Some(String::new()), Some("1914188".into()));
+        let info = bangumi.get_season_info_from(&base).await.unwrap();
+        assert_eq!(info["season_id"], 101854);
+        let requests = requests.await.unwrap();
+        assert_eq!(requests.len(), 1);
+        assert!(requests[0].starts_with("GET /pgc/view/web/season?ep_id=1914188 "));
+        assert!(!requests[0].to_lowercase().contains("cookie:"));
+        assert!(!requests[0].to_lowercase().contains("x-gaia-vtoken:"));
+    }
+
+    #[tokio::test]
+    async fn bangumi_media_resolves_before_fetching_episodes() {
+        for season_id in [json!(101854), json!("101854")] {
+            let (base, requests) = mock_api(vec![
+                (
+                    200,
+                    json!({"code": 0, "message": "success", "result": {"media": {"season_id": season_id}}}).to_string(),
+                ),
+                (
+                    200,
+                    json!({"code": 0, "message": "success", "result": {"season_id": 101854, "episodes": []}})
+                        .to_string(),
+                ),
+            ])
+            .await;
+            let client = BiliClient::new(String::new());
+            Bangumi::from_id(&client, "md26608960")
+                .unwrap()
+                .get_season_info_from(&base)
+                .await
+                .unwrap();
+            let requests = requests.await.unwrap();
+            assert!(requests[0].starts_with("GET /pgc/review/user?media_id=26608960 "));
+            assert!(requests[1].starts_with("GET /pgc/view/web/season?season_id=101854 "));
+        }
+    }
+
+    #[tokio::test]
+    async fn bangumi_rejects_error_or_missing_episode_payload() {
+        for payload in [
+            json!({"code": -404, "message": "不存在"}),
+            json!({"code": 0, "message": "success", "result": {"season_id": 101854}}),
+        ] {
+            let (base, requests) = mock_api(vec![(200, payload.to_string())]).await;
+            let client = BiliClient::new(String::new());
+            assert!(Bangumi::from_id(&client, "101854")
+                .unwrap()
+                .get_season_info_from(&base)
+                .await
+                .is_err());
+            requests.await.unwrap();
+        }
+    }
+
+    #[tokio::test]
+    async fn bangumi_reports_non_json_response_context() {
+        let (base, requests) = mock_api(vec![(200, "<html>request blocked</html>".into())]).await;
+        let client = BiliClient::new(String::new());
+        let error = Bangumi::from_id(&client, "101854")
+            .unwrap()
+            .get_season_info_from(&base)
+            .await
+            .unwrap_err();
+        let message = format!("{error:#}");
+        assert!(message.contains("番剧季度信息响应不是有效 JSON"));
+        assert!(message.contains("status=200"));
+        requests.await.unwrap();
+    }
+
+    #[tokio::test]
+    #[ignore = "requires live Bilibili API access"]
+    async fn bangumi_live_101854_search_and_fetch() {
+        use futures::TryStreamExt;
+        let client = BiliClient::new(String::new());
+        let search = client.search("非人哉", "media_bangumi", 1, 20).await.unwrap();
+        assert!(search.results.iter().any(|r| r.season_id.as_deref() == Some("101854")));
+        let bangumi = Bangumi::from_id(&client, "ss101854").unwrap();
+        let info = bangumi.get_season_info().await.unwrap();
+        assert_eq!(info["season_id"], 101854);
+        let seasons = bangumi.get_all_seasons().await.unwrap();
+        assert!(seasons.iter().any(|s| s.season_id == "101854"));
+        let videos: Vec<_> = bangumi.to_video_stream_incremental(None).try_collect().await.unwrap();
+        assert!(!videos.is_empty());
+        for video in &videos {
+            match video {
+                VideoInfo::Bangumi {
+                    season_id,
+                    cid,
+                    ep_id,
+                    bvid,
+                    ..
+                } => {
+                    assert_eq!(season_id, "101854");
+                    assert!(cid.parse::<i64>().unwrap() > 0);
+                    assert!(!ep_id.is_empty() && !bvid.is_empty());
+                }
+                _ => panic!("expected bangumi episode"),
+            }
+        }
+        println!(
+            "Live 101854: {} search results, {} related seasons, {} fetched episodes",
+            search.results.len(),
+            seasons.len(),
+            videos.len()
+        );
     }
 }

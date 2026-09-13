@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::future::Future;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -5,7 +6,7 @@ use std::time::{Duration, Instant};
 use anyhow::{anyhow, Context, Result};
 use arc_swap::ArcSwapOption;
 use axum::http;
-use reqwest::{header, Method};
+use reqwest::{header, Method, StatusCode};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use tokio::sync::{Mutex, Semaphore};
@@ -37,6 +38,26 @@ pub struct SearchResponseWrapper {
     pub results: Vec<SearchResult>,
     pub total: u32,
     pub num_pages: u32,
+}
+
+/// 空结果是正常搜索结果；仅在两个分类请求均失败时返回错误。
+pub fn merge_bangumi_search_results(
+    bangumi: Result<SearchResponseWrapper>,
+    film: Result<SearchResponseWrapper>,
+) -> Result<SearchResponseWrapper> {
+    match (bangumi, film) {
+        (Ok(mut bangumi), Ok(film)) => {
+            bangumi.results.extend(film.results);
+            bangumi.total += film.total;
+            bangumi.num_pages = bangumi.num_pages.max(film.num_pages);
+            Ok(bangumi)
+        }
+        (Ok(result), Err(err)) | (Err(err), Ok(result)) => {
+            warn!("部分番剧/影视搜索失败: {:#}", err);
+            Ok(result)
+        }
+        (Err(bangumi), Err(film)) => Err(anyhow!("搜索番剧失败: {:#}; 搜索影视失败: {:#}", bangumi, film)),
+    }
 }
 
 /// bilibili搜索结果类型
@@ -149,7 +170,6 @@ impl Client {
             // 调试日志：记录Cookie发送信息
             tracing::debug!("发送Cookie字段数量: {}", cookie_parts.len());
             tracing::debug!("是否包含DedeUserID__ckMd5: {}", credential.dedeuserid_ckmd5.is_some());
-            tracing::debug!("Cookie完整内容: {}", cookie_str);
 
             req = req.header(header::COOKIE, cookie_str);
         }
@@ -157,7 +177,7 @@ impl Client {
         // 如果有gaia_vtoken，添加到请求头中
         if let Some(token) = gaia_vtoken {
             req = req.header("x-gaia-vtoken", token);
-            tracing::debug!("添加gaia_vtoken到请求头: {}", token);
+            tracing::debug!("已添加gaia_vtoken到请求头");
         }
 
         req
@@ -192,6 +212,83 @@ impl Default for Client {
     fn default() -> Self {
         Self::new()
     }
+}
+
+fn response_body_preview(text: &str) -> String {
+    text.chars().take(200).collect::<String>().replace(['\r', '\n'], " ")
+}
+
+#[derive(Debug, Clone, Copy)]
+enum SearchCredentialState {
+    Missing,
+    Incomplete,
+    Complete,
+}
+
+fn current_search_credential_state() -> SearchCredentialState {
+    let config = crate::config::reload_config();
+    let credential = config.credential.load();
+    match credential.as_deref() {
+        Some(credential)
+            if !credential.sessdata.trim().is_empty()
+                && !credential.buvid3.trim().is_empty()
+                && !credential.dedeuserid.trim().is_empty() =>
+        {
+            SearchCredentialState::Complete
+        }
+        Some(_) => SearchCredentialState::Incomplete,
+        None => SearchCredentialState::Missing,
+    }
+}
+
+fn search_http_status_message(operation: &str, status: StatusCode) -> String {
+    if status == StatusCode::PRECONDITION_FAILED {
+        match current_search_credential_state() {
+            SearchCredentialState::Complete => format!(
+                "{}触发 B 站风控(412)：程序已携带当前配置的 Cookie/buvid 指纹并使用搜索页 Referer，但仍被 B 站安全策略拒绝；请稍后重试，或检查这套凭据/出口 IP 是否已被风控",
+                operation
+            ),
+            SearchCredentialState::Incomplete => format!(
+                "{}触发 B 站风控(412)：当前 B 站凭据缺少 SESSDATA、buvid3 或 DedeUserID，搜索请求无法形成稳定 Cookie/buvid 指纹；请重新扫码或补齐整套凭据",
+                operation
+            ),
+            SearchCredentialState::Missing => format!(
+                "{}触发 B 站风控(412)：当前未配置 B 站凭据，搜索请求无法携带 Cookie/buvid 指纹；请先扫码配置 B 站凭据后再试",
+                operation
+            ),
+        }
+    } else {
+        format!("{}请求失败: {}", operation, status)
+    }
+}
+
+pub(super) async fn decode_json_response<T>(response: reqwest::Response, operation: &str) -> Result<T>
+where
+    T: serde::de::DeserializeOwned,
+{
+    let status = response.status();
+    let content_type = response
+        .headers()
+        .get(header::CONTENT_TYPE)
+        .and_then(|value| value.to_str().ok())
+        .unwrap_or("unknown")
+        .to_string();
+    let body = response.text().await.with_context(|| {
+        format!(
+            "读取{}响应体失败: status={}, content-type={}",
+            operation, status, content_type
+        )
+    })?;
+
+    serde_json::from_str(&body).with_context(|| {
+        format!(
+            "{}响应不是有效 JSON: status={}, content-type={}, body_prefix={}",
+            operation,
+            status,
+            content_type,
+            response_body_preview(&body)
+        )
+    })
 }
 
 #[derive(Clone)]
@@ -250,6 +347,34 @@ impl BiliClient {
                 let config = crate::config::reload_config();
                 let credential = config.credential.load();
                 let request_builder = client.request(Method::GET, url, credential.as_deref());
+                let response = tokio::select! {
+                    biased;
+                    _ = token.cancelled() => return Err(anyhow!("Request cancelled before send")),
+                    res = request_builder.send() => res,
+                };
+                Ok::<_, anyhow::Error>(response?)
+            }
+        });
+
+        let response = tokio::select! {
+            biased;
+            _ = token.cancelled() => Err(anyhow!("Request cancelled before scheduling")),
+            res = queued_future => res,
+        }?;
+
+        Ok(response)
+    }
+
+    /// 公开元数据不携带登录 Cookie 或风控令牌，仍遵守请求队列和取消信号。
+    pub async fn public_get(&self, url: &str, token: CancellationToken) -> Result<reqwest::Response> {
+        let queue = self.request_queue.clone();
+        let client = self.client.clone();
+        let token_for_request = token.clone();
+
+        let queued_future = queue.execute(|| {
+            let token = token_for_request.clone();
+            async move {
+                let request_builder = client.request(Method::GET, url, None);
                 let response = tokio::select! {
                     biased;
                     _ = token.cancelled() => return Err(anyhow!("Request cancelled before send")),
@@ -332,6 +457,32 @@ impl BiliClient {
         page: u32,
         page_size: u32,
     ) -> Result<SearchResponseWrapper> {
+        if page == 0 || page_size == 0 {
+            return Err(anyhow!("页码和每页数量必须大于0"));
+        }
+        let legacy_error = match self.search_via_legacy_type(keyword, search_type, page, page_size).await {
+            Ok(wrapper) => return Ok(wrapper),
+            Err(err) => err,
+        };
+        warn!("旧搜索接口失败，回退 WBI 搜索接口: {:#}", legacy_error);
+        let wbi_error = match self.search_via_wbi_type(keyword, search_type, page, page_size).await {
+            Ok(wrapper) => return Ok(wrapper),
+            Err(err) => err,
+        };
+        warn!("WBI 搜索接口失败，最后回退 all/v2 搜索接口: {:#}", wbi_error);
+        self.search_via_all_v2(keyword, search_type, page, page_size)
+            .await
+            .with_context(|| format!("旧搜索接口失败: {:#}; WBI 搜索接口失败: {:#}", legacy_error, wbi_error))
+    }
+
+    /// 使用原有搜索接口，失败时由调用方回退到 WBI 搜索。
+    async fn search_via_legacy_type(
+        &self,
+        keyword: &str,
+        search_type: &str,
+        page: u32,
+        page_size: u32,
+    ) -> Result<SearchResponseWrapper> {
         let url = "https://api.bilibili.com/x/web-interface/search/type";
 
         let params = [
@@ -344,16 +495,87 @@ impl BiliClient {
             ("tids", "0"),          // 不限分区
         ];
 
-        let response = self.request(Method::GET, url).await.query(&params).send().await?;
+        let response = self
+            .request(Method::GET, url)
+            .await
+            .header(header::REFERER, "https://search.bilibili.com/")
+            .query(&params)
+            .send()
+            .await?;
 
         if !response.status().is_success() {
-            return Err(anyhow!("搜索请求失败: {}", response.status()));
+            return Err(anyhow!(search_http_status_message("旧搜索接口", response.status())));
         }
 
-        let search_response: SearchResponse = response.json().await?;
+        let search_response: SearchResponse = decode_json_response(response, "旧搜索").await?;
+        Self::parse_typed_search_response(search_response, search_type, page_size)
+    }
 
+    /// 原有搜索接口失败时，回退到 B 站 Web 端实际调用的 WBI 搜索接口。
+    async fn search_via_wbi_type(
+        &self,
+        keyword: &str,
+        search_type: &str,
+        page: u32,
+        page_size: u32,
+    ) -> Result<SearchResponseWrapper> {
+        let url = "https://api.bilibili.com/x/web-interface/wbi/search/type";
+        let wbi_img = self.wbi_img().await.context("获取 WBI 签名参数失败")?;
+        let params = HashMap::from([
+            ("category_id".to_string(), String::new()),
+            ("search_type".to_string(), search_type.to_string()),
+            ("ad_resource".to_string(), "5646".to_string()),
+            ("__refresh__".to_string(), "true".to_string()),
+            ("_extra".to_string(), String::new()),
+            ("context".to_string(), String::new()),
+            ("page".to_string(), page.to_string()),
+            ("page_size".to_string(), page_size.to_string()),
+            ("order".to_string(), String::new()),
+            ("pubtime_begin_s".to_string(), "0".to_string()),
+            ("pubtime_end_s".to_string(), "0".to_string()),
+            ("duration".to_string(), String::new()),
+            ("from_source".to_string(), String::new()),
+            ("from_spmid".to_string(), "333.337".to_string()),
+            ("platform".to_string(), "pc".to_string()),
+            ("highlight".to_string(), "1".to_string()),
+            ("single_column".to_string(), "0".to_string()),
+            ("keyword".to_string(), keyword.to_string()),
+            ("source_tag".to_string(), "3".to_string()),
+            ("gaia_vtoken".to_string(), String::new()),
+            ("order_sort".to_string(), "0".to_string()),
+            ("user_type".to_string(), "0".to_string()),
+            ("dynamic_offset".to_string(), "0".to_string()),
+            ("web_location".to_string(), "1430654".to_string()),
+        ]);
+        let signed_params = wbi_img.sign_params(params).await.context("生成搜索 WBI 签名失败")?;
+
+        let response = self
+            .request(Method::GET, url)
+            .await
+            .header(header::REFERER, "https://search.bilibili.com/")
+            .query(&signed_params)
+            .send()
+            .await?;
+
+        if !response.status().is_success() {
+            return Err(anyhow!(search_http_status_message("WBI 搜索接口", response.status())));
+        }
+
+        let search_response: SearchResponse = decode_json_response(response, "WBI 搜索").await?;
+        Self::parse_typed_search_response(search_response, search_type, page_size)
+    }
+
+    fn parse_typed_search_response(
+        search_response: SearchResponse,
+        search_type: &str,
+        page_size: u32,
+    ) -> Result<SearchResponseWrapper> {
         if search_response.code != 0 {
-            return Err(anyhow!("搜索API返回错误: {}", search_response.message));
+            return Err(anyhow!(
+                "搜索API返回错误: {} ({})",
+                search_response.message,
+                search_response.code
+            ));
         }
 
         let data = search_response.data.unwrap_or(SearchData {
@@ -361,26 +583,16 @@ impl BiliClient {
             num_pages: None,
             num_results: None,
         });
-
         let results = data.result.unwrap_or_default();
-
-        // 获取总数和页数
-        let total = data.num_results.unwrap_or(0) as u32;
-        let num_pages = data.num_pages.unwrap_or(0) as u32;
-        let num_pages = if num_pages == 0 {
-            if total > 0 {
-                total.div_ceil(page_size) // 向上取整
-            } else {
-                1
-            }
-        } else {
-            num_pages
-        };
-
+        let total = data.num_results.unwrap_or(0).max(0) as u32;
+        let mut num_pages = data.num_pages.unwrap_or(0).max(0) as u32;
+        if num_pages == 0 {
+            num_pages = if total > 0 { total.div_ceil(page_size.max(1)) } else { 1 };
+        }
         let mut parsed_results = Vec::new();
 
         for item in results {
-            if let Ok(result) = self.parse_search_result(&item, search_type) {
+            if let Ok(result) = Self::parse_search_result(&item, search_type) {
                 parsed_results.push(result);
             }
         }
@@ -392,8 +604,88 @@ impl BiliClient {
         })
     }
 
+    /// WBI 搜索也失败时，最后回退 all/v2 搜索接口。
+    async fn search_via_all_v2(
+        &self,
+        keyword: &str,
+        search_type: &str,
+        page: u32,
+        page_size: u32,
+    ) -> Result<SearchResponseWrapper> {
+        let url = "https://api.bilibili.com/x/web-interface/search/all/v2";
+        let params = [
+            ("keyword", keyword),
+            ("page", &page.to_string()),
+            ("page_size", &page_size.to_string()),
+        ];
+
+        let response = self
+            .request(Method::GET, url)
+            .await
+            .header(header::REFERER, "https://search.bilibili.com/")
+            .query(&params)
+            .send()
+            .await?;
+        if !response.status().is_success() {
+            return Err(anyhow!(search_http_status_message(
+                "all/v2 搜索接口",
+                response.status()
+            )));
+        }
+
+        let payload: serde_json::Value = decode_json_response(response, "all/v2 搜索").await?;
+        Self::parse_all_v2_search_response(payload, search_type, page_size)
+    }
+
+    fn parse_all_v2_search_response(
+        payload: Value,
+        search_type: &str,
+        page_size: u32,
+    ) -> Result<SearchResponseWrapper> {
+        let code = payload["code"].as_i64().unwrap_or(-1);
+        if code != 0 {
+            let msg = payload["message"].as_str().unwrap_or("unknown");
+            return Err(anyhow!("all/v2 搜索API返回错误: {} ({})", msg, code));
+        }
+
+        let data = &payload["data"];
+        let pageinfo = &data["pageinfo"][search_type];
+        let total = pageinfo["numResults"]
+            .as_u64()
+            .or_else(|| pageinfo["total"].as_u64())
+            .unwrap_or(0) as u32;
+        let mut num_pages = pageinfo["pages"].as_u64().unwrap_or(0) as u32;
+        if num_pages == 0 {
+            num_pages = data["numPages"].as_u64().unwrap_or(0) as u32;
+        }
+        if num_pages == 0 {
+            num_pages = if total > 0 { total.div_ceil(page_size.max(1)) } else { 1 };
+        }
+
+        let mut parsed_results = Vec::new();
+        let type_block = data["result"].as_array().and_then(|arr| {
+            arr.iter()
+                .find(|item| item["result_type"].as_str() == Some(search_type))
+        });
+        let items = type_block.and_then(|block| block["data"].as_array());
+
+        if let Some(items) = items {
+            for item in items {
+                if let Ok(result) = Self::parse_search_result(item, search_type) {
+                    parsed_results.push(result);
+                }
+            }
+        }
+
+        Ok(SearchResponseWrapper {
+            results: parsed_results,
+            total,
+            num_pages,
+        })
+    }
+
     /// 解析搜索结果
-    fn parse_search_result(&self, item: &Value, search_type: &str) -> Result<SearchResult> {
+    fn parse_search_result(item: &Value, search_type: &str) -> Result<SearchResult> {
         match search_type {
             "video" => {
                 // 解析视频搜索结果
@@ -1211,5 +1503,90 @@ impl QueuedRequestBuilder {
         let queue = self.queue.clone();
         let builder = self.builder.expect("request builder has already been consumed");
         queue.execute(|| async move { builder.send().await }).await
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    #[test]
+    fn bangumi_search_parses_numeric_and_string_ids() {
+        for search_type in ["media_bangumi", "media_ft"] {
+            for season_id in [json!(101854), json!("101854")] {
+                let response: SearchResponse = serde_json::from_value(json!({
+                    "code": 0, "message": "OK", "data": {
+                        "numResults": 1, "numPages": 1, "result": [{
+                            "season_id": season_id, "media_id": 26608960,
+                            "title": "非人哉 第三季", "cover": "https://example.com/cover.jpg"
+                        }]
+                    }
+                }))
+                .unwrap();
+                let result = BiliClient::parse_typed_search_response(response, search_type, 10).unwrap();
+                assert_eq!(result.results[0].season_id.as_deref(), Some("101854"));
+                assert_eq!(result.results[0].media_id.as_deref(), Some("26608960"));
+                assert_eq!(result.results[0].result_type, search_type);
+            }
+        }
+    }
+
+    #[test]
+    fn bangumi_all_v2_search_selects_requested_category() {
+        let response = json!({"code": 0, "data": {
+            "pageinfo": {"media_bangumi": {"numResults": 3, "pages": 1}},
+            "result": [
+                {"result_type": "video", "data": [{"title": "ordinary video"}]},
+                {"result_type": "media_bangumi", "data": [{"season_id": 101854, "title": "非人哉"}]}
+            ]
+        }});
+        let result = BiliClient::parse_all_v2_search_response(response, "media_bangumi", 10).unwrap();
+        assert_eq!(result.total, 3);
+        assert_eq!(result.results.len(), 1);
+        assert_eq!(result.results[0].season_id.as_deref(), Some("101854"));
+        assert!(BiliClient::parse_all_v2_search_response(
+            json!({"code": -412, "message": "blocked"}),
+            "media_bangumi",
+            10
+        )
+        .is_err());
+    }
+
+    fn empty_search() -> SearchResponseWrapper {
+        SearchResponseWrapper {
+            results: vec![],
+            total: 0,
+            num_pages: 1,
+        }
+    }
+
+    #[test]
+    fn bangumi_empty_search_is_success_and_both_failures_keep_details() {
+        assert!(merge_bangumi_search_results(Ok(empty_search()), Ok(empty_search()))
+            .unwrap()
+            .results
+            .is_empty());
+        assert!(merge_bangumi_search_results(Ok(empty_search()), Err(anyhow!("HTTP 412"))).is_ok());
+        let error = merge_bangumi_search_results(Err(anyhow!("HTTP 412")), Err(anyhow!("invalid JSON")))
+            .unwrap_err()
+            .to_string();
+        assert!(error.contains("HTTP 412") && error.contains("invalid JSON"));
+    }
+
+    #[tokio::test]
+    async fn bangumi_search_rejects_zero_pagination_before_requesting() {
+        let client = BiliClient::new(String::new());
+        assert!(client.search("非人哉", "media_bangumi", 0, 20).await.is_err());
+        assert!(client.search("非人哉", "media_bangumi", 1, 0).await.is_err());
+    }
+
+    #[tokio::test]
+    async fn bangumi_public_request_honors_cancellation() {
+        let client = BiliClient::new(String::new());
+        let token = CancellationToken::new();
+        token.cancel();
+        let error = client.public_get("http://127.0.0.1:1", token).await.unwrap_err();
+        assert!(error.to_string().contains("cancelled"));
     }
 }

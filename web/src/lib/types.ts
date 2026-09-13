@@ -511,6 +511,7 @@ export interface BangumiSeasonInfo {
 
 // 番剧季度响应类型
 export interface BangumiSeasonsResponse {
+	current_season_id: string;
 	success: boolean;
 	data: BangumiSeasonInfo[];
 }

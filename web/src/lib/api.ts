@@ -491,7 +491,7 @@ class ApiClient {
 	 * 获取番剧季度信息
 	 */
 	async getBangumiSeasons(seasonId: string): Promise<ApiResponse<BangumiSeasonsResponse>> {
-		return this.get<BangumiSeasonsResponse>(`/bangumi/seasons/${seasonId}`);
+		return this.get<BangumiSeasonsResponse>(`/bangumi/seasons/${encodeURIComponent(seasonId)}`);
 	}
 
 	/**

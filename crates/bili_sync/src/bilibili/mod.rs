@@ -7,7 +7,7 @@ pub use captcha_server::{get_captcha_info, serve_captcha_page, submit_captcha_re
 pub use captcha_solver::CaptchaSolver;
 use chrono::serde::ts_seconds;
 use chrono::{DateTime, Utc};
-pub use client::{BiliClient, Client, SearchResult};
+pub use client::{merge_bangumi_search_results, BiliClient, Client, SearchResult};
 pub use collection::{Collection, CollectionItem, CollectionType};
 pub use credential::Credential;
 pub use danmaku::DanmakuOption;
@@ -201,3 +201,6 @@ pub enum VideoInfo {
         actors: Option<String>,
     },
 }
+
+#[cfg(test)]
+mod test_support;

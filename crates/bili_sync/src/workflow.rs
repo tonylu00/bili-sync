@@ -670,7 +670,6 @@ pub async fn fetch_video_details(
         return Ok(());
     }
     video_source.log_fetch_video_start();
-    let duration_constraints = DurationConstraints::from(video_source);
     let videos_model = filter_unfilled_videos(video_source.filter_expr(), connection).await?;
 
     // 分离出番剧和普通视频
@@ -749,7 +748,16 @@ pub async fn fetch_video_details(
 
             // 4. 使用合并后的信息处理所有视频
             for video_model in videos {
-                if let Err(e) = process_bangumi_video(video_model, &existing_episodes, connection, video_source).await {
+                if let Err(e) = process_bangumi_video(
+                    bili_client,
+                    video_model,
+                    &existing_episodes,
+                    connection,
+                    video_source,
+                    token.clone(),
+                )
+                .await
+                {
                     error!("处理番剧视频失败: {}", e);
                 }
             }
@@ -762,56 +770,18 @@ pub async fn fetch_video_details(
                 videos_without_season.len()
             );
             for video_model in videos_without_season {
-                let txn = connection.begin().await?;
-
-                let (actual_cid, duration) = if let Some(ep_id) = &video_model.ep_id {
-                    match get_bangumi_info_from_api(bili_client, ep_id, token.clone()).await {
-                        Some(info) => info,
-                        None => {
-                            error!("番剧 {} (EP{}) 信息获取失败，将跳过弹幕下载", &video_model.name, ep_id);
-                            (-1, 1440)
-                        }
-                    }
-                } else {
-                    error!("番剧 {} 缺少EP ID，无法获取详细信息", &video_model.name);
-                    (-1, 1440)
-                };
-
-                if !duration_constraints.allows_page(duration as u32)
-                    || !duration_constraints.allows_total(duration as i64)
+                if let Err(e) = process_bangumi_video(
+                    bili_client,
+                    video_model,
+                    &HashMap::new(),
+                    connection,
+                    video_source,
+                    token.clone(),
+                )
+                .await
                 {
-                    info!(
-                        "番剧 {} 单集时长 {} 秒不满足过滤条件，将标记为不自动下载",
-                        video_model.name, duration
-                    );
-                    let mut video_active_model: bili_sync_entity::video::ActiveModel = video_model.into();
-                    video_source.set_relation_id(&mut video_active_model);
-                    video_active_model.single_page = Set(Some(true));
-                    video_active_model.auto_download = Set(false);
-                    video_active_model.tags = Set(Some(serde_json::Value::Array(vec![])));
-                    video_active_model.cid = Set(None);
-                    video_active_model.save(&txn).await?;
-                    txn.commit().await?;
-                    continue;
+                    error!("处理番剧视频失败: {}", e);
                 }
-
-                let page_info = PageInfo {
-                    cid: actual_cid,
-                    page: 1,
-                    name: video_model.name.clone(),
-                    duration,
-                    first_frame: None,
-                    dimension: None,
-                };
-
-                create_pages(vec![page_info], &video_model, &txn).await?;
-
-                let mut video_active_model: bili_sync_entity::video::ActiveModel = video_model.into();
-                video_source.set_relation_id(&mut video_active_model);
-                video_active_model.single_page = Set(Some(true));
-                video_active_model.tags = Set(Some(serde_json::Value::Array(vec![])));
-                video_active_model.save(&txn).await?;
-                txn.commit().await?;
             }
         }
     }
@@ -2929,7 +2899,7 @@ pub async fn download_page(
     bili_client: &BiliClient,
     video_source: &VideoSourceEnum,
     video_model: &video::Model,
-    page_model: page::Model,
+    mut page_model: page::Model,
     connection: &DatabaseConnection,
     semaphore: &Semaphore,
     downloader: &UnifiedDownloader,
@@ -3078,6 +3048,9 @@ pub async fn download_page(
         }),
         _ => None,
     };
+    if is_bangumi && page_model.cid <= 0 {
+        repair_bangumi_page(bili_client, video_model, &mut page_model, connection, token.clone()).await?;
+    }
     let page_info = PageInfo {
         cid: page_model.cid,
         duration: page_model.duration,
@@ -4193,7 +4166,7 @@ async fn get_season_title_from_api(
         match tokio::select! {
             biased;
             _ = token.cancelled() => return None,
-            res = bili_client.get(&url, token.clone()) => res,
+            res = bili_client.public_get(&url, token.clone()) => res,
         } {
             Ok(res) => {
                 if res.status().is_success() {
@@ -4280,7 +4253,7 @@ async fn get_bangumi_aid_from_api(bili_client: &BiliClient, ep_id: &str, token: 
         match tokio::select! {
             biased;
             _ = token.cancelled() => return None,
-            res = bili_client.get(&url, token.clone()) => res,
+            res = bili_client.public_get(&url, token.clone()) => res,
         } {
             Ok(res) => {
                 if res.status().is_success() {
@@ -4370,7 +4343,7 @@ async fn get_bangumi_info_from_api(
         match tokio::select! {
             biased;
             _ = token.cancelled() => return None,
-            res = bili_client.get(&url, token.clone()) => res,
+            res = bili_client.public_get(&url, token.clone()) => res,
         } {
             Ok(res) => {
                 if res.status().is_success() {
@@ -4462,7 +4435,9 @@ async fn get_existing_episodes_for_season(
         if let Some(ep_id) = video.ep_id {
             // 每个番剧视频通常只有一个page（单集）
             if let Some(page) = pages.first() {
-                episodes_map.insert(ep_id, (page.cid, page.duration));
+                if page.cid > 0 {
+                    episodes_map.insert(ep_id, (page.cid, page.duration));
+                }
             }
         }
     }
@@ -4494,7 +4469,7 @@ async fn get_season_info_from_api(
     let res = tokio::select! {
         biased;
         _ = token.cancelled() => return Err(anyhow!("Request cancelled")),
-        res = bili_client.get(&url, token.clone()) => res,
+        res = bili_client.public_get(&url, token.clone()) => res,
     }?;
 
     if !res.status().is_success() {
@@ -4826,31 +4801,55 @@ async fn get_season_info_from_api(
     })
 }
 
+async fn repair_bangumi_page(
+    bili_client: &BiliClient,
+    video_model: &video::Model,
+    page_model: &mut page::Model,
+    connection: &DatabaseConnection,
+    token: CancellationToken,
+) -> Result<()> {
+    let info = if let Some(cid) = video_model.cid.filter(|cid| *cid > 0) {
+        Some((cid, page_model.duration))
+    } else if let Some(ep_id) = video_model.ep_id.as_deref() {
+        get_bangumi_info_from_api(bili_client, ep_id, token.clone()).await
+    } else {
+        None
+    };
+    let (cid, duration) = info
+        .filter(|(cid, _)| *cid > 0)
+        .context("番剧分页 CID 无效，无法获取分集信息，请稍后重试")?;
+    page_model.cid = cid;
+    page_model.duration = duration;
+    page::ActiveModel {
+        id: sea_orm::ActiveValue::Unchanged(page_model.id),
+        cid: Set(cid),
+        duration: Set(duration),
+        ..Default::default()
+    }
+    .update(connection)
+    .await?;
+    Ok(())
+}
+
 /// 处理单个番剧视频
 async fn process_bangumi_video(
+    bili_client: &BiliClient,
     video_model: video::Model,
     episodes_map: &HashMap<String, (i64, u32)>,
     connection: &DatabaseConnection,
     video_source: &VideoSourceEnum,
+    token: CancellationToken,
 ) -> Result<()> {
+    let ep_id = video_model.ep_id.as_deref().context("番剧缺少 EP ID")?;
+    let info = match episodes_map.get(ep_id).copied().filter(|(cid, _)| *cid > 0) {
+        Some(info) => Some(info),
+        None => get_bangumi_info_from_api(bili_client, ep_id, token).await,
+    };
+    let (actual_cid, duration) = info
+        .filter(|(cid, _)| *cid > 0)
+        .context("无法获取番剧的有效 CID，保留未填充状态以便重试")?;
     let txn = connection.begin().await?;
     let constraints = DurationConstraints::from(video_source);
-
-    let (actual_cid, duration) = if let Some(ep_id) = &video_model.ep_id {
-        match episodes_map.get(ep_id) {
-            Some(&info) => {
-                debug!("使用缓存信息: EP{} -> CID={}, Duration={}s", ep_id, info.0, info.1);
-                info
-            }
-            None => {
-                warn!("找不到分集 {} 的信息，使用默认值", ep_id);
-                (-1, 1440) // 默认值
-            }
-        }
-    } else {
-        error!("番剧 {} 缺少EP ID", video_model.name);
-        (-1, 1440)
-    };
 
     if !constraints.allows_page(duration) || !constraints.allows_total(duration as i64) {
         info!(
@@ -4883,6 +4882,7 @@ async fn process_bangumi_video(
     // 更新视频状态
     let mut video_active_model: bili_sync_entity::video::ActiveModel = video_model.into();
     video_source.set_relation_id(&mut video_active_model);
+    video_active_model.cid = Set(Some(actual_cid));
     video_active_model.single_page = Set(Some(true)); // 番剧的每一集都是单页
     video_active_model.tags = Set(Some(serde_json::Value::Array(vec![]))); // 空标签数组
     video_active_model.save(&txn).await?;
@@ -5881,6 +5881,237 @@ mod tests {
     use serde_json::json;
 
     use crate::config::PathSafeTemplate;
+
+    async fn bangumi_test_database() -> super::DatabaseConnection {
+        use bili_sync_migration::{Migrator, MigratorTrait};
+        let db = sea_orm::Database::connect("sqlite::memory:").await.unwrap();
+        Migrator::up(&db, None).await.unwrap();
+        db
+    }
+
+    async fn bangumi_test_source(db: &super::DatabaseConnection) -> super::VideoSourceEnum {
+        use sea_orm::{ActiveModelTrait, Set};
+        bili_sync_entity::video_source::ActiveModel {
+            name: Set("非人哉 第三季".into()),
+            path: Set("/unused".into()),
+            r#type: Set(1),
+            season_id: Set(Some("101854".into())),
+            latest_row_at: Set("1970-01-01 00:00:00".into()),
+            created_at: Set("2026-09-14 00:00:00".into()),
+            ..Default::default()
+        }
+        .insert(db)
+        .await
+        .unwrap();
+        let client = crate::bilibili::BiliClient::new(String::new());
+        let (source, _) = crate::adapter::bangumi_from(
+            &Some("101854".into()),
+            &None,
+            &None,
+            std::path::Path::new("/unused"),
+            &client,
+            db,
+        )
+        .await
+        .unwrap();
+        source
+    }
+
+    async fn bangumi_test_video(db: &super::DatabaseConnection) -> bili_sync_entity::video::Model {
+        use sea_orm::{ActiveModelTrait, IntoActiveModel};
+        bili_sync_entity::video::Model {
+            name: "非人哉 第三季".into(),
+            bvid: "BV1XXgNzmE1N".into(),
+            source_id: Some(1),
+            source_type: Some(1),
+            season_id: Some("101854".into()),
+            ep_id: Some("1914188".into()),
+            valid: true,
+            auto_download: true,
+            ..Default::default()
+        }
+        .into_active_model()
+        .insert(db)
+        .await
+        .unwrap()
+    }
+
+    #[tokio::test]
+    async fn bangumi_failed_details_remain_retryable_without_placeholder_page() {
+        use sea_orm::{EntityTrait, PaginatorTrait};
+        let db = bangumi_test_database().await;
+        let source = bangumi_test_source(&db).await;
+        let video = bangumi_test_video(&db).await;
+        let client = crate::bilibili::BiliClient::new(String::new());
+        let token = tokio_util::sync::CancellationToken::new();
+        token.cancel();
+        let invalid = std::collections::HashMap::from([("1914188".into(), (-1, 1440))]);
+        assert!(
+            super::process_bangumi_video(&client, video.clone(), &invalid, &db, &source, token)
+                .await
+                .is_err()
+        );
+        assert_eq!(bili_sync_entity::page::Entity::find().count(&db).await.unwrap(), 0);
+        let stored = bili_sync_entity::video::Entity::find_by_id(video.id)
+            .one(&db)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(stored.single_page, None);
+        assert_eq!(stored.tags, None);
+        assert_eq!(stored.cid, None);
+    }
+
+    #[tokio::test]
+    async fn bangumi_valid_details_and_legacy_page_cid_are_persisted() {
+        use sea_orm::{ActiveModelTrait, EntityTrait, Set};
+        let db = bangumi_test_database().await;
+        let source = bangumi_test_source(&db).await;
+        let video = bangumi_test_video(&db).await;
+        let client = crate::bilibili::BiliClient::new(String::new());
+        let episodes = std::collections::HashMap::from([("1914188".into(), (35771845189_i64, 446))]);
+        super::process_bangumi_video(
+            &client,
+            video.clone(),
+            &episodes,
+            &db,
+            &source,
+            tokio_util::sync::CancellationToken::new(),
+        )
+        .await
+        .unwrap();
+        let stored = bili_sync_entity::video::Entity::find_by_id(video.id)
+            .one(&db)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(stored.single_page, Some(true));
+        assert_eq!(stored.cid, Some(35771845189));
+        let page = bili_sync_entity::page::Entity::find().one(&db).await.unwrap().unwrap();
+        assert_eq!((page.cid, page.duration), (35771845189, 446));
+        let mut page = bili_sync_entity::page::ActiveModel {
+            id: Set(page.id),
+            cid: Set(-1),
+            ..Default::default()
+        }
+        .update(&db)
+        .await
+        .unwrap();
+        super::repair_bangumi_page(
+            &client,
+            &stored,
+            &mut page,
+            &db,
+            tokio_util::sync::CancellationToken::new(),
+        )
+        .await
+        .unwrap();
+        let repaired = bili_sync_entity::page::Entity::find_by_id(page.id)
+            .one(&db)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(repaired.cid, 35771845189);
+    }
+
+    #[tokio::test]
+    #[ignore = "requires live Bilibili API access; uses an isolated in-memory database"]
+    async fn bangumi_live_101854_add_and_fetch_details() {
+        use futures::TryStreamExt;
+        use sea_orm::{EntityTrait, PaginatorTrait};
+        let seasons = crate::api::handler::get_bangumi_seasons(axum::extract::Path("101854".into()))
+            .await
+            .unwrap();
+        let seasons = serde_json::to_value(seasons).unwrap();
+        assert_eq!(seasons["data"]["current_season_id"], "101854");
+        assert!(seasons["data"]["data"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|s| s["season_id"] == "101854"));
+        let search = crate::api::handler::search_bilibili(axum::extract::Query(crate::api::request::SearchRequest {
+            keyword: "非人哉".into(),
+            search_type: "media_bangumi".into(),
+            page: 1,
+            page_size: 20,
+        }))
+        .await
+        .unwrap();
+        let search = serde_json::to_value(search).unwrap();
+        assert!(search["data"]["results"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|s| s["season_id"] == "101854"));
+        let db = std::sync::Arc::new(bangumi_test_database().await);
+        let path = std::env::temp_dir().join(format!("bili-bangumi-test-{}", uuid::Uuid::new_v4()));
+        let request = serde_json::from_value(json!({
+            "source_type": "bangumi", "source_id": "ep1914188", "name": "非人哉 第三季",
+            "path": path, "selected_seasons": ["101854"]
+        }))
+        .unwrap();
+        let added = crate::api::handler::add_video_source_internal(db.clone(), request)
+            .await
+            .unwrap();
+        let stored = bili_sync_entity::video_source::Entity::find_by_id(added.source_id)
+            .one(db.as_ref())
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(stored.season_id.as_deref(), Some("101854"));
+        assert_eq!(stored.media_id.as_deref(), Some("26608960"));
+        let client = crate::bilibili::BiliClient::new(String::new());
+        let (source, stream) = crate::adapter::bangumi_from(
+            &stored.season_id,
+            &stored.media_id,
+            &stored.ep_id,
+            &path,
+            &client,
+            db.as_ref(),
+        )
+        .await
+        .unwrap();
+        let episodes: Vec<_> = stream.try_collect().await.unwrap();
+        assert!(!episodes.is_empty());
+        crate::utils::model::create_videos(episodes, &source, db.as_ref())
+            .await
+            .unwrap();
+        super::fetch_video_details(
+            &client,
+            &source,
+            db.as_ref(),
+            tokio_util::sync::CancellationToken::new(),
+        )
+        .await
+        .unwrap();
+        let videos = bili_sync_entity::video::Entity::find().all(db.as_ref()).await.unwrap();
+        let pages = bili_sync_entity::page::Entity::find().all(db.as_ref()).await.unwrap();
+        assert!(!pages.is_empty());
+        assert_eq!(videos.len(), pages.len());
+        assert!(pages.iter().all(|p| p.cid > 0 && p.duration > 0));
+        // Re-adding the same season via a different kind of ID resolves to the existing source.
+        let request = serde_json::from_value(json!({
+            "source_type": "bangumi", "source_id": "md26608960", "name": "非人哉 第三季", "path": path
+        }))
+        .unwrap();
+        let duplicate = crate::api::handler::add_video_source_internal(db.clone(), request)
+            .await
+            .unwrap();
+        assert_eq!(duplicate.source_id, added.source_id);
+        assert_eq!(
+            bili_sync_entity::video_source::Entity::find()
+                .count(db.as_ref())
+                .await
+                .unwrap(),
+            1
+        );
+        std::fs::remove_dir(&path).unwrap();
+        println!(
+            "Live 101854: added via ep ID, merged via media ID, fetched {} videos and {} valid pages",
+            videos.len(),
+            pages.len()
+        );
+    }
 
     #[test]
     fn test_template_usage() {

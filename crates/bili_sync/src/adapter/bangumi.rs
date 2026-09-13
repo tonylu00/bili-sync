@@ -276,40 +276,45 @@ impl BangumiSource {
             self.ep_id.clone(),
         );
 
-        // 检查缓存是否可用
-        let use_cache = if let (Some(_cached_episodes), Some(cache_updated_at)) =
-            (&source_model.cached_episodes, source_model.cache_updated_at)
-        {
-            // 检查缓存是否过期（默认24小时）
-            let cache_updated_at_utc = crate::utils::time_format::parse_time_string(&cache_updated_at)
-                .unwrap_or_else(|| chrono::DateTime::from_timestamp(0, 0).unwrap().naive_utc())
-                .and_utc();
-            if !is_cache_expired(Some(cache_updated_at_utc), 24) {
-                // 尝试轻量级更新检查
-                match bangumi.check_update(Some(cache_updated_at_utc)).await {
-                    Ok((has_update, _)) => {
-                        if !has_update {
-                            // 没有更新，可以使用缓存
-                            info!("番剧 {} 无更新，使用缓存数据", self.name);
-                            true
-                        } else {
-                            info!("番剧 {} 检测到更新，需要重新获取", self.name);
+        // 季度缓存只包含单季，不能覆盖全部季度或多个选中季度。
+        let cache_covers_selection = !self.download_all_seasons
+            && self.selected_seasons.as_ref().is_none_or(|seasons| {
+                seasons.is_empty() || (seasons.len() == 1 && Some(&seasons[0]) == self.season_id.as_ref())
+            });
+        let use_cache = cache_covers_selection
+            && if let (Some(_cached_episodes), Some(cache_updated_at)) =
+                (&source_model.cached_episodes, source_model.cache_updated_at)
+            {
+                // 检查缓存是否过期（默认24小时）
+                let cache_updated_at_utc = crate::utils::time_format::parse_time_string(&cache_updated_at)
+                    .unwrap_or_else(|| chrono::DateTime::from_timestamp(0, 0).unwrap().naive_utc())
+                    .and_utc();
+                if !is_cache_expired(Some(cache_updated_at_utc), 24) {
+                    // 尝试轻量级更新检查
+                    match bangumi.check_update(Some(cache_updated_at_utc)).await {
+                        Ok((has_update, _)) => {
+                            if !has_update {
+                                // 没有更新，可以使用缓存
+                                info!("番剧 {} 无更新，使用缓存数据", self.name);
+                                true
+                            } else {
+                                info!("番剧 {} 检测到更新，需要重新获取", self.name);
+                                false
+                            }
+                        }
+                        Err(e) => {
+                            warn!("检查番剧更新失败: {}，将重新获取完整数据", e);
                             false
                         }
                     }
-                    Err(e) => {
-                        warn!("检查番剧更新失败: {}，将重新获取完整数据", e);
-                        false
-                    }
+                } else {
+                    debug!("番剧缓存已过期，需要重新获取");
+                    false
                 }
             } else {
-                debug!("番剧缓存已过期，需要重新获取");
+                debug!("番剧无缓存，需要获取完整数据");
                 false
-            }
-        } else {
-            debug!("番剧无缓存，需要获取完整数据");
-            false
-        };
+            };
 
         if use_cache && source_model.cached_episodes.is_some() {
             // 使用缓存数据
@@ -334,7 +339,7 @@ impl BangumiSource {
                 mode_desc, latest_row_at
             );
             Ok(Box::pin(bangumi.to_all_seasons_video_stream_incremental(latest_row_at)))
-        } else if let Some(ref selected_seasons) = self.selected_seasons {
+        } else if let Some(selected_seasons) = self.selected_seasons.as_ref().filter(|seasons| !seasons.is_empty()) {
             // 如果有选中的季度，只下载选中的季度
             debug!(
                 "正在{}获取选中的 {} 个季度的番剧内容（时间过滤: {:?}）",
