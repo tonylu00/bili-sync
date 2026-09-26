@@ -11,7 +11,6 @@ use std::time::Duration;
 use tracing::{debug, info, warn};
 
 use crate::bilibili::credential::encoded_query;
-use crate::bilibili::favorite_list::Upper;
 use crate::bilibili::{BiliClient, Validate, VideoInfo, MIXIN_KEY};
 use crate::config::SubmissionRiskControlConfig;
 use crate::database::get_global_db;
@@ -21,6 +20,22 @@ use crate::utils::submission_checkpoint;
 /// 存储格式: (页码, 该页已处理的视频索引)
 pub static SUBMISSION_PAGE_TRACKER: Lazy<RwLock<HashMap<String, (usize, usize)>>> =
     Lazy::new(|| RwLock::new(HashMap::new()));
+
+#[derive(Debug, serde::Deserialize)]
+pub struct SubmissionInfo {
+    pub mid: String,
+    pub name: String,
+    #[serde(default)]
+    is_deleted: u8,
+}
+
+impl SubmissionInfo {
+    pub fn is_deleted(&self) -> bool {
+        // The card endpoint currently omits is_deleted, including for deleted accounts.
+        self.is_deleted != 0 || self.name == "账号已注销"
+    }
+}
+
 pub struct Submission<'a> {
     client: &'a BiliClient,
     upper_id: String,
@@ -48,7 +63,7 @@ impl<'a> Submission<'a> {
         self.upper_name.as_deref().unwrap_or(&self.upper_id)
     }
 
-    pub async fn get_info(&self) -> Result<Upper<String>> {
+    pub async fn get_info(&self) -> Result<SubmissionInfo> {
         let mut res = self
             .client
             .request(Method::GET, "https://api.bilibili.com/x/web-interface/card")
@@ -383,5 +398,29 @@ impl<'a> Submission<'a> {
 
         let total_multiplier = large_submission_multiplier * progressive_multiplier;
         base_delay * total_multiplier as u32
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::SubmissionInfo;
+    use serde_json::json;
+
+    #[test]
+    fn detects_deleted_submission_accounts() {
+        for (fields, expected) in [
+            (json!({"name": "账号已注销"}), true),
+            (json!({"name": "账号已注销", "is_deleted": 0}), true),
+            (json!({"name": "Original name", "is_deleted": 1}), true),
+            (json!({"name": "Active uploader", "is_deleted": 0}), false),
+            (json!({"name": "Active uploader"}), false),
+        ] {
+            let mut card = json!({"mid": "480211344"});
+            card.as_object_mut()
+                .unwrap()
+                .extend(fields.as_object().unwrap().clone());
+            let info: SubmissionInfo = serde_json::from_value(card).unwrap();
+            assert_eq!(info.is_deleted(), expected, "{info:?}");
+        }
     }
 }

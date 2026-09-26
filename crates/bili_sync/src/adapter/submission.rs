@@ -13,10 +13,42 @@ use sea_orm::{DatabaseConnection, Unchanged};
 use tracing::{debug, info, warn};
 
 use crate::adapter::{_ActiveModel, VideoSource, VideoSourceEnum};
+use crate::bilibili::submission::SubmissionInfo;
 use crate::bilibili::{BiliClient, Submission, VideoInfo};
 use crate::utils::keyword_filter::deserialize_keywords;
 
-impl VideoSource for submission::Model {
+pub struct SubmissionSource {
+    model: submission::Model,
+    account_deleted: bool,
+}
+
+impl std::ops::Deref for SubmissionSource {
+    type Target = submission::Model;
+
+    fn deref(&self) -> &Self::Target {
+        &self.model
+    }
+}
+
+impl SubmissionSource {
+    pub async fn finish_scan(&self, connection: &DatabaseConnection) -> Result<()> {
+        if self.account_deleted {
+            submission::Entity::update_many()
+                .filter(submission::Column::Id.eq(self.id))
+                .filter(submission::Column::Enabled.eq(true))
+                .col_expr(submission::Column::Enabled, Expr::value(false))
+                .exec(connection)
+                .await?;
+            info!(
+                "UP主「{}」(UID: {}) 已注销，本次扫描结束，已禁用自动扫描",
+                self.upper_name, self.upper_id
+            );
+        }
+        Ok(())
+    }
+}
+
+impl VideoSource for SubmissionSource {
     fn filter_expr(&self) -> SimpleExpr {
         video::Column::SubmissionId.eq(self.id)
     }
@@ -316,10 +348,30 @@ pub(super) async fn submission_from<'a>(
 )> {
     let submission = Submission::new(bili_client, upper_id.to_owned());
     let upper = submission.get_info().await?;
-    // 重新创建带有UP主名称的Submission实例，用于后续的视频流处理和日志显示
-    let submission_with_name = Submission::with_name(bili_client, upper_id.to_owned(), upper.name.clone());
+    let source = save_submission_info(upper, path, connection).await?;
+    // Use the preserved name for the final scan's stream and logs as well.
+    let submission_with_name = Submission::with_name(bili_client, upper_id.to_owned(), source.upper_name.clone());
+    Ok((
+        source.into(),
+        Box::pin(submission_with_name.into_video_stream(cancellation_token.unwrap_or_default())),
+    ))
+}
+
+async fn save_submission_info(
+    upper: SubmissionInfo,
+    path: &Path,
+    connection: &DatabaseConnection,
+) -> Result<SubmissionSource> {
+    let account_deleted = upper.is_deleted();
+    let upper_id = upper.mid.parse::<i64>()?;
+    let mut on_conflict = OnConflict::column(submission::Column::UpperId);
+    on_conflict.update_column(submission::Column::Path);
+    if !account_deleted {
+        on_conflict.update_column(submission::Column::UpperName);
+    }
+
     submission::Entity::insert(submission::ActiveModel {
-        upper_id: Set(upper.mid.parse()?),
+        upper_id: Set(upper_id),
         upper_name: Set(upper.name),
         path: Set(path.to_string_lossy().to_string()),
         created_at: Set(crate::utils::time_format::now_standard_string()),
@@ -328,20 +380,180 @@ pub(super) async fn submission_from<'a>(
         scan_deleted_videos: Set(false),
         ..Default::default()
     })
-    .on_conflict(
-        OnConflict::column(submission::Column::UpperId)
-            .update_columns([submission::Column::UpperName, submission::Column::Path])
-            .to_owned(),
-    )
+    .on_conflict(on_conflict.to_owned())
     .exec(connection)
     .await?;
-    Ok((
-        submission::Entity::find()
-            .filter(submission::Column::UpperId.eq(upper.mid))
+    Ok(SubmissionSource {
+        model: submission::Entity::find()
+            .filter(submission::Column::UpperId.eq(upper_id))
             .one(connection)
             .await?
-            .context("submission not found")?
-            .into(),
-        Box::pin(submission_with_name.into_video_stream(cancellation_token.unwrap_or_default())),
-    ))
+            .context("submission not found")?,
+        account_deleted,
+    })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use bili_sync_migration::{Migrator, MigratorTrait};
+    use futures::stream;
+    use sea_orm::Database;
+    use serde_json::json;
+    use tokio_util::sync::CancellationToken;
+
+    fn account(name: &str, deleted: u8) -> SubmissionInfo {
+        serde_json::from_value(json!({
+            "mid": "480211344", "name": name, "is_deleted": deleted
+        }))
+        .unwrap()
+    }
+
+    async fn database() -> DatabaseConnection {
+        let db = Database::connect("sqlite::memory:").await.unwrap();
+        Migrator::up(&db, None).await.unwrap();
+        db
+    }
+
+    async fn stored(db: &DatabaseConnection) -> submission::Model {
+        submission::Entity::find()
+            .filter(submission::Column::UpperId.eq(480211344_i64))
+            .one(db)
+            .await
+            .unwrap()
+            .unwrap()
+    }
+
+    async fn refresh(
+        source: SubmissionSource,
+        stream: Pin<Box<dyn Stream<Item = Result<VideoInfo>> + Send + '_>>,
+        db: &DatabaseConnection,
+    ) -> Result<(usize, Vec<crate::utils::notification::NewVideoInfo>)> {
+        crate::workflow::refresh_video_source(
+            &source.into(),
+            stream,
+            db,
+            CancellationToken::new(),
+            &BiliClient::new(String::new()),
+        )
+        .await
+    }
+
+    #[tokio::test]
+    async fn deleted_submission_preserves_name_and_finishes_last_scan() {
+        let db = database().await;
+        let original = save_submission_info(account("Last valid name", 0), Path::new("/unused"), &db)
+            .await
+            .unwrap();
+        let source = save_submission_info(account("账号已注销", 0), Path::new("/unused"), &db)
+            .await
+            .unwrap();
+        assert_eq!(source.upper_name, "Last valid name");
+        assert_eq!(source.created_at, original.created_at);
+        assert_eq!(source.latest_row_at, original.latest_row_at);
+        assert!(stored(&db).await.enabled, "metadata refresh must allow the final scan");
+
+        let db_ref = &db;
+        let videos = async_stream::stream! {
+            assert!(stored(db_ref).await.enabled, "do not disable before scanning videos");
+            yield Ok(VideoInfo::Submission {
+                title: "Final video".into(),
+                bvid: "BV1deletedtest".into(),
+                intro: String::new(),
+                cover: String::new(),
+                ctime: chrono::DateTime::from_timestamp(1_750_000_000, 0).unwrap(),
+            });
+        };
+        let (count, _) = refresh(source, Box::pin(videos), &db).await.unwrap();
+        assert_eq!(count, 1);
+        assert_eq!(video::Entity::find().count(&db).await.unwrap(), 1);
+        let saved = stored(&db).await;
+        assert_eq!(saved.upper_name, "Last valid name");
+        assert!(!saved.enabled);
+        assert_ne!(saved.latest_row_at, original.latest_row_at);
+        assert_eq!(
+            submission::Entity::find()
+                .filter(submission::Column::Enabled.eq(true))
+                .count(&db)
+                .await
+                .unwrap(),
+            0
+        );
+
+        // Notification/error-context refreshes after the scan must not re-enable it.
+        save_submission_info(account("账号已注销", 0), Path::new("/unused"), &db)
+            .await
+            .unwrap();
+        assert!(!stored(&db).await.enabled);
+    }
+
+    #[tokio::test]
+    async fn deleted_submission_keeps_existing_placeholder_without_guessing() {
+        let db = database().await;
+        save_submission_info(account("账号已注销", 0), Path::new("/unused"), &db)
+            .await
+            .unwrap();
+        let source = save_submission_info(account("账号已注销", 0), Path::new("/unused"), &db)
+            .await
+            .unwrap();
+        let (count, _) = refresh(source, Box::pin(stream::empty()), &db).await.unwrap();
+        assert_eq!(count, 0);
+        let saved = stored(&db).await;
+        assert_eq!(saved.upper_name, "账号已注销");
+        assert!(!saved.enabled);
+    }
+
+    #[tokio::test]
+    async fn deleted_submission_flag_stops_retries_after_failed_final_scan() {
+        let db = database().await;
+        let original = save_submission_info(account("Last valid name", 0), Path::new("/unused"), &db)
+            .await
+            .unwrap();
+        let source = save_submission_info(account("Removed account", 1), Path::new("/unused"), &db)
+            .await
+            .unwrap();
+        let result = refresh(
+            source,
+            Box::pin(stream::iter([Err(anyhow::anyhow!("video API unavailable"))])),
+            &db,
+        )
+        .await;
+        assert!(result.unwrap_err().to_string().contains("video API unavailable"));
+        let saved = stored(&db).await;
+        assert_eq!(saved.upper_name, original.upper_name);
+        assert_eq!(saved.latest_row_at, original.latest_row_at);
+        assert!(!saved.enabled);
+    }
+
+    #[tokio::test]
+    async fn active_submission_renames_normally_and_preserves_manual_disable() {
+        let db = database().await;
+        let original = save_submission_info(account("Old name", 0), Path::new("/old"), &db)
+            .await
+            .unwrap();
+        let source = save_submission_info(account("New name", 0), Path::new("/new"), &db)
+            .await
+            .unwrap();
+        refresh(source, Box::pin(stream::empty()), &db).await.unwrap();
+        let saved = stored(&db).await;
+        assert_eq!(saved.upper_name, "New name");
+        assert_eq!(saved.path, "/new");
+        assert!(saved.enabled);
+
+        submission::ActiveModel {
+            id: Set(original.id),
+            enabled: Set(false),
+            ..Default::default()
+        }
+        .update(&db)
+        .await
+        .unwrap();
+        let source = save_submission_info(account("Another name", 0), Path::new("/new"), &db)
+            .await
+            .unwrap();
+        refresh(source, Box::pin(stream::empty()), &db).await.unwrap();
+        let saved = stored(&db).await;
+        assert_eq!(saved.upper_name, "Another name");
+        assert!(!saved.enabled);
+    }
 }

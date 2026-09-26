@@ -23,11 +23,10 @@ use sea_orm::entity::prelude::*;
 use sea_orm::sea_query::SimpleExpr;
 use sea_orm::DatabaseConnection;
 
-#[rustfmt::skip]
 use bili_sync_entity::collection::Model as Collection;
 use bili_sync_entity::favorite::Model as Favorite;
-use bili_sync_entity::submission::Model as Submission;
 use bili_sync_entity::watch_later::Model as WatchLater;
+use submission::SubmissionSource as Submission;
 
 use crate::adapter::collection::collection_from;
 use crate::adapter::favorite::favorite_from;

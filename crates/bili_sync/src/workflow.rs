@@ -197,7 +197,7 @@ pub async fn process_video_source(
     };
 
     // 从参数中获取视频列表的 Model 与视频流
-    let (video_source, video_streams) =
+    let (mut video_source, video_streams) =
         match video_source_from(args, path, bili_client, connection, Some(token.clone())).await {
             Ok(result) => result,
             Err(e) => {
@@ -219,8 +219,9 @@ pub async fn process_video_source(
                 let error_msg = format!("{:#}", e);
                 if retry_with_refresh(error_msg).await.is_ok() {
                     // 刷新成功，重新获取视频流并重试
-                    let (_, video_streams) =
+                    let (refreshed_source, video_streams) =
                         video_source_from(args, path, bili_client, connection, Some(token.clone())).await?;
+                    video_source = refreshed_source;
                     refresh_video_source(&video_source, video_streams, connection, token.clone(), bili_client).await?
                 } else {
                     return Err(e);
@@ -436,6 +437,22 @@ async fn update_bangumi_cache(
 
 /// 请求接口，获取视频列表中所有新添加的视频信息，将其写入数据库
 pub async fn refresh_video_source<'a>(
+    video_source: &VideoSourceEnum,
+    video_streams: Pin<Box<dyn Stream<Item = Result<VideoInfo>> + 'a + Send>>,
+    connection: &DatabaseConnection,
+    token: CancellationToken,
+    bili_client: &BiliClient,
+) -> Result<(usize, Vec<NewVideoInfo>)> {
+    let result = refresh_video_source_inner(video_source, video_streams, connection, token, bili_client).await;
+    // A confirmed deleted account gets one final scan attempt, even if its video API fails.
+    // Metadata-only callers of video_source_from must not disable it before that attempt.
+    if let VideoSourceEnum::Submission(source) = video_source {
+        source.finish_scan(connection).await?;
+    }
+    result
+}
+
+async fn refresh_video_source_inner<'a>(
     video_source: &VideoSourceEnum,
     video_streams: Pin<Box<dyn Stream<Item = Result<VideoInfo>> + 'a + Send>>,
     connection: &DatabaseConnection,
