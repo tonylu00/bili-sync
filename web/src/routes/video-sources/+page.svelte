@@ -3,6 +3,7 @@
 	import { Card, CardContent, CardHeader, CardTitle } from '$lib/components/ui/card/index.js';
 	import { Button } from '$lib/components/ui/button/index.js';
 	import { Badge } from '$lib/components/ui/badge/index.js';
+	import { Checkbox } from '$lib/components/ui/checkbox';
 	import { setBreadcrumb } from '$lib/stores/breadcrumb';
 	import { toast } from 'svelte-sonner';
 	import api from '$lib/api';
@@ -18,6 +19,12 @@
 	import ResetPathDialog from '$lib/components/reset-path-dialog.svelte';
 	import EditVideoFiltersDialog from '$lib/components/edit-video-filters-dialog.svelte';
 	import RepairFavoriteDialog from '$lib/components/repair-favorite-dialog.svelte';
+	import BatchDeleteSourcesDialog from '$lib/components/batch-delete-sources-dialog.svelte';
+	import {
+		sourceSelectionKey,
+		type BatchDeleteSource,
+		type BatchDeleteResult
+	} from '$lib/batch-delete-sources.js';
 
 	// 图标导入
 	import PlusIcon from '@lucide/svelte/icons/plus';
@@ -33,6 +40,65 @@
 	let loading = false;
 	let showRepairFavoriteDialog = false;
 	let repairFavoriteSource: VideoSource | null = null;
+	let batchMode = false;
+	let selectedKeys = new Set<string>();
+	let submittedKeys = new Set<string>();
+	let showBatchDeleteDialog = false;
+	let batchDeleteTargets: BatchDeleteSource[] = [];
+	$: allSources = Object.values(VIDEO_SOURCES).flatMap((config) =>
+		($videoSourceStore?.[config.type] ?? []).map((source) => ({
+			type: config.type,
+			typeLabel: config.title,
+			id: source.id,
+			name: source.name,
+			path: source.path,
+			externalId: String(
+				source.f_id ?? source.s_id ?? source.upper_id ?? source.season_id ?? source.media_id ?? ''
+			)
+		}))
+	);
+	$: selectableSources = allSources.filter(
+		(source) => !submittedKeys.has(sourceSelectionKey(source.type, source.id))
+	);
+	$: selectedSources = selectableSources.filter((source) =>
+		selectedKeys.has(sourceSelectionKey(source.type, source.id))
+	);
+
+	function selectSources(sources: { type: string; id: number }[], selected: boolean) {
+		const next = new Set(selectedKeys);
+		for (const source of sources) {
+			const key = sourceSelectionKey(source.type, source.id);
+			if (selected && !submittedKeys.has(key)) next.add(key);
+			else next.delete(key);
+		}
+		selectedKeys = next;
+	}
+
+	function exitBatchMode() {
+		batchMode = false;
+		selectedKeys = new Set();
+	}
+
+	function openBatchDelete() {
+		if (selectedSources.length === 0) return;
+		batchDeleteTargets = selectedSources.map((source) => ({ ...source }));
+		showBatchDeleteDialog = true;
+	}
+
+	async function handleBatchDeleteComplete(event: CustomEvent<BatchDeleteResult[]>) {
+		const nextSelection = new Set(selectedKeys);
+		const submitted = new Set(submittedKeys);
+		for (const result of event.detail) {
+			if (result.success) {
+				const key = sourceSelectionKey(result.source.type, result.source.id);
+				nextSelection.delete(key);
+				submitted.add(key);
+			}
+		}
+		selectedKeys = nextSelection;
+		submittedKeys = submitted;
+		await loadVideoSources();
+	}
 
 	// 响应式相关
 	let innerWidth: number;
@@ -87,6 +153,15 @@
 		try {
 			const response = await api.getVideoSources();
 			setVideoSources(response.data);
+			const currentKeys = new Set(
+				Object.values(VIDEO_SOURCES).flatMap((config) =>
+					(response.data[config.type] ?? []).map((source) =>
+						sourceSelectionKey(config.type, source.id)
+					)
+				)
+			);
+			selectedKeys = new Set([...selectedKeys].filter((key) => currentKeys.has(key)));
+			submittedKeys = new Set([...submittedKeys].filter((key) => currentKeys.has(key)));
 		} catch (error) {
 			console.error('加载视频源失败:', error);
 			const errorMessage =
@@ -333,14 +408,46 @@
 				管理和配置您的视频源，包括收藏夹、合集、投稿和稍后再看
 			</p>
 		</div>
-		<Button
-			onclick={navigateToAddSource}
-			class="flex items-center gap-2 {isMobile ? 'w-full' : 'w-auto'}"
-		>
-			<PlusIcon class="h-4 w-4" />
-			添加视频源
-		</Button>
+		<div class="flex flex-wrap gap-2">
+			{#if !batchMode}
+				<Button
+					variant="outline"
+					disabled={loading || selectableSources.length === 0}
+					onclick={() => (batchMode = true)}
+				>
+					<TrashIcon class="mr-2 h-4 w-4" />批量删除
+				</Button>
+			{/if}
+			<Button onclick={navigateToAddSource} class="flex items-center gap-2">
+				<PlusIcon class="h-4 w-4" />添加视频源
+			</Button>
+		</div>
 	</div>
+
+	{#if batchMode}
+		<div class="flex flex-wrap items-center gap-3 rounded-lg border p-3">
+			<Checkbox
+				aria-label="选择所有视频源"
+				checked={selectableSources.length > 0 &&
+					selectedSources.length === selectableSources.length}
+				indeterminate={selectedSources.length > 0 &&
+					selectedSources.length < selectableSources.length}
+				disabled={loading || selectableSources.length === 0}
+				onCheckedChange={(checked) => selectSources(selectableSources, checked)}
+			/>
+			<span class="text-sm">全选 · 已选 {selectedSources.length} 个视频源</span>
+			<div class="ml-auto flex flex-wrap gap-2">
+				<Button variant="outline" onclick={exitBatchMode}>退出批量选择</Button>
+				<Button
+					variant="destructive"
+					disabled={loading || selectedSources.length === 0}
+					onclick={openBatchDelete}
+				>
+					删除所选 ({selectedSources.length})
+				</Button>
+			</div>
+		</div>
+	{/if}
 
 	{#if loading}
 		<div class="flex items-center justify-center py-12">
@@ -351,9 +458,25 @@
 		<div class="grid gap-6">
 			{#each Object.entries(VIDEO_SOURCES) as [sourceKey, sourceConfig] (sourceKey)}
 				{@const sources = $videoSourceStore ? $videoSourceStore[sourceConfig.type] : []}
+				{@const groupSources = selectableSources.filter(
+					(source) => source.type === sourceConfig.type
+				)}
+				{@const groupSelectedCount = groupSources.filter((source) =>
+					selectedKeys.has(sourceSelectionKey(source.type, source.id))
+				).length}
 				<Card>
 					<CardHeader class="cursor-pointer" onclick={() => toggleCollapse(sourceKey)}>
 						<CardTitle class="flex items-center gap-2">
+							{#if batchMode}
+								<Checkbox
+									aria-label={`选择所有${sourceConfig.title}`}
+									checked={groupSources.length > 0 && groupSelectedCount === groupSources.length}
+									indeterminate={groupSelectedCount > 0 && groupSelectedCount < groupSources.length}
+									disabled={groupSources.length === 0}
+									onCheckedChange={(checked) => selectSources(groupSources, checked)}
+									onclick={(event) => event.stopPropagation()}
+								/>
+							{/if}
 							{#if collapsedSections[sourceKey] !== false}
 								<ChevronRightIcon class="text-muted-foreground h-4 w-4" />
 							{:else}
@@ -371,6 +494,7 @@
 							{#if sources && sources.length > 0}
 								<div class="space-y-3">
 									{#each sources as source (source.id)}
+										{@const selectionKey = sourceSelectionKey(sourceConfig.type, source.id)}
 										<div
 											class="flex {isMobile
 												? 'flex-col gap-3'
@@ -382,7 +506,24 @@
 														? 'flex-col gap-2'
 														: 'flex-row items-center gap-2'} mb-1"
 												>
-													<span class="truncate font-medium">{source.name}</span>
+													<div class="flex min-w-0 items-center gap-2">
+														{#if batchMode}
+															<Checkbox
+																aria-label={`选择${sourceConfig.title} ${source.name} (ID: ${source.id})`}
+																checked={selectedKeys.has(selectionKey)}
+																disabled={submittedKeys.has(selectionKey)}
+																onCheckedChange={(checked) =>
+																	selectSources(
+																		[{ type: sourceConfig.type, id: source.id }],
+																		checked
+																	)}
+															/>
+														{/if}
+														<span class="truncate font-medium">{source.name}</span>
+													</div>
+													{#if submittedKeys.has(selectionKey)}
+														<Badge variant="outline">已提交删除</Badge>
+													{/if}
 													<Badge
 														variant={source.enabled ? 'default' : 'secondary'}
 														class="w-fit text-xs"
@@ -399,6 +540,7 @@
 														收藏夹ID: {source.f_id}
 														<Button
 															variant="link"
+															disabled={batchMode || submittedKeys.has(selectionKey)}
 															size="sm"
 															class="ml-2 h-auto p-0 text-xs"
 															onclick={() => {
@@ -433,81 +575,88 @@
 												{/if}
 											</div>
 
-											<div class="flex items-center justify-end gap-1 sm:ml-4">
-												<!-- 启用/禁用 -->
-												<Button
-													size="sm"
-													variant="ghost"
-													onclick={() =>
-														handleToggleEnabled(
-															sourceConfig.type,
-															source.id,
-															source.enabled,
-															source.name
-														)}
-													title={source.enabled ? '禁用' : '启用'}
-													class="h-8 w-8 p-0"
-												>
-													<PowerIcon
-														class="h-4 w-4 {source.enabled ? 'text-green-600' : 'text-gray-400'}"
-													/>
-												</Button>
+											{#if !batchMode && !submittedKeys.has(selectionKey)}
+												<div class="flex items-center justify-end gap-1 sm:ml-4">
+													<!-- 启用/禁用 -->
+													<Button
+														size="sm"
+														variant="ghost"
+														onclick={() =>
+															handleToggleEnabled(
+																sourceConfig.type,
+																source.id,
+																source.enabled,
+																source.name
+															)}
+														title={source.enabled ? '禁用' : '启用'}
+														class="h-8 w-8 p-0"
+													>
+														<PowerIcon
+															class="h-4 w-4 {source.enabled ? 'text-green-600' : 'text-gray-400'}"
+														/>
+													</Button>
 
-												<!-- 编辑过滤规则 -->
-												<Button
-													size="sm"
-													variant="ghost"
-													onclick={() => handleEditFilters(sourceConfig.type, source)}
-													title="编辑过滤规则"
-													class="h-8 w-8 p-0"
-												>
-													<FilterIcon class="h-4 w-4 text-purple-500" />
-												</Button>
+													<!-- 编辑过滤规则 -->
+													<Button
+														size="sm"
+														variant="ghost"
+														onclick={() => handleEditFilters(sourceConfig.type, source)}
+														title="编辑过滤规则"
+														class="h-8 w-8 p-0"
+													>
+														<FilterIcon class="h-4 w-4 text-purple-500" />
+													</Button>
 
-												<!-- 重设路径 -->
-												<Button
-													size="sm"
-													variant="ghost"
-													onclick={() =>
-														handleResetPath(sourceConfig.type, source.id, source.name, source.path)}
-													title="重设路径"
-													class="h-8 w-8 p-0"
-												>
-													<FolderOpenIcon class="h-4 w-4 text-orange-600" />
-												</Button>
+													<!-- 重设路径 -->
+													<Button
+														size="sm"
+														variant="ghost"
+														onclick={() =>
+															handleResetPath(
+																sourceConfig.type,
+																source.id,
+																source.name,
+																source.path
+															)}
+														title="重设路径"
+														class="h-8 w-8 p-0"
+													>
+														<FolderOpenIcon class="h-4 w-4 text-orange-600" />
+													</Button>
 
-												<!-- 扫描删除视频设置 -->
-												<Button
-													size="sm"
-													variant="ghost"
-													onclick={() =>
-														handleToggleScanDeleted(
-															sourceConfig.type,
-															source.id,
-															source.scan_deleted_videos
-														)}
-													title={source.scan_deleted_videos ? '禁用扫描已删除' : '启用扫描已删除'}
-													class="h-8 w-8 p-0"
-												>
-													<RotateCcwIcon
-														class="h-4 w-4 {source.scan_deleted_videos
-															? 'text-blue-600'
-															: 'text-gray-400'}"
-													/>
-												</Button>
+													<!-- 扫描删除视频设置 -->
+													<Button
+														size="sm"
+														variant="ghost"
+														onclick={() =>
+															handleToggleScanDeleted(
+																sourceConfig.type,
+																source.id,
+																source.scan_deleted_videos
+															)}
+														title={source.scan_deleted_videos ? '禁用扫描已删除' : '启用扫描已删除'}
+														class="h-8 w-8 p-0"
+													>
+														<RotateCcwIcon
+															class="h-4 w-4 {source.scan_deleted_videos
+																? 'text-blue-600'
+																: 'text-gray-400'}"
+														/>
+													</Button>
 
-												<!-- 删除 -->
-												<Button
-													size="sm"
-													variant="ghost"
-													onclick={() =>
-														handleDeleteSource(sourceConfig.type, source.id, source.name)}
-													title="删除"
-													class="h-8 w-8 p-0"
-												>
-													<TrashIcon class="text-destructive h-4 w-4" />
-												</Button>
-											</div>
+													<!-- 删除 -->
+													<Button
+														size="sm"
+														variant="ghost"
+														onclick={() =>
+															handleDeleteSource(sourceConfig.type, source.id, source.name)}
+														title="删除"
+														class="h-8 w-8 p-0"
+													>
+														<TrashIcon class="text-destructive h-4 w-4" />
+													</Button>
+												</div>
+											{/if}
 										</div>
 									{/each}
 								</div>
@@ -540,7 +689,13 @@
 	{/if}
 </div>
 
-<!-- 删除确认对话框 -->
+<BatchDeleteSourcesDialog
+	bind:isOpen={showBatchDeleteDialog}
+	sources={batchDeleteTargets}
+	on:complete={handleBatchDeleteComplete}
+/>
+
+<!-- 收藏夹ID修复 -->
 {#if repairFavoriteSource}
 	<RepairFavoriteDialog
 		bind:isOpen={showRepairFavoriteDialog}
