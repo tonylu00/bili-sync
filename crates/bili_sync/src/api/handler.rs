@@ -7592,15 +7592,8 @@ pub async fn get_user_favorites() -> Result<ApiResponse<Vec<crate::api::response
 
     match bili_client.get_user_favorite_folders(None).await {
         Ok(folders) => {
-            let response_folders: Vec<crate::api::response::UserFavoriteFolder> = folders
-                .into_iter()
-                .map(|folder| crate::api::response::UserFavoriteFolder {
-                    id: folder.id,
-                    fid: folder.fid,
-                    title: folder.title,
-                    media_count: folder.media_count,
-                })
-                .collect();
+            let response_folders: Vec<crate::api::response::UserFavoriteFolder> =
+                folders.into_iter().map(Into::into).collect();
 
             Ok(ApiResponse::ok(response_folders))
         }
@@ -11019,15 +11012,8 @@ pub async fn get_user_favorites_by_uid(
     // 获取指定UP主的收藏夹列表
     match client.get_user_favorite_folders(Some(uid)).await {
         Ok(folders) => {
-            let response_folders: Vec<crate::api::response::UserFavoriteFolder> = folders
-                .into_iter()
-                .map(|f| crate::api::response::UserFavoriteFolder {
-                    id: f.id,
-                    fid: f.fid,
-                    title: f.title,
-                    media_count: f.media_count,
-                })
-                .collect();
+            let response_folders: Vec<crate::api::response::UserFavoriteFolder> =
+                folders.into_iter().map(Into::into).collect();
 
             Ok(ApiResponse::ok(response_folders))
         }

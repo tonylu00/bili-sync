@@ -14,7 +14,7 @@ use tokio::time::sleep;
 use tokio_util::sync::CancellationToken;
 
 use crate::bilibili::credential::WbiImg;
-use crate::bilibili::{Credential, Validate};
+use crate::bilibili::{Credential, FavoriteFolder, Validate};
 use crate::config::RateLimit;
 
 #[derive(Debug, Clone)]
@@ -780,10 +780,7 @@ impl BiliClient {
     }
 
     /// 获取用户创建的收藏夹列表
-    pub async fn get_user_favorite_folders(
-        &self,
-        uid: Option<i64>,
-    ) -> Result<Vec<crate::api::UserFavoriteFolder>, anyhow::Error> {
+    pub async fn get_user_favorite_folders(&self, uid: Option<i64>) -> Result<Vec<FavoriteFolder>, anyhow::Error> {
         let uid = match uid {
             Some(uid) => uid,
             None => self.get_current_user_id()?,
@@ -810,8 +807,7 @@ impl BiliClient {
             return Ok(Vec::new());
         }
 
-        let folders: Vec<crate::api::UserFavoriteFolder> =
-            serde_json::from_value(list_value.clone()).context("解析收藏夹列表失败")?;
+        let folders: Vec<FavoriteFolder> = serde_json::from_value(list_value.clone()).context("解析收藏夹列表失败")?;
 
         Ok(folders)
     }

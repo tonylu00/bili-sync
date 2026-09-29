@@ -7,5 +7,3 @@ pub mod ws;
 
 mod error;
 pub mod wrapper;
-
-pub use response::UserFavoriteFolder;

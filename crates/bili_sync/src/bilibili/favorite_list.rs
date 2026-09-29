@@ -16,6 +16,15 @@ pub struct FavoriteListInfo {
     pub title: String,
 }
 
+/// Folder entries returned by Bilibili's created/list-all API.
+/// Its `id` is the media_id; the separate upstream `fid` is not usable as media_id.
+#[derive(Debug, serde::Deserialize)]
+pub struct FavoriteFolder {
+    pub id: i64,
+    pub title: String,
+    pub media_count: i32,
+}
+
 #[derive(Debug, serde::Deserialize)]
 pub struct Upper<T> {
     pub mid: T,

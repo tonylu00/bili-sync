@@ -493,16 +493,29 @@ pub struct SearchResponse {
 
 #[derive(Debug, Clone, Serialize, Deserialize, utoipa::ToSchema)]
 pub struct UserFavoriteFolder {
-    /// 收藏夹完整ID（推荐使用）
+    /// 收藏夹完整 media_id
     #[serde(serialize_with = "serialize_i64_as_string")]
     pub id: i64,
-    /// 收藏夹短ID（可能截断，不推荐直接使用）
+    /// 与 id 相同的完整 media_id，兼容读取 fid 的旧版前端
     #[serde(serialize_with = "serialize_i64_as_string")]
     pub fid: i64,
     /// 收藏夹标题
     pub title: String,
     /// 收藏夹内视频数量
     pub media_count: i32,
+}
+
+impl From<crate::bilibili::FavoriteFolder> for UserFavoriteFolder {
+    fn from(folder: crate::bilibili::FavoriteFolder) -> Self {
+        Self {
+            id: folder.id,
+            // Older pickers and batch-add clients use fid. Never expose the upstream
+            // short fid here: it can identify an unrelated, valid favorite folder.
+            fid: folder.id,
+            title: folder.title,
+            media_count: folder.media_count,
+        }
+    }
 }
 
 // 辅助函数：将 i64 序列化为字符串
@@ -902,4 +915,55 @@ pub struct TestRiskControlResponse {
     pub message: String,
     pub verification_url: Option<String>,
     pub instructions: Option<String>,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::UserFavoriteFolder;
+    use crate::api::wrapper::ApiResponse;
+    use crate::bilibili::FavoriteFolder;
+    use axum::response::IntoResponse;
+    use serde_json::{json, Value};
+
+    #[tokio::test]
+    async fn favorite_list_response_uses_media_ids_for_current_and_legacy_clients() {
+        // Observed created/list-all entries for 步月moon (UID 443891409).
+        let upstream = json!([
+            {"id": 3895942609_i64, "fid": 38959426, "title": "神父的自我修养5", "media_count": 902},
+            {"id": 3800171409_i64, "fid": 38001714, "title": "神父的自我修养4", "media_count": 1000},
+            {"id": 3569591309_i64, "fid": 35695913, "title": "神父的自我修养3", "media_count": 1000},
+            {"id": 3462577609_i64, "fid": 34625776, "title": "神父的自我修养2", "media_count": 1000},
+            {"id": 3325795709_i64, "fid": 33257957, "title": "神父的自我修养1", "media_count": 1000}
+        ]);
+        let folders: Vec<FavoriteFolder> = serde_json::from_value(upstream.clone()).unwrap();
+        let response =
+            ApiResponse::ok(folders.into_iter().map(UserFavoriteFolder::from).collect::<Vec<_>>()).into_response();
+        assert_eq!(response.status(), axum::http::StatusCode::OK);
+        let body = axum::body::to_bytes(response.into_body(), usize::MAX).await.unwrap();
+        let json: Value = serde_json::from_slice(&body).unwrap();
+        for (index, raw) in upstream.as_array().unwrap().iter().enumerate() {
+            let folder = &json["data"][index];
+            let media_id = raw["id"].as_i64().unwrap().to_string();
+            assert_eq!(folder["id"], media_id);
+            assert_eq!(folder["fid"], media_id);
+            assert_ne!(folder["fid"], raw["fid"].as_i64().unwrap().to_string());
+            assert_eq!(folder["title"], raw["title"]);
+            assert_eq!(folder["media_count"], raw["media_count"]);
+        }
+    }
+
+    #[test]
+    fn favorite_list_response_does_not_require_or_infer_a_short_id() {
+        let folder: FavoriteFolder = serde_json::from_value(json!({
+            "id": 9_007_199_254_740_993_i64, "title": "收藏夹", "media_count": 0
+        }))
+        .unwrap();
+        let json = serde_json::to_value(UserFavoriteFolder::from(folder)).unwrap();
+        assert_eq!(json["id"], "9007199254740993");
+        assert_eq!(json["fid"], "9007199254740993");
+        assert!(serde_json::from_value::<FavoriteFolder>(json!({
+            "fid": 38001714, "title": "收藏夹", "media_count": 0
+        }))
+        .is_err());
+    }
 }
