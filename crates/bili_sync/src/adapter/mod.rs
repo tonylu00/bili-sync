@@ -1,6 +1,6 @@
 pub mod bangumi;
 mod collection;
-mod favorite;
+pub(crate) mod favorite;
 mod submission;
 mod watch_later;
 
@@ -143,7 +143,7 @@ pub trait VideoSource {
 #[derive(Clone, Debug)]
 pub enum Args {
     Favorite {
-        fid: String,
+        source_id: i32,
     },
     Collection {
         collection_item: CollectionItem,
@@ -170,7 +170,7 @@ pub async fn video_source_from<'a>(
     Pin<Box<dyn Stream<Item = Result<VideoInfo>> + 'a + Send>>,
 )> {
     match args {
-        Args::Favorite { fid } => favorite_from(fid, path, bili_client, connection).await,
+        Args::Favorite { source_id } => favorite_from(*source_id, bili_client, connection).await,
         Args::Collection { collection_item } => collection_from(collection_item, path, bili_client, connection).await,
         Args::WatchLater => watch_later_from(path, bili_client, connection).await,
         Args::Submission { upper_id } => {

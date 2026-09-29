@@ -18,6 +18,7 @@ import type {
 	QrcodeGenerateResponse,
 	QrcodePollResponse,
 	QueueStatusResponse,
+	RepairFavoriteResponse,
 	ResetAllVideosResponse,
 	ResetVideoResponse,
 	ResetVideoSourcePathRequest,
@@ -454,6 +455,13 @@ class ApiClient {
 		return this.get<UserFavoriteFolder[]>('/user/favorites');
 	}
 
+	async repairFavoriteSource(id: number, expectedId: string, favorite: string) {
+		return this.put<RepairFavoriteResponse>(`/video-sources/favorite/${id}/repair`, {
+			expected_f_id: expectedId,
+			favorite
+		});
+	}
+
 	/**
 	 * 验证收藏夹ID并获取收藏夹信息
 	 * @param fid 收藏夹ID
@@ -888,6 +896,8 @@ export const api = {
 	 * 验证收藏夹ID
 	 */
 	validateFavorite: (fid: string) => apiClient.validateFavorite(fid),
+	repairFavoriteSource: (id: number, expectedId: string, favorite: string) =>
+		apiClient.repairFavoriteSource(id, expectedId, favorite),
 
 	/**
 	 * 获取指定UP主的收藏夹列表

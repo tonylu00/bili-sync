@@ -8,12 +8,17 @@ use crate::bilibili::{BiliClient, Validate, VideoInfo};
 pub struct FavoriteList<'a> {
     client: &'a BiliClient,
     fid: String,
+    api_base: String,
 }
 
 #[derive(Debug, serde::Deserialize)]
 pub struct FavoriteListInfo {
     pub id: i64,
     pub title: String,
+    #[serde(default)]
+    pub fid: Option<i64>,
+    #[serde(default)]
+    pub mid: Option<i64>,
 }
 
 /// Folder entries returned by Bilibili's created/list-all API.
@@ -33,13 +38,21 @@ pub struct Upper<T> {
 }
 impl<'a> FavoriteList<'a> {
     pub fn new(client: &'a BiliClient, fid: String) -> Self {
-        Self { client, fid }
+        Self::with_api_base(client, fid, "https://api.bilibili.com")
+    }
+
+    pub(crate) fn with_api_base(client: &'a BiliClient, fid: String, api_base: &str) -> Self {
+        Self {
+            client,
+            fid,
+            api_base: api_base.to_owned(),
+        }
     }
 
     pub async fn get_info(&self) -> Result<FavoriteListInfo> {
         let mut res = self
             .client
-            .request(reqwest::Method::GET, "https://api.bilibili.com/x/v3/fav/folder/info")
+            .request(reqwest::Method::GET, &format!("{}/x/v3/fav/folder/info", self.api_base))
             .await
             .query(&[("media_id", &self.fid)])
             .send()
@@ -53,7 +66,10 @@ impl<'a> FavoriteList<'a> {
 
     async fn get_videos(&self, page: u32) -> Result<Value> {
         self.client
-            .request(reqwest::Method::GET, "https://api.bilibili.com/x/v3/fav/resource/list")
+            .request(
+                reqwest::Method::GET,
+                &format!("{}/x/v3/fav/resource/list", self.api_base),
+            )
             .await
             .query(&[
                 ("media_id", self.fid.as_str()),

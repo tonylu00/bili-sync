@@ -3,18 +3,20 @@ use std::path::Path;
 use std::pin::Pin;
 
 use crate::utils::time_format::now_standard_string;
-use anyhow::{Context, Result};
+use anyhow::{ensure, Context, Result};
 use bili_sync_entity::*;
 use chrono::Utc;
 use futures::Stream;
 use sea_orm::entity::prelude::*;
-use sea_orm::sea_query::{OnConflict, SimpleExpr};
+use sea_orm::sea_query::SimpleExpr;
 use sea_orm::ActiveValue::Set;
 use sea_orm::{DatabaseConnection, Unchanged};
 
 use crate::adapter::{_ActiveModel, VideoSource, VideoSourceEnum};
 use crate::bilibili::{BiliClient, FavoriteList, VideoInfo};
 use crate::utils::keyword_filter::deserialize_keywords;
+
+pub(crate) static FAVORITE_SOURCE_LOCK: tokio::sync::RwLock<()> = tokio::sync::RwLock::const_new(());
 
 impl VideoSource for favorite::Model {
     fn filter_expr(&self) -> SimpleExpr {
@@ -202,40 +204,40 @@ pub async fn init_favorite_sources(
 }
 
 pub(super) async fn favorite_from<'a>(
-    fid: &str,
-    path: &Path,
+    source_id: i32,
     bili_client: &'a BiliClient,
     connection: &DatabaseConnection,
 ) -> Result<(
     VideoSourceEnum,
     Pin<Box<dyn Stream<Item = Result<VideoInfo>> + 'a + Send>>,
 )> {
-    let favorite = FavoriteList::new(bili_client, fid.to_owned());
+    favorite_from_with_api_base(source_id, bili_client, connection, "https://api.bilibili.com").await
+}
+
+pub(crate) async fn favorite_from_with_api_base<'a>(
+    source_id: i32,
+    bili_client: &'a BiliClient,
+    connection: &DatabaseConnection,
+    api_base: &str,
+) -> Result<(
+    VideoSourceEnum,
+    Pin<Box<dyn Stream<Item = Result<VideoInfo>> + 'a + Send>>,
+)> {
+    // Notification/error-context callers also refresh metadata outside a full scan.
+    let _guard = FAVORITE_SOURCE_LOCK.read().await;
+    let source = favorite::Entity::find_by_id(source_id)
+        .one(connection)
+        .await?
+        .context("favorite not found")?;
+    let favorite = FavoriteList::with_api_base(bili_client, source.f_id.to_string(), api_base);
     let favorite_info = favorite.get_info().await?;
-    favorite::Entity::insert(favorite::ActiveModel {
-        f_id: Set(favorite_info.id),
-        name: Set(favorite_info.title.clone()),
-        path: Set(path.to_string_lossy().to_string()),
-        created_at: Set(now_standard_string()),
-        latest_row_at: Set("1970-01-01 00:00:00".to_string()),
-        enabled: Set(true),
-        scan_deleted_videos: Set(false),
+    ensure!(favorite_info.id == source.f_id, "收藏夹返回的ID与保存的ID不一致");
+    let source = favorite::ActiveModel {
+        id: Unchanged(source.id),
+        name: Set(favorite_info.title),
         ..Default::default()
-    })
-    .on_conflict(
-        OnConflict::column(favorite::Column::FId)
-            .update_columns([favorite::Column::Name, favorite::Column::Path])
-            .to_owned(),
-    )
-    .exec(connection)
+    }
+    .update(connection)
     .await?;
-    Ok((
-        favorite::Entity::find()
-            .filter(favorite::Column::FId.eq(favorite_info.id))
-            .one(connection)
-            .await?
-            .context("favorite not found")?
-            .into(),
-        Box::pin(favorite.into_video_stream()),
-    ))
+    Ok((source.into(), Box::pin(favorite.into_video_stream())))
 }

@@ -154,6 +154,13 @@ pub async fn process_video_source(
     downloader: &UnifiedDownloader,
     token: CancellationToken,
 ) -> Result<(usize, Vec<NewVideoInfo>)> {
+    // A repair must not switch a favorite's identity during an active scan/download.
+    // Queued favorite jobs carry the local row ID and load the current media ID below.
+    let _favorite_guard = if matches!(args, Args::Favorite { .. }) {
+        Some(crate::adapter::favorite::FAVORITE_SOURCE_LOCK.read().await)
+    } else {
+        None
+    };
     // 记录当前处理的参数和路径
     if let Args::Bangumi {
         season_id,

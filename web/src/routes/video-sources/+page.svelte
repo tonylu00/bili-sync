@@ -17,6 +17,7 @@
 	import DeleteVideoSourceDialog from '$lib/components/delete-video-source-dialog.svelte';
 	import ResetPathDialog from '$lib/components/reset-path-dialog.svelte';
 	import EditVideoFiltersDialog from '$lib/components/edit-video-filters-dialog.svelte';
+	import RepairFavoriteDialog from '$lib/components/repair-favorite-dialog.svelte';
 
 	// 图标导入
 	import PlusIcon from '@lucide/svelte/icons/plus';
@@ -30,6 +31,8 @@
 	import { goto } from '$app/navigation';
 
 	let loading = false;
+	let showRepairFavoriteDialog = false;
+	let repairFavoriteSource: VideoSource | null = null;
 
 	// 响应式相关
 	let innerWidth: number;
@@ -394,6 +397,15 @@
 												<div class="text-muted-foreground mt-1 text-xs">
 													{#if sourceConfig.type === 'favorite' && source.f_id}
 														收藏夹ID: {source.f_id}
+														<Button
+															variant="link"
+															size="sm"
+															class="ml-2 h-auto p-0 text-xs"
+															onclick={() => {
+																repairFavoriteSource = source;
+																showRepairFavoriteDialog = true;
+															}}>修复ID</Button
+														>
 													{:else if sourceConfig.type === 'collection' && source.s_id}
 														合集ID: {source.s_id}
 														{#if source.m_id}
@@ -529,6 +541,16 @@
 </div>
 
 <!-- 删除确认对话框 -->
+{#if repairFavoriteSource}
+	<RepairFavoriteDialog
+		bind:isOpen={showRepairFavoriteDialog}
+		sourceId={repairFavoriteSource.id}
+		sourceName={repairFavoriteSource.name}
+		currentId={String(repairFavoriteSource.f_id)}
+		on:repaired={loadVideoSources}
+	/>
+{/if}
+
 <DeleteVideoSourceDialog
 	bind:isOpen={showDeleteDialog}
 	sourceName={deleteSourceInfo.name}

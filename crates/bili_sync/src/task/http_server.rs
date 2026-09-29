@@ -13,6 +13,7 @@ use utoipa::OpenApi;
 use utoipa_swagger_ui::{Config, SwaggerUi};
 
 use crate::api::auth;
+use crate::api::favorite_repair::repair_favorite_source;
 use crate::api::handler::{
     add_video_source,
     batch_update_config_internal,
@@ -144,6 +145,7 @@ pub async fn http_server(_database_connection: Arc<DatabaseConnection>) -> Resul
     let app = Router::new()
         .route("/api/video-sources", get(get_video_sources))
         .route("/api/video-sources", post(add_video_source))
+        .route("/api/video-sources/favorite/{id}/repair", put(repair_favorite_source))
         .route("/api/video-sources/bangumi/list", get(get_bangumi_sources_for_merge))
         .route(
             "/api/video-sources/{source_type}/{id}/enabled",

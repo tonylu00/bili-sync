@@ -64,10 +64,9 @@ async fn load_video_sources_from_db(
         .await?;
 
     for favorite in favorites {
-        let fid = favorite.f_id.to_string();
         video_sources.push(VideoSourceWithId {
             id: favorite.id,
-            args: Args::Favorite { fid },
+            args: Args::Favorite { source_id: favorite.id },
             path: PathBuf::from(favorite.path),
             source_type: SourceType::Favorite,
         });

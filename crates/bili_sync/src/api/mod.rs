@@ -6,4 +6,5 @@ pub mod video_stream;
 pub mod ws;
 
 mod error;
+pub mod favorite_repair;
 pub mod wrapper;

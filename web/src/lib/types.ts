@@ -476,6 +476,11 @@ export interface UserFavoriteFolder {
 	created?: number;
 }
 
+export interface RepairFavoriteResponse {
+	success: boolean;
+	message: string;
+}
+
 // 用户合集/系列项类型
 export interface UserCollectionItem {
 	collection_type: string;

@@ -13,7 +13,7 @@ pub use credential::Credential;
 pub use danmaku::DanmakuOption;
 pub use error::BiliError;
 use favorite_list::Upper;
-pub use favorite_list::{FavoriteFolder, FavoriteList};
+pub use favorite_list::{FavoriteFolder, FavoriteList, FavoriteListInfo};
 use once_cell::sync::Lazy;
 pub use risk_control::{CaptchaInfo, CaptchaResult, GeetestInfo, RiskControl};
 pub use submission::Submission;
