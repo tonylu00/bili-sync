@@ -465,7 +465,9 @@ export interface UserInfo {
 
 // 用户收藏夹类型
 export interface UserFavoriteFolder {
+	/** Full media_id used by Bilibili's folder and video APIs. */
 	id: number | string;
+	/** Short folder number; using it as media_id can select another folder. */
 	fid?: number | string;
 	name?: string;
 	title?: string;

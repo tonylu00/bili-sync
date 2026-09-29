@@ -810,19 +810,17 @@
 	// 选择搜索到的收藏夹
 	function selectSearchedFavorite(favorite: UserFavoriteFolder) {
 		// 检查收藏夹是否已存在
-		if (isFavoriteExists(favorite.fid)) {
+		if (isFavoriteExists(favorite.id)) {
 			toast.error('收藏夹已存在', {
 				description: `该收藏夹「${favorite.title || ''}」已经添加过了`
 			});
 			return;
 		}
-		if (favorite.fid === undefined) return;
-
-		sourceId = favorite.fid.toString();
+		sourceId = favorite.id.toString();
 		name = favorite.title || '';
 		favoriteValidationResult = {
 			valid: true,
-			fid: Number(favorite.fid),
+			fid: Number(favorite.id),
 			title: favorite.title || '',
 			message: '收藏夹验证成功'
 		};
@@ -1823,9 +1821,9 @@
 				break;
 			case 'searched-favorite':
 				searchedUserFavorites.forEach((favorite) => {
-					const key = `searched-favorite_${favorite.fid}`;
+					const key = `searched-favorite_${favorite.id}`;
 					// 跳过已添加的收藏夹
-					const isDisabled = existingFavoriteIds.has(Number(favorite.fid));
+					const isDisabled = existingFavoriteIds.has(Number(favorite.id));
 					if (!batchSelectedItems.has(key) && !isDisabled) {
 						toggleBatchSelection(key, favorite, 'favorite');
 					}
@@ -2028,11 +2026,7 @@
 			case 'following':
 				return (item.data as UserFollowing).mid.toString();
 			case 'favorite':
-				// 处理两种收藏夹数据结构：用户自己的收藏夹使用id，搜索到的收藏夹使用fid
-				return (
-					((item.data as UserFavoriteFolder).fid || (item.data as UserFavoriteFolder).id) ??
-					''
-				).toString();
+				return (item.data as UserFavoriteFolder).id.toString();
 			case 'collection':
 				return (item.data as UserCollectionItem | UserCollectionInfo).sid.toString();
 			case 'bangumi':
@@ -3244,9 +3238,9 @@
 											? ''
 											: 'grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));'}
 									>
-										{#each filteredSearchedUserFavorites as favorite (favorite.fid)}
-											{@const itemKey = `searched-favorite_${favorite.fid}`}
-											{@const isDisabled = existingFavoriteIds.has(Number(favorite.fid))}
+										{#each filteredSearchedUserFavorites as favorite (favorite.id)}
+											{@const itemKey = `searched-favorite_${favorite.id}`}
+											{@const isDisabled = existingFavoriteIds.has(Number(favorite.id))}
 											<button
 												onclick={() => {
 													if (batchMode) {
@@ -3285,7 +3279,7 @@
 													<div class="min-w-0 flex-1">
 														<div class="mb-1 flex items-center gap-2">
 															<h4 class="truncate text-sm font-medium">{favorite.title}</h4>
-															{#if existingFavoriteIds.has(Number(favorite.fid))}
+															{#if existingFavoriteIds.has(Number(favorite.id))}
 																<span
 																	class="flex-shrink-0 rounded bg-gray-100 px-2 py-0.5 text-xs text-gray-700 dark:bg-gray-800 dark:text-gray-300"
 																>
@@ -3294,7 +3288,7 @@
 															{/if}
 														</div>
 														<p class="text-muted-foreground mb-1 text-xs">
-															收藏夹ID: {favorite.fid}
+															收藏夹ID: {favorite.id}
 														</p>
 														<p class="text-muted-foreground text-xs">
 															共 {favorite.media_count} 个视频
