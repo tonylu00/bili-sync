@@ -64,3 +64,24 @@ impl BiliError {
         }
     }
 }
+
+/// A successful source metadata response explicitly reports no accessible source.
+#[derive(Error, Debug)]
+#[error("source is removed or unavailable")]
+pub struct SourceUnavailable;
+
+pub(crate) fn is_unavailable_name(name: &str) -> bool {
+    matches!(
+        name.trim(),
+        "已失效收藏夹"
+            | "收藏夹已失效"
+            | "收藏夹已删除"
+            | "该收藏夹已失效"
+            | "合集已失效"
+            | "已失效合集"
+            | "合集已删除"
+            | "该合集已失效"
+            | "列表已失效"
+            | "列表已删除"
+    )
+}

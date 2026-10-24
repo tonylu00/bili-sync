@@ -35,6 +35,11 @@ mod m20250914_000001_fix_video_unique_index_for_bangumi;
 mod m20250921_000001_add_collection_cover;
 mod m20251106_000001_add_video_filters;
 mod m20251115_000001_add_keyword_filters;
+mod m20261024_000001_add_favorite_owner;
+mod m20261024_000002_source_name_history;
+mod m20261024_000003_uploader_names;
+
+mod m20261024_000004_library_management;
 
 pub struct Migrator;
 
@@ -77,6 +82,10 @@ impl MigratorTrait for Migrator {
             Box::new(m20250921_000001_add_collection_cover::Migration),
             Box::new(m20251106_000001_add_video_filters::Migration),
             Box::new(m20251115_000001_add_keyword_filters::Migration),
+            Box::new(m20261024_000001_add_favorite_owner::Migration),
+            Box::new(m20261024_000002_source_name_history::Migration),
+            Box::new(m20261024_000003_uploader_names::Migration),
+            Box::new(m20261024_000004_library_management::Migration),
         ]
     }
 }

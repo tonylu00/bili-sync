@@ -140,7 +140,7 @@
 
 	// 根据模式确定显示的标题和副标题
 	$: displayTitle = customTitle || getEnhancedVideoTitle(video);
-	$: displaySubtitle = customSubtitle || video.upper_name;
+	$: displaySubtitle = customSubtitle || video.creators?.map((author) => author.name).join(" · ") || video.upper_name;
 	$: showUserIcon = mode === 'default';
 	$: cardClasses =
 		mode === 'default'

@@ -1,3 +1,4 @@
+use crate::utils::creators::{self, Creator};
 use crate::utils::time_format::parse_time_string;
 use anyhow::Result;
 use bili_sync_entity::*;
@@ -19,6 +20,7 @@ pub enum NFO<'a> {
 }
 
 pub struct Movie<'a> {
+    pub creators: Vec<Creator>,
     pub name: &'a str,
     pub original_title: &'a str,
     pub intro: &'a str,
@@ -49,6 +51,7 @@ pub struct Movie<'a> {
 }
 
 pub struct TVShow<'a> {
+    pub creators: Vec<Creator>,
     pub name: &'a str,
     pub original_title: &'a str,
     pub intro: &'a str,
@@ -82,12 +85,14 @@ pub struct TVShow<'a> {
 }
 
 pub struct Upper {
+    #[allow(dead_code)]
     pub upper_id: String,
     pub upper_name: String,
     pub pubtime: NaiveDateTime,
 }
 
 pub struct Episode<'a> {
+    pub creators: Vec<Creator>,
     pub name: &'a str,
     pub original_title: &'a str,
     #[allow(dead_code)]
@@ -111,6 +116,7 @@ pub struct Episode<'a> {
 }
 
 pub struct Season<'a> {
+    pub creators: Vec<Creator>,
     pub name: &'a str,
     pub original_title: &'a str,
     pub intro: &'a str,
@@ -144,6 +150,46 @@ pub struct Season<'a> {
 }
 
 impl NFO<'_> {
+    async fn write_creators(
+        writer: &mut Writer<&mut BufWriter<&mut Vec<u8>>>,
+        authors: &[Creator],
+        config: &NFOConfig,
+        primary_thumb: Option<&str>,
+    ) -> Result<(), Error> {
+        for (index, author) in authors.iter().enumerate() {
+            let Some((name, _)) = Self::get_actor_info(1, &author.name, config) else {
+                continue;
+            };
+            writer
+                .create_element("actor")
+                .write_inner_content_async::<_, _, Error>(|writer| async move {
+                    writer
+                        .create_element("name")
+                        .write_text_content_async(BytesText::new(&name))
+                        .await?;
+                    writer
+                        .create_element("role")
+                        .write_text_content_async(BytesText::new(&author.role))
+                        .await?;
+                    if author.primary {
+                        if let Some(thumb) = primary_thumb.filter(|s| !s.is_empty()) {
+                            writer
+                                .create_element("thumb")
+                                .write_text_content_async(BytesText::new(thumb))
+                                .await?;
+                        }
+                    }
+                    writer
+                        .create_element("order")
+                        .write_text_content_async(BytesText::new(&(index + 1).to_string()))
+                        .await?;
+                    Ok(writer)
+                })
+                .await?;
+        }
+        Ok(())
+    }
+
     pub async fn generate_nfo(self) -> Result<String> {
         let config = crate::config::reload_config();
         let mut buffer = r#"<?xml version="1.0" encoding="utf-8" standalone="yes"?>
@@ -357,7 +403,8 @@ impl NFO<'_> {
                 }
 
                 // 演员信息（优先使用真实演员信息，备选UP主）
-                if config.include_actor_info {
+                Self::write_creators(writer, &movie.creators, config, movie.upper_face_url).await?;
+                if config.include_actor_info && (movie.creators.is_empty() || movie.actors_info.is_some()) {
                     // 首先尝试使用真实演员信息
                     if let Some(ref actors_str) = movie.actors_info {
                         let actors = Self::parse_actors_string(actors_str);
@@ -383,18 +430,7 @@ impl NFO<'_> {
                         }
                     } else {
                         // 备选：使用UP主信息作为创作者
-                        let trimmed_upper = movie.upper_name.trim();
-                        let actor_info = if movie.upper_id > 0 && !trimmed_upper.is_empty() {
-                            Some((movie.upper_id.to_string(), trimmed_upper.to_string()))
-                        } else {
-                            Self::get_actor_info(movie.upper_id, movie.upper_name, config).map(|(name, role)| {
-                                if movie.upper_id <= 0 && !name.trim().is_empty() {
-                                    (name.clone(), name)
-                                } else {
-                                    (name, role)
-                                }
-                            })
-                        };
+                        let actor_info = Self::get_actor_info(movie.upper_id, movie.upper_name, config);
 
                         if let Some((actor_name, role_name)) = actor_info {
                             writer
@@ -703,7 +739,8 @@ impl NFO<'_> {
                 }
 
                 // 演员信息（优先使用真实演员信息，备选UP主）
-                if config.include_actor_info {
+                Self::write_creators(writer, &tvshow.creators, config, tvshow.upper_face_url).await?;
+                if config.include_actor_info && (tvshow.creators.is_empty() || tvshow.actors_info.is_some()) {
                     // 首先尝试使用真实演员信息
                     if let Some(ref actors_str) = tvshow.actors_info {
                         let actors = Self::parse_actors_string(actors_str);
@@ -729,18 +766,7 @@ impl NFO<'_> {
                         }
                     } else {
                         // 备选：使用UP主信息作为创作者
-                        let trimmed_upper = tvshow.upper_name.trim();
-                        let actor_info = if tvshow.upper_id > 0 && !trimmed_upper.is_empty() {
-                            Some((tvshow.upper_id.to_string(), trimmed_upper.to_string()))
-                        } else {
-                            Self::get_actor_info(tvshow.upper_id, tvshow.upper_name, config).map(|(name, role)| {
-                                if tvshow.upper_id <= 0 && !name.trim().is_empty() {
-                                    (name.clone(), name)
-                                } else {
-                                    (name, role)
-                                }
-                            })
-                        };
+                        let actor_info = Self::get_actor_info(tvshow.upper_id, tvshow.upper_name, config);
 
                         if let Some((actor_name, role_name)) = actor_info {
                             writer
@@ -823,8 +849,6 @@ impl NFO<'_> {
     }
 
     async fn write_upper_nfo(mut writer: Writer<&mut BufWriter<&mut Vec<u8>>>, upper: Upper) -> Result<()> {
-        // upper_name is currently unused but retained for potential future metadata enrichment
-        let _ = &upper.upper_name;
         writer
             .create_element("person")
             .write_inner_content_async::<_, _, Error>(|writer| async move {
@@ -840,11 +864,11 @@ impl NFO<'_> {
                     .await?;
                 writer
                     .create_element("title")
-                    .write_text_content_async(BytesText::new(&upper.upper_id))
+                    .write_text_content_async(BytesText::new(&upper.upper_name))
                     .await?;
                 writer
                     .create_element("sorttitle")
-                    .write_text_content_async(BytesText::new(&upper.upper_id))
+                    .write_text_content_async(BytesText::new(&upper.upper_name))
                     .await?;
                 Ok(writer)
             })
@@ -860,6 +884,7 @@ impl NFO<'_> {
         writer
             .create_element("episodedetails")
             .write_inner_content_async::<_, _, Error>(|writer| async move {
+                Self::write_creators(writer, &episode.creators, config, None).await?;
                 // 标题信息
                 writer
                     .create_element("title")
@@ -1247,7 +1272,8 @@ impl NFO<'_> {
                 }
 
                 // 演员信息（优先使用真实演员信息，备选UP主）
-                if config.include_actor_info {
+                Self::write_creators(writer, &season.creators, config, season.upper_face_url).await?;
+                if config.include_actor_info && (season.creators.is_empty() || season.actors_info.is_some()) {
                     // 首先尝试使用真实演员信息
                     if let Some(ref actors_str) = season.actors_info {
                         let actors = Self::parse_actors_string(actors_str);
@@ -1636,6 +1662,7 @@ impl<'a> From<&'a video::Model> for Movie<'a> {
             bvid: &video.bvid,
             upper_id: video.upper_id,
             upper_name: &video.upper_name,
+            creators: creators::from_video(video),
             aired: aired_time,
             premiered: aired_time,
             tags: video
@@ -1736,6 +1763,7 @@ impl<'a> From<&'a video::Model> for TVShow<'a> {
             bvid: &video.bvid,
             upper_id: video.upper_id,
             upper_name: &video.upper_name,
+            creators: creators::from_video(video),
             aired: aired_time,
             premiered: aired_time,
             tags: video
@@ -1899,6 +1927,7 @@ impl<'a> TVShow<'a> {
             bvid: &video.bvid,
             upper_id: video.upper_id,
             upper_name: &video.upper_name,
+            creators: creators::from_video(video),
             aired: aired_time,
             premiered: aired_time,
             tags: genres,
@@ -1954,6 +1983,7 @@ impl<'a> From<&'a page::Model> for Episode<'a> {
     fn from(page: &'a page::Model) -> Self {
         Self {
             name: &page.name,
+            creators: Vec::new(),
             original_title: &page.name,
             pid: page.pid.to_string(),
             plot: None,                                // 分页没有单独简介
@@ -1993,6 +2023,7 @@ impl<'a> Episode<'a> {
 
         Self {
             name: &page.name,
+            creators: creators::from_video(video),
             original_title: &page.name,
             pid: page.pid.to_string(),
             plot: Some(&video.intro),                                 // 使用视频简介
@@ -2082,6 +2113,7 @@ impl<'a> From<&'a video::Model> for Season<'a> {
             bvid: &video.bvid,
             upper_id: video.upper_id,
             upper_name: &video.upper_name,
+            creators: creators::from_video(video),
             aired: aired_time,
             premiered: aired_time,
             tags: video
@@ -2168,6 +2200,7 @@ impl<'a> Season<'a> {
             bvid: &video.bvid,
             upper_id: video.upper_id,
             upper_name: &video.upper_name,
+            creators: creators::from_video(video),
             aired: aired_time,
             premiered: aired_time,
             tags: genres,
@@ -2240,8 +2273,8 @@ mod tests {
         assert!(generated_movie.contains(r#"<uniqueid type="bilibili" default="true">BV1nWcSeeEkV</uniqueid>"#));
         assert!(generated_movie.contains("<country>中国</country>"));
         assert!(generated_movie.contains("<studio>哔哩哔哩</studio>"));
-        assert!(generated_movie.contains("<name>1</name>")); // upper_id=1
-        assert!(generated_movie.contains("<role>upper_name</role>"));
+        assert!(generated_movie.contains("<name>upper_name</name>")); // upper_id=1
+        assert!(generated_movie.contains("<role>UP主</role>"));
         assert!(generated_movie.contains("<thumb>https://example.com/cover.jpg</thumb>"));
 
         let generated_tvshow = NFO::TVShow((&video).into()).generate_nfo().await.unwrap();
@@ -2253,8 +2286,8 @@ mod tests {
         assert!(generated_tvshow.contains("<totalseasons>1</totalseasons>"));
         assert!(generated_tvshow.contains("<country>中国</country>"));
         assert!(generated_tvshow.contains("<studio>哔哩哔哩</studio>"));
-        assert!(generated_tvshow.contains("<name>1</name>")); // upper_id=1
-        assert!(generated_tvshow.contains("<role>upper_name</role>"));
+        assert!(generated_tvshow.contains("<name>upper_name</name>")); // upper_id=1
+        assert!(generated_tvshow.contains("<role>UP主</role>"));
         assert!(generated_tvshow.contains("<thumb>https://example.com/cover.jpg</thumb>"));
 
         assert_eq!(
@@ -2265,8 +2298,8 @@ mod tests {
     <outline/>
     <lockdata>false</lockdata>
     <dateadded>2033-03-03 03:03:03</dateadded>
-    <title>1</title>
-    <sorttitle>1</sorttitle>
+    <title>upper_name</title>
+    <sorttitle>upper_name</sorttitle>
 </person>"#,
         );
 
@@ -2939,8 +2972,8 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_nfo_actor_info_with_uid_and_role() {
-        // 测试NFO生成中使用UID作为name，UP主名称作为role
+    async fn test_nfo_actor_names_do_not_expose_uids() {
+        // Creator UIDs are database identities, never NFO display names.
         let video = video::Model {
             intro: "测试视频介绍".to_string(),
             name: "测试视频".to_string(),
@@ -2962,10 +2995,11 @@ mod tests {
 
         let movie_nfo = NFO::Movie((&video).into()).generate_nfo().await.unwrap();
 
-        // 验证使用UID作为name，UP主名称作为role
+        // Names and roles remain separate.
         assert!(movie_nfo.contains("<actor>"));
-        assert!(movie_nfo.contains("<name>123456789</name>")); // UID作为name
-        assert!(movie_nfo.contains("<role>知名UP主</role>")); // UP主名称作为role
+        assert!(!movie_nfo.contains("<name>123456789</name>")); // UID stays in the database
+        assert!(movie_nfo.contains("<name>知名UP主</name>"));
+        assert!(movie_nfo.contains("<role>UP主</role>"));
         assert!(movie_nfo.contains("<order>1</order>"));
 
         // 测试UID无效的情况
@@ -2979,8 +3013,43 @@ mod tests {
 
         // 验证无效UID时，UP主名称同时作为name和role
         assert!(movie_nfo_no_uid.contains("<name>另一个UP主</name>"));
-        assert!(movie_nfo_no_uid.contains("<role>另一个UP主</role>"));
+        assert!(movie_nfo_no_uid.contains("<role>UP主</role>"));
 
         println!("NFO演员信息（UID和角色）测试通过");
+    }
+    #[tokio::test]
+    async fn coauthors_are_separate_in_every_video_nfo_without_uids() {
+        let video = video::Model {
+            upper_id: 12345678,
+            upper_name: "Main & Partner".into(),
+            name: "Video".into(),
+            bvid: "BV1nWcSeeEkV".into(),
+            staff_info: Some(serde_json::json!([
+                {"mid":12345678, "name":"Main & Partner"},
+                {"mid":87654321, "name":"Collaborator", "title":"配音"}
+            ])),
+            ..Default::default()
+        };
+        let page = page::Model {
+            name: "Episode".into(),
+            ..Default::default()
+        };
+        for nfo in [
+            NFO::Movie((&video).into()),
+            NFO::TVShow((&video).into()),
+            NFO::Season((&video).into()),
+            NFO::Episode(Episode::from_video_and_page(&video, &page)),
+        ] {
+            let xml = nfo.generate_nfo().await.unwrap();
+            assert_eq!(xml.matches("<actor>").count(), 2, "{xml}");
+            assert!(xml.contains("<name>Main &amp; Partner</name>"));
+            assert!(xml.contains("<name>Collaborator</name>"));
+            assert!(xml.contains("<role>配音</role>"));
+            assert!(!xml.contains("12345678"));
+            assert!(!xml.contains("87654321"));
+        }
+        let xml = NFO::Upper((&video).into()).generate_nfo().await.unwrap();
+        assert!(xml.contains("<title>Main &amp; Partner</title>"));
+        assert!(!xml.contains("12345678"));
     }
 }

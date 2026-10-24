@@ -538,6 +538,7 @@
 												<div class="text-muted-foreground mt-1 text-xs">
 													{#if sourceConfig.type === 'favorite' && source.f_id}
 														收藏夹ID: {source.f_id}
+														{#if source.owner_mid} · 创建者UID: {source.owner_mid}{/if}
 														<Button
 															variant="link"
 															disabled={batchMode || submittedKeys.has(selectionKey)}
@@ -702,6 +703,7 @@
 		sourceId={repairFavoriteSource.id}
 		sourceName={repairFavoriteSource.name}
 		currentId={String(repairFavoriteSource.f_id)}
+		currentOwner={repairFavoriteSource.owner_mid || ''}
 		on:repaired={loadVideoSources}
 	/>
 {/if}

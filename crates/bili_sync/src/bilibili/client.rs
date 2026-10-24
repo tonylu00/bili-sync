@@ -315,7 +315,7 @@ impl BiliClient {
     }
 
     /// 获取当前用户ID的辅助函数
-    fn get_current_user_id(&self) -> Result<i64, anyhow::Error> {
+    pub(crate) fn get_current_user_id(&self) -> Result<i64, anyhow::Error> {
         let config = crate::config::reload_config();
         let credential = config.credential.load();
         match credential.as_ref() {
@@ -1086,10 +1086,12 @@ impl BiliClient {
 
     /// 获取关注的UP主列表
     pub async fn get_user_followings(&self) -> Result<Vec<UserFollowingInfo>, anyhow::Error> {
-        let uid = self.get_current_user_id()?;
+        self.get_user_followings_at(self.get_current_user_id()?, "https://api.bilibili.com/x/relation/followings").await
+    }
 
-        let url = "https://api.bilibili.com/x/relation/followings";
+    async fn get_user_followings_at(&self, uid: i64, url: &str) -> Result<Vec<UserFollowingInfo>> {
         let mut all_followings = Vec::new();
+        let mut expected_total = None;
         let mut page = 1;
         let page_size = 50; // bilibili API限制最大为50
 
@@ -1109,9 +1111,14 @@ impl BiliClient {
                 .await?
                 .validate()?;
 
-            let list = response["data"]["list"]
-                .as_array()
-                .ok_or_else(|| anyhow!("响应格式错误：缺少list字段"))?;
+            let total = response["data"]["total"].as_u64().context("关注列表缺少总数，保留原备份")?;
+            anyhow::ensure!(expected_total.is_none_or(|previous| previous == total), "关注列表在刷新期间变更，请重试");
+            expected_total = Some(total);
+            let list: &[serde_json::Value] = match response["data"]["list"].as_array() {
+                Some(list) => list,
+                None if total == 0 && response["data"]["list"].is_null() => &[],
+                None => return Err(anyhow!("响应格式错误：缺少list字段")),
+            };
 
             // 如果当前页没有数据，说明已经获取完毕
             if list.is_empty() {
@@ -1141,6 +1148,7 @@ impl BiliClient {
                 })
                 .collect();
 
+            anyhow::ensure!(current_page_followings.len() == list.len(), "关注列表包含无法解析的记录，保留原备份");
             all_followings.extend(current_page_followings);
 
             // 如果当前页数据不足50个，说明是最后一页
@@ -1148,12 +1156,17 @@ impl BiliClient {
                 break;
             }
 
+            if expected_total.is_some_and(|total| all_followings.len() as u64 >= total) { break; }
             page += 1;
+            anyhow::ensure!(page <= 1000, "关注列表分页异常");
 
             // 添加延迟以避免请求过于频繁
             tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
         }
 
+        let unique: std::collections::HashSet<_> = all_followings.iter().map(|f| f.mid).collect();
+        anyhow::ensure!(unique.len() == all_followings.len(), "关注列表分页包含重复记录，请重试");
+        anyhow::ensure!(expected_total.is_none_or(|total| total == unique.len() as u64), "关注列表不完整，保留原备份，请重试");
         Ok(all_followings)
     }
 
@@ -1196,6 +1209,7 @@ impl BiliClient {
                 if let Some(item_obj) = item.as_object() {
                     all_collections.push(crate::api::response::UserCollectionInfo {
                         sid: item_obj["id"].as_i64().unwrap_or(0).to_string(),
+                        original_fid: item_obj.get("fid").and_then(Value::as_i64).map(|id| id.to_string()),
                         name: item_obj["title"].as_str().unwrap_or("").to_string(),
                         cover: item_obj.get("cover").and_then(|v| v.as_str()).unwrap_or("").to_string(),
                         description: item_obj
@@ -1585,4 +1599,36 @@ mod tests {
         let error = client.public_get("http://127.0.0.1:1", token).await.unwrap_err();
         assert!(error.to_string().contains("cancelled"));
     }
+    #[tokio::test]
+    async fn following_snapshot_rejects_partial_or_malformed_results() {
+        use crate::bilibili::test_support::mock_api;
+        for data in [
+            serde_json::json!({"total":2,"list":[{"mid":11,"uname":"One","face":""}]}),
+            serde_json::json!({"total":1,"list":[{"mid":11,"face":""}]}),
+            serde_json::json!({"total":1,"list":null}),
+            serde_json::json!({"list":[]}),
+        ] {
+            let (url, server) = mock_api(vec![(200, serde_json::json!({"code":0,"message":"0","data":data}).to_string())]).await;
+            assert!(BiliClient::new(String::new()).get_user_followings_at(1, &url).await.is_err());
+            server.await.unwrap();
+        }
+    }
+
+    #[tokio::test]
+    async fn following_snapshot_accepts_empty_and_paginates_complete_lists() {
+        use crate::bilibili::test_support::mock_api;
+        let (url, server) = mock_api(vec![(200, serde_json::json!({"code":0,"message":"0","data":{"total":0,"list":null}}).to_string())]).await;
+        assert!(BiliClient::new(String::new()).get_user_followings_at(1, &url).await.unwrap().is_empty());
+        server.await.unwrap();
+        let first: Vec<_> = (1..=50).map(|mid| serde_json::json!({"mid":mid,"uname":"Name","face":""})).collect();
+        let (url, server) = mock_api(vec![
+            (200, serde_json::json!({"code":0,"message":"0","data":{"total":51,"list":first}}).to_string()),
+            (200, serde_json::json!({"code":0,"message":"0","data":{"total":51,"list":[{"mid":51,"uname":"Last","face":""}]}}).to_string()),
+        ]).await;
+        let result = BiliClient::new(String::new()).get_user_followings_at(1, &url).await.unwrap();
+        assert_eq!(result.len(), 51);
+        let requests = server.await.unwrap();
+        assert!(requests[1].contains("pn=2"));
+    }
+
 }

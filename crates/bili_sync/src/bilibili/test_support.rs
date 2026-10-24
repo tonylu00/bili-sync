@@ -1,7 +1,7 @@
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
 /// Serve deterministic upstream responses and capture the actual HTTP requests.
-pub(super) async fn mock_api(responses: Vec<(u16, String)>) -> (String, tokio::task::JoinHandle<Vec<String>>) {
+pub(crate) async fn mock_api(responses: Vec<(u16, String)>) -> (String, tokio::task::JoinHandle<Vec<String>>) {
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let base = format!("http://{}", listener.local_addr().unwrap());
     let task = tokio::spawn(async move {

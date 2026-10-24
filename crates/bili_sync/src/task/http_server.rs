@@ -14,6 +14,7 @@ use utoipa_swagger_ui::{Config, SwaggerUi};
 
 use crate::api::auth;
 use crate::api::favorite_repair::repair_favorite_source;
+use crate::api::uploader_name::{get_uploader_name, rename_uploader};
 use crate::api::handler::{
     add_video_source,
     batch_update_config_internal,
@@ -167,6 +168,7 @@ pub async fn http_server(_database_connection: Arc<DatabaseConnection>) -> Resul
         .route("/api/videos", get(get_videos))
         .route("/api/videos/deleted", get(get_deleted_videos))
         .route("/api/videos/{id}", get(get_video))
+        .route("/api/videos/{id}/uploader", get(get_uploader_name).put(rename_uploader))
         .route("/api/videos/{id}", delete(delete_video))
         .route("/api/videos/{id}/reset", post(reset_video))
         .route("/api/videos/{id}/restore", post(restore_video))
@@ -224,6 +226,13 @@ pub async fn http_server(_database_connection: Arc<DatabaseConnection>) -> Resul
         .route("/api/favorite/{fid}/validate", get(validate_favorite))
         .route("/api/user/collections/{mid}", get(get_user_collections))
         .route("/api/user/followings", get(get_user_followings))
+        .route("/api/library/uploaders", get(crate::api::library::get_usage))
+        .route("/api/library/uploaders/{uid}/videos", get(crate::api::library::get_videos))
+        .route("/api/library/uploaders/{uid}/filters", put(crate::api::library::save_filter))
+        .route(
+            "/api/user/followings/cache",
+            get(crate::api::followings::get_snapshot).put(crate::api::followings::refresh_snapshot),
+        )
         .route("/api/user/subscribed-collections", get(get_subscribed_collections))
         .route("/api/submission/{up_id}/videos", get(get_submission_videos))
         .route("/api/logs", get(get_logs))

@@ -193,6 +193,7 @@ pub struct BangumiSourceListResponse {
 
 #[derive(Serialize, ToSchema, Debug)]
 pub struct VideoSource {
+    pub owner_mid: Option<String>, // 收藏夹创建者UID
     pub id: i32,
     pub name: String,
     pub enabled: bool,
@@ -256,6 +257,7 @@ impl From<(i32, i32, String, u32, Option<String>)> for PageInfo {
 
 #[derive(Serialize, ToSchema)]
 pub struct VideoInfo {
+    pub creators: Vec<crate::utils::creators::Creator>,
     pub id: i32,
     pub name: String,
     pub upper_name: String,
@@ -272,6 +274,7 @@ impl From<(i32, String, String, String, i32, u32, String)> for VideoInfo {
         (id, name, upper_name, path, category, download_status, cover): (i32, String, String, String, i32, u32, String),
     ) -> Self {
         Self {
+            creators: Vec::new(),
             id,
             name,
             upper_name,
@@ -493,12 +496,15 @@ pub struct SearchResponse {
 
 #[derive(Debug, Clone, Serialize, Deserialize, utoipa::ToSchema)]
 pub struct UserFavoriteFolder {
+    pub creator_uid: Option<String>,
     /// 收藏夹完整 media_id
     #[serde(serialize_with = "serialize_i64_as_string")]
     pub id: i64,
     /// 与 id 相同的完整 media_id，兼容读取 fid 的旧版前端
     #[serde(serialize_with = "serialize_i64_as_string")]
     pub fid: i64,
+    /// B站原始短ID，仅用于识别待修复的旧视频源。
+    pub original_fid: Option<String>,
     /// 收藏夹标题
     pub title: String,
     /// 收藏夹内视频数量
@@ -512,6 +518,8 @@ impl From<crate::bilibili::FavoriteFolder> for UserFavoriteFolder {
             // Older pickers and batch-add clients use fid. Never expose the upstream
             // short fid here: it can identify an unrelated, valid favorite folder.
             fid: folder.id,
+            original_fid: folder.fid.map(|id| id.to_string()),
+            creator_uid: folder.mid.map(|id| id.to_string()),
             title: folder.title,
             media_count: folder.media_count,
         }
@@ -550,6 +558,8 @@ pub struct UserCollection {
 pub struct UserCollectionInfo {
     /// 合集/系列ID
     pub sid: String,
+    /// 收藏夹原始短ID，仅用于识别待修复的旧视频源。
+    pub original_fid: Option<String>,
     /// 合集/系列名称
     pub name: String,
     /// 封面图片URL
@@ -575,7 +585,7 @@ pub struct UserCollectionsResponse {
     pub page_size: u32,
 }
 
-#[derive(Serialize, ToSchema)]
+#[derive(Clone, Serialize, Deserialize, ToSchema)]
 pub struct UserFollowing {
     pub mid: i64,
     pub name: String,
@@ -584,7 +594,7 @@ pub struct UserFollowing {
     pub official_verify: Option<OfficialVerify>,
 }
 
-#[derive(Serialize, ToSchema)]
+#[derive(Clone, Serialize, Deserialize, ToSchema)]
 pub struct OfficialVerify {
     #[serde(rename = "type")]
     pub type_: i32,
@@ -946,6 +956,7 @@ mod tests {
             let media_id = raw["id"].as_i64().unwrap().to_string();
             assert_eq!(folder["id"], media_id);
             assert_eq!(folder["fid"], media_id);
+            assert_eq!(folder["original_fid"], raw["fid"].as_i64().unwrap().to_string());
             assert_ne!(folder["fid"], raw["fid"].as_i64().unwrap().to_string());
             assert_eq!(folder["title"], raw["title"]);
             assert_eq!(folder["media_count"], raw["media_count"]);
@@ -961,6 +972,7 @@ mod tests {
         let json = serde_json::to_value(UserFavoriteFolder::from(folder)).unwrap();
         assert_eq!(json["id"], "9007199254740993");
         assert_eq!(json["fid"], "9007199254740993");
+        assert!(json["original_fid"].is_null());
         assert!(serde_json::from_value::<FavoriteFolder>(json!({
             "fid": 38001714, "title": "收藏夹", "media_count": 0
         }))

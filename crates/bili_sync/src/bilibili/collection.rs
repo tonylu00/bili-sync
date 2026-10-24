@@ -55,6 +55,7 @@ pub struct CollectionItem {
 pub struct Collection<'a> {
     client: &'a BiliClient,
     collection: &'a CollectionItem,
+    api_base: String,
 }
 
 #[derive(Debug, PartialEq)]
@@ -94,21 +95,42 @@ impl<'de> Deserialize<'de> for CollectionInfo {
 
 impl<'a> Collection<'a> {
     pub fn new(client: &'a BiliClient, collection: &'a CollectionItem) -> Self {
-        Self { client, collection }
+        Self::with_api_base(client, collection, "https://api.bilibili.com")
+    }
+
+    pub(crate) fn with_api_base(client: &'a BiliClient, collection: &'a CollectionItem, api_base: &str) -> Self {
+        Self {
+            client,
+            collection,
+            api_base: api_base.to_owned(),
+        }
     }
 
     pub async fn get_info(&self) -> Result<CollectionInfo> {
-        let meta = match self.collection.collection_type {
-            // 没有找到专门获取 Season 信息的接口，所以直接获取第一页，从里面取 meta 信息
-            CollectionType::Season => self.get_videos(1).await?["data"]["meta"].take(),
-            CollectionType::Series => self.get_series_info().await?["data"]["meta"].take(),
+        let mut response = match self.collection.collection_type {
+            // Season metadata is included in its first video page.
+            CollectionType::Season => self.get_videos(1).await?,
+            CollectionType::Series => self.get_series_info().await?,
         };
-        Ok(serde_json::from_value(meta)?)
+        let data = response.get_mut("data").context("合集响应缺少data")?;
+        if data.is_null() {
+            return Err(crate::bilibili::SourceUnavailable.into());
+        }
+        let meta = data.get_mut("meta").context("合集响应缺少meta")?.take();
+        if meta.is_null() {
+            return Err(crate::bilibili::SourceUnavailable.into());
+        }
+        let info: CollectionInfo = serde_json::from_value(meta)?;
+        if super::error::is_unavailable_name(&info.name) {
+            return Err(crate::bilibili::SourceUnavailable.into());
+        }
+        anyhow::ensure!(!info.name.trim().is_empty(), "合集名称为空");
+        Ok(info)
     }
 
     async fn get_series_info(&self) -> Result<Value> {
         self.client
-            .request(Method::GET, "https://api.bilibili.com/x/series/series")
+            .request(Method::GET, &format!("{}/x/series/series", self.api_base))
             .await
             .query(&[("series_id", self.collection.sid.as_str())])
             .send()
@@ -123,7 +145,7 @@ impl<'a> Collection<'a> {
         let page = page.to_string();
         let (url, query) = match self.collection.collection_type {
             CollectionType::Series => (
-                "https://api.bilibili.com/x/series/archives",
+                "/x/series/archives",
                 encoded_query(
                     vec![
                         ("mid", self.collection.mid.as_str()),
@@ -137,7 +159,7 @@ impl<'a> Collection<'a> {
                 ),
             ),
             CollectionType::Season => (
-                "https://api.bilibili.com/x/polymer/web-space/seasons_archives_list",
+                "/x/polymer/web-space/seasons_archives_list",
                 encoded_query(
                     vec![
                         ("mid", self.collection.mid.as_str()),
@@ -150,8 +172,9 @@ impl<'a> Collection<'a> {
                 ),
             ),
         };
-        self.client
-            .request(Method::GET, url)
+        let response = self
+            .client
+            .request(Method::GET, &format!("{}{url}", self.api_base))
             .await
             .query(&query)
             .send()
@@ -159,7 +182,12 @@ impl<'a> Collection<'a> {
             .error_for_status()?
             .json::<Value>()
             .await?
-            .validate()
+            .validate()?;
+        let data = response.get("data").context("视频列表响应缺少data")?;
+        if data.is_null() {
+            return Err(crate::bilibili::SourceUnavailable.into());
+        }
+        Ok(response)
     }
 
     pub fn into_video_stream(self) -> impl Stream<Item = Result<VideoInfo>> + 'a {

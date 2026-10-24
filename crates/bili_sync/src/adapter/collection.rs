@@ -10,11 +10,27 @@ use sea_orm::sea_query::{OnConflict, SimpleExpr};
 use sea_orm::ActiveValue::Set;
 use sea_orm::{DatabaseConnection, Unchanged};
 
-use crate::adapter::{_ActiveModel, VideoSource, VideoSourceEnum};
+use crate::adapter::{VideoSource, VideoSourceEnum, _ActiveModel};
 use crate::bilibili::{BiliClient, Collection, CollectionItem, CollectionType, VideoInfo};
 use crate::utils::keyword_filter::deserialize_keywords;
 
-impl VideoSource for collection::Model {
+pub type CollectionSource = super::source_state::SourceState<collection::Model>;
+
+impl CollectionSource {
+    pub async fn finish_scan(&self, connection: &DatabaseConnection) -> Result<()> {
+        if self.is_unavailable() {
+            collection::Entity::update_many()
+                .filter(collection::Column::Id.eq(self.id))
+                .col_expr(collection::Column::Enabled, Expr::value(false))
+                .exec(connection)
+                .await?;
+            info!("视频源「{}」已删除或不可访问，本次扫描结束，已禁用自动扫描", self.name);
+        }
+        Ok(())
+    }
+}
+
+impl VideoSource for CollectionSource {
     fn filter_expr(&self) -> SimpleExpr {
         video::Column::CollectionId.eq(self.id)
     }
@@ -243,13 +259,53 @@ pub(super) async fn collection_from<'a>(
     VideoSourceEnum,
     Pin<Box<dyn Stream<Item = Result<VideoInfo>> + 'a + Send>>,
 )> {
-    let collection = Collection::new(bili_client, collection_item);
-    let collection_info = collection.get_info().await?;
+    collection_from_with_api_base(
+        collection_item,
+        path,
+        bili_client,
+        connection,
+        "https://api.bilibili.com",
+    )
+    .await
+}
+
+pub(crate) async fn collection_from_with_api_base<'a>(
+    collection_item: &'a CollectionItem,
+    path: &Path,
+    bili_client: &'a BiliClient,
+    connection: &DatabaseConnection,
+    api_base: &str,
+) -> Result<(
+    VideoSourceEnum,
+    Pin<Box<dyn Stream<Item = Result<VideoInfo>> + 'a + Send>>,
+)> {
+    let existing = collection::Entity::find()
+        .filter(collection::Column::SId.eq(collection_item.sid.parse::<i64>()?))
+        .filter(collection::Column::MId.eq(collection_item.mid.parse::<i64>()?))
+        .filter(collection::Column::Type.eq(i32::from(collection_item.collection_type.clone())))
+        .one(connection)
+        .await?;
+    let collection = Collection::with_api_base(bili_client, collection_item, api_base);
+    let info = match collection.get_info().await {
+        Ok(info) => info,
+        Err(error) if super::source_state::is_unavailable_error(&error, false) => {
+            let source = CollectionSource::new(existing.context("collection not found")?, true);
+            let stream = source.track_stream(collection.into_video_stream(), false);
+            return Ok((source.into(), stream));
+        }
+        Err(error) => return Err(error),
+    };
+    anyhow::ensure!(
+        info.sid.to_string() == collection_item.sid
+            && info.mid.to_string() == collection_item.mid
+            && info.collection_type == collection_item.collection_type,
+        "合集返回的ID或创建者UID与保存的ID不一致"
+    );
     collection::Entity::insert(collection::ActiveModel {
-        s_id: Set(collection_info.sid),
-        m_id: Set(collection_info.mid),
-        r#type: Set(collection_info.collection_type.into()),
-        name: Set(collection_info.name.clone()),
+        s_id: Set(info.sid),
+        m_id: Set(info.mid),
+        r#type: Set(info.collection_type.into()),
+        name: Set(info.name),
         path: Set(path.to_string_lossy().to_string()),
         created_at: Set(crate::utils::time_format::now_standard_string()),
         latest_row_at: Set("1970-01-01 00:00:00".to_string()),
@@ -268,18 +324,14 @@ pub(super) async fn collection_from<'a>(
     )
     .exec(connection)
     .await?;
-    Ok((
-        collection::Entity::find()
-            .filter(
-                collection::Column::SId
-                    .eq(collection_item.sid.clone())
-                    .and(collection::Column::MId.eq(collection_item.mid.clone()))
-                    .and(collection::Column::Type.eq(Into::<i32>::into(collection_item.collection_type.clone()))),
-            )
-            .one(connection)
-            .await?
-            .context("collection not found")?
-            .into(),
-        Box::pin(collection.into_video_stream()),
-    ))
+    let source = collection::Entity::find()
+        .filter(collection::Column::SId.eq(info.sid))
+        .filter(collection::Column::MId.eq(info.mid))
+        .filter(collection::Column::Type.eq(i32::from(collection_item.collection_type.clone())))
+        .one(connection)
+        .await?
+        .context("collection not found")?;
+    let source = CollectionSource::new(source, false);
+    let stream = source.track_stream(collection.into_video_stream(), false);
+    Ok((source.into(), stream))
 }

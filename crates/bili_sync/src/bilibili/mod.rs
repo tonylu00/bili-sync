@@ -11,7 +11,7 @@ pub use client::{merge_bangumi_search_results, BiliClient, Client, SearchResult}
 pub use collection::{Collection, CollectionItem, CollectionType};
 pub use credential::Credential;
 pub use danmaku::DanmakuOption;
-pub use error::BiliError;
+pub use error::{BiliError, SourceUnavailable};
 use favorite_list::Upper;
 pub use favorite_list::{FavoriteFolder, FavoriteList, FavoriteListInfo};
 use once_cell::sync::Lazy;
@@ -203,4 +203,4 @@ pub enum VideoInfo {
 }
 
 #[cfg(test)]
-mod test_support;
+pub(crate) mod test_support;

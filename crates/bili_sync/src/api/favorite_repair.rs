@@ -15,14 +15,29 @@ use crate::bilibili::{BiliClient, FavoriteList, FavoriteListInfo};
 pub struct RepairFavoriteRequest {
     /// 当前保存的ID，用于防止覆盖其他客户端的修复。
     pub expected_f_id: String,
-    /// 正确的收藏夹完整ID或B站收藏夹URL。
+    /// 正确的收藏夹完整ID或B站收藏夹URL；留空时自动查找。
+    #[serde(default)]
     pub favorite: String,
+    /// 可选的已知创建者UID。
+    #[serde(default)]
+    pub creator_uid: String,
+    /// 显式启用旧收藏夹尾号查找。只返回候选，不直接修改源。
+    #[serde(default)]
+    pub allow_probe: bool,
 }
 
 #[derive(Serialize, ToSchema)]
 pub struct RepairFavoriteResponse {
     pub success: bool,
     pub message: String,
+    pub candidates: Vec<RepairFavoriteCandidate>,
+}
+
+#[derive(Serialize, ToSchema)]
+pub struct RepairFavoriteCandidate {
+    pub title: String,
+    pub creator_uid: String,
+    pub url: String,
 }
 
 struct RepairTarget {
@@ -78,10 +93,9 @@ async fn save_repair(
         target.owner_mid.is_none_or(|mid| Some(mid) == info.mid),
         "收藏夹所属UP主与URL不一致"
     );
-    // Do not guess by ID length, title or appending an owner's digits. Short IDs
-    // can also be valid full IDs for unrelated folders. Require upstream proof.
+    // Require upstream proof; arithmetic or a matching title alone is insufficient.
     ensure!(
-        info.id != expected_f_id && info.fid == Some(expected_f_id),
+        info.id != expected_f_id && info.matches_short_id(expected_f_id),
         "该收藏夹的原始ID与当前源不匹配，请复制原收藏夹的完整URL"
     );
     let txn = db.begin().await?;
@@ -91,6 +105,10 @@ async fn save_repair(
         .context("收藏夹源不存在")?;
     ensure!(source.f_id == expected_f_id, "收藏夹ID已变更，请刷新页面后重试");
     ensure!(
+        source.owner_mid.is_none_or(|mid| Some(mid) == info.mid),
+        "收藏夹创建者UID与保存的UID不一致"
+    );
+    ensure!(
         favorite::Entity::find()
             .filter(favorite::Column::FId.eq(info.id))
             .one(&txn)
@@ -99,12 +117,16 @@ async fn save_repair(
         "完整ID的收藏夹源已经存在，请先检查重复源；现有记录未修改"
     );
     let message = format!(
-        "已修复收藏夹「{}」：{} → {}，下次扫描生效",
-        info.title, source.f_id, info.id
+        "已修复收藏夹「{}」：{} → {}（创建者UID：{}），下次扫描生效",
+        info.title,
+        source.f_id,
+        info.id,
+        info.mid.unwrap()
     );
     favorite::ActiveModel {
         id: Set(source.id),
         f_id: Set(info.id),
+        owner_mid: Set(info.mid),
         name: Set(info.title),
         ..Default::default()
     }
@@ -127,32 +149,130 @@ pub async fn repair_favorite_source(
     Path(source_id): Path<i32>,
     Json(request): Json<RepairFavoriteRequest>,
 ) -> ApiResponse<RepairFavoriteResponse> {
-    let result = async {
-        let expected_f_id = positive_id(request.expected_f_id.trim())?;
-        let target = parse_target(&request.favorite)?;
-        let source = favorite::Entity::find_by_id(source_id)
-            .one(db.as_ref())
-            .await?
-            .context("收藏夹源不存在")?;
-        ensure!(source.f_id == expected_f_id, "收藏夹ID已变更，请刷新页面后重试");
-        let client = BiliClient::new(String::new());
-        let info = FavoriteList::new(&client, target.media_id.to_string())
-            .get_info()
-            .await
-            .context("无法验证收藏夹，请检查URL以及B站登录状态")?;
-        let _guard = FAVORITE_SOURCE_LOCK
-            .try_write()
-            .context("收藏夹正在扫描或下载，请暂停任务并等待当前任务结束后重试")?;
-        save_repair(db.as_ref(), source_id, expected_f_id, &target, info).await
-    }
+    let client = BiliClient::new(String::new());
+    let result = repair_source(
+        &db,
+        source_id,
+        request,
+        &client,
+        "https://api.bilibili.com",
+        client.get_current_user_id().ok(),
+    )
     .await;
     ApiResponse::ok(match result {
-        Ok(message) => RepairFavoriteResponse { success: true, message },
+        Ok(response) => response,
         Err(error) => RepairFavoriteResponse {
             success: false,
             message: format!("{error:#}"),
+            candidates: Vec::new(),
         },
     })
+}
+
+async fn repair_source(
+    db: &DatabaseConnection,
+    source_id: i32,
+    request: RepairFavoriteRequest,
+    client: &BiliClient,
+    api_base: &str,
+    uid: Option<i64>,
+) -> Result<RepairFavoriteResponse> {
+    let expected_f_id = positive_id(request.expected_f_id.trim())?;
+    let source = favorite::Entity::find_by_id(source_id)
+        .one(db)
+        .await?
+        .context("收藏夹源不存在")?;
+    ensure!(source.f_id == expected_f_id, "收藏夹ID已变更，请刷新页面后重试");
+    let owner_mid = if request.creator_uid.trim().is_empty() {
+        source.owner_mid
+    } else {
+        Some(positive_id(request.creator_uid.trim())?)
+    };
+    ensure!(
+        source.owner_mid.is_none_or(|mid| Some(mid) == owner_mid),
+        "输入的创建者UID与保存的UID不一致"
+    );
+    let (target, infos) = if request.favorite.trim().is_empty() {
+        let infos = FavoriteList::with_api_base(client, expected_f_id.to_string(), api_base)
+            .resolve_short_id(expected_f_id, uid, owner_mid, request.allow_probe)
+            .await?;
+        (None, infos)
+    } else {
+        let target = parse_target(&request.favorite)?;
+        let info = FavoriteList::with_api_base(client, target.media_id.to_string(), api_base)
+            .get_info()
+            .await
+            .context("无法验证收藏夹，请检查URL以及B站登录状态")?;
+        (Some(target), vec![info])
+    };
+    ensure!(
+        infos
+            .iter()
+            .all(|info| owner_mid.is_none_or(|mid| Some(mid) == info.mid)),
+        "收藏夹与指定创建者UID不匹配"
+    );
+    if request.allow_probe {
+        let candidates = infos
+            .into_iter()
+            .map(|info| {
+                let mid = info.mid.context("收藏夹详情未返回创建者UID")?;
+                Ok(RepairFavoriteCandidate {
+                    title: info.title,
+                    creator_uid: mid.to_string(),
+                    url: format!("https://space.bilibili.com/{mid}/favlist?fid={}", info.id),
+                })
+            })
+            .collect::<Result<Vec<_>>>()?;
+        return Ok(RepairFavoriteResponse {
+            success: false,
+            message: "找到旧收藏夹候选；短ID可能被不同创建者复用，请选择并核对创建者及收藏夹后确认修复".into(),
+            candidates,
+        });
+    }
+    ensure!(infos.len() == 1, "原始ID匹配到多个收藏夹，请填写创建者UID或完整URL");
+    let info = infos.into_iter().next().context("未找到收藏夹")?;
+    let target = target.unwrap_or(RepairTarget {
+        media_id: info.id,
+        owner_mid: info.mid,
+    });
+    let _guard = FAVORITE_SOURCE_LOCK
+        .try_write()
+        .context("收藏夹正在扫描或下载，请暂停任务并等待当前任务结束后重试")?;
+    let message = save_repair(db, source_id, expected_f_id, &target, info).await?;
+    Ok::<_, anyhow::Error>(RepairFavoriteResponse {
+        success: true,
+        message,
+        candidates: Vec::new(),
+    })
+}
+
+/// Called by add-source while holding FAVORITE_SOURCE_LOCK. Reuse the original
+/// row so its paths, settings, downloaded videos and queued source IDs survive.
+pub(crate) async fn repair_existing_for_add(
+    db: &DatabaseConnection,
+    info: FavoriteListInfo,
+) -> Result<Option<crate::api::response::AddVideoSourceResponse>> {
+    let Some(short_id) = info.fid.filter(|short_id| info.matches_short_id(*short_id)) else {
+        return Ok(None);
+    };
+    let Some(source) = favorite::Entity::find()
+        .filter(favorite::Column::FId.eq(short_id))
+        .one(db)
+        .await?
+    else {
+        return Ok(None);
+    };
+    let target = RepairTarget {
+        media_id: info.id,
+        owner_mid: info.mid,
+    };
+    let message = save_repair(db, source.id, source.f_id, &target, info).await?;
+    Ok(Some(crate::api::response::AddVideoSourceResponse {
+        success: true,
+        source_id: source.id,
+        source_type: "favorite".into(),
+        message,
+    }))
 }
 
 #[cfg(test)]
@@ -240,6 +360,7 @@ mod tests {
             .unwrap();
         let mut expected = original.clone();
         expected.f_id = 3800171409;
+        expected.owner_mid = Some(443891409);
         expected.name = "神父的自我修养4".into();
         assert_eq!(
             favorite::Entity::find_by_id(original.id)
@@ -316,11 +437,152 @@ mod tests {
         let crate::adapter::VideoSourceEnum::Favorite(source) = source else {
             unreachable!()
         };
-        assert_eq!(source, expected);
+        assert_eq!(*source, expected);
         let requests = server.await.unwrap();
         assert!(requests[0].starts_with("GET /x/v3/fav/folder/info?media_id=3800171409 "));
         assert!(requests[1].starts_with("GET /x/v3/fav/resource/list?media_id=3800171409&"));
         assert_eq!(favorite::Entity::find().count(&db).await.unwrap(), 1);
+    }
+
+    #[tokio::test]
+    async fn favorite_probe_is_opt_in_and_preview_preserves_database_until_confirmation() {
+        let (db, original) = database().await;
+        let client = BiliClient::new(String::new());
+        let request = |probe| {
+            serde_json::from_value::<RepairFavoriteRequest>(json!({
+                "expected_f_id": "38001714", "allow_probe": probe
+            }))
+            .unwrap()
+        };
+        // Default behavior does not make any suffix requests, even without login.
+        assert!(!request(false).allow_probe);
+        assert!(
+            repair_source(&db, original.id, request(false), &client, "http://127.0.0.1:1", None)
+                .await
+                .is_err()
+        );
+        let mut responses: Vec<_> = (0..9)
+            .map(|_| (200, json!({"code": 0, "message": "OK", "data": null}).to_string()))
+            .collect();
+        responses[1] = (
+            200,
+            json!({"code": 0, "message": "OK", "data": {
+                "id": 3800171401_i64, "fid": 38001714, "mid": 101, "title": "Another creator"
+            }})
+            .to_string(),
+        );
+        let verified = json!({"code": 0, "message": "OK", "data": {
+            "id": 3800171409_i64, "fid": 38001714, "mid": 443891409, "title": "Recovered"
+        }})
+        .to_string();
+        responses.push((200, verified.clone()));
+        responses.extend((10..100).map(|_| (200, json!({"code": 0, "message": "OK", "data": null}).to_string())));
+        responses.push((200, verified));
+        let (base, server) = crate::bilibili::test_support::mock_api(responses).await;
+        let preview = repair_source(&db, original.id, request(true), &client, &base, None)
+            .await
+            .unwrap();
+        assert!(!preview.success);
+        assert_eq!(preview.candidates.len(), 2, "never stop at the first matching suffix");
+        let candidate = preview
+            .candidates
+            .into_iter()
+            .find(|candidate| candidate.creator_uid == "443891409")
+            .unwrap();
+        assert_eq!(candidate.creator_uid, "443891409");
+        assert_eq!(
+            favorite::Entity::find_by_id(original.id)
+                .one(&db)
+                .await
+                .unwrap()
+                .unwrap(),
+            original
+        );
+        let confirmation = serde_json::from_value(json!({
+            "expected_f_id": "38001714", "favorite": candidate.url
+        }))
+        .unwrap();
+        let repaired = repair_source(&db, original.id, confirmation, &client, &base, None)
+            .await
+            .unwrap();
+        assert!(repaired.success);
+        let saved = favorite::Entity::find_by_id(original.id)
+            .one(&db)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(saved.f_id, 3800171409);
+        assert_eq!(saved.owner_mid, Some(443891409));
+        assert_eq!(saved.path, original.path);
+        assert_eq!(server.await.unwrap().len(), 101);
+    }
+
+    #[tokio::test]
+    async fn favorite_owner_migration_keeps_existing_rows_unknown() {
+        use sea_orm::ConnectionTrait;
+        let db = Database::connect("sqlite::memory:").await.unwrap();
+        Migrator::up(
+            &db,
+            Some(
+                Migrator::migrations()
+                    .iter()
+                    .position(|m| m.name() == "m20261024_000001_add_favorite_owner")
+                    .unwrap() as u32,
+            ),
+        )
+        .await
+        .unwrap();
+        db.execute_unprepared("INSERT INTO favorite (f_id, name, path, created_at, latest_row_at, enabled, scan_deleted_videos) VALUES (38001714, 'Legacy', '/original', '2025-01-01 00:00:00', '2026-01-01 00:00:00', 0, 1)")
+            .await
+            .unwrap();
+        Migrator::up(&db, None).await.unwrap();
+        let source = favorite::Entity::find().one(&db).await.unwrap().unwrap();
+        assert_eq!(source.f_id, 38001714);
+        assert_eq!(source.path, "/original");
+        assert_eq!(source.owner_mid, None);
+    }
+
+    #[tokio::test]
+    async fn favorite_repair_rejects_different_persisted_owner_with_same_suffix() {
+        let (db, source) = database().await;
+        let mut model = source.into_active_model();
+        model.owner_mid = Set(Some(109));
+        let original = model.update(&db).await.unwrap();
+        assert!(
+            save_repair(&db, original.id, original.f_id, &parse_target(URL).unwrap(), folder())
+                .await
+                .is_err()
+        );
+        assert_eq!(
+            favorite::Entity::find_by_id(original.id)
+                .one(&db)
+                .await
+                .unwrap()
+                .unwrap(),
+            original
+        );
+    }
+
+    #[tokio::test]
+    async fn favorite_add_reuses_legacy_source_and_preserves_settings() {
+        let (db, original) = database().await;
+        let response = repair_existing_for_add(&db, folder()).await.unwrap().unwrap();
+        assert!(response.success);
+        assert_eq!(response.source_id, original.id);
+        let mut expected = original.clone();
+        expected.f_id = 3800171409;
+        expected.owner_mid = Some(443891409);
+        expected.name = folder().title;
+        assert_eq!(
+            favorite::Entity::find_by_id(original.id)
+                .one(&db)
+                .await
+                .unwrap()
+                .unwrap(),
+            expected
+        );
+        assert_eq!(favorite::Entity::find().count(&db).await.unwrap(), 1);
+        assert!(repair_existing_for_add(&db, folder()).await.unwrap().is_none());
     }
 
     #[tokio::test]

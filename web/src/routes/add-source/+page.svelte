@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
 	import api from '$lib/api';
+	import { hasFavoriteSource } from '$lib/favorite-identity.js';
 	import { Button } from '$lib/components/ui/button';
 	import { Input } from '$lib/components/ui/input';
 	import { Label } from '$lib/components/ui/label';
@@ -83,6 +84,8 @@
 	// 关注的UP主相关
 	let userFollowings: UserFollowing[] = [];
 	let loadingFollowings = false;
+	let followingsUpdatedAt = '';
+	let keepSourceLists = false;
 
 	// 番剧季度相关
 	let bangumiSeasons: BangumiSeasonInfo[] = [];
@@ -106,7 +109,8 @@
 	// eslint-disable-next-line @typescript-eslint/no-unused-vars
 	let existingVideoSources: VideoSourcesResponse | null = null;
 	let existingCollectionIds: Set<string> = new Set();
-	let existingFavoriteIds: Set<number> = new Set();
+	let existingFavoriteIds: Set<string> = new Set();
+	let existingFavoriteOwners = new Map<string, string>();
 	let existingSubmissionIds: Set<number> = new Set();
 	let existingBangumiSeasonIds: Set<string> = new Set();
 	// eslint-disable-next-line @typescript-eslint/no-unused-vars
@@ -263,6 +267,7 @@
 			{ label: '添加视频源', isActive: true }
 		]);
 		loadLastDownloadPath();
+		keepSourceLists = localStorage.getItem('bili-sync-keep-source-lists') === 'true';
 		await loadExistingVideoSources();
 	});
 
@@ -419,6 +424,7 @@
 				break;
 			case 'submission':
 				if (result.mid) {
+					if (sourceId !== result.mid.toString()) selectedVideos = [];
 					sourceId = result.mid.toString();
 					name = cleanTitle(result.title);
 					selectedUpName = cleanTitle(result.title);
@@ -447,11 +453,12 @@
 				break;
 		}
 
-		// 关闭搜索结果
-		showSearchResults = false;
-		searchResults = [];
-		searchKeyword = '';
-		searchTotalResults = 0;
+		if (!keepSourceLists) {
+			showSearchResults = false;
+			searchResults = [];
+			searchKeyword = '';
+			searchTotalResults = 0;
+		}
 
 		// 清除悬停状态
 		hoveredItem = null;
@@ -707,9 +714,11 @@
 				toast.success('添加成功', { description: result.data.message });
 				// 重置表单
 				sourceId = '';
-				upId = '';
+				if (!keepSourceLists) upId = '';
 				name = '';
-				path = '/Downloads';
+				cover = '';
+				favoriteValidationResult = null;
+				path = keepSourceLists ? submittedPath : '/Downloads';
 				downloadAllSeasons = false;
 				collectionType = 'season';
 				isManualInput = false;
@@ -721,7 +730,12 @@
 				existingBangumiSources = [];
 				resetFilterInputs();
 				// 跳转到视频源管理页面
-				goto('/video-sources');
+				if (keepSourceLists) {
+					showSubmissionSelection = false;
+					await loadExistingVideoSources();
+				} else {
+					goto('/video-sources');
+				}
 			} else {
 				toast.error('添加失败', { description: result.data.message });
 			}
@@ -789,7 +803,7 @@
 	// 选择收藏夹
 	function selectFavorite(favorite: UserFavoriteFolder) {
 		// 检查收藏夹是否已存在
-		if (isFavoriteExists(favorite.id)) {
+		if (isFavoriteExists(favorite.id, favorite.original_fid, favorite.creator_uid)) {
 			toast.error('收藏夹已存在', {
 				description: `该收藏夹「${favorite.name || favorite.title || ''}」已经添加过了`
 			});
@@ -810,7 +824,7 @@
 	// 选择搜索到的收藏夹
 	function selectSearchedFavorite(favorite: UserFavoriteFolder) {
 		// 检查收藏夹是否已存在
-		if (isFavoriteExists(favorite.id)) {
+		if (isFavoriteExists(favorite.id, favorite.original_fid, favorite.creator_uid)) {
 			toast.error('收藏夹已存在', {
 				description: `该收藏夹「${favorite.title || ''}」已经添加过了`
 			});
@@ -836,14 +850,17 @@
 		loadingSearchedUserFavorites = true;
 		searchedUserFavorites = [];
 
-		// 关闭搜索结果
-		showSearchResults = false;
-		searchResults = [];
-		searchKeyword = '';
-		searchTotalResults = 0;
+		if (!keepSourceLists) {
+			showSearchResults = false;
+			searchResults = [];
+			searchKeyword = '';
+			searchTotalResults = 0;
+		}
 
+		const owner = selectedUserId;
 		try {
-			const result = await api.getUserFavoritesByUid(selectedUserId);
+			const result = await api.getUserFavoritesByUid(owner);
+			if (selectedUserId !== owner || sourceType !== 'favorite') return;
 			if (result.data && result.data.length > 0) {
 				searchedUserFavorites = result.data;
 				toast.success('获取收藏夹成功', {
@@ -853,12 +870,13 @@
 				toast.info('该UP主没有公开收藏夹');
 			}
 		} catch {
+			if (selectedUserId !== owner || sourceType !== 'favorite') return;
 			console.error('获取UP主收藏夹失败');
 			toast.error('获取收藏夹失败', {
 				description: 'UP主可能没有公开收藏夹或网络错误'
 			});
 		} finally {
-			loadingSearchedUserFavorites = false;
+			if (selectedUserId === owner) loadingSearchedUserFavorites = false;
 		}
 	}
 
@@ -930,8 +948,10 @@
 	// 获取UP主合集列表
 	async function fetchUserCollections() {
 		if (!upId.trim()) return;
+		const owner = upId;
 		try {
-			const result = await api.getUserCollections(upId);
+			const result = await api.getUserCollections(owner);
+			if (upId !== owner || sourceType !== 'collection') return;
 			if (result.data && result.data.collections) {
 				userCollections = result.data.collections;
 				if (userCollections.length === 0) {
@@ -946,6 +966,7 @@
 				userCollections = [];
 			}
 		} catch (error: unknown) {
+			if (upId !== owner || sourceType !== 'collection') return;
 			console.error('获取合集列表失败:', error);
 
 			// 根据错误类型提供更友好的提示
@@ -980,6 +1001,7 @@
 		}
 
 		sourceId = collection.sid;
+		upId = collection.mid.toString();
 		name = collection.name;
 		cover = collection.cover || '';
 		collectionType = collection.collection_type;
@@ -1072,9 +1094,11 @@
 
 				// 处理收藏夹
 				existingFavoriteIds.clear();
+				existingFavoriteOwners.clear();
 				result.data.favorite?.forEach((f) => {
 					if (f.f_id) {
-						existingFavoriteIds.add(f.f_id);
+						existingFavoriteIds.add(String(f.f_id));
+						if (f.owner_mid) existingFavoriteOwners.set(String(f.f_id), f.owner_mid);
 					}
 				});
 
@@ -1115,6 +1139,13 @@
 						}
 					}
 				});
+                // Reassign retained lists so their existing-source badges refresh in legacy Svelte reactivity.
+                userFollowings = [...userFollowings];
+                userFavorites = [...userFavorites];
+                searchedUserFavorites = [...searchedUserFavorites];
+                userCollections = [...userCollections];
+                subscribedCollections = [...subscribedCollections];
+                searchResults = [...searchResults];
 			}
 		} catch (error) {
 			console.error('加载已有视频源失败:', error);
@@ -1135,11 +1166,25 @@
 	}
 
 	// 检查收藏夹是否已存在
-	function isFavoriteExists(fId: number | string | undefined): boolean {
-		if (fId === undefined) return false;
-		const parsed = typeof fId === 'number' ? fId : Number.parseInt(fId, 10);
-		if (!Number.isFinite(parsed)) return false;
-		return existingFavoriteIds.has(parsed);
+	function isFavoriteExists(fId: number | string | undefined, originalId?: string | null, owner?: string | null): boolean {
+		return hasFavoriteSource(existingFavoriteIds, fId, originalId, existingFavoriteOwners, owner);
+	}
+
+	function isSubscribedCollectionExists(collection: UserCollectionInfo): boolean {
+		return collection.collection_type === 'favorite'
+			? isFavoriteExists(collection.sid, collection.original_fid, String(collection.up_mid))
+			: isCollectionExists(collection.sid, String(collection.up_mid));
+	}
+
+	function toggleSubscribedCollection(key: string, collection: UserCollectionInfo) {
+		if (collection.collection_type === 'favorite') {
+			toggleBatchSelection(key, {
+				id: collection.sid, title: collection.name, media_count: collection.total,
+				original_fid: collection.original_fid, creator_uid: String(collection.up_mid), cover: collection.cover
+			}, 'favorite');
+		} else {
+			toggleBatchSelection(key, collection, 'collection');
+		}
 	}
 
 	// 检查番剧季度是否已存在
@@ -1205,6 +1250,13 @@
 		fetchExistingBangumiSources();
 	}
 
+    function resetFollowingLists() {
+        if (!keepSourceLists) {
+            userFollowings = [];
+            subscribedCollections = [];
+        }
+    }
+
 	// 监听sourceType变化，重置手动输入标志和清空所有缓存
 	$: if (sourceType) {
 		isManualInput = false;
@@ -1215,10 +1267,9 @@
 		showSearchResults = false;
 		hoveredItem = null;
 		// 清空各类型的缓存数据
-		userFollowings = [];
+		resetFollowingLists();
 		userCollections = [];
 		userFavorites = [];
-		subscribedCollections = [];
 		// 清空UP主收藏夹搜索状态
 		searchedUserFavorites = [];
 		selectedUserId = '';
@@ -1317,12 +1368,13 @@
 	}
 
 	// 获取关注的UP主列表
-	async function fetchUserFollowings() {
+	async function fetchUserFollowings(refresh = false) {
 		loadingFollowings = true;
 		try {
-			const result = await api.getUserFollowings();
+			const result = await api.getFollowingSnapshot(refresh);
 			if (result.data) {
-				userFollowings = result.data;
+				userFollowings = result.data.followings;
+				followingsUpdatedAt = result.data.fetched_at;
 				toast.success('获取关注UP主成功', {
 					description: `共获取到 ${userFollowings.length} 个UP主`
 				});
@@ -1348,6 +1400,7 @@
 				toast.success('已填充UP主信息', { description: '正在获取合集列表...' });
 				break;
 			case 'submission':
+				if (sourceId !== following.mid.toString()) selectedVideos = [];
 				sourceId = following.mid.toString();
 				name = following.name;
 				selectedUpName = following.name;
@@ -1357,8 +1410,7 @@
 				break;
 		}
 
-		// 清空关注UP主列表状态，关闭面板
-		userFollowings = [];
+		if (!keepSourceLists) userFollowings = [];
 	}
 
 	// 获取关注的收藏夹列表
@@ -1392,6 +1444,8 @@
 
 	// 选择订阅的合集
 	function selectSubscribedCollection(collection: UserCollectionInfo) {
+		if (isSubscribedCollectionExists(collection)) return;
+		sourceType = collection.collection_type === 'favorite' ? 'favorite' : 'collection';
 		sourceId = collection.sid;
 		name = collection.name;
 		cover = collection.cover || '';
@@ -1426,7 +1480,12 @@
 	// 投稿选择相关函数
 
 	// 重置投稿选择状态
+	let submissionRequest = 0;
 	function resetSubmissionState() {
+		submissionRequest += 1;
+		isLoadingMore = false;
+		isSearching = false;
+		if (searchTimeout) clearTimeout(searchTimeout);
 		submissionVideos = [];
 		selectedSubmissionVideos = new Set();
 		submissionLoading = false;
@@ -1454,6 +1513,7 @@
 				performSearch();
 			}, 500); // 500ms防抖
 		} else {
+			isSearching = false;
 			filteredSubmissionVideos = submissionVideos;
 		}
 	}
@@ -1466,22 +1526,28 @@
 			return;
 		}
 
+		const owner = sourceId;
+		const query = submissionSearchQuery.trim();
+		const request = submissionRequest;
+		const current = () => request === submissionRequest && owner === sourceId && query === submissionSearchQuery.trim();
 		isSearching = true;
 
 		try {
 			const response = await api.getSubmissionVideos({
-				up_id: sourceId,
+				up_id: owner,
 				page: 1,
 				page_size: 30, // 获取更多结果
-				keyword: submissionSearchQuery.trim()
+				keyword: query
 			});
 
+			if (!current()) return;
 			if (response.data && response.data.videos) {
 				filteredSubmissionVideos = response.data.videos;
 			} else {
 				filteredSubmissionVideos = [];
 			}
 		} catch (error) {
+			if (!current()) return;
 			console.error('搜索视频失败:', error);
 			toast.error('搜索失败', {
 				description: '请稍后重试'
@@ -1491,7 +1557,7 @@
 				video.title.toLowerCase().includes(submissionSearchQuery.toLowerCase().trim())
 			);
 		} finally {
-			isSearching = false;
+			if (current()) isSearching = false;
 		}
 	}
 	/* eslint-enable svelte/infinite-reactive-loop */
@@ -1500,6 +1566,7 @@
 	async function loadSubmissionVideos() {
 		if (!sourceId) return;
 
+		const request = submissionRequest;
 		submissionLoading = true;
 		submissionError = null;
 		submissionVideos = [];
@@ -1510,14 +1577,18 @@
 		try {
 			await loadVideosInBatch(INITIAL_LOAD_SIZE);
 		} catch (err) {
+			if (request !== submissionRequest) return;
 			submissionError = err instanceof Error ? err.message : '网络请求失败';
 		} finally {
-			submissionLoading = false;
+			if (request === submissionRequest) submissionLoading = false;
 		}
 	}
 
 	// 批量加载视频（串行请求，带延迟）
 	async function loadVideosInBatch(loadCount: number) {
+		const request = submissionRequest;
+		const owner = sourceId;
+		const current = () => request === submissionRequest && owner === sourceId && showSubmissionSelection;
 		const startPage = currentLoadedPage + 1;
 		const targetVideos = Math.min(
 			submissionVideos.length + loadCount,
@@ -1534,12 +1605,14 @@
 				await new Promise((resolve) => setTimeout(resolve, PAGE_DELAY));
 			}
 
+			if (!current()) return;
 			const response = await api.getSubmissionVideos({
-				up_id: sourceId,
+				up_id: owner,
 				page: page,
 				page_size: SUBMISSION_PAGE_SIZE
 			});
 
+			if (!current()) return;
 			if (!response.data) {
 				throw new Error('获取投稿列表失败');
 			}
@@ -1576,17 +1649,19 @@
 	async function loadMoreSubmissionVideos() {
 		if (!hasMoreVideos || isLoadingMore) return;
 
+		const request = submissionRequest;
 		isLoadingMore = true;
 		showLoadMoreButton = false; // 隐藏按钮
 		try {
 			await loadVideosInBatch(LOAD_MORE_SIZE);
 		} catch (err) {
+			if (request !== submissionRequest) return;
 			console.error('加载更多视频失败:', err);
 			toast.error('加载更多视频失败', {
 				description: err instanceof Error ? err.message : '网络请求失败'
 			});
 		} finally {
-			isLoadingMore = false;
+			if (request === submissionRequest) isLoadingMore = false;
 		}
 	}
 
@@ -1813,7 +1888,7 @@
 				userFavorites.forEach((favorite) => {
 					const key = `favorite_${favorite.id}`;
 					// 跳过已添加的收藏夹
-					const isDisabled = existingFavoriteIds.has(Number(favorite.id));
+					const isDisabled = isFavoriteExists(favorite.id, favorite.original_fid, favorite.creator_uid);
 					if (!batchSelectedItems.has(key) && !isDisabled) {
 						toggleBatchSelection(key, favorite, 'favorite');
 					}
@@ -1823,7 +1898,7 @@
 				searchedUserFavorites.forEach((favorite) => {
 					const key = `searched-favorite_${favorite.id}`;
 					// 跳过已添加的收藏夹
-					const isDisabled = existingFavoriteIds.has(Number(favorite.id));
+					const isDisabled = isFavoriteExists(favorite.id, favorite.original_fid, favorite.creator_uid);
 					if (!batchSelectedItems.has(key) && !isDisabled) {
 						toggleBatchSelection(key, favorite, 'favorite');
 					}
@@ -1843,9 +1918,9 @@
 				subscribedCollections.forEach((collection) => {
 					const key = `subscribed-collection_${collection.sid}`;
 					// 跳过已添加的合集
-					const isDisabled = isCollectionExists(collection.sid, collection.up_mid.toString());
+					const isDisabled = isSubscribedCollectionExists(collection);
 					if (!batchSelectedItems.has(key) && !isDisabled) {
-						toggleBatchSelection(key, collection, 'collection');
+						toggleSubscribedCollection(key, collection);
 					}
 				});
 				break;
@@ -2041,6 +2116,17 @@
 	<title>添加视频源 - Bili Sync</title>
 </svelte:head>
 
+<div class="mb-4 flex flex-wrap items-center gap-4 rounded-lg border p-3">
+	<label class="flex items-center gap-2 text-sm">
+		<input type="checkbox" bind:checked={keepSourceLists} onchange={(event) => localStorage.setItem('bili-sync-keep-source-lists', String(event.currentTarget.checked))} />
+		添加后留在本页并保留列表（逐个预览、分别设置过滤条件）
+	</label>
+	<Button variant="outline" size="sm" disabled={loadingFollowings} onclick={() => fetchUserFollowings()}>载入关注UP主备份</Button>
+	<Button variant="outline" size="sm" disabled={loadingFollowings} onclick={() => fetchUserFollowings(true)}>从B站刷新关注列表</Button>
+	{#if followingsUpdatedAt}<span class="text-muted-foreground text-xs">备份时间：{followingsUpdatedAt}</span>{/if}
+</div>
+
+
 <svelte:window bind:innerWidth />
 
 <div class="py-2">
@@ -2143,7 +2229,7 @@
 													<Button
 														onclick={sourceType === 'collection'
 															? fetchSubscribedCollections
-															: fetchUserFollowings}
+															: () => fetchUserFollowings()}
 														disabled={sourceType === 'collection'
 															? loadingSubscribedCollections
 															: loadingFollowings}
@@ -3090,7 +3176,7 @@
 								>
 									{#each filteredUserFavorites as favorite (favorite.id)}
 										{@const itemKey = `favorite_${favorite.id}`}
-										{@const isDisabled = existingFavoriteIds.has(Number(favorite.id))}
+										{@const isDisabled = isFavoriteExists(favorite.id, favorite.original_fid, favorite.creator_uid)}
 										<button
 											onclick={() => {
 												if (batchMode) {
@@ -3143,7 +3229,7 @@
 														<h4 class="truncate text-sm font-medium">
 															{favorite.name || favorite.title}
 														</h4>
-														{#if existingFavoriteIds.has(Number(favorite.id))}
+														{#if isFavoriteExists(favorite.id, favorite.original_fid, favorite.creator_uid)}
 															<span
 																class="flex-shrink-0 rounded bg-gray-100 px-2 py-0.5 text-xs text-gray-700 dark:bg-gray-800 dark:text-gray-300"
 															>
@@ -3240,7 +3326,7 @@
 									>
 										{#each filteredSearchedUserFavorites as favorite (favorite.id)}
 											{@const itemKey = `searched-favorite_${favorite.id}`}
-											{@const isDisabled = existingFavoriteIds.has(Number(favorite.id))}
+											{@const isDisabled = isFavoriteExists(favorite.id, favorite.original_fid, favorite.creator_uid)}
 											<button
 												onclick={() => {
 													if (batchMode) {
@@ -3279,7 +3365,7 @@
 													<div class="min-w-0 flex-1">
 														<div class="mb-1 flex items-center gap-2">
 															<h4 class="truncate text-sm font-medium">{favorite.title}</h4>
-															{#if existingFavoriteIds.has(Number(favorite.id))}
+															{#if isFavoriteExists(favorite.id, favorite.original_fid, favorite.creator_uid)}
 																<span
 																	class="flex-shrink-0 rounded bg-gray-100 px-2 py-0.5 text-xs text-gray-700 dark:bg-gray-800 dark:text-gray-300"
 																>
@@ -3476,7 +3562,7 @@
 				{/if}
 
 				<!-- 订阅的合集列表（仅合集类型时显示） -->
-				{#if sourceType === 'collection' && subscribedCollections.length > 0}
+				{#if (sourceType === 'collection' || (keepSourceLists && sourceType === 'favorite')) && subscribedCollections.length > 0}
 					<div class={isMobile ? 'mt-6 w-full' : 'flex-1'}>
 						<div
 							class="bg-card rounded-lg border {isMobile
@@ -3519,14 +3605,11 @@
 								>
 									{#each subscribedCollections as collection (collection.sid)}
 										{@const itemKey = `subscribed-collection_${collection.sid}`}
-										{@const isExisting = isCollectionExists(
-											collection.sid,
-											collection.up_mid.toString()
-										)}
+										{@const isExisting = isSubscribedCollectionExists(collection)}
 										<button
 											onclick={() => {
 												if (batchMode) {
-													toggleBatchSelection(itemKey, collection, 'collection');
+													toggleSubscribedCollection(itemKey, collection);
 												} else {
 													selectSubscribedCollection(collection);
 												}
@@ -3547,7 +3630,7 @@
 															checked={batchCheckboxStates[itemKey] || false}
 															onclick={(e) => {
 																e.stopPropagation();
-																toggleBatchSelection(itemKey, collection, 'collection');
+																toggleSubscribedCollection(itemKey, collection);
 															}}
 															class="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
 														/>
@@ -3576,7 +3659,7 @@
 														<span
 															class="flex-shrink-0 rounded bg-purple-100 px-2 py-0.5 text-xs text-purple-700 dark:bg-purple-900 dark:text-purple-300"
 														>
-															{collection.collection_type === 'season' ? '合集' : '系列'}
+															{collection.collection_type === 'favorite' ? '收藏夹' : collection.collection_type === 'season' ? '合集' : '系列'}
 														</span>
 														{#if isExisting}
 															<span

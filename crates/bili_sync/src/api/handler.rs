@@ -41,6 +41,7 @@ use crate::api::response::{
     VideoSource, VideoSourceFilters, VideoSourcesResponse, VideosResponse,
 };
 use crate::api::wrapper::{ApiError, ApiResponse};
+use crate::bilibili::{BiliClient, FavoriteList};
 use crate::utils::status::{PageStatus, VideoStatus};
 
 // 全局静态的扫码登录服务实例
@@ -156,7 +157,7 @@ mod rename_tests {
 
 #[derive(OpenApi)]
 #[openapi(
-    paths(crate::api::favorite_repair::repair_favorite_source, get_video_sources, get_videos, get_deleted_videos, get_video, reset_video, restore_video, reset_all_videos, reset_specific_tasks, set_specific_tasks_status, update_video_status, add_video_source, update_video_source_enabled, update_video_source_scan_deleted, update_video_source_filters, reset_video_source_path, delete_video_source, reload_config, get_config, update_config, get_bangumi_seasons, search_bilibili, get_user_favorites, get_user_collections, get_user_followings, get_subscribed_collections, get_submission_videos, get_logs, get_queue_status, proxy_image, get_config_item, get_config_history, validate_config, get_hot_reload_status, check_initial_setup, setup_auth_token, update_credential, generate_qr_code, poll_qr_status, get_current_user, clear_credential, pause_scanning_endpoint, resume_scanning_endpoint, get_task_control_status, get_video_play_info, proxy_video_stream, validate_favorite, get_user_favorites_by_uid, test_notification_handler, get_notification_config, update_notification_config, get_notification_status, test_risk_control_handler),
+    paths(crate::api::uploader_name::get_uploader_name, crate::api::uploader_name::rename_uploader, crate::api::favorite_repair::repair_favorite_source, get_video_sources, get_videos, get_deleted_videos, get_video, reset_video, restore_video, reset_all_videos, reset_specific_tasks, set_specific_tasks_status, update_video_status, add_video_source, update_video_source_enabled, update_video_source_scan_deleted, update_video_source_filters, reset_video_source_path, delete_video_source, reload_config, get_config, update_config, get_bangumi_seasons, search_bilibili, get_user_favorites, get_user_collections, get_user_followings, get_subscribed_collections, get_submission_videos, get_logs, get_queue_status, proxy_image, get_config_item, get_config_history, validate_config, get_hot_reload_status, check_initial_setup, setup_auth_token, update_credential, generate_qr_code, poll_qr_status, get_current_user, clear_credential, pause_scanning_endpoint, resume_scanning_endpoint, get_task_control_status, get_video_play_info, proxy_video_stream, validate_favorite, get_user_favorites_by_uid, test_notification_handler, get_notification_config, update_notification_config, get_notification_status, test_risk_control_handler),
     modifiers(&OpenAPIAuth),
     security(
         ("Token" = []),
@@ -196,6 +197,7 @@ pub async fn get_video_sources(
             path: model.path,
             scan_deleted_videos: model.scan_deleted_videos,
             f_id: None,
+            owner_mid: None,
             s_id: Some(model.s_id),
             m_id: Some(model.m_id),
             upper_id: None,
@@ -222,6 +224,7 @@ pub async fn get_video_sources(
             path: model.path,
             scan_deleted_videos: model.scan_deleted_videos,
             f_id: Some(model.f_id),
+            owner_mid: model.owner_mid.map(|mid| mid.to_string()),
             s_id: None,
             m_id: None,
             upper_id: None,
@@ -248,6 +251,7 @@ pub async fn get_video_sources(
             path: model.path,
             scan_deleted_videos: model.scan_deleted_videos,
             f_id: None,
+            owner_mid: None,
             s_id: None,
             m_id: None,
             upper_id: Some(model.upper_id),
@@ -274,6 +278,7 @@ pub async fn get_video_sources(
             path: model.path,
             scan_deleted_videos: model.scan_deleted_videos,
             f_id: None,
+            owner_mid: None,
             s_id: None,
             m_id: None,
             upper_id: None,
@@ -319,6 +324,7 @@ pub async fn get_video_sources(
                 path: model.path,
                 scan_deleted_videos: model.scan_deleted_videos,
                 f_id: None,
+                owner_mid: None,
                 s_id: None,
                 m_id: None,
                 upper_id: None,
@@ -548,6 +554,17 @@ pub async fn get_videos(
                 }
             }
 
+            let author_models = video::Entity::find()
+                .filter(video::Column::Id.is_in(videos.iter().map(|v| v.id)))
+                .all(db.as_ref())
+                .await?;
+            let author_map: std::collections::HashMap<_, _> = author_models
+                .into_iter()
+                .map(|v| (v.id, crate::utils::creators::from_video(&v)))
+                .collect();
+            for info in &mut videos {
+                info.creators = author_map.get(&info.id).cloned().unwrap_or_default();
+            }
             videos
         },
         total_count,
@@ -727,6 +744,17 @@ pub async fn get_deleted_videos(
                 }
             }
 
+            let author_models = video::Entity::find()
+                .filter(video::Column::Id.is_in(videos.iter().map(|v| v.id)))
+                .all(db.as_ref())
+                .await?;
+            let author_map: std::collections::HashMap<_, _> = author_models
+                .into_iter()
+                .map(|v| (v.id, crate::utils::creators::from_video(&v)))
+                .collect();
+            for info in &mut videos {
+                info.creators = author_map.get(&info.id).cloned().unwrap_or_default();
+            }
             videos
         },
         total_count,
@@ -779,6 +807,9 @@ pub async fn get_video(
 
     // 创建VideoInfo并填充bangumi_title
     let mut video_info = VideoInfo::from((_id, name, upper_name, path, category, download_status, cover));
+    if let Some(model) = video::Entity::find_by_id(id).one(db.as_ref()).await? {
+        video_info.creators = crate::utils::creators::from_video(&model);
+    }
 
     // 为番剧类型的视频填充真实标题
     if source_type == Some(1) && season_id.is_some() {
@@ -1963,6 +1994,48 @@ pub async fn add_video_source_internal(
     db: Arc<DatabaseConnection>,
     mut params: AddVideoSourceRequest,
 ) -> Result<AddVideoSourceResponse, ApiError> {
+    // Serialize favorite additions with repairs and active scans. Resolve a legacy
+    // match before opening the insertion transaction (upstream requests may be slow).
+    let _favorite_guard = if params.source_type == "favorite" {
+        Some(
+            crate::adapter::favorite::FAVORITE_SOURCE_LOCK
+                .try_write()
+                .context("收藏夹正在扫描或下载，请稍后重试")?,
+        )
+    } else {
+        None
+    };
+    let mut favorite_owner = None;
+    if params.source_type == "favorite" {
+        let full_id = params.source_id.parse::<i64>().context("无效的收藏夹ID")?;
+        if full_id <= 0 {
+            return Err(anyhow!("收藏夹ID必须大于0").into());
+        }
+        let legacy = favorite::Entity::find()
+            .filter(favorite::Column::FId.eq(full_id / 100))
+            .one(db.as_ref())
+            .await?;
+        let client = BiliClient::new(String::new());
+        let info = FavoriteList::new(&client, full_id.to_string()).get_info().await?;
+        if info.id != full_id {
+            return Err(anyhow!("收藏夹返回的ID与输入不一致").into());
+        }
+        favorite_owner = Some(info.mid.filter(|mid| *mid > 0).context("收藏夹未返回有效创建者UID")?);
+        if let Some(legacy) = legacy.filter(|source| source.owner_mid.is_none_or(|mid| Some(mid) == favorite_owner)) {
+            let resolved = FavoriteList::new(&client, legacy.f_id.to_string())
+                .resolve_short_id(legacy.f_id, client.get_current_user_id().ok(), legacy.owner_mid, false)
+                .await?
+                .remove(0);
+            if resolved.id != info.id || resolved.mid != info.mid {
+                return Err(anyhow!("原始ID对应的创建者不明确，请先修复原收藏夹ID").into());
+            }
+            // A suspected legacy source must never silently become a duplicate.
+            if let Some(response) = crate::api::favorite_repair::repair_existing_for_add(db.as_ref(), info).await? {
+                return Ok(response);
+            }
+            return Err(anyhow!("发现可能使用原始ID的收藏夹源，无法验证对应关系，请先修复原收藏夹ID").into());
+        }
+    }
     // 先解析并验证番剧 ID，避免把空 season_id 持久化，也避免网络请求占用写事务。
     if params.source_type == "bangumi" {
         use crate::bilibili::bangumi::{bangumi_id, Bangumi};
@@ -2128,6 +2201,7 @@ pub async fn add_video_source_internal(
             let favorite = favorite::ActiveModel {
                 id: sea_orm::ActiveValue::NotSet,
                 f_id: sea_orm::Set(f_id),
+                owner_mid: sea_orm::Set(favorite_owner),
                 name: sea_orm::Set(params.name),
                 path: sea_orm::Set(params.path.clone()),
                 created_at: sea_orm::Set(now_standard_string()),
@@ -7682,33 +7756,8 @@ fn get_directory_size(path: &str) -> std::io::Result<u64> {
         (status = 200, body = ApiResponse<Vec<crate::api::response::UserFollowing>>),
     )
 )]
-pub async fn get_user_followings() -> Result<ApiResponse<Vec<crate::api::response::UserFollowing>>, ApiError> {
-    let bili_client = crate::bilibili::BiliClient::new(String::new());
-
-    match bili_client.get_user_followings().await {
-        Ok(followings) => {
-            let response_followings: Vec<crate::api::response::UserFollowing> = followings
-                .into_iter()
-                .map(|following| crate::api::response::UserFollowing {
-                    mid: following.mid,
-                    name: following.name,
-                    face: following.face,
-                    sign: following.sign,
-                    official_verify: following
-                        .official_verify
-                        .map(|verify| crate::api::response::OfficialVerify {
-                            type_: verify.type_,
-                            desc: verify.desc,
-                        }),
-                })
-                .collect();
-            Ok(ApiResponse::ok(response_followings))
-        }
-        Err(e) => {
-            tracing::error!("获取关注UP主列表失败: {}", e);
-            Err(ApiError::from(anyhow::anyhow!("获取关注UP主列表失败: {}", e)))
-        }
-    }
+pub async fn get_user_followings(Extension(db): Extension<Arc<DatabaseConnection>>) -> Result<ApiResponse<Vec<crate::api::response::UserFollowing>>, ApiError> {
+    Ok(ApiResponse::ok(crate::api::followings::load(&db, false).await?.followings))
 }
 
 /// 获取订阅的合集列表

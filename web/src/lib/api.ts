@@ -45,6 +45,7 @@ import type {
 	UpdateVideoSourceFiltersResponse,
 	UpdateVideoStatusRequest,
 	UpdateVideoStatusResponse,
+	UploaderNameResponse,
 	UppersResponse,
 	UserCollectionInfo,
 	UserCollectionsResponse,
@@ -217,6 +218,21 @@ class ApiClient {
 	 * 获取单个视频详情
 	 * @param id 视频 ID
 	 */
+	async getUploaderName(id: number): Promise<ApiResponse<UploaderNameResponse>> {
+		return this.get<UploaderNameResponse>(`/videos/${id}/uploader`);
+	}
+
+	async renameUploader(
+		id: number,
+		name: string,
+		expectedUpperId: string
+	): Promise<ApiResponse<UploaderNameResponse>> {
+		return this.put<UploaderNameResponse>(`/videos/${id}/uploader`, {
+			name,
+			expected_upper_id: expectedUpperId
+		});
+	}
+
 	async getVideo(id: number): Promise<ApiResponse<VideoResponse>> {
 		return this.get<VideoResponse>(`/videos/${id}`);
 	}
@@ -455,10 +471,18 @@ class ApiClient {
 		return this.get<UserFavoriteFolder[]>('/user/favorites');
 	}
 
-	async repairFavoriteSource(id: number, expectedId: string, favorite: string) {
+	async repairFavoriteSource(
+		id: number,
+		expectedId: string,
+		favorite: string,
+		creatorUid = '',
+		allowProbe = false
+	) {
 		return this.put<RepairFavoriteResponse>(`/video-sources/favorite/${id}/repair`, {
 			expected_f_id: expectedId,
-			favorite
+			favorite,
+			creator_uid: creatorUid,
+			allow_probe: allowProbe
 		});
 	}
 
@@ -514,6 +538,18 @@ class ApiClient {
 	/**
 	 * 获取关注的UP主列表
 	 */
+	async getLibraryUsage() { return this.request<import('./types').LibraryUsage>('/library/uploaders'); }
+	async getUploaderVideos(uid: string) { return this.request<import('./types').LibraryVideo[]>(`/library/uploaders/${encodeURIComponent(uid)}/videos`); }
+	async saveUploaderFilter(uid: string, filters: import('./types').UploaderFilter) {
+		return this.request<import('./types').UploaderFilter>(`/library/uploaders/${encodeURIComponent(uid)}/filters`, { method: 'PUT', body: JSON.stringify(filters) });
+	}
+	async getFollowingSnapshot(refresh = false) {
+		const url = '/user/followings/cache';
+		return refresh
+			? this.put<import('./types').FollowingSnapshot>(url, {})
+			: this.get<import('./types').FollowingSnapshot>(url);
+	}
+
 	async getUserFollowings(): Promise<ApiResponse<UserFollowing[]>> {
 		return this.get<UserFollowing[]>('/user/followings');
 	}
@@ -777,6 +813,9 @@ export const apiClient = new ApiClient();
 
 // 导出 API 方法的便捷函数
 export const api = {
+    getLibraryUsage: () => apiClient.getLibraryUsage(),
+    getUploaderVideos: (uid: string) => apiClient.getUploaderVideos(uid),
+    saveUploaderFilter: (uid: string, filters: import('./types').UploaderFilter) => apiClient.saveUploaderFilter(uid, filters),
 	/**
 	 * 获取所有视频来源
 	 */
@@ -796,6 +835,9 @@ export const api = {
 	 * 获取单个视频详情
 	 */
 	getVideo: (id: number) => apiClient.getVideo(id),
+	getUploaderName: (id: number) => apiClient.getUploaderName(id),
+	renameUploader: (id: number, name: string, expectedUpperId: string) =>
+		apiClient.renameUploader(id, name, expectedUpperId),
 
 	/**
 	 * 重置视频下载状态
@@ -896,8 +938,13 @@ export const api = {
 	 * 验证收藏夹ID
 	 */
 	validateFavorite: (fid: string) => apiClient.validateFavorite(fid),
-	repairFavoriteSource: (id: number, expectedId: string, favorite: string) =>
-		apiClient.repairFavoriteSource(id, expectedId, favorite),
+	repairFavoriteSource: (
+		id: number,
+		expectedId: string,
+		favorite: string,
+		creatorUid = '',
+		allowProbe = false
+	) => apiClient.repairFavoriteSource(id, expectedId, favorite, creatorUid, allowProbe),
 
 	/**
 	 * 获取指定UP主的收藏夹列表
@@ -924,6 +971,7 @@ export const api = {
 	 * 获取关注的UP主列表
 	 */
 	getUserFollowings: () => apiClient.getUserFollowings(),
+	getFollowingSnapshot: (refresh = false) => apiClient.getFollowingSnapshot(refresh),
 
 	/**
 	 * 获取订阅的合集列表

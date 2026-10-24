@@ -1,6 +1,7 @@
 pub mod bangumi;
-mod collection;
+pub(crate) mod collection;
 pub(crate) mod favorite;
+pub(crate) mod source_state;
 mod submission;
 mod watch_later;
 
@@ -23,9 +24,9 @@ use sea_orm::entity::prelude::*;
 use sea_orm::sea_query::SimpleExpr;
 use sea_orm::DatabaseConnection;
 
-use bili_sync_entity::collection::Model as Collection;
-use bili_sync_entity::favorite::Model as Favorite;
 use bili_sync_entity::watch_later::Model as WatchLater;
+use collection::CollectionSource as Collection;
+use favorite::FavoriteSource as Favorite;
 use submission::SubmissionSource as Submission;
 
 use crate::adapter::collection::collection_from;

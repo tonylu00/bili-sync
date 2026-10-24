@@ -30,6 +30,7 @@ export interface VideosRequest {
 
 // 视频来源类型
 export interface VideoSource {
+	owner_mid?: string | null;
 	id: number;
 	name: string;
 	enabled: boolean;
@@ -63,6 +64,7 @@ export interface VideoSourcesResponse {
 
 // 视频信息类型
 export interface VideoInfo {
+	creators?: Creator[];
 	id: number;
 	name: string;
 	upper_name: string;
@@ -465,10 +467,13 @@ export interface UserInfo {
 
 // 用户收藏夹类型
 export interface UserFavoriteFolder {
+	creator_uid?: string | null;
 	/** Full media_id used by Bilibili's folder and video APIs. */
 	id: number | string;
 	/** Compatibility alias of id; the API never exposes Bilibili's short fid here. */
 	fid?: number | string;
+	/** Upstream short ID, used only to recognize legacy sources needing repair. */
+	original_fid?: string | null;
 	name?: string;
 	title?: string;
 	media_count: number;
@@ -479,6 +484,7 @@ export interface UserFavoriteFolder {
 export interface RepairFavoriteResponse {
 	success: boolean;
 	message: string;
+	candidates?: { title: string; creator_uid: string; url: string }[];
 }
 
 // 用户合集/系列项类型
@@ -557,6 +563,7 @@ export interface OfficialVerify {
 }
 
 export interface UserCollectionInfo {
+	original_fid?: string | null;
 	sid: string;
 	name: string;
 	cover: string;
@@ -1087,3 +1094,27 @@ export type QrcodePollResponse =
 	| { status: 'success'; credential: Credential }
 	| { status: 'pending'; message: string; scanned?: boolean }
 	| { status: 'expired'; message: string };
+
+export interface UploaderNameResponse {
+	upper_id: string;
+	name: string;
+	names: string[];
+	video_count: number;
+}
+
+export interface FollowingSnapshot {
+	account_uid: string;
+	fetched_at: string;
+	followings: UserFollowing[];
+}
+
+export interface Creator { uid: string; name: string; role: string; primary: boolean; }
+export type UploaderFilter = UpdateVideoSourceFiltersRequest;
+export interface UploaderUsage {
+    uid: string; name: string;
+    primary_video_count: number; primary_bytes: number;
+    coauthored_video_count: number; coauthored_bytes: number;
+    filters: UploaderFilter;
+}
+export interface LibraryUsage { uploaders: UploaderUsage[]; missing_files: number; unreadable_files: number; }
+export interface LibraryVideo { id: number; name: string; bvid: string; creators: Creator[]; }

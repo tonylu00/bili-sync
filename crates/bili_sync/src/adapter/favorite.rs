@@ -12,13 +12,29 @@ use sea_orm::sea_query::SimpleExpr;
 use sea_orm::ActiveValue::Set;
 use sea_orm::{DatabaseConnection, Unchanged};
 
-use crate::adapter::{_ActiveModel, VideoSource, VideoSourceEnum};
+use crate::adapter::{VideoSource, VideoSourceEnum, _ActiveModel};
 use crate::bilibili::{BiliClient, FavoriteList, VideoInfo};
 use crate::utils::keyword_filter::deserialize_keywords;
 
 pub(crate) static FAVORITE_SOURCE_LOCK: tokio::sync::RwLock<()> = tokio::sync::RwLock::const_new(());
 
-impl VideoSource for favorite::Model {
+pub type FavoriteSource = super::source_state::SourceState<favorite::Model>;
+
+impl FavoriteSource {
+    pub async fn finish_scan(&self, connection: &DatabaseConnection) -> Result<()> {
+        if self.is_unavailable() {
+            favorite::Entity::update_many()
+                .filter(favorite::Column::Id.eq(self.id))
+                .col_expr(favorite::Column::Enabled, Expr::value(false))
+                .exec(connection)
+                .await?;
+            info!("视频源「{}」已删除或不可访问，本次扫描结束，已禁用自动扫描", self.name);
+        }
+        Ok(())
+    }
+}
+
+impl VideoSource for FavoriteSource {
     fn filter_expr(&self) -> SimpleExpr {
         video::Column::FavoriteId.eq(self.id)
     }
@@ -140,6 +156,7 @@ pub async fn init_favorite_sources(
                     let model = favorite::ActiveModel {
                         id: Set(Default::default()),
                         f_id: Set(favorite_info.id),
+                        owner_mid: Set(favorite_info.mid),
                         name: Set(favorite_info.title.clone()),
                         path: Set(path.to_string_lossy().to_string()),
                         created_at: Set(now_standard_string()),
@@ -230,14 +247,31 @@ pub(crate) async fn favorite_from_with_api_base<'a>(
         .await?
         .context("favorite not found")?;
     let favorite = FavoriteList::with_api_base(bili_client, source.f_id.to_string(), api_base);
-    let favorite_info = favorite.get_info().await?;
+    let favorite_info = match favorite.get_info().await {
+        Ok(info) => info,
+        Err(error) if super::source_state::is_unavailable_error(&error, true) => {
+            let source = FavoriteSource::new(source, true);
+            let stream = source.track_stream(favorite.into_video_stream(), true);
+            return Ok((source.into(), stream));
+        }
+        Err(error) => return Err(error),
+    };
     ensure!(favorite_info.id == source.f_id, "收藏夹返回的ID与保存的ID不一致");
+    ensure!(
+        source.owner_mid.is_none_or(|mid| Some(mid) == favorite_info.mid),
+        "收藏夹创建者UID与保存的UID不一致"
+    );
     let source = favorite::ActiveModel {
         id: Unchanged(source.id),
         name: Set(favorite_info.title),
+        // Legacy rows may contain a short ID that is also an unrelated full ID.
+        // Populate their owner only through explicit repair, never from a scan.
+        owner_mid: Unchanged(source.owner_mid),
         ..Default::default()
     }
     .update(connection)
     .await?;
-    Ok((source.into(), Box::pin(favorite.into_video_stream())))
+    let source = FavoriteSource::new(source, false);
+    let stream = source.track_stream(favorite.into_video_stream(), true);
+    Ok((source.into(), stream))
 }

@@ -3,6 +3,7 @@
 	import { page } from '$app/stores';
 	import api from '$lib/api';
 	import StatusEditor from '$lib/components/status-editor.svelte';
+	import RenameUploaderDialog from '$lib/components/rename-uploader-dialog.svelte';
 	import { Button } from '$lib/components/ui/button/index.js';
 	import VideoCard from '$lib/components/video-card.svelte';
 	import { setBreadcrumb } from '$lib/stores/breadcrumb';
@@ -21,6 +22,7 @@
 	// let _resetDialogOpen = false; // 未使用，已注释
 	// let _resetting = false; // 未使用，已注释
 	let statusEditorOpen = false;
+	let uploaderEditorOpen = false;
 	let statusEditorLoading = false;
 	let showVideoPlayer = false;
 	let currentPlayingPageIndex = 0;
@@ -349,6 +351,31 @@
 				</Button>
 			</div>
 		</div>
+
+		{#if !videoData.video.bangumi_title}
+			<div class="mb-4 flex flex-wrap items-center gap-2">
+				<span class="text-muted-foreground text-sm"
+					>创作者：{videoData.video.creators?.map((author) => `${author.name}（${author.role}）`).join(' · ') || videoData.video.upper_name || '未知'}</span
+				>
+				<Button size="sm" variant="outline" onclick={() => (uploaderEditorOpen = true)}>
+					<EditIcon class="mr-2 h-4 w-4" />修改UP主名称
+				</Button>
+			</div>
+		{/if}
+		{#if uploaderEditorOpen}
+			<RenameUploaderDialog
+				bind:isOpen={uploaderEditorOpen}
+				videoId={videoData.video.id}
+				on:renamed={(event) => {
+					if (videoData && videoData.video.id === event.detail.videoId) {
+						videoData = {
+							...videoData,
+							video: { ...videoData.video, upper_name: event.detail.name, creators: videoData.video.creators?.map((author) => author.primary ? { ...author, name: event.detail.name } : author) }
+						};
+					}
+				}}
+			/>
+		{/if}
 
 		<div style="margin-bottom: 1rem;">
 			<VideoCard

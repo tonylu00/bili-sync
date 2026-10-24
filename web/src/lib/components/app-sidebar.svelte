@@ -105,6 +105,12 @@
 					内容管理
 				</div>
 				<Sidebar.Menu class="space-y-1">
+                    <Sidebar.MenuItem><Sidebar.MenuButton>
+                        <button class="hover:bg-accent/50 text-foreground flex w-full items-center gap-3 rounded-lg px-3 py-2.5" on:click={() => handleNavClick('/cleanup')}>
+                            <BarChart3 class="text-muted-foreground h-4 w-4" /><span class="text-sm">视频清理</span>
+                        </button>
+                    </Sidebar.MenuButton></Sidebar.MenuItem>
+
 					<Sidebar.MenuItem>
 						<Sidebar.MenuButton>
 							<button
