@@ -226,6 +226,8 @@ pub async fn http_server(_database_connection: Arc<DatabaseConnection>) -> Resul
         .route("/api/favorite/{fid}/validate", get(validate_favorite))
         .route("/api/user/collections/{mid}", get(get_user_collections))
         .route("/api/user/followings", get(get_user_followings))
+        .route("/api/library/dedup", get(crate::api::library::dedup_history).post(crate::api::library::preview_dedup))
+        .route("/api/library/dedup/{id}/execute", post(crate::api::library::execute_dedup))
         .route("/api/library/uploaders", get(crate::api::library::get_usage))
         .route("/api/library/uploaders/{uid}/videos", get(crate::api::library::get_videos))
         .route("/api/library/uploaders/{uid}/filters", put(crate::api::library::save_filter))

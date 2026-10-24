@@ -41,6 +41,8 @@ mod m20261024_000003_uploader_names;
 
 mod m20261024_000004_library_management;
 
+mod m20261024_000005_shared_media;
+
 pub struct Migrator;
 
 #[async_trait::async_trait]
@@ -86,6 +88,7 @@ impl MigratorTrait for Migrator {
             Box::new(m20261024_000002_source_name_history::Migration),
             Box::new(m20261024_000003_uploader_names::Migration),
             Box::new(m20261024_000004_library_management::Migration),
+            Box::new(m20261024_000005_shared_media::Migration),
         ]
     }
 }

@@ -37,6 +37,13 @@ pub struct LibraryVideo {
     name: String,
     bvid: String,
     creators: Vec<Creator>,
+    sources: Vec<LibraryVideoSource>,
+}
+#[derive(Serialize)]
+pub struct LibraryVideoSource {
+    video_id: i32,
+    source_type: &'static str,
+    source_id: Option<i32>,
 }
 
 async fn rules(db: &DatabaseConnection) -> anyhow::Result<HashMap<String, UploaderFilter>> {
@@ -57,19 +64,15 @@ async fn rules(db: &DatabaseConnection) -> anyhow::Result<HashMap<String, Upload
 
 // File identity deduplicates paths and hard links. Directories are never recursively counted:
 // a source folder may contain videos belonging to many unrelated creators.
-fn file_size(path: &str) -> std::io::Result<Option<(String, u64)>> {
+fn file_size(path: &str) -> std::io::Result<Option<(Arc<same_file::Handle>, u64)>> {
     let meta = std::fs::metadata(path)?;
     if !meta.is_file() {
         return Ok(None);
     }
-    #[cfg(unix)]
-    let key = {
-        use std::os::unix::fs::MetadataExt;
-        format!("{}:{}", meta.dev(), meta.ino())
-    };
-    #[cfg(not(unix))]
-    let key = std::fs::canonicalize(path)?.to_string_lossy().into_owned();
-    Ok(Some((key, meta.len())))
+    Ok(Some((
+        crate::utils::shared_media::file_identity(std::path::Path::new(path))?,
+        meta.len(),
+    )))
 }
 
 fn aggregate(
@@ -160,6 +163,7 @@ fn aggregate(
 pub async fn get_usage(
     Extension(db): Extension<Arc<DatabaseConnection>>,
 ) -> Result<ApiResponse<LibraryUsage>, ApiError> {
+    let _storage_guard = crate::utils::shared_media::GATE.read().await;
     let videos = video::Entity::find()
         .filter(video::Column::Deleted.eq(0))
         .all(db.as_ref())
@@ -179,18 +183,46 @@ pub async fn get_videos(
         .filter(video::Column::Deleted.eq(0))
         .all(db.as_ref())
         .await?;
-    let videos = videos
-        .into_iter()
-        .filter_map(|v| {
-            let creators = creators::from_video(&v);
-            creators.iter().any(|c| c.uid == uid).then_some(LibraryVideo {
-                id: v.id,
-                name: v.name,
-                bvid: v.bvid,
-                creators,
-            })
-        })
-        .collect();
+    let mut grouped: BTreeMap<String, LibraryVideo> = BTreeMap::new();
+    for v in videos {
+        let creators = creators::from_video(&v);
+        if !creators.iter().any(|c| c.uid == uid) {
+            continue;
+        }
+        let source = if v.submission_id.is_some() {
+            ("UP主", v.submission_id)
+        } else if v.favorite_id.is_some() {
+            ("收藏夹", v.favorite_id)
+        } else if v.collection_id.is_some() {
+            ("合集", v.collection_id)
+        } else if v.watch_later_id.is_some() {
+            ("稍后观看", v.watch_later_id)
+        } else {
+            ("番剧", v.source_id)
+        };
+        let source = LibraryVideoSource {
+            video_id: v.id,
+            source_type: source.0,
+            source_id: source.1,
+        };
+        let identity = if v.bvid.is_empty() {
+            format!("row:{}", v.id)
+        } else {
+            v.bvid.clone()
+        };
+        let entry = grouped.entry(identity).or_insert_with(|| LibraryVideo {
+            id: v.id,
+            name: v.name,
+            bvid: v.bvid,
+            creators: creators.clone(),
+            sources: Vec::new(),
+        });
+        if creators.len() > entry.creators.len() {
+            entry.creators = creators;
+        }
+        entry.sources.push(source);
+    }
+    let videos: Vec<_> = grouped.into_values().collect();
     Ok(ApiResponse::ok(videos))
 }
 
@@ -247,4 +279,65 @@ mod tests {
         assert_eq!(result.uploaders[1].coauthored_video_count, 1);
         std::fs::remove_dir_all(dir).unwrap();
     }
+}
+
+pub async fn preview_dedup(
+    Extension(db): Extension<Arc<DatabaseConnection>>,
+) -> Result<ApiResponse<crate::utils::shared_media::Plan>, ApiError> {
+    // Detach execution from the HTTP connection so closing the tab cannot interrupt publication.
+    let plan = tokio::spawn(async move {
+        let _guard = crate::utils::shared_media::GATE.write().await;
+        crate::utils::shared_media::preview(&db).await
+    })
+    .await??;
+    Ok(ApiResponse::ok(plan))
+}
+
+pub async fn execute_dedup(
+    Path(id): Path<String>,
+    Extension(db): Extension<Arc<DatabaseConnection>>,
+) -> Result<ApiResponse<crate::utils::shared_media::Plan>, ApiError> {
+    uuid::Uuid::parse_str(&id).map_err(|_| InnerApiError::BadRequest("无效的迁移预览".into()))?;
+    let plan = tokio::spawn(async move {
+        let _guard = crate::utils::shared_media::GATE.write().await;
+        let backup_dir = crate::config::CONFIG_DIR.join("storage-backups");
+        tokio::fs::create_dir_all(&backup_dir).await?;
+        let backup = backup_dir.join(format!("{id}.sqlite"));
+        if !backup.try_exists()? {
+            db.execute(Statement::from_sql_and_values(
+                DbBackend::Sqlite,
+                "VACUUM INTO ?",
+                [backup.to_string_lossy().to_string().into()],
+            ))
+            .await?;
+        }
+        crate::utils::shared_media::execute(&db, &id).await
+    })
+    .await??;
+    Ok(ApiResponse::ok(plan))
+}
+
+#[derive(Serialize)]
+pub struct StorageOperation {
+    id: String,
+    state: String,
+    error: Option<String>,
+    plan: crate::utils::shared_media::Plan,
+}
+pub async fn dedup_history(
+    Extension(db): Extension<Arc<DatabaseConnection>>,
+) -> Result<ApiResponse<Vec<StorageOperation>>, ApiError> {
+    let rows = db.query_all(Statement::from_string(DbBackend::Sqlite, "SELECT id,state,error,payload FROM storage_operation WHERE kind='dedup' ORDER BY created_at DESC,rowid DESC LIMIT 10")).await?;
+    let history: anyhow::Result<Vec<_>> = rows
+        .into_iter()
+        .map(|r| {
+            Ok(StorageOperation {
+                id: r.try_get("", "id")?,
+                state: r.try_get("", "state")?,
+                error: r.try_get("", "error")?,
+                plan: serde_json::from_str(&r.try_get::<String>("", "payload")?)?,
+            })
+        })
+        .collect();
+    Ok(ApiResponse::ok(history?))
 }

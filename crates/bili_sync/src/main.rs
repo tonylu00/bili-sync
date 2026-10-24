@@ -39,7 +39,9 @@ use anyhow::Result;
 async fn main() -> Result<()> {
     init();
 
+    let _storage_process_lock = crate::utils::shared_media::process_lock()?;
     let connection = Arc::new(setup_database().await);
+    crate::utils::shared_media::recover(&connection).await?;
 
     // 初始化数据库配置系统
     if let Err(e) = init_config_with_database(connection.as_ref().clone()).await {

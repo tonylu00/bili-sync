@@ -1117,4 +1117,15 @@ export interface UploaderUsage {
     filters: UploaderFilter;
 }
 export interface LibraryUsage { uploaders: UploaderUsage[]; missing_files: number; unreadable_files: number; }
-export interface LibraryVideo { id: number; name: string; bvid: string; creators: Creator[]; }
+export interface LibraryVideo { id: number; name: string; bvid: string; creators: Creator[]; sources: { video_id: number; source_type: string; source_id: number | null }[]; }
+
+export interface DedupCandidate {
+	page_id: number; video_id: number; bvid: string; cid: number; path: string; name: string;
+	upper_id: number; source_kind: string; source_uid: number | null;
+}
+export interface DedupGroup {
+	bvid: string; cid: number; keeper: DedupCandidate; copies: DedupCandidate[];
+	reason: string; reclaimable_bytes: number; conflict: string | null;
+}
+export interface DedupPlan { id: string; groups: DedupGroup[]; unresolved_pages: number; }
+export interface DedupOperation { id: string; state: string; error: string | null; plan: DedupPlan; }

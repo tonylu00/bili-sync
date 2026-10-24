@@ -8,6 +8,7 @@
 		UploaderUsage,
 		UpdateVideoSourceFiltersRequest
 	} from '$lib/types';
+	import SharedMediaPanel from '$lib/components/shared-media-panel.svelte';
 	import EditVideoFiltersDialog from '$lib/components/edit-video-filters-dialog.svelte';
 	let data: LibraryUsage | null = null;
 	let loading = false;
@@ -99,6 +100,7 @@
 		按创作者查看视频文件体积和视频数。主投稿与联合创作分别统计；同一 BV
 		的多个来源只计一个视频，独立文件副本分别计入体积。协作体积包含共享视频，不能与其他作者直接相加。不含封面、字幕和回收站文件。
 	</p>
+	<SharedMediaPanel oncomplete={load} />
 	{#if error}<p role="alert" class="text-destructive">{error}</p>{/if}
 	{#if data}
 		{#if data.unreadable_files > 0}<p class="text-amber-600">
@@ -175,7 +177,7 @@
 				>
 			</div>
 			<p class="text-muted-foreground text-sm">
-				规则只作用于此UP主作为主投稿者的视频，不作用于仅参与的联合创作。与视频源规则共同生效；下次扫描时用于自动下载。已下载文件保留，可进入视频详情预览并删除。删除联合创作视频会删除整个文件。
+				规则只作用于此UP主作为主投稿者的视频，不作用于仅参与的联合创作。与视频源规则共同生效；下次扫描时用于自动下载。已下载文件保留，可进入视频详情预览并删除。删除只解除当前来源的引用；其他来源仍使用的媒体会保留。
 			</p>
 
 			<input
@@ -190,6 +192,13 @@
 							<a class="text-primary hover:underline" href={`/video/${video.id}`}>{video.name}</a>
 							<p class="text-muted-foreground mt-1 text-xs">
 								{video.creators.map((c) => `${c.name}（${c.role}）`).join(' · ')}
+							</p>
+							<p class="mt-2 flex flex-wrap gap-3 text-xs">
+								{#each video.sources as source}<a
+										class="text-primary underline"
+										href={`/video/${source.video_id}`}
+										>{source.source_type} #{source.source_id ?? source.video_id}</a
+									>{/each}
 							</p>
 						</li>{:else}<li class="text-muted-foreground py-3">暂无匹配的视频</li>{/each}
 				</ul>

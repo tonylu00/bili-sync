@@ -691,6 +691,7 @@ pub async fn fetch_video_details(
     connection: &DatabaseConnection,
     token: CancellationToken,
 ) -> Result<()> {
+    let _storage_guard = crate::utils::shared_media::GATE.read().await;
     // Early exit when paused/cancelled
     if crate::task::TASK_CONTROLLER.is_paused() || token.is_cancelled() {
         info!("任务已暂停/取消，跳过视频详情阶段");
@@ -1312,6 +1313,7 @@ pub async fn download_video_pages(
     should_download_upper: bool,
     token: CancellationToken,
 ) -> Result<video::ActiveModel> {
+    let _storage_guard = crate::utils::shared_media::GATE.read().await;
     let _permit = tokio::select! {
         biased;
         _ = token.cancelled() => return Err(anyhow!("Download cancelled")),
@@ -2867,6 +2869,9 @@ pub async fn download_page(
         dimension,
         ..Default::default()
     };
+    let mut media = crate::utils::shared_media::acquire(
+        connection, &video_model.bvid, page_model.cid, page_model.id, &video_path,
+    ).await?;
     // 使用 tokio::join! 替代装箱的 Future，零分配并行执行
     let (res_1, res_2, res_3, res_4, res_5) = tokio::join!(
         fetch_page_poster(
@@ -2878,15 +2883,22 @@ pub async fn download_page(
             fanart_path,
             token.clone(),
         ),
-        fetch_page_video(
-            separate_status[1],
-            bili_client,
-            video_model,
-            downloader,
-            &page_info,
-            &video_path,
-            token.clone(),
-        ),
+        async {
+            if media.ready { return Ok(ExecutionStatus::Succeeded); }
+            if !separate_status[1] {
+                media.abort(connection).await?;
+                return Ok(ExecutionStatus::Skipped);
+            }
+            let result = fetch_page_video(
+                true, bili_client, video_model, downloader, &page_info, &media.path, token.clone(),
+            ).await;
+            if matches!(&result, Ok(ExecutionStatus::Succeeded)) {
+                media.publish(connection, page_model.duration).await?;
+            } else {
+                media.abort(connection).await?;
+            }
+            result
+        },
         generate_page_nfo(separate_status[2], video_model, &page_model, nfo_path, connection),
         fetch_page_danmaku(
             separate_status[3],
@@ -3038,7 +3050,7 @@ pub async fn download_page(
     }
     let mut page_active_model: page::ActiveModel = page_model.into();
     page_active_model.download_status = Set(status.into());
-    page_active_model.path = Set(Some(video_path.to_string_lossy().to_string()));
+    page_active_model.path = Set(Some(if media.ready { media.path } else { video_path }.to_string_lossy().to_string()));
     Ok(page_active_model)
 }
 

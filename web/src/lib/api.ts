@@ -538,6 +538,9 @@ class ApiClient {
 	/**
 	 * 获取关注的UP主列表
 	 */
+	async previewDedup() { return this.request<import('./types').DedupPlan>('/library/dedup', { method: 'POST' }); }
+	async executeDedup(id: string) { return this.request<import('./types').DedupPlan>(`/library/dedup/${encodeURIComponent(id)}/execute`, { method: 'POST' }); }
+	async getDedupHistory() { return this.request<import('./types').DedupOperation[]>('/library/dedup'); }
 	async getLibraryUsage() { return this.request<import('./types').LibraryUsage>('/library/uploaders'); }
 	async getUploaderVideos(uid: string) { return this.request<import('./types').LibraryVideo[]>(`/library/uploaders/${encodeURIComponent(uid)}/videos`); }
 	async saveUploaderFilter(uid: string, filters: import('./types').UploaderFilter) {
@@ -813,6 +816,9 @@ export const apiClient = new ApiClient();
 
 // 导出 API 方法的便捷函数
 export const api = {
+    previewDedup: () => apiClient.previewDedup(),
+    executeDedup: (id: string) => apiClient.executeDedup(id),
+    getDedupHistory: () => apiClient.getDedupHistory(),
     getLibraryUsage: () => apiClient.getLibraryUsage(),
     getUploaderVideos: (uid: string) => apiClient.getUploaderVideos(uid),
     saveUploaderFilter: (uid: string, filters: import('./types').UploaderFilter) => apiClient.saveUploaderFilter(uid, filters),

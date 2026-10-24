@@ -136,3 +136,5 @@ fn build_optimized_filter(base_level: &str) -> tracing_subscriber::EnvFilter {
 
 pub mod creators;
 pub mod uploader_filter;
+
+pub mod shared_media;

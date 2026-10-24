@@ -171,6 +171,7 @@ pub async fn create_videos(
     video_source: &VideoSourceEnum,
     connection: &DatabaseConnection,
 ) -> Result<()> {
+    let _storage_guard = crate::utils::shared_media::GATE.read().await;
     use sea_orm::{Set, Unchanged};
 
     // 新增：在全量模式下进行去重检查，防止重复处理已存在的视频

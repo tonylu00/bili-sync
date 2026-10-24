@@ -490,6 +490,7 @@ dependencies = [
  "reqwest",
  "rsa",
  "rust-embed",
+ "same-file",
  "sea-orm",
  "serde",
  "serde_json",
