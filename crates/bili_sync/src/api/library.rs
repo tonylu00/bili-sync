@@ -186,9 +186,6 @@ pub async fn get_videos(
     let mut grouped: BTreeMap<String, LibraryVideo> = BTreeMap::new();
     for v in videos {
         let creators = creators::from_video(&v);
-        if !creators.iter().any(|c| c.uid == uid) {
-            continue;
-        }
         let source = if v.submission_id.is_some() {
             ("UP主", v.submission_id)
         } else if v.favorite_id.is_some() {
@@ -222,7 +219,10 @@ pub async fn get_videos(
         }
         entry.sources.push(source);
     }
-    let videos: Vec<_> = grouped.into_values().collect();
+    let videos: Vec<_> = grouped
+        .into_values()
+        .filter(|v| v.creators.iter().any(|c| c.uid == uid))
+        .collect();
     Ok(ApiResponse::ok(videos))
 }
 
@@ -300,18 +300,8 @@ pub async fn execute_dedup(
     uuid::Uuid::parse_str(&id).map_err(|_| InnerApiError::BadRequest("无效的迁移预览".into()))?;
     let plan = tokio::spawn(async move {
         let _guard = crate::utils::shared_media::GATE.write().await;
-        let backup_dir = crate::config::CONFIG_DIR.join("storage-backups");
-        tokio::fs::create_dir_all(&backup_dir).await?;
-        let backup = backup_dir.join(format!("{id}.sqlite"));
-        if !backup.try_exists()? {
-            db.execute(Statement::from_sql_and_values(
-                DbBackend::Sqlite,
-                "VACUUM INTO ?",
-                [backup.to_string_lossy().to_string().into()],
-            ))
-            .await?;
-        }
-        crate::utils::shared_media::execute(&db, &id).await
+        crate::utils::shared_media::execute_with_backup(&db, &id, &crate::config::CONFIG_DIR.join("storage-backups"))
+            .await
     })
     .await??;
     Ok(ApiResponse::ok(plan))

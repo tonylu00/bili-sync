@@ -225,6 +225,12 @@ pub async fn acquire(db: &DatabaseConnection, bvid: &str, cid: i64, page_id: i32
     ensure!(bvid.starts_with("BV") && cid > 0, "无法共享媒体：尚未确认 BV/CID");
     let digest = Sha256::digest(format!("{bvid}:{cid}"));
     let lock = PART_LOCKS[digest[0] as usize].lock().await;
+    // Holding this key's mutex proves that any old downloading journal for it is abandoned.
+    for row in db.query_all(statement("SELECT id,payload FROM storage_operation WHERE kind='publish' AND state='downloading' AND json_extract(payload,'$.bvid')=? AND json_extract(payload,'$.cid')=?",vec![bvid.into(),cid.into()])).await? {
+        let payload:serde_json::Value=serde_json::from_str(&row.try_get::<String>("","payload")?)?;
+        remove_staging(Path::new(payload["staging"].as_str().context("Missing abandoned staging path")?)).await?;
+        db.execute(statement("UPDATE storage_operation SET state='cancelled' WHERE id=?",vec![row.try_get::<String>("","id")?.into()])).await?;
+    }
     let mut lease = Lease {
         _lock: lock,
         path: requested.with_extension(format!("{}.part.mp4", uuid::Uuid::new_v4())),
@@ -268,6 +274,10 @@ pub async fn acquire(db: &DatabaseConnection, bvid: &str, cid: i64, page_id: i32
         for copy in copies.into_iter().filter(|c| c.completed) {
             let path = Path::new(&copy.path);
             // Fail closed: an offline/invalid existing copy needs review, not a duplicate download.
+            ensure!(
+                !path_has_other_identity(db, &copy.path, bvid, cid).await?,
+                "现有路径还被不同的 BV/CID 使用"
+            );
             probe(path, copy.duration).await?;
             let fp = fingerprint(path).await?;
             register(db, bvid, cid, &copy.path, &fp).await?;
@@ -301,6 +311,16 @@ impl Lease {
         if self.ready {
             return Ok(());
         }
+        let downloading = db
+            .query_one(statement(
+                "SELECT id FROM storage_operation WHERE id=? AND state='downloading'",
+                vec![self.operation.clone().into()],
+            ))
+            .await?
+            .is_some();
+        if !downloading {
+            return Ok(());
+        } // Preserve prepared publications for recovery.
         remove_staging(&self.path).await?;
         db.execute(statement(
             "UPDATE storage_operation SET state='cancelled' WHERE id=? AND state='downloading'",
@@ -402,6 +422,16 @@ pub async fn preview(db: &DatabaseConnection) -> Result<Plan> {
             }
             Err(e) => group.conflict = Some(format!("{e:#}")),
         }
+        if group.conflict.is_none() {
+            for copy in &group.copies {
+                if path_has_other_identity(db, &copy.path, &group.bvid, group.cid).await? {
+                    group.conflict = Some("路径还被不同的 BV/CID 使用，保留为冲突".into());
+                    group.reclaimable_bytes = 0;
+                    group.fingerprint = None;
+                    break;
+                }
+            }
+        }
         groups.push(group);
     }
     let plan = Plan {
@@ -450,6 +480,50 @@ pub fn file_identity(path: &Path) -> std::io::Result<std::sync::Arc<same_file::H
 
 /// Recheck every file and database mapping, commit references, then unlink exact duplicates.
 /// No directory removal. A retry uses the saved plan, and verifies the keeper again.
+pub async fn execute_with_backup(db: &DatabaseConnection, id: &str, backup_dir: &Path) -> Result<Plan> {
+    uuid::Uuid::parse_str(id).context("Invalid migration ID")?;
+    let row = db
+        .query_one(statement(
+            "SELECT state FROM storage_operation WHERE id=? AND kind='dedup'",
+            vec![id.into()],
+        ))
+        .await?
+        .context("迁移预览不存在")?;
+    if row.try_get::<String>("", "state")? != "complete" {
+        tokio::fs::create_dir_all(backup_dir).await?;
+        let backup = backup_dir.join(format!("{id}.sqlite"));
+        if !backup.try_exists()? {
+            let staging = backup.with_extension("sqlite.partial");
+            if staging.try_exists()? {
+                tokio::fs::remove_file(&staging).await?;
+            }
+            db.execute(statement(
+                "VACUUM INTO ?",
+                vec![staging.to_string_lossy().to_string().into()],
+            ))
+            .await?;
+            verify_backup(&staging).await?;
+            tokio::fs::rename(&staging, &backup).await?;
+        } else {
+            verify_backup(&backup).await?;
+        }
+    }
+    execute(db, id).await
+}
+async fn verify_backup(path: &Path) -> Result<()> {
+    let snapshot = sea_orm::Database::connect(format!("sqlite://{}?mode=ro&immutable=1", path.to_string_lossy()))
+        .await
+        .with_context(|| format!("无法打开备份 {} (exists={})", path.display(), path.exists()))?;
+    let checked = snapshot
+        .query_one(statement("PRAGMA quick_check", []))
+        .await?
+        .context("无法校验数据库备份")?;
+    let result: String = checked.try_get_by_index(0)?;
+    snapshot.close().await?;
+    ensure!(result == "ok", "数据库备份校验失败: {result}");
+    Ok(())
+}
+
 pub async fn execute(db: &DatabaseConnection, id: &str) -> Result<Plan> {
     let row = db
         .query_one(statement(
@@ -490,6 +564,10 @@ async fn execute_group(db: &DatabaseConnection, group: &Group) -> Result<()> {
         &fingerprint(Path::new(&group.keeper.path)).await? == fp,
         "保留文件发生变化，请重新预览"
     );
+    ensure!(
+        !path_has_other_identity(db, &group.keeper.path, &group.bvid, group.cid).await?,
+        "保留路径还被不同的 BV/CID 使用"
+    );
     let current = candidates(db, Some((&group.bvid, group.cid))).await?;
     for copy in &group.copies {
         let now = current
@@ -520,8 +598,8 @@ async fn execute_group(db: &DatabaseConnection, group: &Group) -> Result<()> {
     }
     txn.commit().await?;
     for path in group.copies.iter().map(|c| &c.path).collect::<HashSet<_>>() {
-        if path == &group.keeper.path {
-            continue;
+        if same_location(path, &group.keeper.path) {
+            continue; // ./, .., parent symlinks and case aliases are the SAME directory entry.
         }
         if Path::new(path).try_exists()? {
             ensure!(
@@ -534,29 +612,54 @@ async fn execute_group(db: &DatabaseConnection, group: &Group) -> Result<()> {
     }
     Ok(())
 }
+// Unlike file_identity, this compares directory entries, not hardlink inodes.
+fn location(path: &str) -> Option<PathBuf> {
+    let path = Path::new(path);
+    std::fs::canonicalize(path)
+        .ok()
+        .or_else(|| Some(std::fs::canonicalize(path.parent()?).ok()?.join(path.file_name()?)))
+}
+fn same_location(a: &str, b: &str) -> bool {
+    a == b || location(a).zip(location(b)).is_some_and(|(a, b)| a == b)
+}
 async fn path_has_other_identity(db: &DatabaseConnection, path: &str, bvid: &str, cid: i64) -> Result<bool> {
-    Ok(db.query_one(statement("SELECT p.id FROM page p JOIN video v ON v.id=p.video_id WHERE p.path=? AND (v.bvid<>? OR p.cid<>?) LIMIT 1", vec![path.into(), bvid.into(), cid.into()])).await?.is_some())
+    let rows=db.query_all(statement("SELECT DISTINCT p.path FROM page p JOIN video v ON v.id=p.video_id WHERE p.path IS NOT NULL AND (v.bvid<>? OR p.cid<>?) UNION SELECT path FROM media_part WHERE bvid<>? OR cid<>?",vec![bvid.into(),cid.into(),bvid.into(),cid.into()])).await?;
+    for row in rows {
+        if same_location(path, &row.try_get::<String>("", "path")?) {
+            return Ok(true);
+        }
+    }
+    Ok(false)
 }
 
-/// Remove only the selected source's reference. Exact paths shared by another row or pinned are retained.
+/// Remove only the selected source's reference. Aliases and independent pins retain the file too.
 pub async fn can_remove<C: ConnectionTrait>(db: &C, path: &str, video_id: i32) -> Result<bool> {
-    let other = db.query_one(statement("SELECT p.id FROM page p JOIN video v ON v.id=p.video_id WHERE p.path=? AND p.video_id<>? AND v.deleted=0 LIMIT 1", vec![path.into(), video_id.into()])).await?;
-    let pin = db
-        .query_one(statement(
-            "SELECT bvid FROM media_part WHERE path=? AND pinned=1 LIMIT 1",
-            vec![path.into()],
-        ))
-        .await?;
-    Ok(other.is_none() && pin.is_none())
+    let rows=db.query_all(statement("SELECT DISTINCT p.path FROM page p JOIN video v ON v.id=p.video_id WHERE p.path IS NOT NULL AND p.video_id<>? AND v.deleted=0 UNION SELECT path FROM media_part WHERE pinned=1",vec![video_id.into()])).await?;
+    for row in rows {
+        if same_location(path, &row.try_get::<String>("", "path")?) {
+            return Ok(false);
+        }
+    }
+    Ok(true)
 }
 pub async fn forget_removed<C: ConnectionTrait>(db: &C, path: &str) -> Result<()> {
-    db.execute(statement(
-        "DELETE FROM media_part WHERE path=? AND pinned=0",
-        vec![path.into()],
-    ))
-    .await?;
+    // Parent canonicalization also resolves aliases after the file has been unlinked.
+    for row in db
+        .query_all(statement("SELECT path FROM media_part WHERE pinned=0", []))
+        .await?
+    {
+        let registered: String = row.try_get("", "path")?;
+        if same_location(path, &registered) {
+            db.execute(statement(
+                "DELETE FROM media_part WHERE path=? AND pinned=0",
+                vec![registered.into()],
+            ))
+            .await?;
+        }
+    }
     Ok(())
 }
+
 pub async fn pin_video<C: ConnectionTrait>(db: &C, video_id: i32) -> Result<()> {
     // Adopt completed legacy files before their source rows disappear, so future sources can reuse them.
     for row in db.query_all(statement("SELECT v.bvid,p.cid,p.path,p.duration FROM page p JOIN video v ON v.id=p.video_id WHERE v.id=? AND p.cid>0 AND p.path IS NOT NULL AND ((p.download_status >> 3) & 7)=7",vec![video_id.into()])).await? {
@@ -577,10 +680,13 @@ pub async fn pin_video<C: ConnectionTrait>(db: &C, video_id: i32) -> Result<()> 
 
 /// Any directory containing a canonical file is independent of source folder lifecycle.
 pub async fn protects_directory<C: ConnectionTrait>(db: &C, directory: &str) -> Result<bool> {
-    let dir = Path::new(directory);
+    let dir = std::fs::canonicalize(directory).unwrap_or_else(|_| PathBuf::from(directory));
     for row in db.query_all(statement("SELECT path FROM media_part", [])).await? {
         let path: String = row.try_get("", "path")?;
-        if Path::new(&path).starts_with(dir) {
+        if location(&path)
+            .unwrap_or_else(|| PathBuf::from(&path))
+            .starts_with(&dir)
+        {
             return Ok(true);
         }
     }
@@ -596,7 +702,8 @@ pub async fn managed_video<C: ConnectionTrait>(db: &C, video_id: i32) -> Result<
         .await?
         .is_some())
 }
-pub async fn remove_orphan_files<C: ConnectionTrait>(db: &C, video_id: i32) -> Result<()> {
+#[cfg(test)]
+async fn remove_orphan_files<C: ConnectionTrait>(db: &C, video_id: i32) -> Result<()> {
     for row in db
         .query_all(statement(
             "SELECT path FROM page WHERE video_id=? AND path IS NOT NULL",
@@ -964,6 +1071,108 @@ mod tests {
         std::fs::write(&a, b"new content").unwrap();
         collect_garbage(&db).await.unwrap();
         assert_eq!(std::fs::read(&a).unwrap(), b"new content");
+    }
+
+    #[tokio::test]
+    async fn path_aliases_never_unlink_the_keeper_or_bypass_live_references() {
+        let db = database().await;
+        let dir = Temp::new();
+        let a = dir.file("primary/video.mp4");
+        let alias = dir.0.join("primary/../primary/video.mp4");
+        add(&db, 1, Some(11), &a, 10).await;
+        add(&db, 2, None, &alias, 10).await;
+        assert!(!can_remove(&db, &a.to_string_lossy(), 1).await.unwrap());
+        let plan = preview(&db).await.unwrap();
+        assert_eq!(plan.groups[0].conflict, None);
+        execute(&db, &plan.id).await.unwrap();
+        assert!(a.exists());
+        assert_eq!(page_path(&db, 2).await, a.to_string_lossy());
+    }
+    #[tokio::test]
+    async fn abandoned_download_is_cleaned_before_retry_without_touching_prepared_files() {
+        let db = database().await;
+        let dir = Temp::new();
+        let target = dir.0.join("video.mp4");
+        let first = acquire(&db, "BV1sharedtest", 10, 1, &target).await.unwrap();
+        let abandoned = first.path.clone();
+        std::fs::write(&abandoned, b"partial").unwrap();
+        drop(first);
+        let second = acquire(&db, "BV1sharedtest", 10, 1, &target).await.unwrap();
+        assert!(!abandoned.exists());
+        std::fs::write(&second.path, MEDIA).unwrap();
+        db.execute(statement(
+            "UPDATE storage_operation SET state='prepared' WHERE id=?",
+            vec![second.operation.clone().into()],
+        ))
+        .await
+        .unwrap();
+        second.abort(&db).await.unwrap();
+        assert!(second.path.exists());
+    }
+    #[tokio::test]
+    async fn identity_collisions_are_reported_instead_of_merging() {
+        let db = database().await;
+        let dir = Temp::new();
+        let a = dir.file("a/video.mp4");
+        let b = dir.file("b/video.mp4");
+        add(&db, 1, Some(11), &a, 10).await;
+        add(&db, 2, None, &b, 10).await;
+        add(&db, 3, Some(22), &a, 20).await;
+        let plan = preview(&db).await.unwrap();
+        assert!(plan.groups[0].conflict.is_some());
+        assert!(a.exists() && b.exists());
+    }
+
+    #[tokio::test]
+    async fn migration_backup_is_verified_and_contains_the_original_reference_paths() {
+        let dir = Temp::new();
+        let db = Database::connect(format!("sqlite://{}?mode=rwc", dir.0.join("data.sqlite").display()))
+            .await
+            .unwrap();
+        Migrator::up(&db, None).await.unwrap();
+        let a = dir.file("a/video.mp4");
+        let b = dir.file("b/video.mp4");
+        add(&db, 1, Some(11), &a, 10).await;
+        add(&db, 2, None, &b, 10).await;
+        let plan = preview(&db).await.unwrap();
+        let backups = dir.0.join("backups");
+        std::fs::create_dir_all(&backups).unwrap();
+        std::fs::write(
+            backups.join(format!("{}.sqlite.partial", plan.id)),
+            b"interrupted backup",
+        )
+        .unwrap();
+        execute_with_backup(&db, &plan.id, &backups).await.unwrap();
+        let snapshot = sea_orm::Database::connect(format!(
+            "sqlite://{}?mode=ro",
+            backups.join(format!("{}.sqlite", plan.id)).display()
+        ))
+        .await
+        .unwrap();
+        assert_eq!(page_path(&snapshot, 2).await, b.to_string_lossy());
+        snapshot.close().await.unwrap();
+        assert!(!b.exists());
+        assert!(a.exists());
+        execute_with_backup(&db, &plan.id, &backups).await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn creator_video_list_groups_bv_and_keeps_sources_with_incomplete_staff_metadata() {
+        let db = std::sync::Arc::new(database().await);
+        let dir = Temp::new();
+        let a = dir.file("a/video.mp4");
+        let b = dir.file("b/video.mp4");
+        add(&db, 1, Some(11), &a, 10).await;
+        add(&db, 2, None, &b, 10).await;
+        db.execute_unprepared("UPDATE video SET staff_info=NULL WHERE id=2")
+            .await
+            .unwrap();
+        let response = crate::api::library::get_videos(axum::extract::Path(22), axum::Extension(db))
+            .await
+            .unwrap();
+        let json = serde_json::to_value(response).unwrap();
+        assert_eq!(json["data"].as_array().unwrap().len(), 1);
+        assert_eq!(json["data"][0]["sources"].as_array().unwrap().len(), 2);
     }
 
     #[tokio::test]

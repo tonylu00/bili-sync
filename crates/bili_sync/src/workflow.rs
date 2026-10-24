@@ -2893,7 +2893,10 @@ pub async fn download_page(
                 true, bili_client, video_model, downloader, &page_info, &media.path, token.clone(),
             ).await;
             if matches!(&result, Ok(ExecutionStatus::Succeeded)) {
-                media.publish(connection, page_model.duration).await?;
+                if let Err(error) = media.publish(connection, page_model.duration).await {
+                    media.abort(connection).await?;
+                    return Err(error);
+                }
             } else {
                 media.abort(connection).await?;
             }
