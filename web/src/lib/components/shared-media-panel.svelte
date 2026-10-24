@@ -60,8 +60,11 @@
 			error = message(e);
 			state = 'interrupted';
 		} finally {
+			const failure = error;
 			busy = false;
 			await refresh();
+			// Backup failures happen before the migration journal changes state.
+			if (failure && !error) error = failure;
 		}
 	}
 	onMount(refresh);
