@@ -4,6 +4,7 @@ use super::{
 };
 use crate::utils::{
     creators::{self, Creator},
+    shared_media::FileIdentity,
     uploader_filter::UploaderFilter,
 };
 use axum::{extract::Path, Extension, Json};
@@ -64,7 +65,7 @@ async fn rules(db: &DatabaseConnection) -> anyhow::Result<HashMap<String, Upload
 
 // File identity deduplicates paths and hard links. Directories are never recursively counted:
 // a source folder may contain videos belonging to many unrelated creators.
-fn file_size(path: &str) -> std::io::Result<Option<(Arc<same_file::Handle>, u64)>> {
+fn file_size(path: &str) -> std::io::Result<Option<(FileIdentity, u64)>> {
     let meta = std::fs::metadata(path)?;
     if !meta.is_file() {
         return Ok(None);
@@ -119,7 +120,7 @@ fn aggregate(
                     }
                 });
             if let Some(size) = size {
-                sizes.push(size.clone());
+                sizes.push(*size);
             }
         }
         for author in authors {
@@ -143,7 +144,7 @@ fn aggregate(
                 }
             }
             for (key, bytes) in &sizes {
-                if files.insert((author.uid.clone(), author.primary, key.clone())) {
+                if files.insert((author.uid.clone(), author.primary, *key)) {
                     if author.primary {
                         row.primary_bytes += bytes;
                     } else {
@@ -246,6 +247,108 @@ pub async fn save_filter(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    // Run in a child so the low descriptor limit cannot affect other tests. The
+    // scan must leave descriptors available even when the library exceeds it.
+    #[cfg(unix)]
+    #[test]
+    fn large_library_under_low_descriptor_limit() {
+        const CHILD: &str = "BILI_SYNC_LOW_FD_TEST_CHILD";
+        if std::env::var_os(CHILD).is_none() {
+            let output = std::process::Command::new("/bin/sh")
+                .args(["-c", "ulimit -n 128 || exit 1; exec \"$@\"", "low-fd-test"])
+                .arg(std::env::current_exe().unwrap())
+                .args([
+                    "--exact",
+                    "api::library::tests::large_library_under_low_descriptor_limit",
+                    "--nocapture",
+                ])
+                .env(CHILD, "1")
+                .output()
+                .unwrap();
+            assert!(
+                output.status.success(),
+                "low-descriptor scan failed:\n{}\n{}",
+                String::from_utf8_lossy(&output.stdout),
+                String::from_utf8_lossy(&output.stderr)
+            );
+            return;
+        }
+
+        let dir = std::env::temp_dir().join(format!("bili-library-fd-test-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let mut videos = Vec::new();
+        let mut pages = Vec::new();
+        for id in 1..=512 {
+            let path = dir.join(format!("{id}.mp4"));
+            std::fs::write(&path, [0; 42]).unwrap();
+            videos.push(video::Model {
+                id,
+                upper_id: 11,
+                upper_name: "Main".into(),
+                bvid: format!("BV{id}"),
+                path: dir.to_string_lossy().into(),
+                ..Default::default()
+            });
+            pages.push(page::Model {
+                video_id: id,
+                path: Some(path.to_string_lossy().into()),
+                ..Default::default()
+            });
+        }
+        let result = aggregate(videos, pages, HashMap::new());
+        std::fs::remove_dir_all(dir).unwrap();
+        assert_eq!(result.unreadable_files, 0);
+        assert_eq!(result.missing_files, 0);
+        assert_eq!(result.uploaders.len(), 1);
+        assert_eq!(result.uploaders[0].primary_video_count, 512);
+        assert_eq!(result.uploaders[0].primary_bytes, 512 * 42);
+    }
+
+    #[test]
+    fn counts_hardlinks_once_and_independent_copies_separately() {
+        let dir = std::env::temp_dir().join(format!("bili-library-links-test-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let original = dir.join("original.mp4");
+        let hardlink = dir.join("hardlink.mp4");
+        let copy = dir.join("copy.mp4");
+        std::fs::write(&original, [0; 42]).unwrap();
+        std::fs::hard_link(&original, &hardlink).unwrap();
+        std::fs::copy(&original, &copy).unwrap();
+        let mut paths = vec![original, hardlink, copy];
+        #[cfg(unix)]
+        {
+            let symlink = dir.join("symlink.mp4");
+            std::os::unix::fs::symlink(&paths[0], &symlink).unwrap();
+            paths.push(symlink);
+        }
+        // Repeated paths, hardlinks and symlinks all refer to the same bytes;
+        // the independent copy counts separately even with identical content.
+        paths.push(paths[0].clone());
+        let v = video::Model {
+            id: 1,
+            upper_id: 11,
+            upper_name: "Main".into(),
+            bvid: "BV1".into(),
+            path: dir.to_string_lossy().into(),
+            ..Default::default()
+        };
+        let pages = paths
+            .iter()
+            .map(|path| page::Model {
+                video_id: 1,
+                path: Some(path.to_string_lossy().into()),
+                ..Default::default()
+            })
+            .collect();
+        let result = aggregate(vec![v], pages, HashMap::new());
+        std::fs::remove_dir_all(dir).unwrap();
+        assert_eq!(result.unreadable_files, 0);
+        assert_eq!(result.missing_files, 0);
+        assert_eq!(result.uploaders[0].primary_bytes, 84);
+        assert_eq!(result.uploaders[0].primary_video_count, 1);
+    }
+
     #[test]
     fn counts_separate_authors_and_deduplicates_files_and_copies() {
         let dir = std::env::temp_dir().join(format!("bili-library-test-{}", uuid::Uuid::new_v4()));

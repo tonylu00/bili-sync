@@ -490,7 +490,6 @@ dependencies = [
  "reqwest",
  "rsa",
  "rust-embed",
- "same-file",
  "sea-orm",
  "serde",
  "serde_json",
@@ -511,6 +510,7 @@ dependencies = [
  "utoipa-swagger-ui",
  "uuid",
  "webbrowser",
+ "winapi-util",
 ]
 
 [[package]]

@@ -474,8 +474,34 @@ async fn inspect_group(group: &Group) -> Result<(Fingerprint, u64)> {
     Ok((fp, bytes))
 }
 
-pub fn file_identity(path: &Path) -> std::io::Result<std::sync::Arc<same_file::Handle>> {
-    same_file::Handle::from_path(path).map(std::sync::Arc::new)
+/// A snapshot for disk accounting, not a proof that a path is safe to delete.
+/// Keep only identity values: retaining an open handle per media file exhausts
+/// process descriptors during large library scans (including concurrent DNS).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct FileIdentity {
+    volume: u64,
+    index: u64,
+}
+
+#[cfg(unix)]
+pub fn file_identity(path: &Path) -> std::io::Result<FileIdentity> {
+    use std::os::unix::fs::MetadataExt;
+    let metadata = std::fs::metadata(path)?;
+    Ok(FileIdentity {
+        volume: metadata.dev(),
+        index: metadata.ino(),
+    })
+}
+
+#[cfg(windows)]
+pub fn file_identity(path: &Path) -> std::io::Result<FileIdentity> {
+    let handle = winapi_util::Handle::from_path_any(path)?;
+    let info = winapi_util::file::information(&handle)?;
+    // The temporary handle closes here, before the identity enters a scan's sets.
+    Ok(FileIdentity {
+        volume: info.volume_serial_number(),
+        index: info.file_index(),
+    })
 }
 
 /// Recheck every file and database mapping, commit references, then unlink exact duplicates.
