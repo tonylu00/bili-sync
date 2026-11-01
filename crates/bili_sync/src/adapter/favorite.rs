@@ -12,8 +12,8 @@ use sea_orm::sea_query::SimpleExpr;
 use sea_orm::ActiveValue::Set;
 use sea_orm::{DatabaseConnection, Unchanged};
 
-use crate::adapter::{VideoSource, VideoSourceEnum, _ActiveModel};
-use crate::bilibili::{BiliClient, FavoriteList, VideoInfo};
+use crate::adapter::{_ActiveModel, VideoSource, VideoSourceEnum};
+use crate::bilibili::{BiliClient, FavoriteList, FavoriteListInfo, VideoInfo};
 use crate::utils::keyword_filter::deserialize_keywords;
 
 pub(crate) static FAVORITE_SOURCE_LOCK: tokio::sync::RwLock<()> = tokio::sync::RwLock::const_new(());
@@ -240,14 +240,55 @@ pub(crate) async fn favorite_from_with_api_base<'a>(
     VideoSourceEnum,
     Pin<Box<dyn Stream<Item = Result<VideoInfo>> + 'a + Send>>,
 )> {
+    favorite_from_with_identity_context(
+        source_id,
+        bili_client,
+        connection,
+        api_base,
+        bili_client.get_current_user_id().ok(),
+    )
+    .await
+}
+
+async fn favorite_from_with_identity_context<'a>(
+    source_id: i32,
+    bili_client: &'a BiliClient,
+    connection: &DatabaseConnection,
+    api_base: &str,
+    uid: Option<i64>,
+) -> Result<(
+    VideoSourceEnum,
+    Pin<Box<dyn Stream<Item = Result<VideoInfo>> + 'a + Send>>,
+)> {
     // Notification/error-context callers also refresh metadata outside a full scan.
     let _guard = FAVORITE_SOURCE_LOCK.read().await;
     let source = favorite::Entity::find_by_id(source_id)
         .one(connection)
         .await?
         .context("favorite not found")?;
+    // Old rows have no verified owner. Never send their stored ID to folder/info:
+    // a short fid can also be another folder's valid media_id.
+    let resolved = if source.owner_mid.is_none() {
+        Some(
+            FavoriteList::with_api_base(bili_client, source.f_id.to_string(), api_base)
+                .resolve_stored_id(uid)
+                .await
+                .context("无法确认旧收藏夹身份，已保留原记录；请在视频源页面使用「修复收藏夹ID」填写原收藏夹完整URL")?,
+        )
+    } else {
+        None
+    };
+    let source = if let Some(info) = &resolved {
+        save_resolved_identity(connection, &source, info).await?
+    } else {
+        source
+    };
     let favorite = FavoriteList::with_api_base(bili_client, source.f_id.to_string(), api_base);
-    let favorite_info = match favorite.get_info().await {
+    let favorite_info = match resolved {
+        Some(info) => Ok(info),
+        None => favorite.get_info().await,
+    };
+    let favorite_info = match favorite_info {
         Ok(info) => info,
         Err(error) if super::source_state::is_unavailable_error(&error, true) => {
             let source = FavoriteSource::new(source, true);
@@ -264,8 +305,6 @@ pub(crate) async fn favorite_from_with_api_base<'a>(
     let source = favorite::ActiveModel {
         id: Unchanged(source.id),
         name: Set(favorite_info.title),
-        // Legacy rows may contain a short ID that is also an unrelated full ID.
-        // Populate their owner only through explicit repair, never from a scan.
         owner_mid: Unchanged(source.owner_mid),
         ..Default::default()
     }
@@ -275,3 +314,58 @@ pub(crate) async fn favorite_from_with_api_base<'a>(
     let stream = source.track_stream(favorite.into_video_stream(), true);
     Ok((source.into(), stream))
 }
+
+/// Only unknown identities can migrate during a scan. Every scan resolves them
+/// before creating its stream; concurrent scans must converge on the same ID.
+/// Manual repairs/additions remain excluded by FAVORITE_SOURCE_LOCK.
+async fn save_resolved_identity(
+    connection: &DatabaseConnection,
+    source: &favorite::Model,
+    info: &FavoriteListInfo,
+) -> Result<favorite::Model> {
+    ensure!(source.owner_mid.is_none(), "收藏夹身份已验证");
+    ensure!(info.mid.is_some_and(|mid| mid > 0), "收藏夹未返回有效创建者UID");
+    ensure!(
+        info.id == source.f_id || info.matches_short_id(source.f_id),
+        "收藏夹原始ID与当前源不匹配"
+    );
+    ensure!(
+        favorite::Entity::find()
+            .filter(favorite::Column::FId.eq(info.id))
+            .filter(favorite::Column::Id.ne(source.id))
+            .one(connection)
+            .await?
+            .is_none(),
+        "完整ID的收藏夹源已经存在，请先检查重复源；现有记录未修改"
+    );
+    let result = favorite::Entity::update_many()
+        .filter(favorite::Column::Id.eq(source.id))
+        .filter(favorite::Column::FId.eq(source.f_id))
+        .filter(favorite::Column::OwnerMid.is_null())
+        .col_expr(favorite::Column::FId, Expr::value(info.id))
+        .col_expr(favorite::Column::OwnerMid, Expr::value(info.mid))
+        .col_expr(favorite::Column::Name, Expr::value(info.title.clone()))
+        .exec(connection)
+        .await?;
+    let saved = favorite::Entity::find_by_id(source.id)
+        .one(connection)
+        .await?
+        .context("favorite not found")?;
+    ensure!(
+        saved.f_id == info.id && saved.owner_mid == info.mid,
+        "收藏夹身份已变更，请重新扫描"
+    );
+    if result.rows_affected > 0 {
+        info!(
+            "已确认收藏夹「{}」完整ID：{} → {}（创建者UID：{}），保留原下载记录和设置",
+            saved.name,
+            source.f_id,
+            saved.f_id,
+            saved.owner_mid.unwrap()
+        );
+    }
+    Ok(saved)
+}
+
+#[cfg(test)]
+mod tests;

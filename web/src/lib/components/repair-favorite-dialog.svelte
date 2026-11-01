@@ -98,7 +98,9 @@
 				placeholder="https://space.bilibili.com/…/favlist?fid=…"
 				disabled={saving}
 			/>
-			<p class="text-muted-foreground text-sm">打开B站原收藏夹，复制浏览器地址栏中的完整URL。</p>
+			<p class="text-muted-foreground text-sm">
+				打开B站原收藏夹，复制浏览器地址栏中的完整URL。当前ID已经完整时，也可提交该URL验证身份，恢复扫描。
+			</p>
 			<details>
 				<summary class="text-sm">旧收藏夹候选查找（可选）</summary>
 				<p class="text-muted-foreground text-sm">

@@ -180,6 +180,191 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn stored_favorite_resolver_maps_short_id_without_querying_it_as_media_id() {
+        let (base, server) = mock_api(vec![
+            response(json!({"list": [folder()]})),
+            response(json!({"list": []})),
+            response(folder()),
+        ])
+        .await;
+        let client = BiliClient::new(String::new());
+        let info = FavoriteList::with_api_base(&client, "38001714".into(), &base)
+            .resolve_stored_id(Some(443891409))
+            .await
+            .unwrap();
+        assert_eq!(info.id, 3800171409);
+        assert_eq!(info.mid, Some(443891409));
+        let requests = server.await.unwrap();
+        assert_eq!(requests.len(), 3);
+        assert!(requests[2].contains("folder/info?media_id=3800171409"));
+        assert!(requests.iter().all(|request| !request.contains("media_id=38001714 ")));
+    }
+
+    #[tokio::test]
+    async fn stored_favorite_resolver_preserves_exact_full_id_and_default_folder_title() {
+        let mut default_folder = folder();
+        default_folder["title"] = json!("默认收藏夹");
+        let (base, server) = mock_api(vec![
+            // Created folders may omit fid and mid; details still must prove both.
+            response(json!({"list": [{"id": 3800171409_i64}]})),
+            response(json!({"list": []})),
+            response(default_folder),
+        ])
+        .await;
+        let client = BiliClient::new(String::new());
+        let info = FavoriteList::with_api_base(&client, "3800171409".into(), &base)
+            .resolve_stored_id(Some(443891409))
+            .await
+            .unwrap();
+        assert_eq!(info.id, 3800171409);
+        assert_eq!(info.title, "默认收藏夹");
+        assert!(server.await.unwrap()[2].contains("folder/info?media_id=3800171409"));
+    }
+
+    #[tokio::test]
+    async fn stored_favorite_resolver_rejects_short_and_full_id_collision_before_details() {
+        let (base, server) = mock_api(vec![
+            response(json!({"list": [{"id": 38001714, "fid": 380017, "mid": 114}]})),
+            response(json!({"list": [folder()]})),
+        ])
+        .await;
+        let client = BiliClient::new(String::new());
+        let error = FavoriteList::with_api_base(&client, "38001714".into(), &base)
+            .resolve_stored_id(Some(114))
+            .await
+            .unwrap_err();
+        assert!(error.to_string().contains("多个收藏夹"));
+        assert_eq!(server.await.unwrap().len(), 2);
+    }
+
+    #[tokio::test]
+    async fn stored_favorite_resolver_requires_both_lists_to_succeed() {
+        for failed_list in 0..2 {
+            let mut responses = vec![response(json!({"list": [folder()]})); 2];
+            responses[failed_list] = (200, json!({"code": -101, "message": "not logged in"}).to_string());
+            let (base, server) = mock_api(responses).await;
+            let client = BiliClient::new(String::new());
+            let error = FavoriteList::with_api_base(&client, "38001714".into(), &base)
+                .resolve_stored_id(Some(99))
+                .await
+                .unwrap_err();
+            assert!(error.to_string().contains("未能完整读取"));
+            let requests = server.await.unwrap();
+            assert_eq!(requests.len(), 2);
+            assert!(requests[1].contains("collected/list"));
+        }
+    }
+
+    #[tokio::test]
+    async fn stored_favorite_resolver_rejects_missing_login_without_requests() {
+        let (base, server) = mock_api(Vec::new()).await;
+        let client = BiliClient::new(String::new());
+        assert!(FavoriteList::with_api_base(&client, "38001714".into(), &base)
+            .resolve_stored_id(None)
+            .await
+            .unwrap_err()
+            .to_string()
+            .contains("登录状态"));
+        assert!(server.await.unwrap().is_empty());
+    }
+
+    #[tokio::test]
+    async fn stored_favorite_resolver_rejects_unlisted_id_without_probing() {
+        let (base, server) = mock_api(vec![response(json!({"list": null})), response(json!({"list": []}))]).await;
+        let client = BiliClient::new(String::new());
+        assert!(FavoriteList::with_api_base(&client, "38001714".into(), &base)
+            .resolve_stored_id(Some(99))
+            .await
+            .unwrap_err()
+            .to_string()
+            .contains("未在创建或关注列表中找到"));
+        assert_eq!(server.await.unwrap().len(), 2);
+    }
+
+    #[tokio::test]
+    async fn stored_favorite_resolver_rejects_malformed_list_even_with_valid_candidate() {
+        let (base, server) = mock_api(vec![
+            response(json!({"unexpected": []})),
+            response(json!({"list": [folder()]})),
+        ])
+        .await;
+        let client = BiliClient::new(String::new());
+        let error = FavoriteList::with_api_base(&client, "38001714".into(), &base)
+            .resolve_stored_id(Some(99))
+            .await
+            .unwrap_err();
+        assert!(format!("{error:#}").contains("缺少list"));
+        assert_eq!(server.await.unwrap().len(), 2);
+    }
+
+    #[tokio::test]
+    async fn stored_favorite_resolver_paginates_followed_folders_and_checks_nested_owner() {
+        let mut followed = folder();
+        followed.as_object_mut().unwrap().remove("mid");
+        followed["upper"] = json!({"mid": 443891409});
+        let (base, server) = mock_api(vec![
+            response(json!({"list": []})),
+            response(json!({"list": [{"id": 123, "fid": 1}], "has_more": true})),
+            response(json!({"list": [followed], "has_more": false})),
+            response(folder()),
+        ])
+        .await;
+        let client = BiliClient::new(String::new());
+        let info = FavoriteList::with_api_base(&client, "38001714".into(), &base)
+            .resolve_stored_id(Some(99))
+            .await
+            .unwrap();
+        assert_eq!(info.id, 3800171409);
+        let requests = server.await.unwrap();
+        assert_eq!(requests.len(), 4);
+        assert!(requests[2].contains("collected/list?up_mid=99&pn=2&ps=20"));
+    }
+
+    #[tokio::test]
+    async fn stored_favorite_resolver_deduplicates_consistent_folder_evidence() {
+        let (base, server) = mock_api(vec![
+            response(json!({"list": [folder()]})),
+            response(json!({"list": [{"id": 3800171409_i64}]})),
+            response(folder()),
+        ])
+        .await;
+        let client = BiliClient::new(String::new());
+        assert_eq!(
+            FavoriteList::with_api_base(&client, "3800171409".into(), &base)
+                .resolve_stored_id(Some(443891409))
+                .await
+                .unwrap()
+                .id,
+            3800171409
+        );
+        assert_eq!(server.await.unwrap().len(), 3);
+    }
+
+    #[tokio::test]
+    async fn stored_favorite_resolver_rejects_detail_identity_disagreement() {
+        for detail in [
+            json!({"id": 3800171408_i64, "fid": 38001714, "mid": 443891408, "title": "Wrong ID"}),
+            json!({"id": 3800171409_i64, "fid": 1, "mid": 443891409, "title": "Wrong fid"}),
+            json!({"id": 3800171409_i64, "fid": 38001714, "mid": 109, "title": "Wrong owner"}),
+        ] {
+            let (base, server) = mock_api(vec![
+                response(json!({"list": [folder()]})),
+                response(json!({"list": []})),
+                response(detail),
+            ])
+            .await;
+            let client = BiliClient::new(String::new());
+            assert!(FavoriteList::with_api_base(&client, "38001714".into(), &base)
+                .resolve_stored_id(Some(443891409))
+                .await
+                .unwrap_err()
+                .to_string()
+                .contains("列表与详情不一致"));
+            assert_eq!(server.await.unwrap().len(), 3);
+        }
+    }
+
+    #[tokio::test]
     #[ignore = "contacts Bilibili to verify public short-ID recovery"]
     async fn favorite_resolver_live_public_folder() {
         let client = BiliClient::new(String::new());
@@ -229,6 +414,14 @@ pub struct FavoriteFolder {
     pub fid: Option<i64>,
     #[serde(default)]
     pub mid: Option<i64>,
+}
+
+/// Identity evidence from an account's created or followed folder list.
+#[derive(Debug)]
+struct ListedFavoriteFolder {
+    id: i64,
+    fid: Option<i64>,
+    mid: Option<i64>,
 }
 
 #[derive(Debug, serde::Deserialize)]
@@ -308,73 +501,14 @@ impl<'a> FavoriteList<'a> {
         let mut candidates = std::collections::BTreeMap::new();
         let mut list_errors = Vec::new();
         if let Some(uid) = uid {
-            for followed in [false, true] {
-                let mut page = 1;
-                loop {
-                    let path = if followed { "collected/list" } else { "created/list-all" };
-                    let response = async {
-                        self.client
-                            .request(
-                                reqwest::Method::GET,
-                                &format!("{}/x/v3/fav/folder/{path}", self.api_base),
-                            )
-                            .await
-                            .query(&[
-                                ("up_mid", uid.to_string()),
-                                ("pn", page.to_string()),
-                                ("ps", "20".into()),
-                                ("platform", "web".into()),
-                            ])
-                            .send()
-                            .await?
-                            .error_for_status()?
-                            .json::<Value>()
-                            .await?
-                            .validate()
-                    }
-                    .await;
-                    let response = match response {
-                        Ok(response) => response,
-                        Err(error) => {
-                            // A failed owned list must not prevent trying followed folders.
-                            list_errors.push(format!("{path}: {error:#}"));
-                            break;
-                        }
-                    };
-                    let Some(list) = response["data"]["list"].as_array() else {
-                        break;
-                    };
-                    for folder in list {
-                        if folder["fid"].as_i64() != Some(short_id) {
-                            continue;
-                        }
-                        let Some(id) = folder["id"].as_i64() else { continue };
-                        if id < base_id || id > base_id + 99 {
-                            continue;
-                        }
-                        tried.insert(id);
-                        let owner = folder["mid"].as_i64().or(if followed { None } else { Some(uid) });
-                        candidates.insert((id, owner), ());
-                    }
-                    if !followed || list.is_empty() {
-                        break;
-                    }
-                    if response["data"]["has_more"].as_bool() == Some(false) {
-                        break;
-                    }
-                    if response["data"]["has_more"].as_bool() != Some(true)
-                        && response["data"]["count"]
-                            .as_u64()
-                            .is_some_and(|count| page * 20 >= count)
-                    {
-                        break;
-                    }
-                    if list.len() < 20 && response["data"]["has_more"].as_bool() != Some(true) {
-                        break;
-                    }
-                    page += 1;
-                    ensure!(page <= 1000, "关注收藏夹分页异常，请使用完整URL修复");
+            let (folders, errors) = self.read_folder_lists(uid).await?;
+            list_errors = errors;
+            for folder in folders {
+                if folder.fid != Some(short_id) || folder.id < base_id || folder.id > base_id + 99 {
+                    continue;
                 }
+                tried.insert(folder.id);
+                candidates.insert((folder.id, folder.mid), ());
             }
         }
         ensure!(
@@ -385,7 +519,11 @@ impl<'a> FavoriteList<'a> {
             ensure!(
                 list_errors.is_empty(),
                 "未能完整读取收藏夹列表：{}，请重试或填写完整URL",
-                list_errors.join("; ")
+                list_errors
+                    .iter()
+                    .map(|error| format!("{error:#}"))
+                    .collect::<Vec<_>>()
+                    .join("; ")
             );
         }
         let mut listed = Vec::new();
@@ -424,6 +562,162 @@ impl<'a> FavoriteList<'a> {
         Err(anyhow!(
             "未找到原始ID为 {short_id} 的可访问收藏夹；收藏夹可能已删除或设为私密，请填写完整URL重试"
         ))
+    }
+
+    /// Resolve an unknown-owner persisted ID without ever treating a legacy fid as a media_id.
+    /// Both account lists must agree on one identity before folder/info is queried.
+    pub(crate) async fn resolve_stored_id(&self, uid: Option<i64>) -> Result<FavoriteListInfo> {
+        let stored_id = self.fid.parse::<i64>().context("收藏夹ID格式错误")?;
+        ensure!(stored_id > 0, "收藏夹ID必须大于0");
+        let uid = uid
+            .filter(|uid| *uid > 0)
+            .context("未获取到用户ID，请检查B站登录状态后重试")?;
+        let (folders, errors) = self.read_folder_lists(uid).await?;
+        if let Some(error) = errors.into_iter().next() {
+            return Err(error.context("未能完整读取收藏夹列表，请重试或填写完整URL"));
+        }
+        let mut candidates = std::collections::BTreeMap::<i64, ListedFavoriteFolder>::new();
+        for folder in folders {
+            let matches = folder.id == stored_id
+                || (folder.fid == Some(stored_id)
+                    && stored_id.checked_mul(100).is_some_and(|base| {
+                        folder.id >= base && folder.id.checked_sub(base).is_some_and(|suffix| suffix < 100)
+                    }));
+            if !matches {
+                continue;
+            }
+            if let Some(previous) = candidates.get_mut(&folder.id) {
+                ensure!(
+                    previous.fid.zip(folder.fid).is_none_or(|(a, b)| a == b)
+                        && previous.mid.zip(folder.mid).is_none_or(|(a, b)| a == b),
+                    "收藏夹列表身份不一致，请填写完整URL"
+                );
+                previous.fid = previous.fid.or(folder.fid);
+                previous.mid = previous.mid.or(folder.mid);
+            } else {
+                candidates.insert(folder.id, folder);
+            }
+        }
+        ensure!(
+            candidates.len() <= 1,
+            "存储的ID匹配到多个收藏夹，无法确定创建者，请填写创建者UID或完整URL"
+        );
+        let folder = candidates
+            .into_values()
+            .next()
+            .context("未在创建或关注列表中找到收藏夹，请填写创建者UID或完整URL")?;
+        let info = Self::with_api_base(self.client, folder.id.to_string(), &self.api_base)
+            .get_info()
+            .await?;
+        ensure!(
+            info.id == folder.id
+                && info.fid.is_some_and(|fid| info.matches_short_id(fid))
+                && folder.fid.is_none_or(|fid| info.fid == Some(fid))
+                && folder.mid.is_none_or(|mid| info.mid == Some(mid)),
+            "收藏夹列表与详情不一致，请填写完整URL"
+        );
+        Ok(info)
+    }
+
+    /// Read both account lists even if one fails, sharing pagination with manual recovery.
+    async fn read_folder_lists(&self, uid: i64) -> Result<(Vec<ListedFavoriteFolder>, Vec<anyhow::Error>)> {
+        let mut folders = Vec::new();
+        let mut errors = Vec::new();
+        for followed in [false, true] {
+            let path = if followed { "collected/list" } else { "created/list-all" };
+            let mut page = 1;
+            loop {
+                let response = async {
+                    let response = self
+                        .client
+                        .request(
+                            reqwest::Method::GET,
+                            &format!("{}/x/v3/fav/folder/{path}", self.api_base),
+                        )
+                        .await
+                        .query(&[
+                            ("up_mid", uid.to_string()),
+                            ("pn", page.to_string()),
+                            ("ps", "20".into()),
+                            ("platform", "web".into()),
+                        ])
+                        .send()
+                        .await?
+                        .error_for_status()?
+                        .json::<Value>()
+                        .await?
+                        .validate()?;
+                    let list = response["data"].get("list").context("收藏夹列表响应缺少list")?;
+                    ensure!(list.is_null() || list.is_array(), "收藏夹列表响应格式错误");
+                    Ok::<_, anyhow::Error>(response)
+                }
+                .await;
+                let response = match response {
+                    Ok(response) => response,
+                    Err(error) => {
+                        // Keep typed causes for the scan's retry/risk-control handling,
+                        // and stop immediately when Bilibili asks us to back off.
+                        if matches!(
+                            error.downcast_ref::<crate::bilibili::BiliError>(),
+                            Some(
+                                crate::bilibili::BiliError::RiskControlOccurred
+                                    | crate::bilibili::BiliError::RiskControlVerificationRequired(_)
+                                    | crate::bilibili::BiliError::RequestFailed(-352 | -412, _)
+                            )
+                        ) {
+                            return Err(error.context(format!("读取收藏夹列表 {path} 时触发风控")));
+                        }
+                        errors.push(error.context(format!("读取收藏夹列表 {path} 失败")));
+                        break;
+                    }
+                };
+                let Some(list) = response["data"]["list"].as_array() else {
+                    break;
+                };
+                for folder in list {
+                    let evidence = (|| -> Result<ListedFavoriteFolder> {
+                        let id = folder["id"].as_i64().filter(|id| *id > 0).context("收藏夹列表ID无效")?;
+                        let optional_id = |value: Option<&Value>| -> Result<Option<i64>> {
+                            match value {
+                                None | Some(Value::Null) => Ok(None),
+                                Some(value) => {
+                                    Ok(Some(value.as_i64().filter(|id| *id > 0).context("收藏夹列表身份无效")?))
+                                }
+                            }
+                        };
+                        let fid = optional_id(folder.get("fid"))?;
+                        let direct_mid = optional_id(folder.get("mid"))?;
+                        let upper_mid = optional_id(folder.get("upper").and_then(|upper| upper.get("mid")))?;
+                        ensure!(
+                            direct_mid.zip(upper_mid).is_none_or(|(a, b)| a == b),
+                            "收藏夹列表创建者身份不一致"
+                        );
+                        let mid = direct_mid.or(upper_mid).or(if followed { None } else { Some(uid) });
+                        Ok(ListedFavoriteFolder { id, fid, mid })
+                    })();
+                    match evidence {
+                        Ok(folder) => folders.push(folder),
+                        Err(error) => errors.push(error.context(format!("读取收藏夹列表 {path} 失败"))),
+                    }
+                }
+                if !followed || list.is_empty() || response["data"]["has_more"].as_bool() == Some(false) {
+                    break;
+                }
+                if response["data"]["has_more"].as_bool() != Some(true)
+                    && response["data"]["count"]
+                        .as_u64()
+                        .is_some_and(|count| page * 20 >= count)
+                {
+                    break;
+                }
+                if list.len() < 20 && response["data"]["has_more"].as_bool() != Some(true) {
+                    break;
+                }
+                page += 1;
+                ensure!(page <= 1000, "关注收藏夹分页异常，请使用完整URL修复");
+            }
+        }
+        Ok((folders, errors))
     }
 
     async fn probe_short_id(&self, id: i64, short_id: i64) -> Result<Option<FavoriteListInfo>> {

@@ -93,11 +93,13 @@ async fn save_repair(
         target.owner_mid.is_none_or(|mid| Some(mid) == info.mid),
         "收藏夹所属UP主与URL不一致"
     );
-    // Require upstream proof; arithmetic or a matching title alone is insufficient.
+    // An explicit full ID also verifies an old row whose ID was already correct.
+    // A changed ID still requires upstream proof of the legacy short ID.
     ensure!(
-        info.id != expected_f_id && info.matches_short_id(expected_f_id),
+        info.id == expected_f_id || info.matches_short_id(expected_f_id),
         "该收藏夹的原始ID与当前源不匹配，请复制原收藏夹的完整URL"
     );
+    ensure!(info.mid.is_some_and(|mid| mid > 0), "收藏夹未返回有效创建者UID");
     let txn = db.begin().await?;
     let source = favorite::Entity::find_by_id(source_id)
         .one(&txn)
@@ -111,13 +113,14 @@ async fn save_repair(
     ensure!(
         favorite::Entity::find()
             .filter(favorite::Column::FId.eq(info.id))
+            .filter(favorite::Column::Id.ne(source_id))
             .one(&txn)
             .await?
             .is_none(),
         "完整ID的收藏夹源已经存在，请先检查重复源；现有记录未修改"
     );
     let message = format!(
-        "已修复收藏夹「{}」：{} → {}（创建者UID：{}），下次扫描生效",
+        "已验证并修复收藏夹「{}」：{} → {}（创建者UID：{}），下次扫描生效",
         info.title,
         source.f_id,
         info.id,
@@ -561,6 +564,43 @@ mod tests {
                 .unwrap(),
             original
         );
+    }
+
+    #[tokio::test]
+    async fn favorite_repair_verifies_existing_full_id_without_account_lists() {
+        let (db, source) = database().await;
+        let mut model = source.into_active_model();
+        model.f_id = Set(3800171409);
+        let original = model.update(&db).await.unwrap();
+        let (base, server) = crate::bilibili::test_support::mock_api(vec![(
+            200,
+            json!({"code": 0, "message": "OK", "data": {
+                "id": 3800171409_i64, "fid": 38001714, "mid": 443891409, "title": "Recovered"
+            }})
+            .to_string(),
+        )])
+        .await;
+        let request = serde_json::from_value(json!({
+            "expected_f_id": "3800171409", "favorite": URL
+        }))
+        .unwrap();
+        let client = BiliClient::new(String::new());
+        let repaired = repair_source(&db, original.id, request, &client, &base, None)
+            .await
+            .unwrap();
+        assert!(repaired.success);
+        let mut expected = original.clone();
+        expected.owner_mid = Some(443891409);
+        expected.name = "Recovered".into();
+        assert_eq!(
+            favorite::Entity::find_by_id(original.id)
+                .one(&db)
+                .await
+                .unwrap()
+                .unwrap(),
+            expected
+        );
+        assert_eq!(server.await.unwrap().len(), 1);
     }
 
     #[tokio::test]
