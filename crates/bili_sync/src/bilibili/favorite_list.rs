@@ -365,6 +365,204 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn favorite_resolvers_accept_sparse_list_identity_and_verify_details() {
+        // Followed lists can contain zero placeholders, or omit identity fields.
+        // Only folder/info establishes the legacy alias and the complete owner.
+        for listed in [
+            json!({"id": 3800171409_i64, "fid": 0, "mid": 0}),
+            json!({"id": 3800171409_i64, "fid": null, "mid": 0, "upper": {"mid": 443891409}}),
+            json!({"id": 3800171409_i64}),
+        ] {
+            for short_only in [false, true] {
+                let (base, server) = mock_api(vec![
+                    response(json!({"list": []})),
+                    response(json!({"list": [listed], "has_more": false})),
+                    response(folder()),
+                ])
+                .await;
+                let client = BiliClient::new(String::new());
+                let resolver = FavoriteList::with_api_base(&client, "38001714".into(), &base);
+                let info = if short_only {
+                    resolver
+                        .resolve_short_id(38001714, Some(99), None, false)
+                        .await
+                        .unwrap()
+                        .remove(0)
+                } else {
+                    resolver.resolve_stored_id(Some(99)).await.unwrap()
+                };
+                assert_eq!(info.id, 3800171409);
+                assert_eq!(info.mid, Some(443891409));
+                let requests = server.await.unwrap();
+                assert_eq!(requests.len(), 3);
+                assert!(requests[2].contains("folder/info?media_id=3800171409"));
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn favorite_resolvers_ignore_unrelated_zero_identity_placeholders() {
+        for short_only in [false, true] {
+            let (base, server) = mock_api(vec![
+                response(json!({"list": [folder()]})),
+                response(json!({"list": [
+                    {"id": 123, "fid": 0, "mid": 0, "upper": {"mid": 0}},
+                    {"id": 456, "fid": null, "mid": null}
+                ]})),
+                response(folder()),
+            ])
+            .await;
+            let client = BiliClient::new(String::new());
+            let resolver = FavoriteList::with_api_base(&client, "38001714".into(), &base);
+            let info = if short_only {
+                resolver
+                    .resolve_short_id(38001714, Some(443891409), None, false)
+                    .await
+                    .unwrap()
+                    .remove(0)
+            } else {
+                resolver.resolve_stored_id(Some(443891409)).await.unwrap()
+            };
+            assert_eq!(info.id, 3800171409);
+            assert_eq!(server.await.unwrap().len(), 3);
+        }
+    }
+
+    #[tokio::test]
+    async fn favorite_resolvers_skip_seasons_and_paginate_to_real_favorites() {
+        for short_only in [false, true] {
+            let (base, server) = mock_api(vec![
+                response(json!({"list": []})),
+                // A season may even collide numerically with the sought ID.
+                response(json!({"list": [
+                    {"id": 1850028, "fid": 0, "mid": 249697245, "type": 21},
+                    {"id": 38001714, "fid": 0, "mid": 266765166, "type": 21}
+                ], "has_more": true})),
+                response(json!({"list": [folder()], "has_more": false})),
+                response(folder()),
+            ])
+            .await;
+            let client = BiliClient::new(String::new());
+            let resolver = FavoriteList::with_api_base(&client, "38001714".into(), &base);
+            let info = if short_only {
+                resolver
+                    .resolve_short_id(38001714, Some(99), None, false)
+                    .await
+                    .unwrap()
+                    .remove(0)
+            } else {
+                resolver.resolve_stored_id(Some(99)).await.unwrap()
+            };
+            assert_eq!(info.id, 3800171409);
+            let requests = server.await.unwrap();
+            assert_eq!(requests.len(), 4);
+            assert!(requests[2].contains("collected/list?up_mid=99&pn=2&ps=20"));
+            assert!(requests[3].contains("folder/info?media_id=3800171409"));
+        }
+    }
+
+    #[tokio::test]
+    async fn stored_favorite_resolver_rejects_incomplete_followed_pagination() {
+        for data in [
+            json!({"list": [], "has_more": true}),
+            json!({"list": null, "count": 2}),
+            json!({"list": [folder()], "has_more": false, "count": 2}),
+        ] {
+            let (base, server) = mock_api(vec![response(json!({"list": [folder()]})), response(data)]).await;
+            let client = BiliClient::new(String::new());
+            let error = FavoriteList::with_api_base(&client, "38001714".into(), &base)
+                .resolve_stored_id(Some(443891409))
+                .await
+                .unwrap_err();
+            assert!(format!("{error:#}").contains("分页响应不完整"));
+            assert_eq!(server.await.unwrap().len(), 2);
+        }
+    }
+
+    #[tokio::test]
+    async fn stored_favorite_resolver_uses_raw_count_across_short_season_pages() {
+        let (base, server) = mock_api(vec![
+            response(json!({"list": []})),
+            response(json!({"list": [{"id": 1850028, "fid": 0, "mid": 249697245, "type": 21}], "count": 2})),
+            response(json!({"list": [folder()], "count": 2})),
+            response(folder()),
+        ])
+        .await;
+        let client = BiliClient::new(String::new());
+        assert_eq!(
+            FavoriteList::with_api_base(&client, "38001714".into(), &base)
+                .resolve_stored_id(Some(99))
+                .await
+                .unwrap()
+                .id,
+            3800171409
+        );
+        assert_eq!(server.await.unwrap().len(), 4);
+    }
+
+    #[tokio::test]
+    async fn favorite_resolver_rejects_invalid_or_conflicting_list_evidence() {
+        for entry in [
+            json!({"id": 0, "fid": 0, "mid": 0}),
+            json!({"id": 123, "fid": -1}),
+            json!({"id": 123, "mid": "invalid"}),
+            json!({"id": 123, "mid": 99, "upper": {"mid": 199}}),
+        ] {
+            let (base, server) = mock_api(vec![
+                response(json!({"list": [folder()]})),
+                response(json!({"list": [entry]})),
+            ])
+            .await;
+            let client = BiliClient::new(String::new());
+            assert!(FavoriteList::with_api_base(&client, "38001714".into(), &base)
+                .resolve_stored_id(Some(443891409))
+                .await
+                .unwrap_err()
+                .to_string()
+                .contains("未能完整读取"));
+            assert_eq!(server.await.unwrap().len(), 2);
+        }
+    }
+
+    #[tokio::test]
+    async fn sparse_favorite_list_identity_still_requires_verified_detail_alias() {
+        for detail in [
+            json!({"id": 3800171409_i64, "fid": 0, "mid": 443891409, "title": "Unknown alias"}),
+            json!({"id": 3800171409_i64, "fid": 38001714, "mid": 0, "title": "Unknown owner"}),
+            json!({"id": 3800171409_i64, "fid": 1, "mid": 443891409, "title": "Wrong alias"}),
+        ] {
+            let (base, server) = mock_api(vec![
+                response(json!({"list": []})),
+                response(json!({"list": [{"id": 3800171409_i64, "fid": 0, "mid": 0}]})),
+                response(detail),
+            ])
+            .await;
+            let client = BiliClient::new(String::new());
+            let error = FavoriteList::with_api_base(&client, "38001714".into(), &base)
+                .resolve_stored_id(Some(99))
+                .await
+                .unwrap_err();
+            assert!(error.to_string().contains("列表与详情不一致"));
+            assert_eq!(server.await.unwrap().len(), 3);
+        }
+    }
+
+    #[tokio::test]
+    #[ignore = "contacts public Bilibili account lists and folder details"]
+    async fn favorite_resolver_live_mixed_account_lists() {
+        let client = BiliClient::new(String::new());
+        for stored_id in ["38001714", "3800171409"] {
+            let info = FavoriteList::new(&client, stored_id.into())
+                .resolve_stored_id(Some(443891409))
+                .await
+                .unwrap();
+            assert_eq!(info.id, 3800171409);
+            assert_eq!(info.mid, Some(443891409));
+            assert!(info.matches_short_id(38001714));
+        }
+    }
+
+    #[tokio::test]
     #[ignore = "contacts Bilibili to verify public short-ID recovery"]
     async fn favorite_resolver_live_public_folder() {
         let client = BiliClient::new(String::new());
@@ -422,6 +620,14 @@ struct ListedFavoriteFolder {
     id: i64,
     fid: Option<i64>,
     mid: Option<i64>,
+}
+
+impl ListedFavoriteFolder {
+    /// Sparse list metadata can nominate a candidate, but folder/info must
+    /// still prove its short ID and complete creator UID before any mutation.
+    fn may_match_short_id(&self, short_id: i64) -> bool {
+        short_id > 0 && self.id / 100 == short_id && self.fid.is_none_or(|fid| fid == short_id)
+    }
 }
 
 #[derive(Debug, serde::Deserialize)]
@@ -501,10 +707,10 @@ impl<'a> FavoriteList<'a> {
         let mut candidates = std::collections::BTreeMap::new();
         let mut list_errors = Vec::new();
         if let Some(uid) = uid {
-            let (folders, errors) = self.read_folder_lists(uid).await?;
+            let (folders, errors) = self.read_folder_lists(uid, true).await?;
             list_errors = errors;
             for folder in folders {
-                if folder.fid != Some(short_id) || folder.id < base_id || folder.id > base_id + 99 {
+                if !folder.may_match_short_id(short_id) {
                     continue;
                 }
                 tried.insert(folder.id);
@@ -567,22 +773,30 @@ impl<'a> FavoriteList<'a> {
     /// Resolve an unknown-owner persisted ID without ever treating a legacy fid as a media_id.
     /// Both account lists must agree on one identity before folder/info is queried.
     pub(crate) async fn resolve_stored_id(&self, uid: Option<i64>) -> Result<FavoriteListInfo> {
+        self.resolve_stored_id_with_owner(uid, None).await
+    }
+
+    pub(crate) async fn resolve_stored_id_with_owner(
+        &self,
+        uid: Option<i64>,
+        owner_mid: Option<i64>,
+    ) -> Result<FavoriteListInfo> {
         let stored_id = self.fid.parse::<i64>().context("收藏夹ID格式错误")?;
         ensure!(stored_id > 0, "收藏夹ID必须大于0");
-        let uid = uid
+        let uid = owner_mid
+            .or(uid)
             .filter(|uid| *uid > 0)
             .context("未获取到用户ID，请检查B站登录状态后重试")?;
-        let (folders, errors) = self.read_folder_lists(uid).await?;
+        // An explicitly supplied creator restricts the search to their own
+        // folders. Their followed folders cannot establish this ownership.
+        // Still check both full and short IDs, rather than appending a suffix.
+        let (folders, errors) = self.read_folder_lists(uid, owner_mid.is_none()).await?;
         if let Some(error) = errors.into_iter().next() {
             return Err(error.context("未能完整读取收藏夹列表，请重试或填写完整URL"));
         }
         let mut candidates = std::collections::BTreeMap::<i64, ListedFavoriteFolder>::new();
         for folder in folders {
-            let matches = folder.id == stored_id
-                || (folder.fid == Some(stored_id)
-                    && stored_id.checked_mul(100).is_some_and(|base| {
-                        folder.id >= base && folder.id.checked_sub(base).is_some_and(|suffix| suffix < 100)
-                    }));
+            let matches = folder.id == stored_id || folder.may_match_short_id(stored_id);
             if !matches {
                 continue;
             }
@@ -613,19 +827,28 @@ impl<'a> FavoriteList<'a> {
             info.id == folder.id
                 && info.fid.is_some_and(|fid| info.matches_short_id(fid))
                 && folder.fid.is_none_or(|fid| info.fid == Some(fid))
-                && folder.mid.is_none_or(|mid| info.mid == Some(mid)),
+                && folder.mid.is_none_or(|mid| info.mid == Some(mid))
+                && owner_mid.is_none_or(|mid| info.mid == Some(mid)),
             "收藏夹列表与详情不一致，请填写完整URL"
         );
         Ok(info)
     }
 
     /// Read both account lists even if one fails, sharing pagination with manual recovery.
-    async fn read_folder_lists(&self, uid: i64) -> Result<(Vec<ListedFavoriteFolder>, Vec<anyhow::Error>)> {
+    async fn read_folder_lists(
+        &self,
+        uid: i64,
+        include_followed: bool,
+    ) -> Result<(Vec<ListedFavoriteFolder>, Vec<anyhow::Error>)> {
         let mut folders = Vec::new();
         let mut errors = Vec::new();
         for followed in [false, true] {
+            if followed && !include_followed {
+                break;
+            }
             let path = if followed { "collected/list" } else { "created/list-all" };
             let mut page = 1;
+            let mut read_count = 0;
             loop {
                 let response = async {
                     let response = self
@@ -671,17 +894,35 @@ impl<'a> FavoriteList<'a> {
                         break;
                     }
                 };
-                let Some(list) = response["data"]["list"].as_array() else {
+                let list = response["data"]["list"].as_array().map(Vec::as_slice).unwrap_or(&[]);
+                read_count += list.len() as u64;
+                let has_more = response["data"]["has_more"].as_bool();
+                let remaining = response["data"]["count"]
+                    .as_u64()
+                    .is_some_and(|count| count > read_count);
+                if followed
+                    && ((list.is_empty() && (has_more == Some(true) || remaining))
+                        || (has_more == Some(false) && remaining))
+                {
+                    errors.push(anyhow!("读取收藏夹列表 {path} 失败：分页响应不完整"));
                     break;
-                };
+                }
                 for folder in list {
+                    // collected/list mixes favorite folders (type 11) with
+                    // video seasons (type 21, fid 0). Seasons use a different
+                    // ID namespace and cannot attest a favorite's identity.
+                    if followed && folder["type"].as_i64() == Some(21) {
+                        continue;
+                    }
                     let evidence = (|| -> Result<ListedFavoriteFolder> {
                         let id = folder["id"].as_i64().filter(|id| *id > 0).context("收藏夹列表ID无效")?;
                         let optional_id = |value: Option<&Value>| -> Result<Option<i64>> {
                             match value {
                                 None | Some(Value::Null) => Ok(None),
                                 Some(value) => {
-                                    Ok(Some(value.as_i64().filter(|id| *id > 0).context("收藏夹列表身份无效")?))
+                                    let id = value.as_i64().filter(|id| *id >= 0).context("收藏夹列表身份无效")?;
+                                    // Zero is a placeholder, not identity evidence.
+                                    Ok((id > 0).then_some(id))
                                 }
                             }
                         };
@@ -700,17 +941,17 @@ impl<'a> FavoriteList<'a> {
                         Err(error) => errors.push(error.context(format!("读取收藏夹列表 {path} 失败"))),
                     }
                 }
-                if !followed || list.is_empty() || response["data"]["has_more"].as_bool() == Some(false) {
+                if !followed || list.is_empty() || has_more == Some(false) {
                     break;
                 }
-                if response["data"]["has_more"].as_bool() != Some(true)
+                if has_more != Some(true)
                     && response["data"]["count"]
                         .as_u64()
-                        .is_some_and(|count| page * 20 >= count)
+                        .is_some_and(|count| read_count >= count)
                 {
                     break;
                 }
-                if list.len() < 20 && response["data"]["has_more"].as_bool() != Some(true) {
+                if list.len() < 20 && has_more != Some(true) && !remaining {
                     break;
                 }
                 page += 1;

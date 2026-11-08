@@ -1175,11 +1175,19 @@ impl BiliClient {
         &self,
     ) -> Result<Vec<crate::api::response::UserCollectionInfo>, anyhow::Error> {
         let uid = self.get_current_user_id()?;
-
         let url = "https://api.bilibili.com/x/v3/fav/folder/collected/list";
+        self.get_subscribed_collections_at(uid, url).await
+    }
+
+    async fn get_subscribed_collections_at(
+        &self,
+        uid: i64,
+        url: &str,
+    ) -> Result<Vec<crate::api::response::UserCollectionInfo>, anyhow::Error> {
         let mut all_collections = Vec::new();
         let mut page = 1;
         let page_size = 20;
+        let mut read_count = 0;
 
         loop {
             let response = self
@@ -1198,18 +1206,31 @@ impl BiliClient {
                 .await?
                 .validate()?;
 
-            let list = response["data"]["list"].as_array();
-            if list.is_none() || list.unwrap().is_empty() {
+            let list = response["data"]["list"].as_array().map(Vec::as_slice).unwrap_or(&[]);
+            read_count += list.len() as u64;
+            let has_more = response["data"]["has_more"].as_bool();
+            let remaining = response["data"]["count"]
+                .as_u64()
+                .is_some_and(|count| count > read_count);
+            anyhow::ensure!(
+                !((list.is_empty() && (has_more == Some(true) || remaining)) || (has_more == Some(false) && remaining)),
+                "关注收藏夹分页响应不完整，请重试"
+            );
+            if list.is_empty() {
                 break;
             }
 
-            let list = list.unwrap();
-
             for item in list {
                 if let Some(item_obj) = item.as_object() {
+                    // This endpoint includes followed seasons as well as favorites.
+                    let is_season = item_obj.get("type").and_then(Value::as_i64) == Some(21);
                     all_collections.push(crate::api::response::UserCollectionInfo {
                         sid: item_obj["id"].as_i64().unwrap_or(0).to_string(),
-                        original_fid: item_obj.get("fid").and_then(Value::as_i64).map(|id| id.to_string()),
+                        original_fid: item_obj
+                            .get("fid")
+                            .and_then(Value::as_i64)
+                            .filter(|id| !is_season && *id > 0)
+                            .map(|id| id.to_string()),
                         name: item_obj["title"].as_str().unwrap_or("").to_string(),
                         cover: item_obj.get("cover").and_then(|v| v.as_str()).unwrap_or("").to_string(),
                         description: item_obj
@@ -1218,18 +1239,28 @@ impl BiliClient {
                             .unwrap_or("")
                             .to_string(),
                         total: item_obj["media_count"].as_i64().unwrap_or(0) as i32,
-                        collection_type: "favorite".to_string(),
+                        collection_type: if is_season { "season" } else { "favorite" }.to_string(),
                         up_name: "".to_string(),
-                        up_mid: item_obj["mid"].as_i64().unwrap_or(0),
+                        up_mid: item_obj
+                            .get("mid")
+                            .and_then(Value::as_i64)
+                            .filter(|mid| *mid > 0)
+                            .or_else(|| item["upper"]["mid"].as_i64().filter(|mid| *mid > 0))
+                            .unwrap_or(0),
                     });
                 }
             }
 
-            if list.len() < page_size {
+            if has_more == Some(false)
+                || (has_more != Some(true)
+                    && !remaining
+                    && (list.len() < page_size || response["data"]["count"].as_u64().is_some()))
+            {
                 break;
             }
 
             page += 1;
+            anyhow::ensure!(page <= 1000, "关注收藏夹分页异常");
             tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
         }
 
@@ -1520,6 +1551,33 @@ impl QueuedRequestBuilder {
 mod tests {
     use super::*;
     use serde_json::json;
+
+    #[tokio::test]
+    async fn subscribed_collections_distinguish_seasons_from_favorites() {
+        let responses = [
+            json!({"list": [
+                {"id": 1850028, "fid": 0, "mid": 249697245, "type": 21, "title": "Season", "media_count": 10}
+            ], "count": 2}),
+            json!({"list": [
+                {"id": 3800171409_i64, "fid": 38001714, "mid": 0, "upper": {"mid": 443891409}, "type": 11, "title": "Favorite", "media_count": 2}
+            ], "count": 2}),
+        ].into_iter().map(|data| (200, json!({"code": 0, "message": "OK", "data": data}).to_string())).collect();
+        let (base, server) = crate::bilibili::test_support::mock_api(responses).await;
+        let client = BiliClient::new(String::new());
+        let items = client.get_subscribed_collections_at(99, &base).await.unwrap();
+        assert_eq!(items.len(), 2);
+        assert_eq!(items[0].collection_type, "season");
+        assert_eq!(items[0].sid, "1850028");
+        assert_eq!(items[0].up_mid, 249697245);
+        assert_eq!(items[0].original_fid, None);
+        assert_eq!(items[1].collection_type, "favorite");
+        assert_eq!(items[1].sid, "3800171409");
+        assert_eq!(items[1].original_fid.as_deref(), Some("38001714"));
+        assert_eq!(items[1].up_mid, 443891409);
+        let requests = server.await.unwrap();
+        assert_eq!(requests.len(), 2);
+        assert!(requests[1].contains("up_mid=99&pn=2&ps=20"));
+    }
 
     #[test]
     fn bangumi_search_parses_numeric_and_string_ids() {

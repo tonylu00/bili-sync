@@ -12,6 +12,8 @@
 	export let sourceName = '';
 	export let currentId = '';
 	export let currentOwner = '';
+	export let initialFavorite = '';
+	export let initialCreatorUid: string | null = null;
 	const dispatch = createEventDispatcher<{ repaired: void }>();
 	let favorite = '';
 	let creatorUid = '';
@@ -22,8 +24,8 @@
 	let errorMessage = '';
 
 	$: if (isOpen) {
-		favorite = '';
-		creatorUid = currentOwner;
+		favorite = initialFavorite;
+		creatorUid = initialCreatorUid ?? currentOwner;
 		candidate = null;
 		candidates = [];
 		errorMessage = '';

@@ -19,7 +19,10 @@ fn response(data: Value) -> (u16, String) {
 fn resolution_responses() -> Vec<(u16, String)> {
     vec![
         response(json!({"list": [folder()]})),
-        response(json!({"list": []})),
+        response(json!({"list": [
+            {"id": 1850028, "fid": 0, "mid": 249697245, "type": 21},
+            {"id": 1502689, "fid": 0, "mid": 266765166, "type": 21}
+        ]})),
         response(folder()),
     ]
 }

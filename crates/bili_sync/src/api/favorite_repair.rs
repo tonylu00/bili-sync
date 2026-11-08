@@ -196,9 +196,21 @@ async fn repair_source(
         "输入的创建者UID与保存的UID不一致"
     );
     let (target, infos) = if request.favorite.trim().is_empty() {
-        let infos = FavoriteList::with_api_base(client, expected_f_id.to_string(), api_base)
-            .resolve_short_id(expected_f_id, uid, owner_mid, request.allow_probe)
-            .await?;
+        let resolver = FavoriteList::with_api_base(client, expected_f_id.to_string(), api_base);
+        let infos = if source.owner_mid.is_some() {
+            // A persisted owner attests that this is already a complete ID.
+            let info = resolver.get_info().await?;
+            ensure!(info.id == expected_f_id, "收藏夹返回的ID与保存的ID不一致");
+            vec![info]
+        } else if request.allow_probe {
+            resolver
+                .resolve_short_id(expected_f_id, uid, owner_mid, request.allow_probe)
+                .await?
+        } else {
+            // Old rows can contain either a short fid or a complete media_id.
+            // Use the same collision checks as automatic scan migration.
+            vec![resolver.resolve_stored_id_with_owner(uid, owner_mid).await?]
+        };
         (None, infos)
     } else {
         let target = parse_target(&request.favorite)?;
@@ -564,6 +576,159 @@ mod tests {
                 .unwrap(),
             original
         );
+    }
+
+    #[tokio::test]
+    async fn favorite_auto_repair_resolves_short_and_full_ids_with_mixed_followed_list() {
+        for saved_id in [38001714, 3800171409] {
+            let (db, source) = database().await;
+            let mut model = source.into_active_model();
+            model.f_id = Set(saved_id);
+            let original = model.update(&db).await.unwrap();
+            let detail = json!({"id": 3800171409_i64, "fid": 38001714, "mid": 443891409, "title": "Recovered"});
+            let responses = [
+                json!({"list": [detail.clone()]}),
+                json!({"list": [{"id": 1850028, "fid": 0, "mid": 249697245, "type": 21}]}),
+                detail,
+            ]
+            .into_iter()
+            .map(|data| (200, json!({"code": 0, "message": "OK", "data": data}).to_string()))
+            .collect();
+            let (base, server) = crate::bilibili::test_support::mock_api(responses).await;
+            let request = serde_json::from_value(json!({"expected_f_id": saved_id.to_string()})).unwrap();
+            let client = BiliClient::new(String::new());
+            let result = repair_source(&db, original.id, request, &client, &base, Some(443891409))
+                .await
+                .unwrap();
+            assert!(result.success);
+            let mut expected = original.clone();
+            expected.f_id = 3800171409;
+            expected.owner_mid = Some(443891409);
+            expected.name = "Recovered".into();
+            assert_eq!(
+                favorite::Entity::find_by_id(original.id)
+                    .one(&db)
+                    .await
+                    .unwrap()
+                    .unwrap(),
+                expected
+            );
+            assert_eq!(favorite::Entity::find().count(&db).await.unwrap(), 1);
+            let requests = server.await.unwrap();
+            assert_eq!(requests.len(), 3);
+            assert!(requests[2].contains("folder/info?media_id=3800171409"));
+        }
+    }
+
+    #[tokio::test]
+    async fn favorite_auto_repair_with_creator_handles_both_short_and_full_stored_ids() {
+        for saved_id in [38001714, 3800171409] {
+            let (db, source) = database().await;
+            let mut model = source.into_active_model();
+            model.f_id = Set(saved_id);
+            let original = model.update(&db).await.unwrap();
+            let detail = json!({"id": 3800171409_i64, "fid": 38001714, "mid": 443891409, "title": "Recovered"});
+            let responses = [json!({"list": [detail.clone()]}), detail]
+                .into_iter()
+                .map(|data| (200, json!({"code": 0, "message": "OK", "data": data}).to_string()))
+                .collect();
+            let (base, server) = crate::bilibili::test_support::mock_api(responses).await;
+            let request = serde_json::from_value(json!({
+                "expected_f_id": saved_id.to_string(), "creator_uid": "443891409"
+            }))
+            .unwrap();
+            let client = BiliClient::new(String::new());
+            assert!(
+                repair_source(&db, original.id, request, &client, &base, None)
+                    .await
+                    .unwrap()
+                    .success
+            );
+            let mut expected = original.clone();
+            expected.f_id = 3800171409;
+            expected.owner_mid = Some(443891409);
+            expected.name = "Recovered".into();
+            assert_eq!(
+                favorite::Entity::find_by_id(original.id)
+                    .one(&db)
+                    .await
+                    .unwrap()
+                    .unwrap(),
+                expected
+            );
+            let requests = server.await.unwrap();
+            assert_eq!(requests.len(), 2);
+            assert!(requests[0].contains("created/list-all?up_mid=443891409"));
+            assert!(requests[1].contains("folder/info?media_id=3800171409"));
+        }
+    }
+
+    #[tokio::test]
+    async fn favorite_auto_repair_reuses_verified_full_id_without_appending_owner_suffix() {
+        let (db, source) = database().await;
+        let mut model = source.into_active_model();
+        model.f_id = Set(3800171409);
+        model.owner_mid = Set(Some(443891409));
+        let original = model.update(&db).await.unwrap();
+        let (base, server) = crate::bilibili::test_support::mock_api(vec![(
+            200,
+            json!({
+                "code": 0, "message": "OK", "data": {"id": 3800171409_i64, "fid": 38001714, "mid": 443891409, "title": "Recovered"}
+            })
+            .to_string(),
+        )])
+        .await;
+        let request = serde_json::from_value(json!({"expected_f_id": "3800171409"})).unwrap();
+        let client = BiliClient::new(String::new());
+        assert!(
+            repair_source(&db, original.id, request, &client, &base, None)
+                .await
+                .unwrap()
+                .success
+        );
+        let mut expected = original.clone();
+        expected.name = "Recovered".into();
+        assert_eq!(
+            favorite::Entity::find_by_id(original.id)
+                .one(&db)
+                .await
+                .unwrap()
+                .unwrap(),
+            expected
+        );
+        let requests = server.await.unwrap();
+        assert_eq!(requests.len(), 1);
+        assert!(requests[0].contains("folder/info?media_id=3800171409"));
+    }
+
+    #[tokio::test]
+    async fn favorite_auto_repair_rejects_short_full_collision_without_changing_source() {
+        let (db, original) = database().await;
+        let responses = [
+            json!({"list": [{"id": 38001714, "fid": 380017, "mid": 114}]}),
+            json!({"list": [{"id": 3800171409_i64, "fid": 38001714, "mid": 443891409}]}),
+        ]
+        .into_iter()
+        .map(|data| (200, json!({"code": 0, "message": "OK", "data": data}).to_string()))
+        .collect();
+        let (base, server) = crate::bilibili::test_support::mock_api(responses).await;
+        let request = serde_json::from_value(json!({"expected_f_id": "38001714"})).unwrap();
+        let client = BiliClient::new(String::new());
+        assert!(repair_source(&db, original.id, request, &client, &base, Some(114))
+            .await
+            .err()
+            .unwrap()
+            .to_string()
+            .contains("多个收藏夹"));
+        assert_eq!(
+            favorite::Entity::find_by_id(original.id)
+                .one(&db)
+                .await
+                .unwrap()
+                .unwrap(),
+            original
+        );
+        assert_eq!(server.await.unwrap().len(), 2);
     }
 
     #[tokio::test]

@@ -1,7 +1,8 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
 	import api from '$lib/api';
-	import { hasFavoriteSource } from '$lib/favorite-identity.js';
+	import { favoriteRepairSelection, hasFavoriteSource } from '$lib/favorite-identity.js';
+	import RepairFavoriteDialog from '$lib/components/repair-favorite-dialog.svelte';
 	import { Button } from '$lib/components/ui/button';
 	import { Input } from '$lib/components/ui/input';
 	import { Label } from '$lib/components/ui/label';
@@ -106,11 +107,14 @@
 	let isUsingMergedSourceMeta = false;
 
 	// 过滤已有视频源相关
-	// eslint-disable-next-line @typescript-eslint/no-unused-vars
 	let existingVideoSources: VideoSourcesResponse | null = null;
 	let existingCollectionIds: Set<string> = new Set();
 	let existingFavoriteIds: Set<string> = new Set();
 	let existingFavoriteOwners = new Map<string, string>();
+	let showRepairFavoriteDialog = false;
+	let selectedFavoriteRepair: ReturnType<
+		typeof favoriteRepairSelection<VideoSourcesResponse['favorite'][number]>
+	> = null;
 	let existingSubmissionIds: Set<number> = new Set();
 	let existingBangumiSeasonIds: Set<string> = new Set();
 	// eslint-disable-next-line @typescript-eslint/no-unused-vars
@@ -1168,6 +1172,16 @@
 	// 检查收藏夹是否已存在
 	function isFavoriteExists(fId: number | string | undefined, originalId?: string | null, owner?: string | null): boolean {
 		return hasFavoriteSource(existingFavoriteIds, fId, originalId, existingFavoriteOwners, owner);
+	}
+
+	function openFavoriteRepair(favorite: UserFavoriteFolder) {
+		selectedFavoriteRepair = favoriteRepairSelection(
+			existingVideoSources?.favorite || [],
+			favorite.id,
+			favorite.original_fid,
+			favorite.creator_uid
+		);
+		showRepairFavoriteDialog = selectedFavoriteRepair !== null;
 	}
 
 	function isSubscribedCollectionExists(collection: UserCollectionInfo): boolean {
@@ -3177,78 +3191,90 @@
 									{#each filteredUserFavorites as favorite (favorite.id)}
 										{@const itemKey = `favorite_${favorite.id}`}
 										{@const isDisabled = isFavoriteExists(favorite.id, favorite.original_fid, favorite.creator_uid)}
-										<button
-											onclick={() => {
-												if (batchMode) {
-													toggleBatchSelection(itemKey, favorite, 'favorite');
-												} else {
-													selectFavorite(favorite);
-												}
-											}}
-											disabled={isDisabled}
-											class="hover:bg-muted rounded-lg border p-4 text-left transition-colors {isDisabled
-												? 'cursor-not-allowed opacity-60'
-												: ''} {batchMode && isBatchSelected(itemKey)
-												? 'bg-blue-50 ring-2 ring-blue-500 dark:bg-blue-950'
-												: ''}"
-										>
-											<div class="flex items-start gap-3">
-												<!-- 批量模式下的复选框 -->
-												{#if batchMode}
-													<div class="flex-shrink-0 pt-1">
-														<input
-															type="checkbox"
-															checked={batchCheckboxStates[itemKey] || false}
-															onclick={(e) => {
-																e.stopPropagation();
-																toggleBatchSelection(itemKey, favorite, 'favorite');
-															}}
-															class="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+										<div class="space-y-2">
+											<button
+												onclick={() => {
+													if (batchMode) {
+														toggleBatchSelection(itemKey, favorite, 'favorite');
+													} else {
+														selectFavorite(favorite);
+													}
+												}}
+												disabled={isDisabled}
+												class="hover:bg-muted w-full rounded-lg border p-4 text-left transition-colors {isDisabled
+													? 'cursor-not-allowed opacity-60'
+													: ''} {batchMode && isBatchSelected(itemKey)
+													? 'bg-blue-50 ring-2 ring-blue-500 dark:bg-blue-950'
+													: ''}"
+											>
+												<div class="flex items-start gap-3">
+													<!-- 批量模式下的复选框 -->
+													{#if batchMode}
+														<div class="flex-shrink-0 pt-1">
+															<input
+																type="checkbox"
+																checked={batchCheckboxStates[itemKey] || false}
+																onclick={(e) => {
+																	e.stopPropagation();
+																	toggleBatchSelection(itemKey, favorite, 'favorite');
+																}}
+																class="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+															/>
+														</div>
+													{/if}
+													{#if favorite.cover}
+														<img
+															src={processBilibiliImageUrl(favorite.cover)}
+															alt={favorite.name || favorite.title}
+															class="h-16 w-24 flex-shrink-0 rounded object-cover"
+															onerror={handleImageError}
+															loading="lazy"
+															crossorigin="anonymous"
+															referrerpolicy="no-referrer"
 														/>
-													</div>
-												{/if}
-												{#if favorite.cover}
-													<img
-														src={processBilibiliImageUrl(favorite.cover)}
-														alt={favorite.name || favorite.title}
-														class="h-16 w-24 flex-shrink-0 rounded object-cover"
-														onerror={handleImageError}
-														loading="lazy"
-														crossorigin="anonymous"
-														referrerpolicy="no-referrer"
-													/>
-												{:else}
-													<div
-														class="bg-muted text-muted-foreground flex h-16 w-24 flex-shrink-0 items-center justify-center rounded text-xs"
-													>
-														无封面
-													</div>
-												{/if}
-												<div class="min-w-0 flex-1">
-													<div class="mb-1 flex items-center gap-2">
-														<h4 class="truncate text-sm font-medium">
-															{favorite.name || favorite.title}
-														</h4>
-														{#if isFavoriteExists(favorite.id, favorite.original_fid, favorite.creator_uid)}
-															<span
-																class="flex-shrink-0 rounded bg-gray-100 px-2 py-0.5 text-xs text-gray-700 dark:bg-gray-800 dark:text-gray-300"
-															>
-																已添加
-															</span>
+													{:else}
+														<div
+															class="bg-muted text-muted-foreground flex h-16 w-24 flex-shrink-0 items-center justify-center rounded text-xs"
+														>
+															无封面
+														</div>
+													{/if}
+													<div class="min-w-0 flex-1">
+														<div class="mb-1 flex items-center gap-2">
+															<h4 class="truncate text-sm font-medium">
+																{favorite.name || favorite.title}
+															</h4>
+															{#if isFavoriteExists(favorite.id, favorite.original_fid, favorite.creator_uid)}
+																<span
+																	class="flex-shrink-0 rounded bg-gray-100 px-2 py-0.5 text-xs text-gray-700 dark:bg-gray-800 dark:text-gray-300"
+																>
+																	已添加
+																</span>
+															{/if}
+														</div>
+														<p class="text-muted-foreground mb-1 text-xs">
+															收藏夹ID: {favorite.id}
+														</p>
+														<p class="text-muted-foreground mb-1 text-xs">
+															共 {favorite.media_count} 个视频
+														</p>
+														{#if favorite.created}
+															<p class="text-muted-foreground text-xs">
+																创建于 {new Date(favorite.created * 1000).toLocaleDateString()}
+															</p>
 														{/if}
 													</div>
-													<p class="text-muted-foreground mb-1 text-xs">收藏夹ID: {favorite.id}</p>
-													<p class="text-muted-foreground mb-1 text-xs">
-														共 {favorite.media_count} 个视频
-													</p>
-													{#if favorite.created}
-														<p class="text-muted-foreground text-xs">
-															创建于 {new Date(favorite.created * 1000).toLocaleDateString()}
-														</p>
-													{/if}
 												</div>
-											</div>
-										</button>
+											</button>
+											{#if isDisabled}
+												<Button
+													variant="outline"
+													size="sm"
+													class="w-full"
+													onclick={() => openFavoriteRepair(favorite)}>修复原视频源</Button
+												>
+											{/if}
+										</div>
 									{/each}
 								</div>
 							</div>
@@ -3327,61 +3353,71 @@
 										{#each filteredSearchedUserFavorites as favorite (favorite.id)}
 											{@const itemKey = `searched-favorite_${favorite.id}`}
 											{@const isDisabled = isFavoriteExists(favorite.id, favorite.original_fid, favorite.creator_uid)}
-											<button
-												onclick={() => {
-													if (batchMode) {
-														toggleBatchSelection(itemKey, favorite, 'favorite');
-													} else {
-														selectSearchedFavorite(favorite);
-													}
-												}}
-												disabled={isDisabled}
-												class="hover:bg-muted rounded-lg border p-4 text-left transition-colors {isDisabled
-													? 'cursor-not-allowed opacity-60'
-													: ''} {batchMode && isBatchSelected(itemKey)
-													? 'bg-blue-50 ring-2 ring-blue-500 dark:bg-blue-950'
-													: ''}"
-											>
-												<div class="flex items-start gap-3">
-													<!-- 批量模式下的复选框 -->
-													{#if batchMode}
-														<div class="flex-shrink-0 pt-1">
-															<input
-																type="checkbox"
-																checked={batchCheckboxStates[itemKey] || false}
-																onclick={(e) => {
-																	e.stopPropagation();
-																	toggleBatchSelection(itemKey, favorite, 'favorite');
-																}}
-																class="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
-															/>
+											<div class="space-y-2">
+												<button
+													onclick={() => {
+														if (batchMode) {
+															toggleBatchSelection(itemKey, favorite, 'favorite');
+														} else {
+															selectSearchedFavorite(favorite);
+														}
+													}}
+													disabled={isDisabled}
+													class="hover:bg-muted w-full rounded-lg border p-4 text-left transition-colors {isDisabled
+														? 'cursor-not-allowed opacity-60'
+														: ''} {batchMode && isBatchSelected(itemKey)
+														? 'bg-blue-50 ring-2 ring-blue-500 dark:bg-blue-950'
+														: ''}"
+												>
+													<div class="flex items-start gap-3">
+														<!-- 批量模式下的复选框 -->
+														{#if batchMode}
+															<div class="flex-shrink-0 pt-1">
+																<input
+																	type="checkbox"
+																	checked={batchCheckboxStates[itemKey] || false}
+																	onclick={(e) => {
+																		e.stopPropagation();
+																		toggleBatchSelection(itemKey, favorite, 'favorite');
+																	}}
+																	class="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+																/>
+															</div>
+														{/if}
+														<div
+															class="bg-muted text-muted-foreground flex h-16 w-24 flex-shrink-0 items-center justify-center rounded text-xs"
+														>
+															收藏夹
 														</div>
-													{/if}
-													<div
-														class="bg-muted text-muted-foreground flex h-16 w-24 flex-shrink-0 items-center justify-center rounded text-xs"
+														<div class="min-w-0 flex-1">
+															<div class="mb-1 flex items-center gap-2">
+																<h4 class="truncate text-sm font-medium">{favorite.title}</h4>
+																{#if isFavoriteExists(favorite.id, favorite.original_fid, favorite.creator_uid)}
+																	<span
+																		class="flex-shrink-0 rounded bg-gray-100 px-2 py-0.5 text-xs text-gray-700 dark:bg-gray-800 dark:text-gray-300"
+																	>
+																		已添加
+																	</span>
+																{/if}
+															</div>
+															<p class="text-muted-foreground mb-1 text-xs">
+																收藏夹ID: {favorite.id}
+															</p>
+															<p class="text-muted-foreground text-xs">
+																共 {favorite.media_count} 个视频
+															</p>
+														</div>
+													</div>
+												</button>
+												{#if isDisabled}
+													<Button
+														variant="outline"
+														size="sm"
+														class="w-full"
+														onclick={() => openFavoriteRepair(favorite)}>修复原视频源</Button
 													>
-														收藏夹
-													</div>
-													<div class="min-w-0 flex-1">
-														<div class="mb-1 flex items-center gap-2">
-															<h4 class="truncate text-sm font-medium">{favorite.title}</h4>
-															{#if isFavoriteExists(favorite.id, favorite.original_fid, favorite.creator_uid)}
-																<span
-																	class="flex-shrink-0 rounded bg-gray-100 px-2 py-0.5 text-xs text-gray-700 dark:bg-gray-800 dark:text-gray-300"
-																>
-																	已添加
-																</span>
-															{/if}
-														</div>
-														<p class="text-muted-foreground mb-1 text-xs">
-															收藏夹ID: {favorite.id}
-														</p>
-														<p class="text-muted-foreground text-xs">
-															共 {favorite.media_count} 个视频
-														</p>
-													</div>
-												</div>
-											</button>
+												{/if}
+											</div>
 										{/each}
 									</div>
 								{:else}
@@ -3606,82 +3642,104 @@
 									{#each subscribedCollections as collection (collection.sid)}
 										{@const itemKey = `subscribed-collection_${collection.sid}`}
 										{@const isExisting = isSubscribedCollectionExists(collection)}
-										<button
-											onclick={() => {
-												if (batchMode) {
-													toggleSubscribedCollection(itemKey, collection);
-												} else {
-													selectSubscribedCollection(collection);
-												}
-											}}
-											disabled={isExisting}
-											class="hover:bg-muted rounded-lg border p-4 text-left transition-colors {isExisting
-												? 'cursor-not-allowed opacity-60'
-												: ''} {batchMode && isBatchSelected(itemKey)
-												? 'bg-blue-50 ring-2 ring-blue-500 dark:bg-blue-950'
-												: ''}"
-										>
-											<div class="flex items-start gap-3">
-												<!-- 批量模式下的复选框 -->
-												{#if batchMode}
-													<div class="flex-shrink-0 pt-1">
-														<input
-															type="checkbox"
-															checked={batchCheckboxStates[itemKey] || false}
-															onclick={(e) => {
-																e.stopPropagation();
-																toggleSubscribedCollection(itemKey, collection);
-															}}
-															class="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+										<div class="space-y-2">
+											<button
+												onclick={() => {
+													if (batchMode) {
+														toggleSubscribedCollection(itemKey, collection);
+													} else {
+														selectSubscribedCollection(collection);
+													}
+												}}
+												disabled={isExisting}
+												class="hover:bg-muted w-full rounded-lg border p-4 text-left transition-colors {isExisting
+													? 'cursor-not-allowed opacity-60'
+													: ''} {batchMode && isBatchSelected(itemKey)
+													? 'bg-blue-50 ring-2 ring-blue-500 dark:bg-blue-950'
+													: ''}"
+											>
+												<div class="flex items-start gap-3">
+													<!-- 批量模式下的复选框 -->
+													{#if batchMode}
+														<div class="flex-shrink-0 pt-1">
+															<input
+																type="checkbox"
+																checked={batchCheckboxStates[itemKey] || false}
+																onclick={(e) => {
+																	e.stopPropagation();
+																	toggleSubscribedCollection(itemKey, collection);
+																}}
+																class="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+															/>
+														</div>
+													{/if}
+													{#if collection.cover}
+														<img
+															src={processBilibiliImageUrl(collection.cover)}
+															alt={collection.name}
+															class="h-16 w-24 flex-shrink-0 rounded object-cover"
+															onerror={handleImageError}
+															loading="lazy"
+															crossorigin="anonymous"
+															referrerpolicy="no-referrer"
 														/>
-													</div>
-												{/if}
-												{#if collection.cover}
-													<img
-														src={processBilibiliImageUrl(collection.cover)}
-														alt={collection.name}
-														class="h-16 w-24 flex-shrink-0 rounded object-cover"
-														onerror={handleImageError}
-														loading="lazy"
-														crossorigin="anonymous"
-														referrerpolicy="no-referrer"
-													/>
-												{:else}
-													<div
-														class="bg-muted text-muted-foreground flex h-16 w-24 flex-shrink-0 items-center justify-center rounded text-xs"
-													>
-														无封面
-													</div>
-												{/if}
-												<div class="min-w-0 flex-1">
-													<div class="mb-1 flex items-center gap-2">
-														<h4 class="truncate text-sm font-medium">{collection.name}</h4>
-														<span
-															class="flex-shrink-0 rounded bg-purple-100 px-2 py-0.5 text-xs text-purple-700 dark:bg-purple-900 dark:text-purple-300"
+													{:else}
+														<div
+															class="bg-muted text-muted-foreground flex h-16 w-24 flex-shrink-0 items-center justify-center rounded text-xs"
 														>
-															{collection.collection_type === 'favorite' ? '收藏夹' : collection.collection_type === 'season' ? '合集' : '系列'}
-														</span>
-														{#if isExisting}
+															无封面
+														</div>
+													{/if}
+													<div class="min-w-0 flex-1">
+														<div class="mb-1 flex items-center gap-2">
+															<h4 class="truncate text-sm font-medium">{collection.name}</h4>
 															<span
-																class="flex-shrink-0 rounded bg-gray-100 px-2 py-0.5 text-xs text-gray-700 dark:bg-gray-800 dark:text-gray-300"
+																class="flex-shrink-0 rounded bg-purple-100 px-2 py-0.5 text-xs text-purple-700 dark:bg-purple-900 dark:text-purple-300"
 															>
-																已添加
+																{collection.collection_type === 'favorite'
+																	? '收藏夹'
+																	: collection.collection_type === 'season'
+																		? '合集'
+																		: '系列'}
 															</span>
+															{#if isExisting}
+																<span
+																	class="flex-shrink-0 rounded bg-gray-100 px-2 py-0.5 text-xs text-gray-700 dark:bg-gray-800 dark:text-gray-300"
+																>
+																	已添加
+																</span>
+															{/if}
+														</div>
+														<p class="text-muted-foreground mb-1 text-xs">ID: {collection.sid}</p>
+														<p class="text-muted-foreground mb-1 text-xs">
+															UP主: {collection.up_name}
+														</p>
+														<p class="text-muted-foreground text-xs">
+															共 {collection.total} 个视频
+														</p>
+														{#if collection.description}
+															<p class="text-muted-foreground mt-1 line-clamp-2 text-xs">
+																{collection.description}
+															</p>
 														{/if}
 													</div>
-													<p class="text-muted-foreground mb-1 text-xs">ID: {collection.sid}</p>
-													<p class="text-muted-foreground mb-1 text-xs">
-														UP主: {collection.up_name}
-													</p>
-													<p class="text-muted-foreground text-xs">共 {collection.total} 个视频</p>
-													{#if collection.description}
-														<p class="text-muted-foreground mt-1 line-clamp-2 text-xs">
-															{collection.description}
-														</p>
-													{/if}
 												</div>
-											</div>
-										</button>
+											</button>
+											{#if isExisting && collection.collection_type === 'favorite'}
+												<Button
+													variant="outline"
+													size="sm"
+													class="w-full"
+													onclick={() =>
+														openFavoriteRepair({
+															id: collection.sid,
+															original_fid: collection.original_fid,
+															creator_uid: String(collection.up_mid),
+															media_count: collection.total
+														})}>修复原视频源</Button
+												>
+											{/if}
+										</div>
 									{/each}
 								</div>
 							</div>
@@ -4299,6 +4357,19 @@
 			</div>
 		</div>
 	</div>
+{/if}
+
+{#if selectedFavoriteRepair}
+	<RepairFavoriteDialog
+		bind:isOpen={showRepairFavoriteDialog}
+		sourceId={selectedFavoriteRepair.source.id}
+		sourceName={selectedFavoriteRepair.source.name}
+		currentId={String(selectedFavoriteRepair.source.f_id)}
+		currentOwner={selectedFavoriteRepair.source.owner_mid || ''}
+		initialFavorite={selectedFavoriteRepair.favorite}
+		initialCreatorUid={selectedFavoriteRepair.creatorUid}
+		on:repaired={loadExistingVideoSources}
+	/>
 {/if}
 
 <style>

@@ -1968,6 +1968,9 @@ pub async fn add_video_source_internal(
         }
         let legacy = favorite::Entity::find()
             .filter(favorite::Column::FId.eq(full_id / 100))
+            // Persisted owners attest complete IDs; those rows cannot be a
+            // legacy alias even when the numeric values happen to overlap.
+            .filter(favorite::Column::OwnerMid.is_null())
             .one(db.as_ref())
             .await?;
         let client = BiliClient::new(String::new());
@@ -1976,11 +1979,10 @@ pub async fn add_video_source_internal(
             return Err(anyhow!("收藏夹返回的ID与输入不一致").into());
         }
         favorite_owner = Some(info.mid.filter(|mid| *mid > 0).context("收藏夹未返回有效创建者UID")?);
-        if let Some(legacy) = legacy.filter(|source| source.owner_mid.is_none_or(|mid| Some(mid) == favorite_owner)) {
+        if let Some(legacy) = legacy {
             let resolved = FavoriteList::new(&client, legacy.f_id.to_string())
-                .resolve_short_id(legacy.f_id, client.get_current_user_id().ok(), legacy.owner_mid, false)
-                .await?
-                .remove(0);
+                .resolve_stored_id(client.get_current_user_id().ok())
+                .await?;
             if resolved.id != info.id || resolved.mid != info.mid {
                 return Err(anyhow!("原始ID对应的创建者不明确，请先修复原收藏夹ID").into());
             }
